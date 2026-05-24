@@ -124,6 +124,7 @@ function App() {
           <BracketMapChart
             ledger={ledger}
             inputs={inputs}
+            simulateSurvivor={simulateSurvivor}
             onUpdateConversion={handleUpdateConversion}
           />
         )}

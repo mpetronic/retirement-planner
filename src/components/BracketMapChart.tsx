@@ -30,12 +30,14 @@ ChartJS.register(
 interface BracketMapChartProps {
   ledger: SimulationResultRow[];
   inputs: AppStateInputs;
+  simulateSurvivor: boolean;
   onUpdateConversion: (val: number) => void;
 }
 
 export const BracketMapChart: React.FC<BracketMapChartProps> = ({
   ledger,
   inputs,
+  simulateSurvivor,
   onUpdateConversion,
 }) => {
   const [isDragging, setIsDragging] = useState(false);
@@ -53,49 +55,49 @@ export const BracketMapChart: React.FC<BracketMapChartProps> = ({
   const fed12PercentLine = useMemo(() => {
     return ledger.map((r) => {
       // 12% Bracket limit + standard deduction
-      const isSingle = r.yourAge >= 85 && inputs.you.targetSSClaimingAge > 0; // Check survivor status from age
+      const isSingle = simulateSurvivor && r.year >= 2045; // Check survivor status from age & setting
       const limit = isSingle ? 47150 : 94300;
       const stdDec = r.standardDeduction;
       return limit * (r.standardDeduction / (isSingle ? 13850 : 27700)) + stdDec;
     });
-  }, [ledger, inputs]);
+  }, [ledger, inputs, simulateSurvivor]);
 
   const fed22PercentLine = useMemo(() => {
     return ledger.map((r) => {
-      const isSingle = r.yourAge >= 85 && inputs.you.targetSSClaimingAge > 0;
+      const isSingle = simulateSurvivor && r.year >= 2045;
       const limit = isSingle ? 100525 : 201050;
       const stdDec = r.standardDeduction;
       return limit * (r.standardDeduction / (isSingle ? 13850 : 27700)) + stdDec;
     });
-  }, [ledger, inputs]);
+  }, [ledger, inputs, simulateSurvivor]);
 
   const fed24PercentLine = useMemo(() => {
     return ledger.map((r) => {
-      const isSingle = r.yourAge >= 85 && inputs.you.targetSSClaimingAge > 0;
+      const isSingle = simulateSurvivor && r.year >= 2045;
       const limit = isSingle ? 191950 : 383900;
       const stdDec = r.standardDeduction;
       return limit * (r.standardDeduction / (isSingle ? 13850 : 27700)) + stdDec;
     });
-  }, [ledger, inputs]);
+  }, [ledger, inputs, simulateSurvivor]);
 
   const irmaaCliff1Line = useMemo(() => {
     return ledger.map((r) => {
-      const isSingle = r.yourAge >= 85 && inputs.you.targetSSClaimingAge > 0;
+      const isSingle = simulateSurvivor && r.year >= 2045;
       const baseCliff = isSingle ? 109000 : 218000;
       // Clinically indexed standard deduction factor represents CPI inflation
       const cpiFactor = r.standardDeduction / (isSingle ? 13850 : 27700);
       return baseCliff * cpiFactor;
     });
-  }, [ledger, inputs]);
+  }, [ledger, inputs, simulateSurvivor]);
 
   const irmaaCliff2Line = useMemo(() => {
     return ledger.map((r) => {
-      const isSingle = r.yourAge >= 85 && inputs.you.targetSSClaimingAge > 0;
+      const isSingle = simulateSurvivor && r.year >= 2045;
       const baseCliff = isSingle ? 137000 : 274000;
       const cpiFactor = r.standardDeduction / (isSingle ? 13850 : 27700);
       return baseCliff * cpiFactor;
     });
-  }, [ledger, inputs]);
+  }, [ledger, inputs, simulateSurvivor]);
 
   const chartData = useMemo(() => {
     return {
@@ -222,12 +224,14 @@ export const BracketMapChart: React.FC<BracketMapChartProps> = ({
           },
         },
         tooltip: {
+          mode: 'index',
+          intersect: false,
           backgroundColor: '#0f172a',
           titleColor: '#f1f5f9',
-          bodyColor: '#94a3b8',
+          bodyColor: '#cbd5e1',
           borderColor: 'rgba(255,255,255,0.08)',
           borderWidth: 1,
-          padding: 10,
+          padding: 12,
           callbacks: {
             label: function (context: any) {
               let label = context.dataset.label || '';
@@ -242,6 +246,22 @@ export const BracketMapChart: React.FC<BracketMapChartProps> = ({
                 }).format(context.parsed.y);
               }
               return label;
+            },
+            footer: function (tooltipItems: any[]) {
+              let sum = 0;
+              tooltipItems.forEach((item) => {
+                if (item.dataset.stack === 'income') {
+                  sum += item.parsed.y || 0;
+                }
+              });
+              if (sum > 0) {
+                return '\nTotal Stacked Income: ' + new Intl.NumberFormat('en-US', {
+                  style: 'currency',
+                  currency: 'USD',
+                  maximumFractionDigits: 0,
+                }).format(sum);
+              }
+              return '';
             },
           },
         },
@@ -260,7 +280,7 @@ export const BracketMapChart: React.FC<BracketMapChartProps> = ({
           },
         },
         y: {
-          stacked: true,
+          stacked: false,
           grid: {
             color: 'rgba(255,255,255,0.04)',
           },
@@ -276,7 +296,7 @@ export const BracketMapChart: React.FC<BracketMapChartProps> = ({
         },
       },
     };
-  }, [isDragging]);
+  }, [isDragging, ssIncomes, rmds, activeSalaries]);
 
   // Generic quick-fill conversion target handler
   const handleFillToTarget = (limitValue: number) => {
