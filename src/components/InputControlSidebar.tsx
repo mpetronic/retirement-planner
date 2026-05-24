@@ -67,9 +67,9 @@ export const InputControlSidebar: React.FC<InputControlSidebarProps> = ({
         </div>
       </div>
 
-      <div className="p-6 space-y-8 flex-1">
+      <div className="p-4 space-y-6 flex-1">
         {/* Section 1: Spouses Profiles */}
-        <div className="space-y-4">
+        <div className="space-y-3">
           <div className="flex items-center gap-2 text-emerald-400 font-semibold border-b border-slate-800 pb-2">
             <User className="w-5 h-5" />
             <h2>Spouse Profiles</h2>
@@ -227,112 +227,102 @@ export const InputControlSidebar: React.FC<InputControlSidebarProps> = ({
         </div>
 
         {/* Section 2: Portfolio Initial Balances */}
-        <div className="space-y-4">
+        <div className="space-y-3">
           <div className="flex items-center gap-2 text-emerald-400 font-semibold border-b border-slate-800 pb-2">
             <Coins className="w-5 h-5" />
             <h2>Starting Balances</h2>
           </div>
 
-          <div className="grid grid-cols-1 gap-4">
+          <div className="grid grid-cols-1 gap-3">
             {/* Your Balances */}
-            <div className="p-4 bg-slate-950/60 rounded-xl border border-slate-800 space-y-3">
+            <div className="p-3 bg-slate-950/60 rounded-xl border border-slate-800 space-y-2">
               <span className="text-xs font-bold text-slate-300 block border-b border-slate-800 pb-1">{(inputs.you.name || 'You')}'s Portfolio Assets</span>
               
-              <div className="space-y-1">
-                <label className="text-xs text-slate-400 flex justify-between">
-                  <span>Traditional Pre-Tax IRA</span>
-                  <span className="text-slate-200 font-mono font-semibold">{formatCurrency(inputs.portfolio.yourPreTaxIRA)}</span>
-                </label>
-                <input
-                  type="number"
-                  value={inputs.portfolio.yourPreTaxIRA}
-                  onChange={(e) => updateNestedState('portfolio', 'yourPreTaxIRA', Number(e.target.value))}
-                  className="w-full bg-slate-900 border border-slate-800 rounded-lg px-3 py-1.5 text-sm text-slate-100 font-mono focus:outline-none focus:border-emerald-500"
-                />
-              </div>
-
-              <div className="space-y-1">
-                <label className="text-xs text-slate-400 flex justify-between">
-                  <span>Roth IRA Balance</span>
-                  <span className="text-slate-200 font-mono font-semibold">{formatCurrency(inputs.portfolio.yourRothIRA)}</span>
-                </label>
-                <input
-                  type="number"
-                  value={inputs.portfolio.yourRothIRA}
-                  onChange={(e) => updateNestedState('portfolio', 'yourRothIRA', Number(e.target.value))}
-                  className="w-full bg-slate-900 border border-slate-800 rounded-lg px-3 py-1.5 text-sm text-slate-100 font-mono focus:outline-none focus:border-emerald-500"
-                />
+              <div className="grid grid-cols-2 gap-2">
+                <div className="space-y-1">
+                  <label className="text-[10px] text-slate-400 block truncate" title="Traditional Pre-Tax IRA">Pre-Tax IRA</label>
+                  <input
+                    type="number"
+                    value={inputs.portfolio.yourPreTaxIRA}
+                    onChange={(e) => updateNestedState('portfolio', 'yourPreTaxIRA', Number(e.target.value))}
+                    className="w-full bg-slate-900 border border-slate-800 rounded-lg px-2.5 py-1 text-xs text-slate-100 font-mono focus:outline-none focus:border-emerald-500"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <label className="text-[10px] text-slate-400 block truncate" title="Roth IRA Balance">Roth IRA</label>
+                  <input
+                    type="number"
+                    value={inputs.portfolio.yourRothIRA}
+                    onChange={(e) => updateNestedState('portfolio', 'yourRothIRA', Number(e.target.value))}
+                    className="w-full bg-slate-900 border border-slate-800 rounded-lg px-2.5 py-1 text-xs text-slate-100 font-mono focus:outline-none focus:border-emerald-500"
+                  />
+                </div>
               </div>
 
               <div className="grid grid-cols-2 gap-2">
                 <div className="space-y-1">
-                  <label className="text-xs text-slate-400 block truncate">Taxable Brokerage</label>
+                  <label className="text-[10px] text-slate-400 block truncate" title="Taxable Brokerage">Taxable Assets</label>
                   <input
                     type="number"
                     value={inputs.portfolio.yourTaxableBrokerage}
                     onChange={(e) => updateNestedState('portfolio', 'yourTaxableBrokerage', Number(e.target.value))}
-                    className="w-full bg-slate-900 border border-slate-800 rounded-lg px-3 py-1.5 text-xs text-slate-100 font-mono focus:outline-none focus:border-emerald-500"
+                    className="w-full bg-slate-900 border border-slate-800 rounded-lg px-2.5 py-1 text-xs text-slate-100 font-mono focus:outline-none focus:border-emerald-500"
                   />
                 </div>
                 <div className="space-y-1">
-                  <label className="text-xs text-slate-400 block truncate">Cost Basis</label>
+                  <label className="text-[10px] text-slate-400 block truncate" title="Taxable Cost Basis">Cost Basis</label>
                   <input
                     type="number"
                     value={inputs.portfolio.yourTaxableBasis}
                     onChange={(e) => updateNestedState('portfolio', 'yourTaxableBasis', Number(e.target.value))}
-                    className="w-full bg-slate-900 border border-slate-800 rounded-lg px-3 py-1.5 text-xs text-slate-100 font-mono focus:outline-none focus:border-emerald-500"
+                    className="w-full bg-slate-900 border border-slate-800 rounded-lg px-2.5 py-1 text-xs text-slate-100 font-mono focus:outline-none focus:border-emerald-500"
                   />
                 </div>
               </div>
             </div>
 
             {/* Wife Balances */}
-            <div className="p-4 bg-slate-950/60 rounded-xl border border-slate-800 space-y-3">
+            <div className="p-3 bg-slate-950/60 rounded-xl border border-slate-800 space-y-2">
               <span className="text-xs font-bold text-slate-300 block border-b border-slate-800 pb-1">{(inputs.wife.name || 'Spouse')}'s Portfolio Assets</span>
               
-              <div className="space-y-1">
-                <label className="text-xs text-slate-400 flex justify-between">
-                  <span>Traditional Pre-Tax IRA</span>
-                  <span className="text-slate-200 font-mono font-semibold">{formatCurrency(inputs.portfolio.wifePreTaxIRA)}</span>
-                </label>
-                <input
-                  type="number"
-                  value={inputs.portfolio.wifePreTaxIRA}
-                  onChange={(e) => updateNestedState('portfolio', 'wifePreTaxIRA', Number(e.target.value))}
-                  className="w-full bg-slate-900 border border-slate-800 rounded-lg px-3 py-1.5 text-sm text-slate-100 font-mono focus:outline-none focus:border-emerald-500"
-                />
-              </div>
-
-              <div className="space-y-1">
-                <label className="text-xs text-slate-400 flex justify-between">
-                  <span>Roth IRA Balance</span>
-                  <span className="text-slate-200 font-mono font-semibold">{formatCurrency(inputs.portfolio.wifeRothIRA)}</span>
-                </label>
-                <input
-                  type="number"
-                  value={inputs.portfolio.wifeRothIRA}
-                  onChange={(e) => updateNestedState('portfolio', 'wifeRothIRA', Number(e.target.value))}
-                  className="w-full bg-slate-900 border border-slate-800 rounded-lg px-3 py-1.5 text-sm text-slate-100 font-mono focus:outline-none focus:border-emerald-500"
-                />
+              <div className="grid grid-cols-2 gap-2">
+                <div className="space-y-1">
+                  <label className="text-[10px] text-slate-400 block truncate" title="Traditional Pre-Tax IRA">Pre-Tax IRA</label>
+                  <input
+                    type="number"
+                    value={inputs.portfolio.wifePreTaxIRA}
+                    onChange={(e) => updateNestedState('portfolio', 'wifePreTaxIRA', Number(e.target.value))}
+                    className="w-full bg-slate-900 border border-slate-800 rounded-lg px-2.5 py-1 text-xs text-slate-100 font-mono focus:outline-none focus:border-emerald-500"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <label className="text-[10px] text-slate-400 block truncate" title="Roth IRA Balance">Roth IRA</label>
+                  <input
+                    type="number"
+                    value={inputs.portfolio.wifeRothIRA}
+                    onChange={(e) => updateNestedState('portfolio', 'wifeRothIRA', Number(e.target.value))}
+                    className="w-full bg-slate-900 border border-slate-800 rounded-lg px-2.5 py-1 text-xs text-slate-100 font-mono focus:outline-none focus:border-emerald-500"
+                  />
+                </div>
               </div>
 
               <div className="grid grid-cols-2 gap-2">
                 <div className="space-y-1">
-                  <label className="text-xs text-slate-400 block truncate">Taxable Brokerage</label>
+                  <label className="text-[10px] text-slate-400 block truncate" title="Taxable Brokerage">Taxable Assets</label>
                   <input
                     type="number"
                     value={inputs.portfolio.wifeTaxableBrokerage}
                     onChange={(e) => updateNestedState('portfolio', 'wifeTaxableBrokerage', Number(e.target.value))}
-                    className="w-full bg-slate-900 border border-slate-800 rounded-lg px-3 py-1.5 text-xs text-slate-100 font-mono focus:outline-none focus:border-emerald-500"
+                    className="w-full bg-slate-900 border border-slate-800 rounded-lg px-2.5 py-1 text-xs text-slate-100 font-mono focus:outline-none focus:border-emerald-500"
                   />
                 </div>
                 <div className="space-y-1">
-                  <label className="text-xs text-slate-400 block truncate">Cost Basis</label>
+                  <label className="text-[10px] text-slate-400 block truncate" title="Taxable Cost Basis">Cost Basis</label>
                   <input
                     type="number"
                     value={inputs.portfolio.wifeTaxableBasis}
                     onChange={(e) => updateNestedState('portfolio', 'wifeTaxableBasis', Number(e.target.value))}
-                    className="w-full bg-slate-900 border border-slate-800 rounded-lg px-3 py-1.5 text-xs text-slate-100 font-mono focus:outline-none focus:border-emerald-500"
+                    className="w-full bg-slate-900 border border-slate-800 rounded-lg px-2.5 py-1 text-xs text-slate-100 font-mono focus:outline-none focus:border-emerald-500"
                   />
                 </div>
               </div>
@@ -416,75 +406,83 @@ export const InputControlSidebar: React.FC<InputControlSidebarProps> = ({
         </div>
 
         {/* Section 4: Growth Assumptions */}
-        <div className="space-y-4">
+        <div className="space-y-3">
           <div className="flex items-center gap-2 text-emerald-400 font-semibold border-b border-slate-800 pb-2">
             <TrendingUp className="w-5 h-5" />
             <h2>Growth & Inflation</h2>
           </div>
 
-          <div className="p-4 bg-slate-950/60 rounded-xl border border-slate-800 space-y-4">
-            <div className="space-y-1">
-              <label className="text-xs text-slate-400 flex justify-between">
-                <span>Equity Return Rate</span>
-                <span className="text-slate-200 font-semibold font-mono">{formatPercent(inputs.growthAssumptions.equityReturnRate)}</span>
-              </label>
-              <input
-                type="range"
-                min="0.00"
-                max="0.15"
-                step="0.005"
-                value={inputs.growthAssumptions.equityReturnRate}
-                onChange={(e) => updateNestedState('growthAssumptions', 'equityReturnRate', Number(e.target.value))}
-                className="w-full h-1.5 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-emerald-500"
-              />
+          <div className="p-3 bg-slate-950/60 rounded-xl border border-slate-800 space-y-3">
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1">
+                <label className="text-[10px] text-slate-400 font-bold uppercase tracking-wider block truncate">Equity Return</label>
+                <div className="flex justify-between items-center text-xs font-mono font-bold text-slate-200">
+                  <span>Rate:</span>
+                  <span>{formatPercent(inputs.growthAssumptions.equityReturnRate)}</span>
+                </div>
+                <input
+                  type="range"
+                  min="0.00"
+                  max="0.15"
+                  step="0.005"
+                  value={inputs.growthAssumptions.equityReturnRate}
+                  onChange={(e) => updateNestedState('growthAssumptions', 'equityReturnRate', Number(e.target.value))}
+                  className="w-full h-1 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-emerald-500"
+                />
+              </div>
+
+              <div className="space-y-1">
+                <label className="text-[10px] text-slate-400 font-bold uppercase tracking-wider block truncate">Fixed Income</label>
+                <div className="flex justify-between items-center text-xs font-mono font-bold text-slate-200">
+                  <span>Rate:</span>
+                  <span>{formatPercent(inputs.growthAssumptions.fixedIncomeReturnRate)}</span>
+                </div>
+                <input
+                  type="range"
+                  min="0.00"
+                  max="0.10"
+                  step="0.005"
+                  value={inputs.growthAssumptions.fixedIncomeReturnRate}
+                  onChange={(e) => updateNestedState('growthAssumptions', 'fixedIncomeReturnRate', Number(e.target.value))}
+                  className="w-full h-1 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-emerald-500"
+                />
+              </div>
             </div>
 
-            <div className="space-y-1">
-              <label className="text-xs text-slate-400 flex justify-between">
-                <span>Fixed Income Return Rate</span>
-                <span className="text-slate-200 font-semibold font-mono">{formatPercent(inputs.growthAssumptions.fixedIncomeReturnRate)}</span>
-              </label>
-              <input
-                type="range"
-                min="0.00"
-                max="0.10"
-                step="0.005"
-                value={inputs.growthAssumptions.fixedIncomeReturnRate}
-                onChange={(e) => updateNestedState('growthAssumptions', 'fixedIncomeReturnRate', Number(e.target.value))}
-                className="w-full h-1.5 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-emerald-500"
-              />
-            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1">
+                <label className="text-[10px] text-slate-400 font-bold uppercase tracking-wider block truncate">CPI Inflation</label>
+                <div className="flex justify-between items-center text-xs font-mono font-bold text-slate-200">
+                  <span>Rate:</span>
+                  <span>{formatPercent(inputs.growthAssumptions.cpiInflationRate)}</span>
+                </div>
+                <input
+                  type="range"
+                  min="0.00"
+                  max="0.08"
+                  step="0.002"
+                  value={inputs.growthAssumptions.cpiInflationRate}
+                  onChange={(e) => updateNestedState('growthAssumptions', 'cpiInflationRate', Number(e.target.value))}
+                  className="w-full h-1 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-emerald-500"
+                />
+              </div>
 
-            <div className="space-y-1">
-              <label className="text-xs text-slate-400 flex justify-between">
-                <span>CPI Inflation Rate</span>
-                <span className="text-slate-200 font-semibold font-mono">{formatPercent(inputs.growthAssumptions.cpiInflationRate)}</span>
-              </label>
-              <input
-                type="range"
-                min="0.00"
-                max="0.08"
-                step="0.002"
-                value={inputs.growthAssumptions.cpiInflationRate}
-                onChange={(e) => updateNestedState('growthAssumptions', 'cpiInflationRate', Number(e.target.value))}
-                className="w-full h-1.5 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-emerald-500"
-              />
-            </div>
-
-            <div className="space-y-1">
-              <label className="text-xs text-slate-400 flex justify-between">
-                <span>Healthcare Inflation Rate</span>
-                <span className="text-slate-200 font-semibold font-mono">{formatPercent(inputs.growthAssumptions.healthcareInflationRate)}</span>
-              </label>
-              <input
-                type="range"
-                min="0.00"
-                max="0.10"
-                step="0.005"
-                value={inputs.growthAssumptions.healthcareInflationRate}
-                onChange={(e) => updateNestedState('growthAssumptions', 'healthcareInflationRate', Number(e.target.value))}
-                className="w-full h-1.5 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-emerald-500"
-              />
+              <div className="space-y-1">
+                <label className="text-[10px] text-slate-400 font-bold uppercase tracking-wider block truncate">Healthcare</label>
+                <div className="flex justify-between items-center text-xs font-mono font-bold text-slate-200">
+                  <span>Inflation:</span>
+                  <span>{formatPercent(inputs.growthAssumptions.healthcareInflationRate)}</span>
+                </div>
+                <input
+                  type="range"
+                  min="0.00"
+                  max="0.10"
+                  step="0.005"
+                  value={inputs.growthAssumptions.healthcareInflationRate}
+                  onChange={(e) => updateNestedState('growthAssumptions', 'healthcareInflationRate', Number(e.target.value))}
+                  className="w-full h-1 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-emerald-500"
+                />
+              </div>
             </div>
           </div>
         </div>

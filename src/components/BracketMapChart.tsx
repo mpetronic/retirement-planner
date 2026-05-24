@@ -201,7 +201,7 @@ export const BracketMapChart: React.FC<BracketMapChartProps> = ({
           },
         },
         y: {
-          stacked: false,
+          stacked: true,
           grid: {
             color: 'rgba(255,255,255,0.04)',
           },
