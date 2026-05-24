@@ -16,28 +16,28 @@ export interface IRMAATier {
 }
 
 // 2026 Federal Standard Deductions
-export const FED_STANDARD_DEDUCTION_MFJ = 27700;
-export const FED_STANDARD_DEDUCTION_SINGLE = 13850;
+export const FED_STANDARD_DEDUCTION_MFJ = 32200;
+export const FED_STANDARD_DEDUCTION_SINGLE = 16100;
 
 // 2026 Federal Brackets (MFJ)
 export const FED_BRACKETS_MFJ: TaxBracket[] = [
-  { rate: 0.10, limit: 23200 },
-  { rate: 0.12, limit: 94300 },
-  { rate: 0.22, limit: 201050 },
-  { rate: 0.24, limit: 383900 },
-  { rate: 0.32, limit: 487450 },
-  { rate: 0.35, limit: 731200 },
+  { rate: 0.10, limit: 24800 },
+  { rate: 0.12, limit: 100800 },
+  { rate: 0.22, limit: 211400 },
+  { rate: 0.24, limit: 403550 },
+  { rate: 0.32, limit: 512450 },
+  { rate: 0.35, limit: 768700 },
   { rate: 0.37, limit: Infinity }
 ];
 
 // 2026 Federal Brackets (Single)
 export const FED_BRACKETS_SINGLE: TaxBracket[] = [
-  { rate: 0.10, limit: 11600 },
-  { rate: 0.12, limit: 47150 },
-  { rate: 0.22, limit: 100525 },
-  { rate: 0.24, limit: 191950 },
-  { rate: 0.32, limit: 243725 },
-  { rate: 0.35, limit: 609350 },
+  { rate: 0.10, limit: 12400 },
+  { rate: 0.12, limit: 50400 },
+  { rate: 0.22, limit: 105700 },
+  { rate: 0.24, limit: 201775 },
+  { rate: 0.32, limit: 256225 },
+  { rate: 0.35, limit: 640600 },
   { rate: 0.37, limit: Infinity }
 ];
 

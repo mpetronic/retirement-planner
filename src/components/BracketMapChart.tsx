@@ -56,27 +56,27 @@ export const BracketMapChart: React.FC<BracketMapChartProps> = ({
     return ledger.map((r) => {
       // 12% Bracket limit + standard deduction
       const isSingle = simulateSurvivor && r.year >= 2045; // Check survivor status from age & setting
-      const limit = isSingle ? 47150 : 94300;
+      const limit = isSingle ? 50400 : 100800;
       const stdDec = r.standardDeduction;
-      return limit * (r.standardDeduction / (isSingle ? 13850 : 27700)) + stdDec;
+      return limit * (r.standardDeduction / (isSingle ? 16100 : 32200)) + stdDec;
     });
   }, [ledger, inputs, simulateSurvivor]);
 
   const fed22PercentLine = useMemo(() => {
     return ledger.map((r) => {
       const isSingle = simulateSurvivor && r.year >= 2045;
-      const limit = isSingle ? 100525 : 201050;
+      const limit = isSingle ? 105700 : 211400;
       const stdDec = r.standardDeduction;
-      return limit * (r.standardDeduction / (isSingle ? 13850 : 27700)) + stdDec;
+      return limit * (r.standardDeduction / (isSingle ? 16100 : 32200)) + stdDec;
     });
   }, [ledger, inputs, simulateSurvivor]);
 
   const fed24PercentLine = useMemo(() => {
     return ledger.map((r) => {
       const isSingle = simulateSurvivor && r.year >= 2045;
-      const limit = isSingle ? 191950 : 383900;
+      const limit = isSingle ? 201775 : 403550;
       const stdDec = r.standardDeduction;
-      return limit * (r.standardDeduction / (isSingle ? 13850 : 27700)) + stdDec;
+      return limit * (r.standardDeduction / (isSingle ? 16100 : 32200)) + stdDec;
     });
   }, [ledger, inputs, simulateSurvivor]);
 
@@ -85,7 +85,7 @@ export const BracketMapChart: React.FC<BracketMapChartProps> = ({
       const isSingle = simulateSurvivor && r.year >= 2045;
       const baseCliff = isSingle ? 109000 : 218000;
       // Clinically indexed standard deduction factor represents CPI inflation
-      const cpiFactor = r.standardDeduction / (isSingle ? 13850 : 27700);
+      const cpiFactor = r.standardDeduction / (isSingle ? 16100 : 32200);
       return baseCliff * cpiFactor;
     });
   }, [ledger, inputs, simulateSurvivor]);
@@ -94,7 +94,7 @@ export const BracketMapChart: React.FC<BracketMapChartProps> = ({
     return ledger.map((r) => {
       const isSingle = simulateSurvivor && r.year >= 2045;
       const baseCliff = isSingle ? 137000 : 274000;
-      const cpiFactor = r.standardDeduction / (isSingle ? 13850 : 27700);
+      const cpiFactor = r.standardDeduction / (isSingle ? 16100 : 32200);
       return baseCliff * cpiFactor;
     });
   }, [ledger, inputs, simulateSurvivor]);
@@ -341,12 +341,12 @@ export const BracketMapChart: React.FC<BracketMapChartProps> = ({
           >
             <option value="" disabled>Select Optimization Target...</option>
             <optgroup label="Federal Tax Brackets (MFJ)">
-              <option value={50900}>Fill to Top of 10% Bracket ($50,900)</option>
-              <option value={122000}>Fill to Top of 12% Bracket ($122,000)</option>
-              <option value={228750}>Fill to Top of 22% Bracket ($228,750)</option>
-              <option value={411600}>Fill to Top of 24% Bracket ($411,600)</option>
-              <option value={515150}>Fill to Top of 32% Bracket ($515,150)</option>
-              <option value={758900}>Fill to Top of 35% Bracket ($758,900)</option>
+              <option value={57000}>Fill to Top of 10% Bracket ($57,000)</option>
+              <option value={133000}>Fill to Top of 12% Bracket ($133,000)</option>
+              <option value={243600}>Fill to Top of 22% Bracket ($243,600)</option>
+              <option value={435750}>Fill to Top of 24% Bracket ($435,750)</option>
+              <option value={544650}>Fill to Top of 32% Bracket ($544,650)</option>
+              <option value={800900}>Fill to Top of 35% Bracket ($800,900)</option>
             </optgroup>
             <optgroup label="Medicare IRMAA Cliffs ($1 Below Cliff)">
               <option value={217999}>Fill to $1 Below Tier 1 Cliff ($217,999)</option>
