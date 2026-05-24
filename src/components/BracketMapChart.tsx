@@ -304,7 +304,7 @@ export const BracketMapChart: React.FC<BracketMapChartProps> = ({
         <input
           type="range"
           min="0"
-          max="250000"
+          max="500000"
           step="5000"
           value={inputs.annualRothConversion}
           onMouseDown={() => setIsDragging(true)}
@@ -317,8 +317,8 @@ export const BracketMapChart: React.FC<BracketMapChartProps> = ({
 
         <div className="flex justify-between text-xs text-slate-500 font-mono">
           <span>$0 (No Conversions)</span>
-          <span>$125,000</span>
-          <span>$250,000 (Max)</span>
+          <span>$250,000</span>
+          <span>$500,000 (Max)</span>
         </div>
       </div>
     </div>
