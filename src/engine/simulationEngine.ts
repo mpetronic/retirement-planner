@@ -286,7 +286,9 @@ export function runRetirementSimulation(
     let yourConverted = 0;
     let wifeConverted = 0;
     
-    const targetConversion = inputs.annualRothConversion * cpiFactor; // inflates conversion target
+    const startYear = inputs.rothConversionStartYear !== undefined ? inputs.rothConversionStartYear : 2026;
+    const endYear = inputs.rothConversionEndYear !== undefined ? inputs.rothConversionEndYear : 2035;
+    const targetConversion = (year >= startYear && year <= endYear) ? (inputs.annualRothConversion * cpiFactor) : 0;
     
     if (!youDeceased && targetConversion > 0 && yourPreTaxPostRMD > 0) {
       yourConverted = Math.min(targetConversion / (youDeceased ? 1 : 2), yourPreTaxPostRMD);

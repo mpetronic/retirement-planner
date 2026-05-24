@@ -36,6 +36,8 @@ export interface AppStateInputs {
   };
   annualLivingExpenses: number; // Current dollars, inflated annually
   annualRothConversion: number; // Custom conversion slider input
+  rothConversionStartYear?: number; // Starting year for Roth conversions
+  rothConversionEndYear?: number; // Ending year for Roth conversions
 }
 
 export interface SimulationResultRow {

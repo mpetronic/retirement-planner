@@ -102,7 +102,7 @@ export const ClaimingMatrixGrid: React.FC<ClaimingMatrixGridProps> = ({
       style: {
         backgroundColor: `hsl(${h}, ${s}%, ${l}%)`,
       },
-      className: `transition-all duration-300 relative border flex flex-col justify-center items-center h-12 w-full text-center cursor-pointer select-none rounded-lg text-xs font-mono font-bold ${
+      className: `transition-all duration-300 relative border flex flex-col justify-center items-center h-16 w-full text-center cursor-pointer select-none rounded-lg text-xs font-mono font-bold ${
         isSelected
           ? 'border-emerald-400 ring-2 ring-emerald-500/50 shadow-lg scale-105 z-10 text-emerald-300'
           : 'border-slate-800/40 text-slate-300 hover:border-slate-600 hover:scale-102 hover:text-slate-100'
@@ -270,7 +270,7 @@ export const ClaimingMatrixGrid: React.FC<ClaimingMatrixGridProps> = ({
 
       {/* 9x9 Claiming Grid */}
       <div className="flex flex-col items-center">
-        <div className="w-full max-w-2xl bg-slate-950/40 border border-slate-800/60 p-6 rounded-2xl space-y-4">
+        <div className="w-full max-w-4xl bg-slate-950/40 border border-slate-800/60 p-6 rounded-2xl space-y-4">
           <div className="text-center font-bold text-xs text-slate-400 uppercase tracking-wider">
             {(inputs.you.name || 'You')}'s SS Claiming Age (Columns)
           </div>
@@ -284,7 +284,8 @@ export const ClaimingMatrixGrid: React.FC<ClaimingMatrixGridProps> = ({
             
             <div className="flex-1 space-y-1">
               {/* Columns Header (Your Age) */}
-              <div className="grid grid-cols-9 gap-1 mb-2 text-center text-[10px] text-slate-400 font-mono font-bold">
+              <div className="grid grid-cols-[2.5rem_repeat(9,1fr)] gap-1 mb-2 text-center text-xs text-slate-400 font-mono font-bold items-center">
+                <div className="text-slate-500 text-right pr-2"></div>
                 {ages.map((a) => (
                   <div key={a}>{a}</div>
                 ))}
@@ -292,8 +293,11 @@ export const ClaimingMatrixGrid: React.FC<ClaimingMatrixGridProps> = ({
 
               {/* Grid Rows */}
               {ages.map((wifeAge) => (
-                <div key={wifeAge} className="grid grid-cols-9 gap-1 items-center">
+                <div key={wifeAge} className="grid grid-cols-[2.5rem_repeat(9,1fr)] gap-1 items-center">
                   {/* Row Header (Wife Age) */}
+                  <div className="text-xs text-slate-400 font-mono font-bold text-right pr-3 select-none">
+                    {wifeAge}
+                  </div>
                   
                   {ages.map((yourAge) => {
                     const cell = getCellColor(yourAge, wifeAge);
@@ -305,7 +309,7 @@ export const ClaimingMatrixGrid: React.FC<ClaimingMatrixGridProps> = ({
                         onClick={() => onUpdateClaimingAges(yourAge, wifeAge)}
                         title={`Your Age: ${yourAge}, Wife Age: ${wifeAge}\nEnding Estate: ${formatCurrency(cell.value)}`}
                       >
-                        <span className="text-[9px] opacity-90 leading-tight">
+                        <span className="text-xs opacity-95 leading-tight">
                           {(cell.value / 1000000).toFixed(2)}M
                         </span>
                       </div>

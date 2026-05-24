@@ -128,10 +128,8 @@ export const LookbackLedgerTable: React.FC<LookbackLedgerTableProps> = ({
               <th className="p-4">Tax-Deferred (Pre-Tax)</th>
               <th className="p-4">Roth (Tax-Free)</th>
               <th className="p-4">Total Net Worth</th>
-              <th className="p-4">IRMAA Tier</th>
-              <th className="p-4">Surcharge Year (t+2)</th>
-              <th className="p-4 text-right">Combined Monthly Surcharge</th>
-              <th className="p-4 text-right">Annual Surcharge Cost</th>
+              <th className="p-4">IRMAA Tier (T+2)</th>
+              <th className="p-4 text-right">Medicare Surcharge</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-800/40">
@@ -157,7 +155,7 @@ export const LookbackLedgerTable: React.FC<LookbackLedgerTableProps> = ({
                   <td className="p-4 font-mono text-slate-300">{formatCurrency(r.endYourPreTaxIRA + r.endWifePreTaxIRA)}</td>
                   <td className="p-4 font-mono text-emerald-400/90">{formatCurrency(r.endYourRothIRA + r.endWifeRothIRA)}</td>
                   <td className="p-4 font-mono font-bold text-slate-100">{formatCurrency(r.totalPortfolioValue)}</td>
-                  <td className="p-4">
+                  <td className="p-4 whitespace-nowrap">
                     <span
                       className={`px-2.5 py-0.5 rounded-full text-xs font-semibold ${
                         r.surchargeTier > 0
@@ -167,20 +165,15 @@ export const LookbackLedgerTable: React.FC<LookbackLedgerTableProps> = ({
                     >
                       Tier {r.surchargeTier}
                     </span>
+                    <span className="ml-2 font-mono text-xs text-slate-400">({affectedYear})</span>
                   </td>
-                  <td className="p-4 font-mono font-semibold">{affectedYear}</td>
-                  <td className="p-4 text-right font-mono text-slate-200">
+                  <td className="p-4 text-right font-mono whitespace-nowrap">
                     {r.combinedSurchargeMonthly > 0 ? (
-                      <span className="text-red-400">+{formatCurrency(r.combinedSurchargeMonthly)}/mo</span>
+                      <span className="text-red-400 font-semibold">
+                        {formatCurrency(r.combinedSurchargeMonthly)}/mo ({formatCurrency(r.combinedSurchargeAnnual)}/yr)
+                      </span>
                     ) : (
-                      <span className="text-slate-500">$0.00/mo</span>
-                    )}
-                  </td>
-                  <td className="p-4 text-right font-mono font-semibold text-slate-100">
-                    {r.combinedSurchargeAnnual > 0 ? (
-                      <span className="text-red-400">+{formatCurrency(r.combinedSurchargeAnnual)}</span>
-                    ) : (
-                      <span className="text-slate-500">$0.00</span>
+                      <span className="text-slate-500">$0/mo ($0/yr)</span>
                     )}
                   </td>
                 </tr>

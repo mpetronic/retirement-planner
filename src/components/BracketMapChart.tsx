@@ -32,6 +32,8 @@ interface BracketMapChartProps {
   inputs: AppStateInputs;
   simulateSurvivor: boolean;
   onUpdateConversion: (val: number) => void;
+  onUpdateConversionStartYear: (year: number) => void;
+  onUpdateConversionEndYear: (year: number) => void;
 }
 
 export const BracketMapChart: React.FC<BracketMapChartProps> = ({
@@ -39,8 +41,11 @@ export const BracketMapChart: React.FC<BracketMapChartProps> = ({
   inputs,
   simulateSurvivor,
   onUpdateConversion,
+  onUpdateConversionStartYear,
+  onUpdateConversionEndYear,
 }) => {
   const [isDragging, setIsDragging] = useState(false);
+  const [selectedQuickFill, setSelectedQuickFill] = useState<number | null>(null);
 
   const years = useMemo(() => ledger.map((r) => r.year), [ledger]);
 
@@ -51,165 +56,144 @@ export const BracketMapChart: React.FC<BracketMapChartProps> = ({
   const rothConversions = useMemo(() => ledger.map((r) => r.intentionalRothConversion), [ledger]);
   const activeSalaries = useMemo(() => ledger.map((r) => (r.yourSalary || 0) + (r.wifeSalary || 0)), [ledger]);
 
-  // Guidelines lines (sloping upwards with inflation)
-  const fed12PercentLine = useMemo(() => {
-    return ledger.map((r) => {
-      // 12% Bracket limit + standard deduction
-      const isSingle = simulateSurvivor && r.year >= 2045; // Check survivor status from age & setting
-      const limit = isSingle ? 50400 : 100800;
-      const stdDec = r.standardDeduction;
-      return limit * (r.standardDeduction / (isSingle ? 16100 : 32200)) + stdDec;
-    });
-  }, [ledger, inputs, simulateSurvivor]);
+  // Dynamic selected quick-fill guideline line calculator
+  const quickFillLineData = useMemo(() => {
+    if (!selectedQuickFill) return null;
 
-  const fed22PercentLine = useMemo(() => {
-    return ledger.map((r) => {
-      const isSingle = simulateSurvivor && r.year >= 2045;
-      const limit = isSingle ? 105700 : 211400;
-      const stdDec = r.standardDeduction;
-      return limit * (r.standardDeduction / (isSingle ? 16100 : 32200)) + stdDec;
-    });
-  }, [ledger, inputs, simulateSurvivor]);
+    let jointBase = 0;
+    let singleBase = 0;
+    let label = '';
+    let color = 'rgba(16, 185, 129, 0.9)'; // default emerald
 
-  const fed24PercentLine = useMemo(() => {
-    return ledger.map((r) => {
-      const isSingle = simulateSurvivor && r.year >= 2045;
-      const limit = isSingle ? 201775 : 403550;
-      const stdDec = r.standardDeduction;
-      return limit * (r.standardDeduction / (isSingle ? 16100 : 32200)) + stdDec;
-    });
-  }, [ledger, inputs, simulateSurvivor]);
+    switch (selectedQuickFill) {
+      case 57000:
+        jointBase = 57000; singleBase = 28500; label = "Top of 10% Fed Bracket"; color = 'rgba(244, 63, 94, 0.9)';
+        break;
+      case 133000:
+        jointBase = 133000; singleBase = 66500; label = "Top of 12% Fed Bracket"; color = 'rgba(244, 63, 94, 0.9)';
+        break;
+      case 243600:
+        jointBase = 243600; singleBase = 121800; label = "Top of 22% Fed Bracket"; color = 'rgba(249, 115, 22, 0.9)';
+        break;
+      case 435750:
+        jointBase = 435750; singleBase = 217875; label = "Top of 24% Fed Bracket"; color = 'rgba(236, 72, 153, 0.9)';
+        break;
+      case 544650:
+        jointBase = 544650; singleBase = 272325; label = "Top of 32% Fed Bracket"; color = 'rgba(168, 85, 247, 0.9)';
+        break;
+      case 800900:
+        jointBase = 800900; singleBase = 656700; label = "Top of 35% Fed Bracket"; color = 'rgba(239, 68, 68, 0.9)';
+        break;
+      case 217999:
+        jointBase = 218000; singleBase = 109000; label = "IRMAA Tier 1 Cliff"; color = 'rgba(16, 185, 129, 0.9)';
+        break;
+      case 273999:
+        jointBase = 274000; singleBase = 137000; label = "IRMAA Tier 2 Cliff"; color = 'rgba(245, 158, 11, 0.9)';
+        break;
+      case 341999:
+        jointBase = 342000; singleBase = 171000; label = "IRMAA Tier 3 Cliff"; color = 'rgba(59, 130, 246, 0.9)';
+        break;
+      case 409999:
+        jointBase = 410000; singleBase = 205000; label = "IRMAA Tier 4 Cliff"; color = 'rgba(236, 72, 153, 0.9)';
+        break;
+      case 749999:
+        jointBase = 750000; singleBase = 375000; label = "IRMAA Tier 5 Cliff"; color = 'rgba(239, 68, 68, 0.9)';
+        break;
+      default:
+        return null;
+    }
 
-  const irmaaCliff1Line = useMemo(() => {
-    return ledger.map((r) => {
+    const dataPoints = ledger.map((r) => {
       const isSingle = simulateSurvivor && r.year >= 2045;
-      const baseCliff = isSingle ? 109000 : 218000;
-      // Clinically indexed standard deduction factor represents CPI inflation
+      const baseVal = isSingle ? singleBase : jointBase;
       const cpiFactor = r.standardDeduction / (isSingle ? 16100 : 32200);
-      return baseCliff * cpiFactor;
+      return baseVal * cpiFactor;
     });
-  }, [ledger, inputs, simulateSurvivor]);
 
-  const irmaaCliff2Line = useMemo(() => {
-    return ledger.map((r) => {
-      const isSingle = simulateSurvivor && r.year >= 2045;
-      const baseCliff = isSingle ? 137000 : 274000;
-      const cpiFactor = r.standardDeduction / (isSingle ? 16100 : 32200);
-      return baseCliff * cpiFactor;
-    });
-  }, [ledger, inputs, simulateSurvivor]);
+    return { label, color, data: dataPoints };
+  }, [selectedQuickFill, ledger, simulateSurvivor]);
 
   const chartData = useMemo(() => {
+    const datasets: any[] = [
+      {
+        label: 'Active Salaries',
+        data: activeSalaries,
+        backgroundColor: '#8b5cf6', // violet-500
+        stack: 'income',
+        order: 5,
+        pointStyle: 'rect',
+      },
+      {
+        label: 'Social Security',
+        data: ssIncomes,
+        backgroundColor: '#3b82f6', // bright blue
+        stack: 'income',
+        order: 4,
+        pointStyle: 'rect',
+      },
+      {
+        label: 'Forced RMDs',
+        data: rmds,
+        backgroundColor: '#f59e0b', // amber
+        stack: 'income',
+        order: 3,
+        pointStyle: 'rect',
+      },
+      {
+        label: 'Taxable/Pre-Tax Draws',
+        data: drawdowns,
+        backgroundColor: '#ef4444', // rose/red
+        stack: 'income',
+        order: 2,
+        pointStyle: 'rect',
+      },
+      {
+        label: 'Roth Conversions',
+        data: rothConversions,
+        backgroundColor: '#10b981', // emerald-500 highlighting
+        stack: 'income',
+        order: 1,
+        pointStyle: 'rect',
+      },
+      // BOLD Line for Portfolio Value at all times on secondary Y-axis
+      {
+        label: 'Total Net Estate (Portfolio)',
+        data: ledger.map((r) => r.totalPortfolioValue),
+        type: 'line' as const,
+        borderColor: '#10b981', // emerald-500
+        borderWidth: 3,
+        pointRadius: 2,
+        pointHoverRadius: 4,
+        fill: false,
+        yAxisID: 'yPortfolio',
+        order: -1,
+        pointStyle: 'circle',
+        stack: 'line-portfolio',
+      }
+    ];
+
+    // If a quick-fill is selected, show only the line related to it
+    if (quickFillLineData) {
+      datasets.push({
+        label: quickFillLineData.label,
+        data: quickFillLineData.data,
+        type: 'line' as const,
+        borderColor: quickFillLineData.color,
+        borderWidth: 2.5,
+        borderDash: [5, 5],
+        pointRadius: 0,
+        fill: false,
+        order: 0,
+        pointStyle: 'line',
+        stack: 'line-quickfill',
+      });
+    }
+
     return {
       labels: years.map(String),
-      datasets: [
-        {
-          label: 'Active Salaries',
-          data: activeSalaries,
-          backgroundColor: '#8b5cf6', // violet-500
-          stack: 'income',
-          order: 5,
-          pointStyle: 'rect',
-        },
-        {
-          label: 'Social Security',
-          data: ssIncomes,
-          backgroundColor: '#3b82f6', // bright blue
-          stack: 'income',
-          order: 4,
-          pointStyle: 'rect',
-        },
-        {
-          label: 'Forced RMDs',
-          data: rmds,
-          backgroundColor: '#f59e0b', // amber
-          stack: 'income',
-          order: 3,
-          pointStyle: 'rect',
-        },
-        {
-          label: 'Taxable/Pre-Tax Draws',
-          data: drawdowns,
-          backgroundColor: '#ef4444', // rose/red
-          stack: 'income',
-          order: 2,
-          pointStyle: 'rect',
-        },
-        {
-          label: 'Roth Conversions',
-          data: rothConversions,
-          backgroundColor: '#10b981', // emerald-500 highlighting
-          stack: 'income',
-          order: 1,
-          pointStyle: 'rect',
-        },
-        // Line overlays for Brackets & Cliffs (assigned unique stacks to prevent stacking)
-        {
-          label: 'Top of 12% Fed Bracket',
-          data: fed12PercentLine,
-          type: 'line' as const,
-          borderColor: 'rgba(244, 63, 94, 0.7)',
-          borderWidth: 1.5,
-          borderDash: [5, 5],
-          pointRadius: 0,
-          fill: false,
-          order: 0,
-          pointStyle: 'line',
-          stack: 'line-fed12',
-        },
-        {
-          label: 'Top of 22% Fed Bracket',
-          data: fed22PercentLine,
-          type: 'line' as const,
-          borderColor: 'rgba(249, 115, 22, 0.7)',
-          borderWidth: 1.5,
-          borderDash: [5, 5],
-          pointRadius: 0,
-          fill: false,
-          order: 0,
-          pointStyle: 'line',
-          stack: 'line-fed22',
-        },
-        {
-          label: 'Top of 24% Fed Bracket',
-          data: fed24PercentLine,
-          type: 'line' as const,
-          borderColor: 'rgba(236, 72, 153, 0.7)',
-          borderWidth: 1.5,
-          borderDash: [5, 5],
-          pointRadius: 0,
-          fill: false,
-          order: 0,
-          pointStyle: 'line',
-          stack: 'line-fed24',
-        },
-        {
-          label: 'IRMAA Tier 1 Cliff',
-          data: irmaaCliff1Line,
-          type: 'line' as const,
-          borderColor: 'rgba(16, 185, 129, 0.7)',
-          borderWidth: 2,
-          pointRadius: 0,
-          fill: false,
-          order: 0,
-          pointStyle: 'line',
-          stack: 'line-irmaa1',
-        },
-        {
-          label: 'IRMAA Tier 2 Cliff',
-          data: irmaaCliff2Line,
-          type: 'line' as const,
-          borderColor: 'rgba(245, 158, 11, 0.7)',
-          borderWidth: 2,
-          pointRadius: 0,
-          fill: false,
-          order: 0,
-          pointStyle: 'line',
-          stack: 'line-irmaa2',
-        },
-      ],
+      datasets,
     };
-  }, [years, activeSalaries, ssIncomes, rmds, drawdowns, rothConversions, fed12PercentLine, fed22PercentLine, fed24PercentLine, irmaaCliff1Line, irmaaCliff2Line]);
+  }, [years, activeSalaries, ssIncomes, rmds, drawdowns, rothConversions, ledger, quickFillLineData]);
 
   const chartOptions = useMemo(() => {
     return {
@@ -298,7 +282,35 @@ export const BracketMapChart: React.FC<BracketMapChartProps> = ({
               return '$' + (value / 1000) + 'k';
             },
           },
+          title: {
+            display: true,
+            text: 'Annual Inflows / Brackets',
+            color: '#94a3b8',
+            font: { size: 10, weight: 'bold' }
+          }
         },
+        yPortfolio: {
+          type: 'linear' as const,
+          position: 'right' as const,
+          grid: {
+            drawOnChartArea: false, // don't draw gridlines from this scale on main area
+          },
+          ticks: {
+            color: '#10b981',
+            font: {
+              size: 10,
+            },
+            callback: function (value: any) {
+              return '$' + (value / 1000000).toFixed(1) + 'M';
+            },
+          },
+          title: {
+            display: true,
+            text: 'Portfolio Net Estate',
+            color: '#10b981',
+            font: { size: 10, weight: 'bold' }
+          }
+        }
       },
     };
   }, [isDragging, ssIncomes, rmds, activeSalaries]);
@@ -332,14 +344,17 @@ export const BracketMapChart: React.FC<BracketMapChartProps> = ({
         <div className="flex items-center gap-2">
           <span className="text-xs text-slate-400 font-semibold uppercase tracking-wider">Quick Fills:</span>
           <select
+            value={selectedQuickFill !== null ? selectedQuickFill : ""}
             onChange={(e) => {
-              const val = Number(e.target.value);
-              if (val > 0) handleFillToTarget(val);
+              const val = e.target.value === "" ? null : Number(e.target.value);
+              setSelectedQuickFill(val);
+              if (val !== null && val > 0) {
+                handleFillToTarget(val);
+              }
             }}
-            defaultValue=""
             className="text-xs font-semibold px-3 py-2 bg-slate-900 text-slate-100 border border-slate-800 rounded-xl hover:border-slate-600 focus:outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 transition-all cursor-pointer"
           >
-            <option value="" disabled>Select Optimization Target...</option>
+            <option value="">No Active Target (Decluttered)</option>
             <optgroup label="Federal Tax Brackets (MFJ)">
               <option value={57000}>Fill to Top of 10% Bracket ($57,000)</option>
               <option value={133000}>Fill to Top of 12% Bracket ($133,000)</option>
@@ -365,36 +380,102 @@ export const BracketMapChart: React.FC<BracketMapChartProps> = ({
       </div>
 
       {/* Slider Control */}
-      <div className="p-4 bg-slate-950/60 rounded-xl border border-slate-800 space-y-3">
-        <div className="flex justify-between items-center">
-          <span className="text-sm font-semibold text-slate-200">Manual Annual Roth Conversion Target</span>
-          <span className="text-xl font-black text-emerald-400 font-mono">
-            {new Intl.NumberFormat('en-US', {
-              style: 'currency',
-              currency: 'USD',
-              maximumFractionDigits: 0,
-            }).format(inputs.annualRothConversion)}
-          </span>
-        </div>
+      <div className="p-5 bg-slate-950/60 rounded-xl border border-slate-800 space-y-4">
+        <h4 className="text-xs font-bold text-slate-400 uppercase tracking-wider">Manual Roth Conversion Plan</h4>
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 items-start">
+          {/* Start Year Slider */}
+          <div className="space-y-3 bg-slate-900/20 p-3 rounded-lg border border-slate-800/40">
+            <div className="flex justify-between items-center">
+              <span className="text-xs font-semibold text-slate-300">Start Year</span>
+              <span className="text-sm font-black text-emerald-400 font-mono">
+                {inputs.rothConversionStartYear !== undefined ? inputs.rothConversionStartYear : 2026}
+              </span>
+            </div>
 
-        <input
-          type="range"
-          min="0"
-          max="500000"
-          step="5000"
-          value={inputs.annualRothConversion}
-          onMouseDown={() => setIsDragging(true)}
-          onMouseUp={() => setIsDragging(false)}
-          onTouchStart={() => setIsDragging(true)}
-          onTouchEnd={() => setIsDragging(false)}
-          onChange={(e) => onUpdateConversion(Number(e.target.value))}
-          className="w-full h-2 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-emerald-500"
-        />
+            <input
+              type="range"
+              min="2026"
+              max="2050"
+              step="1"
+              value={inputs.rothConversionStartYear !== undefined ? inputs.rothConversionStartYear : 2026}
+              onMouseDown={() => setIsDragging(true)}
+              onMouseUp={() => setIsDragging(false)}
+              onTouchStart={() => setIsDragging(true)}
+              onTouchEnd={() => setIsDragging(false)}
+              onChange={(e) => onUpdateConversionStartYear(Number(e.target.value))}
+              className="w-full h-1.5 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-emerald-500"
+            />
 
-        <div className="flex justify-between text-xs text-slate-500 font-mono">
-          <span>$0 (No Conversions)</span>
-          <span>$250,000</span>
-          <span>$500,000 (Max)</span>
+            <div className="flex justify-between text-[10px] text-slate-500 font-mono">
+              <span>2026</span>
+              <span>2038</span>
+              <span>2050</span>
+            </div>
+          </div>
+
+          {/* End Year Slider */}
+          <div className="space-y-3 bg-slate-900/20 p-3 rounded-lg border border-slate-800/40">
+            <div className="flex justify-between items-center">
+              <span className="text-xs font-semibold text-slate-300">End Year</span>
+              <span className="text-sm font-black text-emerald-400 font-mono">
+                {inputs.rothConversionEndYear !== undefined ? inputs.rothConversionEndYear : 2035}
+              </span>
+            </div>
+
+            <input
+              type="range"
+              min="2026"
+              max="2060"
+              step="1"
+              value={inputs.rothConversionEndYear !== undefined ? inputs.rothConversionEndYear : 2035}
+              onMouseDown={() => setIsDragging(true)}
+              onMouseUp={() => setIsDragging(false)}
+              onTouchStart={() => setIsDragging(true)}
+              onTouchEnd={() => setIsDragging(false)}
+              onChange={(e) => onUpdateConversionEndYear(Number(e.target.value))}
+              className="w-full h-1.5 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-emerald-500"
+            />
+
+            <div className="flex justify-between text-[10px] text-slate-500 font-mono">
+              <span>2026</span>
+              <span>2043</span>
+              <span>2060</span>
+            </div>
+          </div>
+
+          {/* Annual Amount Slider */}
+          <div className="space-y-3 bg-slate-900/20 p-3 rounded-lg border border-slate-800/40">
+            <div className="flex justify-between items-center">
+              <span className="text-xs font-semibold text-slate-300">Annual Target</span>
+              <span className="text-sm font-black text-emerald-400 font-mono">
+                {new Intl.NumberFormat('en-US', {
+                  style: 'currency',
+                  currency: 'USD',
+                  maximumFractionDigits: 0,
+                }).format(inputs.annualRothConversion)}
+              </span>
+            </div>
+
+            <input
+              type="range"
+              min="0"
+              max="500000"
+              step="5000"
+              value={inputs.annualRothConversion}
+              onMouseDown={() => setIsDragging(true)}
+              onMouseUp={() => setIsDragging(false)}
+              onTouchStart={() => setIsDragging(true)}
+              onTouchEnd={() => setIsDragging(false)}
+              onChange={(e) => onUpdateConversion(Number(e.target.value))}
+              className="w-full h-1.5 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-emerald-500"
+            />
+
+            <div className="flex justify-between text-[10px] text-slate-500 font-mono">
+              <span>$0</span>
+              <span>$250k</span>
+              <span>$500k</span>
+            </div>
+          </div>
         </div>
       </div>
     </div>

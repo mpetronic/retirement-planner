@@ -50,6 +50,8 @@ const DEFAULT_INPUTS: AppStateInputs = {
   },
   annualLivingExpenses: 120000,
   annualRothConversion: 50000,
+  rothConversionStartYear: 2026,
+  rothConversionEndYear: 2035,
 };
 
 // Custom hook for LocalStorage persistence
@@ -94,6 +96,22 @@ function App() {
     });
   };
 
+  // Handle updating the Roth conversion start year directly from Workspace 1
+  const handleUpdateConversionStartYear = (year: number) => {
+    setInputs({
+      ...inputs,
+      rothConversionStartYear: year,
+    });
+  };
+
+  // Handle updating the Roth conversion end year directly from Workspace 1
+  const handleUpdateConversionEndYear = (year: number) => {
+    setInputs({
+      ...inputs,
+      rothConversionEndYear: year,
+    });
+  };
+
   // Handle updating the claiming ages directly from the Claiming Matrix Grid
   const handleUpdateClaimingAges = (yourAge: number, wifeAge: number) => {
     setInputs({
@@ -105,7 +123,7 @@ function App() {
 
   // Sync title and head tags for SEO best practices
   useEffect(() => {
-    document.title = 'Retirement Scenario Optimizer - Tax, Medicare & SS Planner';
+    document.title = 'Retirement Planner - Tax, Medicare & SS Planner';
   }, []);
 
   return (
@@ -126,6 +144,8 @@ function App() {
             inputs={inputs}
             simulateSurvivor={simulateSurvivor}
             onUpdateConversion={handleUpdateConversion}
+            onUpdateConversionStartYear={handleUpdateConversionStartYear}
+            onUpdateConversionEndYear={handleUpdateConversionEndYear}
           />
         )}
         {activeTab === 1 && (

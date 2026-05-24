@@ -73,7 +73,7 @@ export const DashboardLayout: React.FC<DashboardLayoutProps> = ({
         <div className="flex flex-col md:flex-row md:justify-between md:items-center gap-4">
           <div>
             <h2 className="text-2xl font-black text-slate-100 tracking-tight">
-              Retirement Scenario Optimizer
+              Retirement Planner
             </h2>
             <p className="text-xs text-slate-400">
               Interactive 35-year tax, Medicare IRMAA, and Social Security modeling
