@@ -136,7 +136,7 @@ export const BracketMapChart: React.FC<BracketMapChartProps> = ({
         data: activeSalaries,
         backgroundColor: 'rgba(139, 92, 246, 0.65)', // violet-500 @ 65% opacity
         stack: 'income',
-        order: 5,
+        order: 6,
         pointStyle: 'rect',
       },
       {
@@ -144,7 +144,7 @@ export const BracketMapChart: React.FC<BracketMapChartProps> = ({
         data: ssIncomes,
         backgroundColor: 'rgba(59, 130, 246, 0.65)', // blue-500 @ 65% opacity
         stack: 'income',
-        order: 4,
+        order: 5,
         pointStyle: 'rect',
       },
       {
@@ -152,7 +152,7 @@ export const BracketMapChart: React.FC<BracketMapChartProps> = ({
         data: rmds,
         backgroundColor: 'rgba(245, 158, 11, 0.65)', // amber-500 @ 65% opacity
         stack: 'income',
-        order: 3,
+        order: 4,
         pointStyle: 'rect',
       },
       {
@@ -160,13 +160,21 @@ export const BracketMapChart: React.FC<BracketMapChartProps> = ({
         data: ledger.map((r) => r.drawdownTaxable),
         backgroundColor: 'rgba(239, 68, 68, 0.7)', // red-500 representing taxable brokerage liquidations
         stack: 'income',
-        order: 2.5,
+        order: 3.5,
         pointStyle: 'rect',
       },
       {
         label: 'Pre-Tax Draws',
         data: ledger.map((r) => r.drawdownPreTax),
         backgroundColor: 'rgba(217, 70, 239, 0.7)', // fuchsia-500 representing IRA ordinary income liquidations
+        stack: 'income',
+        order: 3,
+        pointStyle: 'rect',
+      },
+      {
+        label: 'Roth Draws',
+        data: ledger.map((r) => r.drawdownRoth),
+        backgroundColor: 'rgba(52, 211, 153, 0.75)', // emerald-400 representing tax-free Roth draws
         stack: 'income',
         order: 2,
         pointStyle: 'rect',
