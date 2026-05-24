@@ -392,7 +392,7 @@ export function runRetirementSimulation(
     
     // Convergence loop variables
     let totalTaxBill = 0;
-    let lastTaxBill = -1;
+    let lastTaxBill = -999999;
     let iterations = 0;
     
     while (Math.abs(totalTaxBill - lastTaxBill) > 1 && iterations < 15) {
