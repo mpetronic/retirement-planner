@@ -6,6 +6,7 @@ import {
   LinearScale,
   LineElement,
   PointElement,
+  BarElement,
   Title,
   Tooltip,
   Legend,
@@ -31,6 +32,7 @@ ChartJS.register(
   LinearScale,
   LineElement,
   PointElement,
+  BarElement,
   Title,
   Tooltip,
   Legend,
@@ -153,7 +155,7 @@ export const MonteCarloWorkspace: React.FC<MonteCarloWorkspaceProps> = ({
   };
 
   // SVG parameters for circular success rate gauge
-  const radius = 61;
+  const radius = 70;
   const strokeWidth = 10;
   const circumference = 2 * Math.PI * radius;
   const strokeDashoffset = circumference - successRate * circumference;
@@ -251,6 +253,86 @@ export const MonteCarloWorkspace: React.FC<MonteCarloWorkspaceProps> = ({
         },
       },
     },
+  };
+
+  // Return rates dataset preparation
+  const activeEquityReturns = inputs.lockedReturnSequence 
+    ? inputs.lockedReturnSequence.equityReturns 
+    : Array(35).fill(inputs.growthAssumptions.equityReturnRate);
+    
+  const activeFixedIncomeReturns = inputs.lockedReturnSequence 
+    ? inputs.lockedReturnSequence.fixedIncomeReturns 
+    : Array(35).fill(inputs.growthAssumptions.fixedIncomeReturnRate);
+
+  const barChartData = {
+    labels: years.map(String),
+    datasets: [
+      {
+        label: 'Equity (Stock) Return Rate',
+        data: activeEquityReturns.map(r => Number((r * 100).toFixed(2))),
+        backgroundColor: 'rgba(6, 182, 212, 0.75)', // cyan-500 matching workspace 1 draws
+        borderColor: '#06b6d2',
+        borderWidth: 1,
+        borderRadius: 4,
+      },
+      {
+        label: 'Fixed Income (Bond) Return Rate',
+        data: activeFixedIncomeReturns.map(r => Number((r * 100).toFixed(2))),
+        backgroundColor: 'rgba(245, 158, 11, 0.75)', // amber-500 matching workspace 1 traditional draws
+        borderColor: '#f59e0b',
+        borderWidth: 1,
+        borderRadius: 4,
+      }
+    ]
+  };
+
+  const barChartOptions = {
+    responsive: true,
+    maintainAspectRatio: false,
+    plugins: {
+      legend: {
+        position: 'top' as const,
+        labels: {
+          color: '#cbd5e1',
+          font: { size: 10, weight: 'bold' as const },
+        }
+      },
+      tooltip: {
+        backgroundColor: '#0f172a',
+        titleColor: '#f1f5f9',
+        bodyColor: '#cbd5e1',
+        borderColor: 'rgba(255, 255, 255, 0.08)',
+        borderWidth: 1,
+        callbacks: {
+          label: function(context: any) {
+            let label = context.dataset.label || '';
+            if (label) label += ': ';
+            if (context.parsed.y !== null) {
+              const sign = context.parsed.y >= 0 ? '+' : '';
+              label += sign + context.parsed.y.toFixed(2) + '%';
+            }
+            return label;
+          }
+        }
+      }
+    },
+    scales: {
+      x: {
+        grid: { color: 'rgba(255, 255, 255, 0.03)' },
+        ticks: { color: '#94a3b8', font: { size: 9 } }
+      },
+      y: {
+        grid: { color: 'rgba(255, 255, 255, 0.03)' },
+        ticks: {
+          color: '#94a3b8',
+          font: { size: 9 },
+          callback: (val: any) => {
+            const sign = val >= 0 ? '+' : '';
+            return sign + val + '%';
+          }
+        }
+      }
+    }
   };
 
   return (
@@ -624,6 +706,25 @@ export const MonteCarloWorkspace: React.FC<MonteCarloWorkspaceProps> = ({
             </div>
           </div>
         )}
+      </div>
+
+      {/* Annual Selected Return Rates Bar Chart */}
+      <div className="glass-panel rounded-2xl p-6 border border-slate-800 bg-slate-900/20 space-y-4">
+        <div>
+          <h4 className="text-xs font-bold text-slate-200 uppercase tracking-wider">
+            {isLocked ? 'Stochastic Locked Return Rates Sequence' : 'Deterministic Flat Return Rates Baseline'}
+          </h4>
+          <p className="text-[10px] text-slate-400">
+            {isLocked 
+              ? 'View the specific stock (Equity) and bond (Fixed Income) return rates selected for each year of this locked return path.'
+              : 'Showing the baseline flat equity and fixed income return rates currently configured for the deterministic scenario.'
+            }
+          </p>
+        </div>
+
+        <div className="h-72 bg-slate-950/40 rounded-xl border border-slate-800/40 p-4">
+          <Chart type="bar" data={barChartData as any} options={barChartOptions as any} />
+        </div>
       </div>
 
       {/* Confirmation Modal: Regeneration / Lock Confirmation */}
