@@ -143,7 +143,7 @@ export const BracketMapChart: React.FC<BracketMapChartProps> = ({
           order: 1,
           pointStyle: 'rect',
         },
-        // Line overlays for Brackets & Cliffs
+        // Line overlays for Brackets & Cliffs (assigned unique stacks to prevent stacking)
         {
           label: 'Top of 12% Fed Bracket',
           data: fed12PercentLine,
@@ -155,6 +155,7 @@ export const BracketMapChart: React.FC<BracketMapChartProps> = ({
           fill: false,
           order: 0,
           pointStyle: 'line',
+          stack: 'line-fed12',
         },
         {
           label: 'Top of 22% Fed Bracket',
@@ -167,6 +168,7 @@ export const BracketMapChart: React.FC<BracketMapChartProps> = ({
           fill: false,
           order: 0,
           pointStyle: 'line',
+          stack: 'line-fed22',
         },
         {
           label: 'Top of 24% Fed Bracket',
@@ -179,6 +181,7 @@ export const BracketMapChart: React.FC<BracketMapChartProps> = ({
           fill: false,
           order: 0,
           pointStyle: 'line',
+          stack: 'line-fed24',
         },
         {
           label: 'IRMAA Tier 1 Cliff',
@@ -190,6 +193,7 @@ export const BracketMapChart: React.FC<BracketMapChartProps> = ({
           fill: false,
           order: 0,
           pointStyle: 'line',
+          stack: 'line-irmaa1',
         },
         {
           label: 'IRMAA Tier 2 Cliff',
@@ -201,6 +205,7 @@ export const BracketMapChart: React.FC<BracketMapChartProps> = ({
           fill: false,
           order: 0,
           pointStyle: 'line',
+          stack: 'line-irmaa2',
         },
       ],
     };
@@ -280,7 +285,7 @@ export const BracketMapChart: React.FC<BracketMapChartProps> = ({
           },
         },
         y: {
-          stacked: false,
+          stacked: true,
           grid: {
             color: 'rgba(255,255,255,0.04)',
           },
