@@ -179,7 +179,7 @@ export const DashboardLayout: React.FC<DashboardLayoutProps> = ({
 
       {/* Main Tab Panels viewport scrollable */}
       <main className="flex-1 overflow-y-auto p-6 space-y-6 custom-scrollbar bg-slate-950">
-        <div className="max-w-7xl mx-auto space-y-6">
+        <div className="w-full space-y-6">
           {children}
         </div>
       </main>
