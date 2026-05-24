@@ -13,7 +13,7 @@ import {
   Filler
 } from 'chart.js';
 import { SimulationResultRow, AppStateInputs } from '../types';
-import { Award, Zap, Check, X, RefreshCw, AlertCircle, ArrowUpRight, TrendingDown } from 'lucide-react';
+import { Award, Zap, Check, X, AlertCircle } from 'lucide-react';
 import { optimizeRetirementScenario, OptimizationResult, OptimizationGoal } from '../engine/optimizer';
 
 ChartJS.register(
@@ -360,17 +360,6 @@ export const BracketMapChart: React.FC<BracketMapChartProps> = ({
       },
     };
   }, [isDragging, ssIncomes, rmds, activeSalaries]);
-
-  // Generic quick-fill conversion target handler
-  const handleFillToTarget = (limitValue: number) => {
-    const baseSS = ssIncomes[0] || 0;
-    const baseRMD = rmds[0] || 0;
-    const baseSalary = activeSalaries[0] || 0;
-    const totalBase = baseSS + baseRMD + baseSalary;
-    
-    const gap = Math.max(0, limitValue - totalBase);
-    onUpdateConversion(gap);
-  };
 
   // Optimizer metrics and helper functions
   const currentEndingEstate = ledger[ledger.length - 1]?.totalPortfolioValue || 0;

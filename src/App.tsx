@@ -57,7 +57,7 @@ const DEFAULT_INPUTS: AppStateInputs = {
 };
 
 // Custom hook for LocalStorage persistence
-function useLocalStorage<T>(key: string, initialValue: T): [T, (value: T) => void] {
+function useLocalStorage<T>(key: string, initialValue: T): [T, (value: T | ((val: T) => T)) => void] {
   const [storedValue, setStoredValue] = useState<T>(() => {
     try {
       const item = window.localStorage.getItem(key);
@@ -68,10 +68,13 @@ function useLocalStorage<T>(key: string, initialValue: T): [T, (value: T) => voi
     }
   });
 
-  const setValue = (value: T) => {
+  const setValue = (value: T | ((val: T) => T)) => {
     try {
-      setStoredValue(value);
-      window.localStorage.setItem(key, JSON.stringify(value));
+      setStoredValue((prev) => {
+        const next = value instanceof Function ? value(prev) : value;
+        window.localStorage.setItem(key, JSON.stringify(next));
+        return next;
+      });
     } catch (error) {
       console.warn(`LocalStorage write error for key "${key}":`, error);
     }
@@ -92,62 +95,62 @@ function App() {
 
   // Handle updating the Roth conversion slider target directly from Workspace 1
   const handleUpdateConversion = (val: number) => {
-    setInputs({
-      ...inputs,
+    setInputs((prev) => ({
+      ...prev,
       annualRothConversion: val,
-    });
+    }));
   };
 
   // Handle updating the Roth conversion start year directly from Workspace 1
   const handleUpdateConversionStartYear = (year: number) => {
-    setInputs({
-      ...inputs,
+    setInputs((prev) => ({
+      ...prev,
       rothConversionStartYear: year,
-    });
+    }));
   };
 
   // Handle updating the Roth conversion end year directly from Workspace 1
   const handleUpdateConversionEndYear = (year: number) => {
-    setInputs({
-      ...inputs,
+    setInputs((prev) => ({
+      ...prev,
       rothConversionEndYear: year,
-    });
+    }));
   };
 
   // Handle applying a fully optimized retirement configuration at once
   const handleApplyOptimization = (annualConversion: number, targetValue: number | null, yourAge: number, wifeAge: number) => {
-    setInputs({
-      ...inputs,
+    setInputs((prev) => ({
+      ...prev,
       annualRothConversion: annualConversion,
       rothConversionTargetValue: targetValue,
-      you: { ...inputs.you, targetSSClaimingAge: yourAge },
-      wife: { ...inputs.wife, targetSSClaimingAge: wifeAge },
-    });
+      you: { ...prev.you, targetSSClaimingAge: yourAge },
+      wife: { ...prev.wife, targetSSClaimingAge: wifeAge },
+    }));
   };
 
   // Handle changing conversion strategy
   const handleUpdateStrategy = (strategy: 'flat' | 'fill-to-target') => {
-    setInputs({
-      ...inputs,
+    setInputs((prev) => ({
+      ...prev,
       rothConversionStrategy: strategy,
-    });
+    }));
   };
 
   // Handle changing target MAGI threshold limit
   const handleUpdateTargetValue = (val: number | null) => {
-    setInputs({
-      ...inputs,
+    setInputs((prev) => ({
+      ...prev,
       rothConversionTargetValue: val,
-    });
+    }));
   };
 
   // Handle updating the claiming ages directly from the Claiming Matrix Grid
   const handleUpdateClaimingAges = (yourAge: number, wifeAge: number) => {
-    setInputs({
-      ...inputs,
-      you: { ...inputs.you, targetSSClaimingAge: yourAge },
-      wife: { ...inputs.wife, targetSSClaimingAge: wifeAge },
-    });
+    setInputs((prev) => ({
+      ...prev,
+      you: { ...prev.you, targetSSClaimingAge: yourAge },
+      wife: { ...prev.wife, targetSSClaimingAge: wifeAge },
+    }));
   };
 
   // Sync title and head tags for SEO best practices
