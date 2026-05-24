@@ -7,52 +7,53 @@ import { BracketMapChart } from './components/BracketMapChart';
 import { LookbackLedgerTable } from './components/LookbackLedgerTable';
 import { ClaimingMatrixGrid } from './components/ClaimingMatrixGrid';
 import { MonteCarloWorkspace } from './components/MonteCarloWorkspace';
+import { OnboardingWizard } from './components/OnboardingWizard';
 
 // Default initial state matching specifications
 const DEFAULT_INPUTS: AppStateInputs = {
   you: {
-    name: 'You',
-    birthDate: '1960-06-27',
-    estimatedPIA: 3000,
-    targetSSClaimingAge: 67,
-    plannedRetirementAge: 67,
-    activeSalary: 150000,
-    preMedicareMonthlyPremium: 1000,
+    name: '',
+    birthDate: '',
+    estimatedPIA: null,
+    targetSSClaimingAge: null,
+    plannedRetirementAge: null,
+    activeSalary: null,
+    preMedicareMonthlyPremium: null,
   },
   wife: {
-    name: 'Spouse',
-    birthDate: '1964-03-11',
-    estimatedPIA: 2800,
-    targetSSClaimingAge: 67,
-    plannedRetirementAge: 65,
-    activeSalary: 100000,
-    preMedicareMonthlyPremium: 1000,
+    name: '',
+    birthDate: '',
+    estimatedPIA: null,
+    targetSSClaimingAge: null,
+    plannedRetirementAge: null,
+    activeSalary: null,
+    preMedicareMonthlyPremium: null,
   },
   portfolio: {
-    yourPreTaxIRA: 1200000,
-    yourRothIRA: 200000,
-    yourTaxableBrokerage: 600000,
-    yourTaxableBasis: 400000,
-    wifePreTaxIRA: 800000,
-    wifeRothIRA: 150000,
-    wifeTaxableBrokerage: 400000,
-    wifeTaxableBasis: 250005,
+    yourPreTaxIRA: null,
+    yourRothIRA: null,
+    yourTaxableBrokerage: null,
+    yourTaxableBasis: null,
+    wifePreTaxIRA: null,
+    wifeRothIRA: null,
+    wifeTaxableBrokerage: null,
+    wifeTaxableBasis: null,
   },
   jurisdiction: {
     currentState: 'MD',
     targetState: 'FL',
-    relocationYear: 2032,
+    relocationYear: null,
   },
   growthAssumptions: {
     equityReturnRate: 0.07,
     fixedIncomeReturnRate: 0.04,
-    cpiInflationRate: 0.025,
+    cpiInflationRate: 0.03, // 3% CPI default as requested
     healthcareInflationRate: 0.05,
   },
-  annualLivingExpenses: 120000,
+  annualLivingExpenses: null,
   annualRothConversion: 50000,
-  rothConversionStartYear: 2026,
-  rothConversionEndYear: 2035,
+  rothConversionStartYear: 2027,
+  rothConversionEndYear: 2034,
   rothConversionStrategy: 'flat',
   rothConversionTargetValue: null,
   lockedReturnSequence: null,
@@ -63,6 +64,8 @@ const DEFAULT_INPUTS: AppStateInputs = {
     correlation: 0.15,
     trials: 1000,
   },
+  isConfigured: false,
+  isSingleFiler: false,
 };
 
 // Custom hook for LocalStorage persistence with defensive deep merge schema protection
@@ -179,8 +182,12 @@ function App() {
 
   return (
     <div className="flex flex-col lg:flex-row h-screen w-screen overflow-hidden bg-slate-950 text-slate-100 antialiased font-sans">
+      {!inputs.isConfigured && (
+        <OnboardingWizard onComplete={setInputs} />
+      )}
+
       {/* Sidebar Parameter Controls */}
-      <InputControlSidebar inputs={inputs} onChange={setInputs} />
+      <InputControlSidebar inputs={inputs} onChange={setInputs} onReset={() => setInputs(DEFAULT_INPUTS)} />
 
       {/* Main Orchestration Dashboard Layout */}
       <DashboardLayout

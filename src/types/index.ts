@@ -1,22 +1,22 @@
 export interface SpouseProfile {
   name?: string; // Customizable display name
   birthDate: string; // YYYY-MM-DD
-  estimatedPIA: number; // Primary Insurance Amount at Full Retirement Age (FRA)
-  targetSSClaimingAge: number; // Claiming age (62 to 70)
-  plannedRetirementAge?: number; // Planned retirement age (55 to 75)
-  activeSalary?: number; // Pre-retirement annual active salary
-  preMedicareMonthlyPremium?: number; // Pre-Medicare monthly premium (e.g. $800)
+  estimatedPIA: number | null; // Primary Insurance Amount at Full Retirement Age (FRA)
+  targetSSClaimingAge: number | null; // Claiming age (62 to 70)
+  plannedRetirementAge?: number | null; // Planned retirement age (55 to 75)
+  activeSalary?: number | null; // Pre-retirement annual active salary
+  preMedicareMonthlyPremium?: number | null; // Pre-Medicare monthly premium (e.g. $800)
 }
 
 export interface PortfolioBalances {
-  yourPreTaxIRA: number;
-  yourRothIRA: number;
-  yourTaxableBrokerage: number;
-  yourTaxableBasis: number;
-  wifePreTaxIRA: number;
-  wifeRothIRA: number;
-  wifeTaxableBrokerage: number;
-  wifeTaxableBasis: number;
+  yourPreTaxIRA: number | null;
+  yourRothIRA: number | null;
+  yourTaxableBrokerage: number | null;
+  yourTaxableBasis: number | null;
+  wifePreTaxIRA: number | null;
+  wifeRothIRA: number | null;
+  wifeTaxableBrokerage: number | null;
+  wifeTaxableBasis: number | null;
 }
 
 export interface LockedReturnSequence {
@@ -49,7 +49,7 @@ export interface AppStateInputs {
     cpiInflationRate: number; // e.g. 0.025 (2.5%)
     healthcareInflationRate: number; // e.g. 0.05 (5%)
   };
-  annualLivingExpenses: number; // Current dollars, inflated annually
+  annualLivingExpenses: number | null; // Current dollars, inflated annually
   annualRothConversion: number; // Custom conversion slider input
   rothConversionStartYear?: number; // Starting year for Roth conversions
   rothConversionEndYear?: number; // Ending year for Roth conversions
@@ -57,6 +57,8 @@ export interface AppStateInputs {
   rothConversionTargetValue: number | null;
   lockedReturnSequence: LockedReturnSequence | null; // Null if using flat rates (deterministic baseline)
   monteCarloSettings: MonteCarloSettings;
+  isConfigured: boolean;
+  isSingleFiler: boolean;
 }
 
 

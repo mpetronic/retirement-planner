@@ -15,11 +15,13 @@ import {
 interface InputControlSidebarProps {
   inputs: AppStateInputs;
   onChange: (newInputs: AppStateInputs) => void;
+  onReset: () => void;
 }
 
 export const InputControlSidebar: React.FC<InputControlSidebarProps> = ({
   inputs,
   onChange,
+  onReset,
 }) => {
   const [isEditingYou, setIsEditingYou] = useState(false);
   const [isEditingWife, setIsEditingWife] = useState(false);
@@ -43,12 +45,12 @@ export const InputControlSidebar: React.FC<InputControlSidebarProps> = ({
     onChange(updated);
   };
 
-  const formatCurrency = (val: number) => {
+  const formatCurrency = (val: number | null | undefined) => {
     return new Intl.NumberFormat('en-US', {
       style: 'currency',
       currency: 'USD',
       maximumFractionDigits: 0,
-    }).format(val);
+    }).format(val || 0);
   };
 
   const formatPercent = (val: number) => {
@@ -123,7 +125,7 @@ export const InputControlSidebar: React.FC<InputControlSidebarProps> = ({
                 min="1000"
                 max="4500"
                 step="50"
-                value={inputs.you.estimatedPIA}
+                value={inputs.you.estimatedPIA ?? 3000}
                 onChange={(e) => updateNestedState('you', 'estimatedPIA', Number(e.target.value))}
                 className="w-full h-1.5 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-emerald-500"
               />
@@ -132,14 +134,14 @@ export const InputControlSidebar: React.FC<InputControlSidebarProps> = ({
             <div className="space-y-1">
               <label className="text-xs text-slate-400 flex justify-between">
                 <span>Target Social Security Claiming Age</span>
-                <span className="text-emerald-400 font-bold font-mono">Age {inputs.you.targetSSClaimingAge}</span>
+                <span className="text-emerald-400 font-bold font-mono">Age {inputs.you.targetSSClaimingAge ?? 67}</span>
               </label>
               <input
                 type="range"
                 min="62"
                 max="70"
                 step="1"
-                value={inputs.you.targetSSClaimingAge}
+                value={inputs.you.targetSSClaimingAge ?? 67}
                 onChange={(e) => updateNestedState('you', 'targetSSClaimingAge', Number(e.target.value))}
                 className="w-full h-1.5 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-emerald-500"
               />
@@ -155,14 +157,14 @@ export const InputControlSidebar: React.FC<InputControlSidebarProps> = ({
               <div className="space-y-1">
                 <label className="text-[10px] text-slate-400 font-bold uppercase tracking-wider flex justify-between block truncate">
                   <span>Retire Age</span>
-                  <span className="text-emerald-400 font-mono font-semibold">Age {inputs.you.plannedRetirementAge || 67}</span>
+                  <span className="text-emerald-400 font-mono font-semibold">Age {inputs.you.plannedRetirementAge ?? 67}</span>
                 </label>
                 <input
                   type="range"
                   min="55"
                   max="75"
                   step="1"
-                  value={inputs.you.plannedRetirementAge || 67}
+                  value={inputs.you.plannedRetirementAge ?? 67}
                   onChange={(e) => updateNestedState('you', 'plannedRetirementAge', Number(e.target.value))}
                   className="w-full h-1 bg-slate-800 rounded appearance-none cursor-pointer accent-emerald-500"
                 />
@@ -170,14 +172,14 @@ export const InputControlSidebar: React.FC<InputControlSidebarProps> = ({
               <div className="space-y-1">
                 <label className="text-[10px] text-slate-400 font-bold uppercase tracking-wider flex justify-between block truncate">
                   <span>Active Salary</span>
-                  <span className="text-slate-200 font-mono font-semibold">{formatCurrency(inputs.you.activeSalary || 0)}</span>
+                  <span className="text-slate-200 font-mono font-semibold">{formatCurrency(inputs.you.activeSalary)}</span>
                 </label>
                 <input
                   type="range"
                   min="0"
                   max="300000"
                   step="5000"
-                  value={inputs.you.activeSalary || 0}
+                  value={inputs.you.activeSalary ?? 0}
                   onChange={(e) => updateNestedState('you', 'activeSalary', Number(e.target.value))}
                   className="w-full h-1 bg-slate-800 rounded appearance-none cursor-pointer accent-emerald-500"
                 />
@@ -188,14 +190,14 @@ export const InputControlSidebar: React.FC<InputControlSidebarProps> = ({
             <div className="space-y-1 pt-2 border-t border-slate-800/30">
               <label className="text-xs text-slate-400 flex justify-between">
                 <span>Pre-Medicare Premium / Mo</span>
-                <span className="text-emerald-400 font-bold font-mono">{formatCurrency(inputs.you.preMedicareMonthlyPremium !== undefined ? inputs.you.preMedicareMonthlyPremium : 1000)}/mo</span>
+                <span className="text-emerald-400 font-bold font-mono">{formatCurrency(inputs.you.preMedicareMonthlyPremium !== undefined && inputs.you.preMedicareMonthlyPremium !== null ? inputs.you.preMedicareMonthlyPremium : 1000)}/mo</span>
               </label>
               <input
                 type="range"
                 min="0"
                 max="2500"
                 step="50"
-                value={inputs.you.preMedicareMonthlyPremium !== undefined ? inputs.you.preMedicareMonthlyPremium : 1000}
+                value={inputs.you.preMedicareMonthlyPremium !== undefined && inputs.you.preMedicareMonthlyPremium !== null ? inputs.you.preMedicareMonthlyPremium : 1000}
                 onChange={(e) => updateNestedState('you', 'preMedicareMonthlyPremium', Number(e.target.value))}
                 className="w-full h-1.5 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-emerald-500"
               />
@@ -203,130 +205,132 @@ export const InputControlSidebar: React.FC<InputControlSidebarProps> = ({
           </div>
 
           {/* Wife Profile */}
-          <div className="p-4 bg-slate-950/60 rounded-xl border border-slate-800 space-y-3">
-            {isEditingWife ? (
-              <div className="flex justify-between items-center gap-2">
-                <div className="flex items-center gap-1.5 flex-1">
-                  <span className="text-xs text-slate-400 font-bold uppercase whitespace-nowrap">Spouse:</span>
-                  <input
-                    type="text"
-                    value={inputs.wife.name || ''}
-                    onChange={(e) => updateNestedState('wife', 'name', e.target.value)}
-                    onBlur={() => setIsEditingWife(false)}
-                    onKeyDown={(e) => { if (e.key === 'Enter') setIsEditingWife(false); }}
-                    placeholder="Enter name"
-                    autoFocus
-                    className="bg-slate-900 border border-emerald-500/50 rounded px-2 py-0.5 text-xs text-slate-100 font-semibold focus:outline-none w-full focus:ring-1 focus:ring-emerald-500"
-                  />
+          {!inputs.isSingleFiler && (
+            <div className="p-4 bg-slate-950/60 rounded-xl border border-slate-800 space-y-3">
+              {isEditingWife ? (
+                <div className="flex justify-between items-center gap-2">
+                  <div className="flex items-center gap-1.5 flex-1">
+                    <span className="text-xs text-slate-400 font-bold uppercase whitespace-nowrap">Spouse:</span>
+                    <input
+                      type="text"
+                      value={inputs.wife.name || ''}
+                      onChange={(e) => updateNestedState('wife', 'name', e.target.value)}
+                      onBlur={() => setIsEditingWife(false)}
+                      onKeyDown={(e) => { if (e.key === 'Enter') setIsEditingWife(false); }}
+                      placeholder="Enter name"
+                      autoFocus
+                      className="bg-slate-900 border border-emerald-500/50 rounded px-2 py-0.5 text-xs text-slate-100 font-semibold focus:outline-none w-full focus:ring-1 focus:ring-emerald-500"
+                    />
+                  </div>
+                  <button
+                    onClick={() => setIsEditingWife(false)}
+                    className="text-emerald-400 hover:text-emerald-300 p-0.5 hover:bg-slate-800 rounded transition-colors"
+                    title="Save name"
+                  >
+                    <Check className="w-3.5 h-3.5" />
+                  </button>
                 </div>
-                <button
-                  onClick={() => setIsEditingWife(false)}
-                  className="text-emerald-400 hover:text-emerald-300 p-0.5 hover:bg-slate-800 rounded transition-colors"
-                  title="Save name"
-                >
-                  <Check className="w-3.5 h-3.5" />
-                </button>
-              </div>
-            ) : (
-              <div className="flex justify-between items-center">
-                <div className="flex items-center gap-2 group cursor-pointer" onClick={() => setIsEditingWife(true)}>
-                  <span className="text-sm font-semibold text-slate-200 hover:text-emerald-400 transition-colors">
-                    Spouse ({inputs.wife.name || 'Spouse'})
-                  </span>
-                  <Pencil className="w-3.5 h-3.5 text-slate-500 group-hover:text-emerald-400 opacity-0 group-hover:opacity-100 transition-all cursor-pointer" />
+              ) : (
+                <div className="flex justify-between items-center">
+                  <div className="flex items-center gap-2 group cursor-pointer" onClick={() => setIsEditingWife(true)}>
+                    <span className="text-sm font-semibold text-slate-200 hover:text-emerald-400 transition-colors">
+                      Spouse ({inputs.wife.name || 'Spouse'})
+                    </span>
+                    <Pencil className="w-3.5 h-3.5 text-slate-500 group-hover:text-emerald-400 opacity-0 group-hover:opacity-100 transition-all cursor-pointer" />
+                  </div>
+                  <span className="text-xs bg-slate-800 px-2 py-0.5 rounded text-emerald-400 font-mono">1964</span>
                 </div>
-                <span className="text-xs bg-slate-800 px-2 py-0.5 rounded text-emerald-400 font-mono">1964</span>
-              </div>
-            )}
-            
-            <div className="space-y-1">
-              <label className="text-xs text-slate-400 flex justify-between">
-                <span>Estimated SS Monthly PIA (at Age 67)</span>
-                <span className="text-slate-200 font-semibold font-mono">{formatCurrency(inputs.wife.estimatedPIA)}</span>
-              </label>
-              <input
-                type="range"
-                min="1000"
-                max="4500"
-                step="50"
-                value={inputs.wife.estimatedPIA}
-                onChange={(e) => updateNestedState('wife', 'estimatedPIA', Number(e.target.value))}
-                className="w-full h-1.5 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-emerald-500"
-              />
-            </div>
-
-            <div className="space-y-1">
-              <label className="text-xs text-slate-400 flex justify-between">
-                <span>Target Social Security Claiming Age</span>
-                <span className="text-emerald-400 font-bold font-mono">Age {inputs.wife.targetSSClaimingAge}</span>
-              </label>
-              <input
-                type="range"
-                min="62"
-                max="70"
-                step="1"
-                value={inputs.wife.targetSSClaimingAge}
-                onChange={(e) => updateNestedState('wife', 'targetSSClaimingAge', Number(e.target.value))}
-                className="w-full h-1.5 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-emerald-500"
-              />
-              <div className="flex justify-between text-[10px] text-slate-500 font-mono px-1">
-                <span>62 (Reduced)</span>
-                <span>67 (FRA)</span>
-                <span>70 (Max)</span>
-              </div>
-            </div>
-
-            {/* Planned Retirement & Active Salary side-by-side */}
-            <div className="grid grid-cols-2 gap-3 pt-1 border-t border-slate-800/30">
+              )}
+              
               <div className="space-y-1">
-                <label className="text-[10px] text-slate-400 font-bold uppercase tracking-wider flex justify-between block truncate">
-                  <span>Retire Age</span>
-                  <span className="text-emerald-400 font-mono font-semibold">Age {inputs.wife.plannedRetirementAge || 65}</span>
+                <label className="text-xs text-slate-400 flex justify-between">
+                  <span>Estimated SS Monthly PIA (at Age 67)</span>
+                  <span className="text-slate-200 font-semibold font-mono">{formatCurrency(inputs.wife.estimatedPIA)}</span>
                 </label>
                 <input
                   type="range"
-                  min="55"
-                  max="75"
-                  step="1"
-                  value={inputs.wife.plannedRetirementAge || 65}
-                  onChange={(e) => updateNestedState('wife', 'plannedRetirementAge', Number(e.target.value))}
-                  className="w-full h-1 bg-slate-800 rounded appearance-none cursor-pointer accent-emerald-500"
+                  min="1000"
+                  max="4500"
+                  step="50"
+                  value={inputs.wife.estimatedPIA ?? 2800}
+                  onChange={(e) => updateNestedState('wife', 'estimatedPIA', Number(e.target.value))}
+                  className="w-full h-1.5 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-emerald-500"
                 />
               </div>
+
               <div className="space-y-1">
-                <label className="text-[10px] text-slate-400 font-bold uppercase tracking-wider flex justify-between block truncate">
-                  <span>Active Salary</span>
-                  <span className="text-slate-200 font-mono font-semibold">{formatCurrency(inputs.wife.activeSalary || 0)}</span>
+                <label className="text-xs text-slate-400 flex justify-between">
+                  <span>Target Social Security Claiming Age</span>
+                  <span className="text-emerald-400 font-bold font-mono">Age {inputs.wife.targetSSClaimingAge ?? 67}</span>
+                </label>
+                <input
+                  type="range"
+                  min="62"
+                  max="70"
+                  step="1"
+                  value={inputs.wife.targetSSClaimingAge ?? 67}
+                  onChange={(e) => updateNestedState('wife', 'targetSSClaimingAge', Number(e.target.value))}
+                  className="w-full h-1.5 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-emerald-500"
+                />
+                <div className="flex justify-between text-[10px] text-slate-500 font-mono px-1">
+                  <span>62 (Reduced)</span>
+                  <span>67 (FRA)</span>
+                  <span>70 (Max)</span>
+                </div>
+              </div>
+
+              {/* Planned Retirement & Active Salary side-by-side */}
+              <div className="grid grid-cols-2 gap-3 pt-1 border-t border-slate-800/30">
+                <div className="space-y-1">
+                  <label className="text-[10px] text-slate-400 font-bold uppercase tracking-wider flex justify-between block truncate">
+                    <span>Retire Age</span>
+                    <span className="text-emerald-400 font-mono font-semibold">Age {inputs.wife.plannedRetirementAge ?? 65}</span>
+                  </label>
+                  <input
+                    type="range"
+                    min="55"
+                    max="75"
+                    step="1"
+                    value={inputs.wife.plannedRetirementAge ?? 65}
+                    onChange={(e) => updateNestedState('wife', 'plannedRetirementAge', Number(e.target.value))}
+                    className="w-full h-1 bg-slate-800 rounded appearance-none cursor-pointer accent-emerald-500"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <label className="text-[10px] text-slate-400 font-bold uppercase tracking-wider flex justify-between block truncate">
+                    <span>Active Salary</span>
+                    <span className="text-slate-200 font-mono font-semibold">{formatCurrency(inputs.wife.activeSalary)}</span>
+                  </label>
+                  <input
+                    type="range"
+                    min="0"
+                    max="300000"
+                    step="5000"
+                    value={inputs.wife.activeSalary ?? 0}
+                    onChange={(e) => updateNestedState('wife', 'activeSalary', Number(e.target.value))}
+                    className="w-full h-1 bg-slate-800 rounded appearance-none cursor-pointer accent-emerald-500"
+                  />
+                </div>
+              </div>
+
+              {/* Pre-Medicare monthly premium slider */}
+              <div className="space-y-1 pt-2 border-t border-slate-800/30">
+                <label className="text-xs text-slate-400 flex justify-between">
+                  <span>Pre-Medicare Premium / Mo</span>
+                  <span className="text-emerald-400 font-bold font-mono">{formatCurrency(inputs.wife.preMedicareMonthlyPremium !== undefined && inputs.wife.preMedicareMonthlyPremium !== null ? inputs.wife.preMedicareMonthlyPremium : 1000)}/mo</span>
                 </label>
                 <input
                   type="range"
                   min="0"
-                  max="300000"
-                  step="5000"
-                  value={inputs.wife.activeSalary || 0}
-                  onChange={(e) => updateNestedState('wife', 'activeSalary', Number(e.target.value))}
-                  className="w-full h-1 bg-slate-800 rounded appearance-none cursor-pointer accent-emerald-500"
+                  max="2500"
+                  step="50"
+                  value={inputs.wife.preMedicareMonthlyPremium !== undefined && inputs.wife.preMedicareMonthlyPremium !== null ? inputs.wife.preMedicareMonthlyPremium : 1000}
+                  onChange={(e) => updateNestedState('wife', 'preMedicareMonthlyPremium', Number(e.target.value))}
+                  className="w-full h-1.5 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-emerald-500"
                 />
               </div>
             </div>
-
-            {/* Pre-Medicare monthly premium slider */}
-            <div className="space-y-1 pt-2 border-t border-slate-800/30">
-              <label className="text-xs text-slate-400 flex justify-between">
-                <span>Pre-Medicare Premium / Mo</span>
-                <span className="text-emerald-400 font-bold font-mono">{formatCurrency(inputs.wife.preMedicareMonthlyPremium !== undefined ? inputs.wife.preMedicareMonthlyPremium : 1000)}/mo</span>
-              </label>
-              <input
-                type="range"
-                min="0"
-                max="2500"
-                step="50"
-                value={inputs.wife.preMedicareMonthlyPremium !== undefined ? inputs.wife.preMedicareMonthlyPremium : 1000}
-                onChange={(e) => updateNestedState('wife', 'preMedicareMonthlyPremium', Number(e.target.value))}
-                className="w-full h-1.5 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-emerald-500"
-              />
-            </div>
-          </div>
+          )}
         </div>
 
         {/* Section 2: Portfolio Initial Balances */}
@@ -346,8 +350,8 @@ export const InputControlSidebar: React.FC<InputControlSidebarProps> = ({
                   <label className="text-[10px] text-slate-400 block truncate" title="Traditional Pre-Tax IRA">Pre-Tax IRA</label>
                   <input
                     type="number"
-                    value={inputs.portfolio.yourPreTaxIRA}
-                    onChange={(e) => updateNestedState('portfolio', 'yourPreTaxIRA', Number(e.target.value))}
+                    value={inputs.portfolio.yourPreTaxIRA ?? ''}
+                    onChange={(e) => updateNestedState('portfolio', 'yourPreTaxIRA', e.target.value === '' ? null : Number(e.target.value))}
                     className="w-full bg-slate-900 border border-slate-800 rounded-lg px-2.5 py-1 text-xs text-slate-100 font-mono focus:outline-none focus:border-emerald-500"
                   />
                 </div>
@@ -355,8 +359,8 @@ export const InputControlSidebar: React.FC<InputControlSidebarProps> = ({
                   <label className="text-[10px] text-slate-400 block truncate" title="Roth IRA Balance">Roth IRA</label>
                   <input
                     type="number"
-                    value={inputs.portfolio.yourRothIRA}
-                    onChange={(e) => updateNestedState('portfolio', 'yourRothIRA', Number(e.target.value))}
+                    value={inputs.portfolio.yourRothIRA ?? ''}
+                    onChange={(e) => updateNestedState('portfolio', 'yourRothIRA', e.target.value === '' ? null : Number(e.target.value))}
                     className="w-full bg-slate-900 border border-slate-800 rounded-lg px-2.5 py-1 text-xs text-slate-100 font-mono focus:outline-none focus:border-emerald-500"
                   />
                 </div>
@@ -367,8 +371,8 @@ export const InputControlSidebar: React.FC<InputControlSidebarProps> = ({
                   <label className="text-[10px] text-slate-400 block truncate" title="Taxable Brokerage">Taxable Assets</label>
                   <input
                     type="number"
-                    value={inputs.portfolio.yourTaxableBrokerage}
-                    onChange={(e) => updateNestedState('portfolio', 'yourTaxableBrokerage', Number(e.target.value))}
+                    value={inputs.portfolio.yourTaxableBrokerage ?? ''}
+                    onChange={(e) => updateNestedState('portfolio', 'yourTaxableBrokerage', e.target.value === '' ? null : Number(e.target.value))}
                     className="w-full bg-slate-900 border border-slate-800 rounded-lg px-2.5 py-1 text-xs text-slate-100 font-mono focus:outline-none focus:border-emerald-500"
                   />
                 </div>
@@ -376,8 +380,8 @@ export const InputControlSidebar: React.FC<InputControlSidebarProps> = ({
                   <label className="text-[10px] text-slate-400 block truncate" title="Taxable Cost Basis">Cost Basis</label>
                   <input
                     type="number"
-                    value={inputs.portfolio.yourTaxableBasis}
-                    onChange={(e) => updateNestedState('portfolio', 'yourTaxableBasis', Number(e.target.value))}
+                    value={inputs.portfolio.yourTaxableBasis ?? ''}
+                    onChange={(e) => updateNestedState('portfolio', 'yourTaxableBasis', e.target.value === '' ? null : Number(e.target.value))}
                     className="w-full bg-slate-900 border border-slate-800 rounded-lg px-2.5 py-1 text-xs text-slate-100 font-mono focus:outline-none focus:border-emerald-500"
                   />
                 </div>
@@ -385,51 +389,53 @@ export const InputControlSidebar: React.FC<InputControlSidebarProps> = ({
             </div>
 
             {/* Wife Balances */}
-            <div className="p-3 bg-slate-950/60 rounded-xl border border-slate-800 space-y-2">
-              <span className="text-xs font-bold text-slate-300 block border-b border-slate-800 pb-1">{(inputs.wife.name || 'Spouse')}'s Portfolio Assets</span>
-              
-              <div className="grid grid-cols-2 gap-2">
-                <div className="space-y-1">
-                  <label className="text-[10px] text-slate-400 block truncate" title="Traditional Pre-Tax IRA">Pre-Tax IRA</label>
-                  <input
-                    type="number"
-                    value={inputs.portfolio.wifePreTaxIRA}
-                    onChange={(e) => updateNestedState('portfolio', 'wifePreTaxIRA', Number(e.target.value))}
-                    className="w-full bg-slate-900 border border-slate-800 rounded-lg px-2.5 py-1 text-xs text-slate-100 font-mono focus:outline-none focus:border-emerald-500"
-                  />
+            {!inputs.isSingleFiler && (
+              <div className="p-3 bg-slate-950/60 rounded-xl border border-slate-800 space-y-2">
+                <span className="text-xs font-bold text-slate-300 block border-b border-slate-800 pb-1">{(inputs.wife.name || 'Spouse')}'s Portfolio Assets</span>
+                
+                <div className="grid grid-cols-2 gap-2">
+                  <div className="space-y-1">
+                    <label className="text-[10px] text-slate-400 block truncate" title="Traditional Pre-Tax IRA">Pre-Tax IRA</label>
+                    <input
+                      type="number"
+                      value={inputs.portfolio.wifePreTaxIRA ?? ''}
+                      onChange={(e) => updateNestedState('portfolio', 'wifePreTaxIRA', e.target.value === '' ? null : Number(e.target.value))}
+                      className="w-full bg-slate-900 border border-slate-800 rounded-lg px-2.5 py-1 text-xs text-slate-100 font-mono focus:outline-none focus:border-emerald-500"
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <label className="text-[10px] text-slate-400 block truncate" title="Roth IRA Balance">Roth IRA</label>
+                    <input
+                      type="number"
+                      value={inputs.portfolio.wifeRothIRA ?? ''}
+                      onChange={(e) => updateNestedState('portfolio', 'wifeRothIRA', e.target.value === '' ? null : Number(e.target.value))}
+                      className="w-full bg-slate-900 border border-slate-800 rounded-lg px-2.5 py-1 text-xs text-slate-100 font-mono focus:outline-none focus:border-emerald-500"
+                    />
+                  </div>
                 </div>
-                <div className="space-y-1">
-                  <label className="text-[10px] text-slate-400 block truncate" title="Roth IRA Balance">Roth IRA</label>
-                  <input
-                    type="number"
-                    value={inputs.portfolio.wifeRothIRA}
-                    onChange={(e) => updateNestedState('portfolio', 'wifeRothIRA', Number(e.target.value))}
-                    className="w-full bg-slate-900 border border-slate-800 rounded-lg px-2.5 py-1 text-xs text-slate-100 font-mono focus:outline-none focus:border-emerald-500"
-                  />
-                </div>
-              </div>
 
-              <div className="grid grid-cols-2 gap-2">
-                <div className="space-y-1">
-                  <label className="text-[10px] text-slate-400 block truncate" title="Taxable Brokerage">Taxable Assets</label>
-                  <input
-                    type="number"
-                    value={inputs.portfolio.wifeTaxableBrokerage}
-                    onChange={(e) => updateNestedState('portfolio', 'wifeTaxableBrokerage', Number(e.target.value))}
-                    className="w-full bg-slate-900 border border-slate-800 rounded-lg px-2.5 py-1 text-xs text-slate-100 font-mono focus:outline-none focus:border-emerald-500"
-                  />
-                </div>
-                <div className="space-y-1">
-                  <label className="text-[10px] text-slate-400 block truncate" title="Taxable Cost Basis">Cost Basis</label>
-                  <input
-                    type="number"
-                    value={inputs.portfolio.wifeTaxableBasis}
-                    onChange={(e) => updateNestedState('portfolio', 'wifeTaxableBasis', Number(e.target.value))}
-                    className="w-full bg-slate-900 border border-slate-800 rounded-lg px-2.5 py-1 text-xs text-slate-100 font-mono focus:outline-none focus:border-emerald-500"
-                  />
+                <div className="grid grid-cols-2 gap-2">
+                  <div className="space-y-1">
+                    <label className="text-[10px] text-slate-400 block truncate" title="Taxable Brokerage">Taxable Assets</label>
+                    <input
+                      type="number"
+                      value={inputs.portfolio.wifeTaxableBrokerage ?? ''}
+                      onChange={(e) => updateNestedState('portfolio', 'wifeTaxableBrokerage', e.target.value === '' ? null : Number(e.target.value))}
+                      className="w-full bg-slate-900 border border-slate-800 rounded-lg px-2.5 py-1 text-xs text-slate-100 font-mono focus:outline-none focus:border-emerald-500"
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <label className="text-[10px] text-slate-400 block truncate" title="Taxable Cost Basis">Cost Basis</label>
+                    <input
+                      type="number"
+                      value={inputs.portfolio.wifeTaxableBasis ?? ''}
+                      onChange={(e) => updateNestedState('portfolio', 'wifeTaxableBasis', e.target.value === '' ? null : Number(e.target.value))}
+                      className="w-full bg-slate-900 border border-slate-800 rounded-lg px-2.5 py-1 text-xs text-slate-100 font-mono focus:outline-none focus:border-emerald-500"
+                    />
+                  </div>
                 </div>
               </div>
-            </div>
+            )}
           </div>
         </div>
 
@@ -608,7 +614,7 @@ export const InputControlSidebar: React.FC<InputControlSidebarProps> = ({
                 min="40000"
                 max="300000"
                 step="5000"
-                value={inputs.annualLivingExpenses}
+                value={inputs.annualLivingExpenses ?? 120000}
                 onChange={(e) => updateNestedState('annualLivingExpenses', '', Number(e.target.value))}
                 className="w-full h-1.5 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-emerald-500"
               />
@@ -648,7 +654,7 @@ export const InputControlSidebar: React.FC<InputControlSidebarProps> = ({
                     onChange(updated);
                   }}
                   className={`flex-1 text-[10px] py-1.5 rounded-lg font-bold transition-all ${
-                    inputs.rothConversionStrategy === 'flat'
+                     inputs.rothConversionStrategy === 'flat'
                       ? 'bg-emerald-500 text-slate-950 shadow'
                       : 'text-slate-400 hover:text-slate-200'
                   }`}
@@ -681,7 +687,7 @@ export const InputControlSidebar: React.FC<InputControlSidebarProps> = ({
               <label className="text-xs text-slate-400 flex justify-between">
                 <span>Start Year</span>
                 <span className="text-emerald-400 font-bold font-mono">
-                  {inputs.rothConversionStartYear !== undefined ? inputs.rothConversionStartYear : 2026}
+                  {inputs.rothConversionStartYear !== undefined ? inputs.rothConversionStartYear : 2027}
                 </span>
               </label>
               <input
@@ -689,7 +695,7 @@ export const InputControlSidebar: React.FC<InputControlSidebarProps> = ({
                 min="2026"
                 max="2050"
                 step="1"
-                value={inputs.rothConversionStartYear !== undefined ? inputs.rothConversionStartYear : 2026}
+                value={inputs.rothConversionStartYear !== undefined ? inputs.rothConversionStartYear : 2027}
                 onChange={(e) => updateNestedState('rothConversionStartYear', '', Number(e.target.value))}
                 className="w-full h-1.5 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-emerald-500"
               />
@@ -700,7 +706,7 @@ export const InputControlSidebar: React.FC<InputControlSidebarProps> = ({
               <label className="text-xs text-slate-400 flex justify-between">
                 <span>End Year</span>
                 <span className="text-emerald-400 font-bold font-mono">
-                  {inputs.rothConversionEndYear !== undefined ? inputs.rothConversionEndYear : 2035}
+                  {inputs.rothConversionEndYear !== undefined ? inputs.rothConversionEndYear : 2034}
                 </span>
               </label>
               <input
@@ -708,7 +714,7 @@ export const InputControlSidebar: React.FC<InputControlSidebarProps> = ({
                 min="2026"
                 max="2060"
                 step="1"
-                value={inputs.rothConversionEndYear !== undefined ? inputs.rothConversionEndYear : 2035}
+                value={inputs.rothConversionEndYear !== undefined ? inputs.rothConversionEndYear : 2034}
                 onChange={(e) => updateNestedState('rothConversionEndYear', '', Number(e.target.value))}
                 className="w-full h-1.5 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-emerald-500"
               />
@@ -763,6 +769,26 @@ export const InputControlSidebar: React.FC<InputControlSidebarProps> = ({
               </div>
             )}
           </div>
+        </div>
+
+        {/* Section 7: Danger Zone / Reset */}
+        <div className="space-y-3 pt-4 border-t border-slate-800">
+          <div className="flex items-center gap-2 text-rose-500 font-semibold pb-1">
+            <RefreshCw className="w-4 h-4 text-rose-500 animate-spin" style={{ animationDuration: '6s' }} />
+            <h2 className="text-xs uppercase font-bold tracking-wider">Danger Zone</h2>
+          </div>
+          <button
+            type="button"
+            onClick={() => {
+              if (window.confirm("Are you sure you want to clear your current retirement plan configuration? This will delete all customized inputs and restart the onboarding setup.")) {
+                onReset();
+              }
+            }}
+            className="w-full flex items-center justify-center gap-2 px-4 py-2.5 bg-red-950/20 hover:bg-red-950/40 border border-red-900/30 hover:border-red-900/50 text-red-400 rounded-xl text-xs font-bold transition-all hover:scale-102 cursor-pointer"
+          >
+            <RefreshCw className="w-4 h-4" />
+            <span>Reset Plan & Configuration</span>
+          </button>
         </div>
 
       </div>

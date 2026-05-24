@@ -30,8 +30,8 @@ export function optimizeRetirementScenario(
 
   let bestAnnualRothConversion = inputs.annualRothConversion;
   let bestTargetValue = inputs.rothConversionTargetValue;
-  let bestYourSSAge = inputs.you.targetSSClaimingAge;
-  let bestWifeSSAge = inputs.wife.targetSSClaimingAge;
+  let bestYourSSAge = inputs.you.targetSSClaimingAge ?? 67;
+  let bestWifeSSAge = inputs.wife.targetSSClaimingAge ?? 67;
 
   let bestScore = (goal === 'max_portfolio' || goal === 'max_roth') ? -Infinity : Infinity;
   let bestEndingEstate = -Infinity; // Secondary metric tie-breaker

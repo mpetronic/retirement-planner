@@ -153,18 +153,22 @@ export function runRetirementSimulation(
   simulateSurvivor: boolean = false,
   overrideSequence?: LockedReturnSequence | null
 ): SimulationResultRow[] {
+  if (!inputs.isConfigured) {
+    return []; // Bypass calculations if not configured
+  }
+
   const ledger: SimulationResultRow[] = [];
   
   // Initial portfolio balances
-  let yourPreTax = inputs.portfolio.yourPreTaxIRA;
-  let yourRoth = inputs.portfolio.yourRothIRA;
-  let yourTaxable = inputs.portfolio.yourTaxableBrokerage;
-  let yourBasis = inputs.portfolio.yourTaxableBasis;
+  let yourPreTax = inputs.portfolio.yourPreTaxIRA || 0;
+  let yourRoth = inputs.portfolio.yourRothIRA || 0;
+  let yourTaxable = inputs.portfolio.yourTaxableBrokerage || 0;
+  let yourBasis = inputs.portfolio.yourTaxableBasis || 0;
   
-  let wifePreTax = inputs.portfolio.wifePreTaxIRA;
-  let wifeRoth = inputs.portfolio.wifeRothIRA;
-  let wifeTaxable = inputs.portfolio.wifeTaxableBrokerage;
-  let wifeBasis = inputs.portfolio.wifeTaxableBasis;
+  let wifePreTax = inputs.isSingleFiler ? 0 : (inputs.portfolio.wifePreTaxIRA || 0);
+  let wifeRoth = inputs.isSingleFiler ? 0 : (inputs.portfolio.wifeRothIRA || 0);
+  let wifeTaxable = inputs.isSingleFiler ? 0 : (inputs.portfolio.wifeTaxableBrokerage || 0);
+  let wifeBasis = inputs.isSingleFiler ? 0 : (inputs.portfolio.wifeTaxableBasis || 0);
   
   // Actuarial death year definition for survivor mode:
   // Primary user (born 1960) passes away in 2045 (turning age 85)
@@ -204,16 +208,16 @@ export function runRetirementSimulation(
     let wifeSalary = 0;
     
     if (!(simulateSurvivor && (year >= DEATH_YEAR))) {
-      const youRetireAge = inputs.you.plannedRetirementAge !== undefined ? inputs.you.plannedRetirementAge : 67;
+      const youRetireAge = inputs.you.plannedRetirementAge ?? 67;
       if (yourAge < youRetireAge) {
-        const baseSalary = inputs.you.activeSalary !== undefined ? inputs.you.activeSalary : 0;
+        const baseSalary = inputs.you.activeSalary ?? 0;
         yourSalary = baseSalary * cpiFactor;
       }
     }
     
-    const wifeRetireAge = inputs.wife.plannedRetirementAge !== undefined ? inputs.wife.plannedRetirementAge : 65;
-    if (wifeAge < wifeRetireAge) {
-      const baseSalary = inputs.wife.activeSalary !== undefined ? inputs.wife.activeSalary : 0;
+    const wifeRetireAge = inputs.isSingleFiler ? 0 : (inputs.wife.plannedRetirementAge ?? 65);
+    if (!inputs.isSingleFiler && wifeAge < wifeRetireAge) {
+      const baseSalary = inputs.wife.activeSalary ?? 0;
       wifeSalary = baseSalary * cpiFactor;
     }
     
@@ -243,25 +247,25 @@ export function runRetirementSimulation(
     let wifeSS = 0;
     
     if (!youDeceased) {
-      if (yourAge >= inputs.you.targetSSClaimingAge) {
+      if (inputs.you.targetSSClaimingAge && yourAge >= inputs.you.targetSSClaimingAge) {
         // Base SS inflated to current year
-        const baseSS = calculateSSBenefit(inputs.you.estimatedPIA, inputs.you.targetSSClaimingAge) * 12;
+        const baseSS = calculateSSBenefit(inputs.you.estimatedPIA || 0, inputs.you.targetSSClaimingAge) * 12;
         yourSS = baseSS * cpiFactor;
       }
     }
     
-    if (wifeAge >= inputs.wife.targetSSClaimingAge) {
-      const baseSS = calculateSSBenefit(inputs.wife.estimatedPIA, inputs.wife.targetSSClaimingAge) * 12;
+    if (!inputs.isSingleFiler && inputs.wife.targetSSClaimingAge && wifeAge >= inputs.wife.targetSSClaimingAge) {
+      const baseSS = calculateSSBenefit(inputs.wife.estimatedPIA || 0, inputs.wife.targetSSClaimingAge) * 12;
       wifeSS = baseSS * cpiFactor;
     }
     
     // Survivor Social Security benefit rules:
     // Surviving spouse inherits the larger of the two Social Security benefit streams, smaller is eliminated.
-    if (youDeceased) {
-      const baseYourSS = calculateSSBenefit(inputs.you.estimatedPIA, inputs.you.targetSSClaimingAge) * 12 * cpiFactor;
-      const baseWifeSS = calculateSSBenefit(inputs.wife.estimatedPIA, inputs.wife.targetSSClaimingAge) * 12 * cpiFactor;
+    if (youDeceased && !inputs.isSingleFiler) {
+      const baseYourSS = calculateSSBenefit(inputs.you.estimatedPIA || 0, inputs.you.targetSSClaimingAge || 67) * 12 * cpiFactor;
+      const baseWifeSS = calculateSSBenefit(inputs.wife.estimatedPIA || 0, inputs.wife.targetSSClaimingAge || 67) * 12 * cpiFactor;
       
-      if (wifeAge >= inputs.wife.targetSSClaimingAge) {
+      if (inputs.wife.targetSSClaimingAge && wifeAge >= inputs.wife.targetSSClaimingAge) {
         // If wife has claimed, she receives the maximum of her own or your SS benefit
         wifeSS = Math.max(baseYourSS, baseWifeSS);
       } else {
@@ -383,7 +387,7 @@ export function runRetirementSimulation(
     let wifePartDSurcharge = 0;
     let surchargeTier = 0;
     
-    const irmaaTiers = isSurvivorActive ? IRMAA_TIERS_SINGLE : IRMAA_TIERS_MFJ;
+    const irmaaTiers = (isSurvivorActive || inputs.isSingleFiler) ? IRMAA_TIERS_SINGLE : IRMAA_TIERS_MFJ;
     
     // Identify surcharge tier by matching MAGI against inflated cliffs
     for (let i = irmaaTiers.length - 1; i >= 0; i--) {
@@ -430,12 +434,12 @@ export function runRetirementSimulation(
     }
     
     // Living expenses inflated
-    const livingExpenses = inputs.annualLivingExpenses * cpiFactor;
+    const livingExpenses = (inputs.annualLivingExpenses ?? 120000) * cpiFactor;
 
     // Pre-Medicare healthcare premium calculations
-    const youRetireAge = inputs.you.plannedRetirementAge !== undefined ? inputs.you.plannedRetirementAge : 67;
-    const yourPreMedicareMonthly = inputs.you.preMedicareMonthlyPremium !== undefined ? inputs.you.preMedicareMonthlyPremium : 1000;
-    const wifePreMedicareMonthly = inputs.wife.preMedicareMonthlyPremium !== undefined ? inputs.wife.preMedicareMonthlyPremium : 1000;
+    const youRetireAge = inputs.you.plannedRetirementAge ?? 67;
+    const yourPreMedicareMonthly = inputs.you.preMedicareMonthlyPremium ?? 1000;
+    const wifePreMedicareMonthly = inputs.wife.preMedicareMonthlyPremium ?? 1000;
 
     let yourPreMedicareAnnual = 0;
     if (yourAge < 65 && yourAge >= youRetireAge && !youDeceased) {
@@ -575,20 +579,21 @@ export function runRetirementSimulation(
       
       // SS Taxability based on AGI excluding SS + 50% of SS
       // Other AGI includes traditional withdrawals, RMD, capital gains, conversions, active salaries
+      const isSingle = isSurvivorActive || inputs.isSingleFiler;
       const otherAGI = totalTaxablePreTaxDraw + capitalGainsTriggered + activeSalaryInflow;
-      const taxableSS = calculateTaxableSS(combinedSS, otherAGI, isSurvivorActive);
+      const taxableSS = calculateTaxableSS(combinedSS, otherAGI, isSingle);
       
       const fedAGI = otherAGI + taxableSS;
       
       // Federal Taxable Income
-      const stdDeduction = isSurvivorActive
+      const stdDeduction = isSingle
         ? FED_STANDARD_DEDUCTION_SINGLE * cpiFactor
         : FED_STANDARD_DEDUCTION_MFJ * cpiFactor;
         
       const fedTaxableIncome = Math.max(0, fedAGI - stdDeduction);
       
       // Federal Income Tax
-      fedIncomeTax = calculateFedTax(fedTaxableIncome, isSurvivorActive, cpiFactor);
+      fedIncomeTax = calculateFedTax(fedTaxableIncome, isSingle, cpiFactor);
       
       // State Income Tax
       const isStateFL = (inputs.jurisdiction.relocationYear !== null && year >= inputs.jurisdiction.relocationYear)
@@ -599,7 +604,7 @@ export function runRetirementSimulation(
         stateIncomeTax = 0;
       } else {
         // Maryland State Tax
-        stateIncomeTax = calculateMDStateTax(fedAGI, taxableSS, isSurvivorActive);
+        stateIncomeTax = calculateMDStateTax(fedAGI, taxableSS, isSingle);
       }
       
       totalTaxBill = fedIncomeTax + stateIncomeTax;
@@ -627,8 +632,9 @@ export function runRetirementSimulation(
     const totalPortfolioValue = yourTaxable + yourPreTax + yourRoth + wifeTaxable + wifePreTax + wifeRoth;
     
     // Compute total actual inflows, MAGI, and other ledger parameters
+    const isSingle = isSurvivorActive || inputs.isSingleFiler;
     const finalOtherAGI = combinedRMD + combinedRothConversion + drawdownPreTax + capitalGainsTriggered + activeSalaryInflow;
-    const finalTaxableSS = calculateTaxableSS(combinedSS, finalOtherAGI, isSurvivorActive);
+    const finalTaxableSS = calculateTaxableSS(combinedSS, finalOtherAGI, isSingle);
     const finalFedAGI = finalOtherAGI + finalTaxableSS;
     
     // MAGI for IRMAA is Federal AGI + Tax-Exempt Interest. Since we don't have tax-exempt interest in the inputs, MAGI = AGI.
@@ -653,8 +659,8 @@ export function runRetirementSimulation(
       otherTaxableIncome: drawdownPreTax,
       magi,
       fedAGI: finalFedAGI,
-      standardDeduction: isSurvivorActive ? FED_STANDARD_DEDUCTION_SINGLE * cpiFactor : FED_STANDARD_DEDUCTION_MFJ * cpiFactor,
-      taxableIncome: Math.max(0, finalFedAGI - (isSurvivorActive ? FED_STANDARD_DEDUCTION_SINGLE * cpiFactor : FED_STANDARD_DEDUCTION_MFJ * cpiFactor)),
+      standardDeduction: isSingle ? FED_STANDARD_DEDUCTION_SINGLE * cpiFactor : FED_STANDARD_DEDUCTION_MFJ * cpiFactor,
+      taxableIncome: Math.max(0, finalFedAGI - (isSingle ? FED_STANDARD_DEDUCTION_SINGLE * cpiFactor : FED_STANDARD_DEDUCTION_MFJ * cpiFactor)),
       fedIncomeTax,
       stateIncomeTax,
       totalIncomeTax: fedIncomeTax + stateIncomeTax,

@@ -67,7 +67,7 @@ export const ClaimingMatrixGrid: React.FC<ClaimingMatrixGridProps> = ({
         };
         const res = runRetirementSimulation(scenarioInputs, simulateSurvivor);
         // Ending portfolio value at age 90 (year 2060, the last row)
-        const endVal = res[res.length - 1].totalPortfolioValue;
+        const endVal = res[res.length - 1]?.totalPortfolioValue || 0;
         const key = `${yourSSAge}-${wifeSSAge}`;
         grid[key] = endVal;
 

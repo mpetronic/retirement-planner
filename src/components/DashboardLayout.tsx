@@ -39,7 +39,7 @@ export const DashboardLayout: React.FC<DashboardLayoutProps> = ({
   const stats = useMemo(() => {
     // 1. Ending Net Estate Value (the final year's portfolio value)
     const finalRow = ledger[ledger.length - 1];
-    const endingEstate = finalRow.totalPortfolioValue;
+    const endingEstate = finalRow ? finalRow.totalPortfolioValue : 0;
 
     // 2. Total Lifetime Taxes paid (sum of totalIncomeTax across all years)
     const totalTaxes = ledger.reduce((sum, r) => sum + r.totalIncomeTax, 0);
