@@ -158,7 +158,7 @@ export const BracketMapChart: React.FC<BracketMapChartProps> = ({
       {
         label: 'Taxable Draws',
         data: ledger.map((r) => r.drawdownTaxable),
-        backgroundColor: 'rgba(6, 182, 212, 0.7)', // cyan-500 representing capital gains brokerage liquidations
+        backgroundColor: 'rgba(239, 68, 68, 0.7)', // red-500 representing taxable brokerage liquidations
         stack: 'income',
         order: 2.5,
         pointStyle: 'rect',
