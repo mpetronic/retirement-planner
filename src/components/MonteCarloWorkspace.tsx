@@ -153,7 +153,7 @@ export const MonteCarloWorkspace: React.FC<MonteCarloWorkspaceProps> = ({
   };
 
   // SVG parameters for circular success rate gauge
-  const radius = 60;
+  const radius = 55;
   const strokeWidth = 10;
   const circumference = 2 * Math.PI * radius;
   const strokeDashoffset = circumference - successRate * circumference;
@@ -291,7 +291,7 @@ export const MonteCarloWorkspace: React.FC<MonteCarloWorkspaceProps> = ({
             
             {/* SVG Circular Success Gauge */}
             <div className="relative flex items-center justify-center py-6">
-              <svg className="w-40 h-40 transform -rotate-90">
+              <svg viewBox="0 0 160 160" className="w-40 h-40 transform -rotate-90">
                 {/* Background Ring */}
                 <circle
                   cx="80"
