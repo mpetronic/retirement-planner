@@ -60,6 +60,24 @@ export const BracketMapChart: React.FC<BracketMapChartProps> = ({
     });
   }, [ledger, inputs]);
 
+  const fed22PercentLine = useMemo(() => {
+    return ledger.map((r) => {
+      const isSingle = r.yourAge >= 85 && inputs.you.targetSSClaimingAge > 0;
+      const limit = isSingle ? 100525 : 201050;
+      const stdDec = r.standardDeduction;
+      return limit * (r.standardDeduction / (isSingle ? 13850 : 27700)) + stdDec;
+    });
+  }, [ledger, inputs]);
+
+  const fed24PercentLine = useMemo(() => {
+    return ledger.map((r) => {
+      const isSingle = r.yourAge >= 85 && inputs.you.targetSSClaimingAge > 0;
+      const limit = isSingle ? 191950 : 383900;
+      const stdDec = r.standardDeduction;
+      return limit * (r.standardDeduction / (isSingle ? 13850 : 27700)) + stdDec;
+    });
+  }, [ledger, inputs]);
+
   const irmaaCliff1Line = useMemo(() => {
     return ledger.map((r) => {
       const isSingle = r.yourAge >= 85 && inputs.you.targetSSClaimingAge > 0;
@@ -89,6 +107,7 @@ export const BracketMapChart: React.FC<BracketMapChartProps> = ({
           backgroundColor: '#8b5cf6', // violet-500
           stack: 'income',
           order: 5,
+          pointStyle: 'rect',
         },
         {
           label: 'Social Security',
@@ -96,6 +115,7 @@ export const BracketMapChart: React.FC<BracketMapChartProps> = ({
           backgroundColor: '#3b82f6', // bright blue
           stack: 'income',
           order: 4,
+          pointStyle: 'rect',
         },
         {
           label: 'Forced RMDs',
@@ -103,6 +123,7 @@ export const BracketMapChart: React.FC<BracketMapChartProps> = ({
           backgroundColor: '#f59e0b', // amber
           stack: 'income',
           order: 3,
+          pointStyle: 'rect',
         },
         {
           label: 'Taxable/Pre-Tax Draws',
@@ -110,6 +131,7 @@ export const BracketMapChart: React.FC<BracketMapChartProps> = ({
           backgroundColor: '#ef4444', // rose/red
           stack: 'income',
           order: 2,
+          pointStyle: 'rect',
         },
         {
           label: 'Roth Conversions',
@@ -117,6 +139,7 @@ export const BracketMapChart: React.FC<BracketMapChartProps> = ({
           backgroundColor: '#10b981', // emerald-500 highlighting
           stack: 'income',
           order: 1,
+          pointStyle: 'rect',
         },
         // Line overlays for Brackets & Cliffs
         {
@@ -129,6 +152,31 @@ export const BracketMapChart: React.FC<BracketMapChartProps> = ({
           pointRadius: 0,
           fill: false,
           order: 0,
+          pointStyle: 'line',
+        },
+        {
+          label: 'Top of 22% Fed Bracket',
+          data: fed22PercentLine,
+          type: 'line' as const,
+          borderColor: 'rgba(249, 115, 22, 0.7)',
+          borderWidth: 1.5,
+          borderDash: [5, 5],
+          pointRadius: 0,
+          fill: false,
+          order: 0,
+          pointStyle: 'line',
+        },
+        {
+          label: 'Top of 24% Fed Bracket',
+          data: fed24PercentLine,
+          type: 'line' as const,
+          borderColor: 'rgba(236, 72, 153, 0.7)',
+          borderWidth: 1.5,
+          borderDash: [5, 5],
+          pointRadius: 0,
+          fill: false,
+          order: 0,
+          pointStyle: 'line',
         },
         {
           label: 'IRMAA Tier 1 Cliff',
@@ -139,6 +187,7 @@ export const BracketMapChart: React.FC<BracketMapChartProps> = ({
           pointRadius: 0,
           fill: false,
           order: 0,
+          pointStyle: 'line',
         },
         {
           label: 'IRMAA Tier 2 Cliff',
@@ -149,10 +198,11 @@ export const BracketMapChart: React.FC<BracketMapChartProps> = ({
           pointRadius: 0,
           fill: false,
           order: 0,
+          pointStyle: 'line',
         },
       ],
     };
-  }, [years, activeSalaries, ssIncomes, rmds, drawdowns, rothConversions, fed12PercentLine, irmaaCliff1Line, irmaaCliff2Line]);
+  }, [years, activeSalaries, ssIncomes, rmds, drawdowns, rothConversions, fed12PercentLine, fed22PercentLine, fed24PercentLine, irmaaCliff1Line, irmaaCliff2Line]);
 
   const chartOptions = useMemo(() => {
     return {
@@ -167,7 +217,8 @@ export const BracketMapChart: React.FC<BracketMapChartProps> = ({
             font: {
               size: 11,
             },
-            boxWidth: 12,
+            boxWidth: 15,
+            usePointStyle: true,
           },
         },
         tooltip: {
