@@ -120,13 +120,18 @@ export const LookbackLedgerTable: React.FC<LookbackLedgerTableProps> = ({
       <div className="overflow-x-auto rounded-xl border border-slate-800 bg-slate-950/20">
         <table className="w-full text-left border-collapse text-sm">
           <thead>
-            <tr className="bg-slate-900/60 border-b border-slate-800 text-slate-400 text-xs font-semibold uppercase tracking-wider">
-              <th className="p-4">Tax Action Year (t)</th>
-              <th className="p-4">Total Resulting MAGI</th>
-              <th className="p-4">Surcharge Tier</th>
-              <th className="p-4">Affected Premium Year (t+2)</th>
+            <tr className="bg-slate-900/60 border-b border-slate-800 text-slate-400 text-xs font-semibold uppercase tracking-wider whitespace-nowrap">
+              <th className="p-4">Year (t)</th>
+              <th className="p-4">MAGI (Income)</th>
+              <th className="p-4">Total Expenses</th>
+              <th className="p-4">Brokerage (Taxable)</th>
+              <th className="p-4">Tax-Deferred (Pre-Tax)</th>
+              <th className="p-4">Roth (Tax-Free)</th>
+              <th className="p-4">Total Net Worth</th>
+              <th className="p-4">IRMAA Tier</th>
+              <th className="p-4">Surcharge Year (t+2)</th>
               <th className="p-4 text-right">Combined Monthly Surcharge</th>
-              <th className="p-4 text-right">Annual Cost (MFJ)</th>
+              <th className="p-4 text-right">Annual Surcharge Cost</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-800/40">
@@ -147,6 +152,11 @@ export const LookbackLedgerTable: React.FC<LookbackLedgerTableProps> = ({
                 >
                   <td className="p-4 font-mono font-semibold">{r.year}</td>
                   <td className="p-4 font-mono">{formatCurrency(r.magi)}</td>
+                  <td className="p-4 font-mono text-rose-400/90">{formatCurrency(r.totalExpenses)}</td>
+                  <td className="p-4 font-mono text-slate-300">{formatCurrency(r.endYourTaxableBrokerage + r.endWifeTaxableBrokerage)}</td>
+                  <td className="p-4 font-mono text-slate-300">{formatCurrency(r.endYourPreTaxIRA + r.endWifePreTaxIRA)}</td>
+                  <td className="p-4 font-mono text-emerald-400/90">{formatCurrency(r.endYourRothIRA + r.endWifeRothIRA)}</td>
+                  <td className="p-4 font-mono font-bold text-slate-100">{formatCurrency(r.totalPortfolioValue)}</td>
                   <td className="p-4">
                     <span
                       className={`px-2.5 py-0.5 rounded-full text-xs font-semibold ${
