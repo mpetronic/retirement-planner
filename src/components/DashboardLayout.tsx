@@ -7,7 +7,9 @@ import {
   ArrowRightLeft,
   Settings,
   Coins,
-  MapPin
+  MapPin,
+  Sliders,
+  Lock
 } from 'lucide-react';
 
 interface DashboardLayoutProps {
@@ -97,7 +99,14 @@ export const DashboardLayout: React.FC<DashboardLayoutProps> = ({
           {/* Card 1: Ending Net Estate */}
           <div className="glass-panel rounded-2xl p-4 flex items-center justify-between border-l-4 border-l-emerald-500 hover:scale-102 transition-transform duration-300">
             <div className="space-y-1">
-              <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider block">Ending Net Estate (Age 90)</span>
+              <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider flex items-center gap-1.5">
+                Ending Net Estate (Age 90)
+                {inputs.lockedReturnSequence && (
+                  <span className="text-amber-500 flex items-center" title="Stochastic return sequence currently locked in as baseline">
+                    <Lock className="w-3 h-3 animate-pulse" />
+                  </span>
+                )}
+              </span>
               <span className="text-xl font-black text-emerald-400 font-mono block">
                 {formatCurrency(stats.endingEstate)}
               </span>
@@ -140,7 +149,7 @@ export const DashboardLayout: React.FC<DashboardLayoutProps> = ({
         </div>
 
         {/* Dashboard Tabs Selector */}
-        <div className="flex border-b border-slate-800">
+        <div className="flex border-b border-slate-800 overflow-x-auto custom-scrollbar whitespace-nowrap">
           <button
             onClick={() => setActiveTab(0)}
             className={`py-3 px-6 text-sm font-bold border-b-2 transition-all flex items-center gap-2 ${
@@ -173,6 +182,17 @@ export const DashboardLayout: React.FC<DashboardLayoutProps> = ({
           >
             <Settings className="w-4 h-4" />
             Workspace 3: Claiming Matrix
+          </button>
+          <button
+            onClick={() => setActiveTab(3)}
+            className={`py-3 px-6 text-sm font-bold border-b-2 transition-all flex items-center gap-2 ${
+              activeTab === 3
+                ? 'border-emerald-500 text-emerald-400 bg-slate-900/40 rounded-t-xl'
+                : 'border-transparent text-slate-400 hover:text-slate-200 hover:bg-slate-900/10'
+            }`}
+          >
+            <Sliders className="w-4 h-4" />
+            Workspace 4: Monte Carlo Analysis
           </button>
         </div>
       </header>

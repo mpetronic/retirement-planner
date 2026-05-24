@@ -8,7 +8,8 @@ import {
   Flame,
   DollarSign,
   Pencil,
-  Check
+  Check,
+  RefreshCw
 } from 'lucide-react';
 
 interface InputControlSidebarProps {
@@ -622,6 +623,148 @@ export const InputControlSidebar: React.FC<InputControlSidebarProps> = ({
             </p>
           </div>
         </div>
+
+        {/* Section 6: Roth Conversion Planning */}
+        <div className="space-y-4">
+          <div className="flex items-center gap-2 text-emerald-400 font-semibold border-b border-slate-800 pb-2">
+            <RefreshCw className="w-5 h-5" />
+            <h2>Roth Conversion Planning</h2>
+          </div>
+
+          <div className="p-4 bg-slate-950/60 rounded-xl border border-slate-800 space-y-4">
+            
+            {/* Strategy Selector */}
+            <div className="space-y-2">
+              <label className="text-xs font-semibold text-slate-300 block">Conversion Strategy</label>
+              <div className="flex bg-slate-900 p-0.5 rounded-xl border border-slate-800">
+                <button
+                  type="button"
+                  onClick={() => {
+                    const updated = {
+                      ...inputs,
+                      rothConversionStrategy: 'flat' as const,
+                      rothConversionTargetValue: null,
+                    };
+                    onChange(updated);
+                  }}
+                  className={`flex-1 text-[10px] py-1.5 rounded-lg font-bold transition-all ${
+                    inputs.rothConversionStrategy === 'flat'
+                      ? 'bg-emerald-500 text-slate-950 shadow'
+                      : 'text-slate-400 hover:text-slate-200'
+                  }`}
+                >
+                  Flat Target
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    const updated = {
+                      ...inputs,
+                      rothConversionStrategy: 'fill-to-target' as const,
+                      rothConversionTargetValue: inputs.rothConversionTargetValue || 133000,
+                    };
+                    onChange(updated);
+                  }}
+                  className={`flex-1 text-[10px] py-1.5 rounded-lg font-bold transition-all ${
+                    inputs.rothConversionStrategy === 'fill-to-target'
+                      ? 'bg-emerald-500 text-slate-950 shadow'
+                      : 'text-slate-400 hover:text-slate-200'
+                  }`}
+                >
+                  Fill-to-Target
+                </button>
+              </div>
+            </div>
+
+            {/* Start Year Slider */}
+            <div className="space-y-1">
+              <label className="text-xs text-slate-400 flex justify-between">
+                <span>Start Year</span>
+                <span className="text-emerald-400 font-bold font-mono">
+                  {inputs.rothConversionStartYear !== undefined ? inputs.rothConversionStartYear : 2026}
+                </span>
+              </label>
+              <input
+                type="range"
+                min="2026"
+                max="2050"
+                step="1"
+                value={inputs.rothConversionStartYear !== undefined ? inputs.rothConversionStartYear : 2026}
+                onChange={(e) => updateNestedState('rothConversionStartYear', '', Number(e.target.value))}
+                className="w-full h-1.5 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-emerald-500"
+              />
+            </div>
+
+            {/* End Year Slider */}
+            <div className="space-y-1">
+              <label className="text-xs text-slate-400 flex justify-between">
+                <span>End Year</span>
+                <span className="text-emerald-400 font-bold font-mono">
+                  {inputs.rothConversionEndYear !== undefined ? inputs.rothConversionEndYear : 2035}
+                </span>
+              </label>
+              <input
+                type="range"
+                min="2026"
+                max="2060"
+                step="1"
+                value={inputs.rothConversionEndYear !== undefined ? inputs.rothConversionEndYear : 2035}
+                onChange={(e) => updateNestedState('rothConversionEndYear', '', Number(e.target.value))}
+                className="w-full h-1.5 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-emerald-500"
+              />
+            </div>
+
+            {/* Strategy Dependent slider */}
+            {inputs.rothConversionStrategy === 'flat' ? (
+              <div className="space-y-1">
+                <label className="text-xs text-slate-400 flex justify-between">
+                  <span>Annual Flat Amount</span>
+                  <span className="text-emerald-400 font-bold font-mono">
+                    {formatCurrency(inputs.annualRothConversion)}
+                  </span>
+                </label>
+                <input
+                  type="range"
+                  min="0"
+                  max="500000"
+                  step="5000"
+                  value={inputs.annualRothConversion}
+                  onChange={(e) => updateNestedState('annualRothConversion', '', Number(e.target.value))}
+                  className="w-full h-1.5 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-emerald-500"
+                />
+                <div className="flex justify-between text-[9px] text-slate-500 font-mono px-1">
+                  <span>$0</span>
+                  <span>$250k</span>
+                  <span>$500k</span>
+                </div>
+              </div>
+            ) : (
+              <div className="space-y-1">
+                <label className="text-xs text-slate-400 flex justify-between">
+                  <span>Target MAGI Ceiling</span>
+                  <span className="text-emerald-400 font-bold font-mono">
+                    {formatCurrency(inputs.rothConversionTargetValue || 0)}
+                  </span>
+                </label>
+                <input
+                  type="range"
+                  min="0"
+                  max="500000"
+                  step="5000"
+                  value={inputs.rothConversionTargetValue || 0}
+                  onChange={(e) => updateNestedState('rothConversionTargetValue', '', Number(e.target.value))}
+                  className="w-full h-1.5 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-emerald-500"
+                />
+                <div className="flex justify-between text-[9px] text-slate-500 font-mono px-1">
+                  <span>$0</span>
+                  <span>$250k</span>
+                  <span>$500k</span>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+
       </div>
     </aside>
   );

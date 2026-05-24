@@ -1,4 +1,4 @@
-import { AppStateInputs, SimulationResultRow } from '../types';
+import { AppStateInputs, SimulationResultRow, LockedReturnSequence } from '../types';
 import {
   BASE_MEDICARE_PART_B,
   BASE_MEDICARE_PART_D,
@@ -150,7 +150,8 @@ export function calculateMDStateTax(
 // Full multi-decade simulation runner
 export function runRetirementSimulation(
   inputs: AppStateInputs,
-  simulateSurvivor: boolean = false
+  simulateSurvivor: boolean = false,
+  overrideSequence?: LockedReturnSequence | null
 ): SimulationResultRow[] {
   const ledger: SimulationResultRow[] = [];
   
@@ -169,6 +170,9 @@ export function runRetirementSimulation(
   // Primary user (born 1960) passes away in 2045 (turning age 85)
   const DEATH_YEAR = 2045;
   
+  // Check if a stochastic sequence of returns is active
+  const activeSeq = overrideSequence !== undefined ? overrideSequence : inputs.lockedReturnSequence;
+
   // Let's run year-by-year from 2026 to 2060
   for (let year = 2026; year <= 2060; year++) {
     const yearsElapsed = year - 2026;
@@ -178,9 +182,18 @@ export function runRetirementSimulation(
     const healthcareFactor = Math.pow(1 + inputs.growthAssumptions.healthcareInflationRate, yearsElapsed);
     
     // Growth rates by account type (Equities vs Fixed Income allocation)
-    const taxableGrowthRate = 0.60 * inputs.growthAssumptions.equityReturnRate + 0.40 * inputs.growthAssumptions.fixedIncomeReturnRate;
-    const preTaxGrowthRate = 0.50 * inputs.growthAssumptions.equityReturnRate + 0.50 * inputs.growthAssumptions.fixedIncomeReturnRate;
-    const rothGrowthRate = 1.00 * inputs.growthAssumptions.equityReturnRate;
+    let equityRate = inputs.growthAssumptions.equityReturnRate;
+    let bondRate = inputs.growthAssumptions.fixedIncomeReturnRate;
+    
+    if (activeSeq) {
+      equityRate = activeSeq.equityReturns[yearsElapsed] !== undefined ? activeSeq.equityReturns[yearsElapsed] : equityRate;
+      bondRate = activeSeq.fixedIncomeReturns[yearsElapsed] !== undefined ? activeSeq.fixedIncomeReturns[yearsElapsed] : bondRate;
+    }
+
+    const taxableGrowthRate = 0.60 * equityRate + 0.40 * bondRate;
+    const preTaxGrowthRate = 0.50 * equityRate + 0.50 * bondRate;
+    const rothGrowthRate = 1.00 * equityRate;
+
     
     // Spouse ages in this calendar year
     const yourAge = year - 1960;
@@ -300,8 +313,13 @@ export function runRetirementSimulation(
         targetConversion = Math.max(0, inflatedTarget - uncontrollable);
       }
     } else {
-      // Flat strategy
-      targetConversion = (year >= startYear && year <= endYear) ? (inputs.annualRothConversion * cpiFactor) : 0;
+      // Flat strategy: base amount in the startYear, inflated for subsequent years
+      if (year >= startYear && year <= endYear) {
+        const conversionInflationFactor = Math.pow(1 + inputs.growthAssumptions.cpiInflationRate, year - startYear);
+        targetConversion = inputs.annualRothConversion * conversionInflationFactor;
+      } else {
+        targetConversion = 0;
+      }
     }
     
     if (targetConversion > 0) {

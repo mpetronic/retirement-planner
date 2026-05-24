@@ -32,9 +32,6 @@ interface BracketMapChartProps {
   ledger: SimulationResultRow[];
   inputs: AppStateInputs;
   simulateSurvivor: boolean;
-  onUpdateConversion: (val: number) => void;
-  onUpdateConversionStartYear: (year: number) => void;
-  onUpdateConversionEndYear: (year: number) => void;
   onApplyOptimization: (annualConversion: number, targetValue: number | null, yourAge: number, wifeAge: number) => void;
   onUpdateStrategy: (strategy: 'flat' | 'fill-to-target') => void;
   onUpdateTargetValue: (val: number | null) => void;
@@ -44,14 +41,10 @@ export const BracketMapChart: React.FC<BracketMapChartProps> = ({
   ledger,
   inputs,
   simulateSurvivor,
-  onUpdateConversion,
-  onUpdateConversionStartYear,
-  onUpdateConversionEndYear,
   onApplyOptimization,
   onUpdateStrategy,
   onUpdateTargetValue,
 }) => {
-  const [isDragging, setIsDragging] = useState(false);
   const [selectedQuickFill, setSelectedQuickFill] = useState<number | null>(null);
   
   // Optimizer visual state hooks
@@ -165,7 +158,7 @@ export const BracketMapChart: React.FC<BracketMapChartProps> = ({
       {
         label: 'Taxable Draws',
         data: ledger.map((r) => r.drawdownTaxable),
-        backgroundColor: 'rgba(244, 63, 94, 0.65)', // rose-500 representing capital gains brokerage liquidations
+        backgroundColor: 'rgba(6, 182, 212, 0.7)', // cyan-500 representing capital gains brokerage liquidations
         stack: 'income',
         order: 2.5,
         pointStyle: 'rect',
@@ -173,7 +166,7 @@ export const BracketMapChart: React.FC<BracketMapChartProps> = ({
       {
         label: 'Pre-Tax Draws',
         data: ledger.map((r) => r.drawdownPreTax),
-        backgroundColor: 'rgba(185, 28, 28, 0.65)', // red-700 Representing IRA ordinary income liquidations
+        backgroundColor: 'rgba(217, 70, 239, 0.7)', // fuchsia-500 representing IRA ordinary income liquidations
         stack: 'income',
         order: 2,
         pointStyle: 'rect',
@@ -245,7 +238,7 @@ export const BracketMapChart: React.FC<BracketMapChartProps> = ({
     return {
       responsive: true,
       maintainAspectRatio: false,
-      animation: !isDragging as any, // disable animations during slider drag
+      animation: true,
       plugins: {
         legend: {
           position: 'top' as const,
@@ -359,7 +352,7 @@ export const BracketMapChart: React.FC<BracketMapChartProps> = ({
         }
       },
     };
-  }, [isDragging, ssIncomes, rmds, activeSalaries]);
+  }, [ssIncomes, rmds, activeSalaries]);
 
   // Optimizer metrics and helper functions
   const currentEndingEstate = ledger[ledger.length - 1]?.totalPortfolioValue || 0;
@@ -673,189 +666,8 @@ export const BracketMapChart: React.FC<BracketMapChartProps> = ({
       </div>
 
       {/* Chart Canvas */}
-      <div className="h-96 relative bg-slate-950/40 rounded-xl border border-slate-800/40 p-4">
+      <div className="h-[580px] relative bg-slate-950/40 rounded-xl border border-slate-800/40 p-4">
         <Chart type="bar" data={chartData as any} options={chartOptions as any} />
-      </div>
-
-      {/* Slider Control */}
-      <div className="p-5 bg-slate-950/60 rounded-xl border border-slate-800 space-y-5">
-        
-        {/* Strategy Tab Selector */}
-        <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center border-b border-slate-800/60 pb-3 gap-3">
-          <div>
-            <h4 className="text-xs font-bold text-slate-400 uppercase tracking-wider">Roth Conversion Strategy Planning</h4>
-            <p className="text-[10px] text-slate-500">Choose between flat annual conversion amounts or dynamic ceiling bracket targets</p>
-          </div>
-          <div className="flex bg-slate-900 p-0.5 rounded-xl border border-slate-800">
-            <button
-              onClick={() => {
-                onUpdateStrategy('flat');
-                onUpdateTargetValue(null);
-              }}
-              className={`text-[10px] px-3.5 py-1.5 rounded-lg font-bold transition-all ${
-                inputs.rothConversionStrategy === 'flat'
-                  ? 'bg-emerald-500 text-slate-950 shadow'
-                  : 'text-slate-400 hover:text-slate-200'
-              }`}
-            >
-              Flat Annual Target
-            </button>
-            <button
-              onClick={() => {
-                onUpdateStrategy('fill-to-target');
-                if (inputs.rothConversionTargetValue === null) {
-                  onUpdateTargetValue(133000); // default to 12% bracket
-                }
-              }}
-              className={`text-[10px] px-3.5 py-1.5 rounded-lg font-bold transition-all ${
-                inputs.rothConversionStrategy === 'fill-to-target'
-                  ? 'bg-emerald-500 text-slate-950 shadow'
-                  : 'text-slate-400 hover:text-slate-200'
-              }`}
-            >
-              Dynamic Fill-to-Target
-            </button>
-          </div>
-        </div>
-
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 items-start">
-          {/* Start Year Slider */}
-          <div className="space-y-3 bg-slate-900/20 p-3 rounded-lg border border-slate-800/40">
-            <div className="flex justify-between items-center">
-              <span className="text-xs font-semibold text-slate-300">Start Year</span>
-              <span className="text-sm font-black text-emerald-400 font-mono">
-                {inputs.rothConversionStartYear !== undefined ? inputs.rothConversionStartYear : 2026}
-              </span>
-            </div>
-
-            <input
-              type="range"
-              min="2026"
-              max="2050"
-              step="1"
-              value={inputs.rothConversionStartYear !== undefined ? inputs.rothConversionStartYear : 2026}
-              onMouseDown={() => setIsDragging(true)}
-              onMouseUp={() => setIsDragging(false)}
-              onTouchStart={() => setIsDragging(true)}
-              onTouchEnd={() => setIsDragging(false)}
-              onChange={(e) => onUpdateConversionStartYear(Number(e.target.value))}
-              className="w-full h-1.5 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-emerald-500"
-            />
-
-            <div className="flex justify-between text-[10px] text-slate-500 font-mono">
-              <span>2026</span>
-              <span>2038</span>
-              <span>2050</span>
-            </div>
-          </div>
-
-          {/* End Year Slider */}
-          <div className="space-y-3 bg-slate-900/20 p-3 rounded-lg border border-slate-800/40">
-            <div className="flex justify-between items-center">
-              <span className="text-xs font-semibold text-slate-300">End Year</span>
-              <span className="text-sm font-black text-emerald-400 font-mono">
-                {inputs.rothConversionEndYear !== undefined ? inputs.rothConversionEndYear : 2035}
-              </span>
-            </div>
-
-            <input
-              type="range"
-              min="2026"
-              max="2060"
-              step="1"
-              value={inputs.rothConversionEndYear !== undefined ? inputs.rothConversionEndYear : 2035}
-              onMouseDown={() => setIsDragging(true)}
-              onMouseUp={() => setIsDragging(false)}
-              onTouchStart={() => setIsDragging(true)}
-              onTouchEnd={() => setIsDragging(false)}
-              onChange={(e) => onUpdateConversionEndYear(Number(e.target.value))}
-              className="w-full h-1.5 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-emerald-500"
-            />
-
-            <div className="flex justify-between text-[10px] text-slate-500 font-mono">
-              <span>2026</span>
-              <span>2043</span>
-              <span>2060</span>
-            </div>
-          </div>
-
-          {/* Column 3: Flat Slider OR Dynamic Target Override Slider */}
-          {inputs.rothConversionStrategy === 'flat' ? (
-            /* Flat Annual Amount Slider */
-            <div className="space-y-3 bg-slate-900/20 p-3 rounded-lg border border-slate-800/40">
-              <div className="flex justify-between items-center">
-                <span className="text-xs font-semibold text-slate-300">Annual Target Limit</span>
-                <span className="text-sm font-black text-emerald-400 font-mono">
-                  {formatCurrency(inputs.annualRothConversion)}
-                </span>
-              </div>
-
-              <input
-                type="range"
-                min="0"
-                max="500000"
-                step="5000"
-                value={inputs.annualRothConversion}
-                onMouseDown={() => setIsDragging(true)}
-                onMouseUp={() => setIsDragging(false)}
-                onTouchStart={() => setIsDragging(true)}
-                onTouchEnd={() => setIsDragging(false)}
-                onChange={(e) => {
-                  setSelectedQuickFill(null);
-                  onUpdateConversion(Number(e.target.value));
-                }}
-                className="w-full h-1.5 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-emerald-500"
-              />
-
-              <div className="flex justify-between text-[10px] text-slate-500 font-mono">
-                <span>$0</span>
-                <span>$250k</span>
-                <span>$500k</span>
-              </div>
-            </div>
-          ) : (
-            /* Dynamic Target Override Slider */
-            <div className="space-y-3 bg-slate-900/20 p-3 rounded-lg border border-slate-800/40 flex flex-col justify-between min-h-[125px]">
-              <div className="space-y-1">
-                <div className="flex justify-between items-center">
-                  <span className="text-xs font-semibold text-slate-300">Target MAGI Ceiling</span>
-                  <span className="text-sm font-black text-emerald-400 font-mono">
-                    {formatCurrency(inputs.rothConversionTargetValue || 0)}
-                  </span>
-                </div>
-                <p className="text-[9px] text-slate-500 leading-relaxed pt-0.5">
-                  Slide to override manually, or choose brackets & cliffs from the **Quick Fills** dropdown at the top.
-                </p>
-              </div>
-
-              {/* Slider for Custom Target Value overrides */}
-              <div className="space-y-1">
-                <input
-                  type="range"
-                  min="0"
-                  max="500000"
-                  step="5000"
-                  value={inputs.rothConversionTargetValue || 0}
-                  onMouseDown={() => setIsDragging(true)}
-                  onMouseUp={() => setIsDragging(false)}
-                  onTouchStart={() => setIsDragging(true)}
-                  onTouchEnd={() => setIsDragging(false)}
-                  onChange={(e) => {
-                    setSelectedQuickFill(null); // Clear preset to show manual override is active
-                    onUpdateTargetValue(Number(e.target.value));
-                  }}
-                  className="w-full h-1.5 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-emerald-500"
-                />
-                <div className="flex justify-between text-[9px] text-slate-500 font-mono">
-                  <span>$0</span>
-                  <span>$250k</span>
-                  <span>$500k</span>
-                </div>
-              </div>
-            </div>
-          )}
-
-        </div>
       </div>
       {renderOptimizerModal()}
     </div>

@@ -19,6 +19,21 @@ export interface PortfolioBalances {
   wifeTaxableBasis: number;
 }
 
+export interface LockedReturnSequence {
+  id: string; // Unique timestamp or ID of the sequence
+  mode: 'monte-carlo' | 'historical';
+  equityReturns: number[]; // Array of 35 rates (2026 to 2060)
+  fixedIncomeReturns: number[]; // Array of 35 rates (2026 to 2060)
+}
+
+export interface MonteCarloSettings {
+  mode: 'monte-carlo' | 'historical';
+  equityVolatility: number;      // e.g. 0.15 (15%)
+  fixedIncomeVolatility: number; // e.g. 0.05 (5%)
+  correlation: number;           // e.g. 0.15
+  trials: number;                // e.g. 1000
+}
+
 export interface AppStateInputs {
   you: SpouseProfile;
   wife: SpouseProfile;
@@ -40,7 +55,10 @@ export interface AppStateInputs {
   rothConversionEndYear?: number; // Ending year for Roth conversions
   rothConversionStrategy: 'flat' | 'fill-to-target';
   rothConversionTargetValue: number | null;
+  lockedReturnSequence: LockedReturnSequence | null; // Null if using flat rates (deterministic baseline)
+  monteCarloSettings: MonteCarloSettings;
 }
+
 
 export interface SimulationResultRow {
   year: number;

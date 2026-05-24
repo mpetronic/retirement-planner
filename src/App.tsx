@@ -6,6 +6,7 @@ import { DashboardLayout } from './components/DashboardLayout';
 import { BracketMapChart } from './components/BracketMapChart';
 import { LookbackLedgerTable } from './components/LookbackLedgerTable';
 import { ClaimingMatrixGrid } from './components/ClaimingMatrixGrid';
+import { MonteCarloWorkspace } from './components/MonteCarloWorkspace';
 
 // Default initial state matching specifications
 const DEFAULT_INPUTS: AppStateInputs = {
@@ -54,14 +55,54 @@ const DEFAULT_INPUTS: AppStateInputs = {
   rothConversionEndYear: 2035,
   rothConversionStrategy: 'flat',
   rothConversionTargetValue: null,
+  lockedReturnSequence: null,
+  monteCarloSettings: {
+    mode: 'monte-carlo',
+    equityVolatility: 0.15,
+    fixedIncomeVolatility: 0.05,
+    correlation: 0.15,
+    trials: 1000,
+  },
 };
 
-// Custom hook for LocalStorage persistence
+// Custom hook for LocalStorage persistence with defensive deep merge schema protection
 function useLocalStorage<T>(key: string, initialValue: T): [T, (value: T | ((val: T) => T)) => void] {
   const [storedValue, setStoredValue] = useState<T>(() => {
     try {
       const item = window.localStorage.getItem(key);
-      return item ? JSON.parse(item) : initialValue;
+      if (item) {
+        const parsed = JSON.parse(item);
+        // Robust deep merge to ensure new Monte Carlo fields are populated for users with old saved states
+        return {
+          ...initialValue,
+          ...parsed,
+          growthAssumptions: {
+            ...(initialValue as any).growthAssumptions,
+            ...parsed.growthAssumptions,
+          },
+          you: {
+            ...(initialValue as any).you,
+            ...parsed.you,
+          },
+          wife: {
+            ...(initialValue as any).wife,
+            ...parsed.wife,
+          },
+          portfolio: {
+            ...(initialValue as any).portfolio,
+            ...parsed.portfolio,
+          },
+          jurisdiction: {
+            ...(initialValue as any).jurisdiction,
+            ...parsed.jurisdiction,
+          },
+          monteCarloSettings: {
+            ...(initialValue as any).monteCarloSettings,
+            ...parsed.monteCarloSettings,
+          },
+        };
+      }
+      return initialValue;
     } catch (error) {
       console.warn(`LocalStorage read error for key "${key}":`, error);
       return initialValue;
@@ -93,29 +134,7 @@ function App() {
     return runRetirementSimulation(inputs, simulateSurvivor);
   }, [inputs, simulateSurvivor]);
 
-  // Handle updating the Roth conversion slider target directly from Workspace 1
-  const handleUpdateConversion = (val: number) => {
-    setInputs((prev) => ({
-      ...prev,
-      annualRothConversion: val,
-    }));
-  };
-
-  // Handle updating the Roth conversion start year directly from Workspace 1
-  const handleUpdateConversionStartYear = (year: number) => {
-    setInputs((prev) => ({
-      ...prev,
-      rothConversionStartYear: year,
-    }));
-  };
-
-  // Handle updating the Roth conversion end year directly from Workspace 1
-  const handleUpdateConversionEndYear = (year: number) => {
-    setInputs((prev) => ({
-      ...prev,
-      rothConversionEndYear: year,
-    }));
-  };
+  // Conversion updates are now handled directly by the left sidebar panel inputs
 
   // Handle applying a fully optimized retirement configuration at once
   const handleApplyOptimization = (annualConversion: number, targetValue: number | null, yourAge: number, wifeAge: number) => {
@@ -175,9 +194,6 @@ function App() {
             ledger={ledger}
             inputs={inputs}
             simulateSurvivor={simulateSurvivor}
-            onUpdateConversion={handleUpdateConversion}
-            onUpdateConversionStartYear={handleUpdateConversionStartYear}
-            onUpdateConversionEndYear={handleUpdateConversionEndYear}
             onApplyOptimization={handleApplyOptimization}
             onUpdateStrategy={handleUpdateStrategy}
             onUpdateTargetValue={handleUpdateTargetValue}
@@ -197,6 +213,13 @@ function App() {
             simulateSurvivor={simulateSurvivor}
             onUpdateClaimingAges={handleUpdateClaimingAges}
             onToggleSurvivor={setSimulateSurvivor}
+          />
+        )}
+        {activeTab === 3 && (
+          <MonteCarloWorkspace
+            inputs={inputs}
+            onChangeInputs={setInputs}
+            simulateSurvivor={simulateSurvivor}
           />
         )}
       </DashboardLayout>
