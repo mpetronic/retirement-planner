@@ -281,26 +281,81 @@ export function runRetirementSimulation(
     let yourPreTaxPostRMD = Math.max(0, yourPreTax - yourRMD);
     let wifePreTaxPostRMD = Math.max(0, wifePreTax - wifeRMD);
     
-    // 3. Intentional Roth conversions (slider controlled scenario input)
+    // 3. Intentional Roth conversions (slider or strategy target controlled)
     // Only convert from traditional pre-tax balances if they exist and are greater than 0
     let yourConverted = 0;
     let wifeConverted = 0;
     
     const startYear = inputs.rothConversionStartYear !== undefined ? inputs.rothConversionStartYear : 2026;
     const endYear = inputs.rothConversionEndYear !== undefined ? inputs.rothConversionEndYear : 2035;
-    const targetConversion = (year >= startYear && year <= endYear) ? (inputs.annualRothConversion * cpiFactor) : 0;
     
-    if (!youDeceased && targetConversion > 0 && yourPreTaxPostRMD > 0) {
-      yourConverted = Math.min(targetConversion / (youDeceased ? 1 : 2), yourPreTaxPostRMD);
-      yourPreTaxPostRMD -= yourConverted;
-      yourRoth += yourConverted; // added to Roth immediately
+    let targetConversion = 0;
+    
+    if (inputs.rothConversionStrategy === 'fill-to-target' && inputs.rothConversionTargetValue !== null) {
+      if (year >= startYear && year <= endYear) {
+        const inflatedTarget = inputs.rothConversionTargetValue * cpiFactor;
+        
+        // Solve for conversion amount required to perfectly fill up to the inflated target MAGI.
+        // We use a monotonic binary search loop to resolve SS taxability dependencies.
+        let low = 0;
+        let high = Math.max(0, inflatedTarget);
+        
+        for (let step = 0; step < 15; step++) {
+          const mid = (low + high) / 2;
+          const testOtherAGI = combinedRMD + mid + activeSalaryInflow;
+          const testTaxableSS = calculateTaxableSS(combinedSS, testOtherAGI, isSurvivorActive);
+          const testMAGI = testOtherAGI + testTaxableSS;
+          
+          if (testMAGI < inflatedTarget) {
+            low = mid;
+          } else {
+            high = mid;
+          }
+        }
+        targetConversion = low;
+      }
+    } else {
+      // Flat strategy
+      targetConversion = (year >= startYear && year <= endYear) ? (inputs.annualRothConversion * cpiFactor) : 0;
     }
     
-    if (targetConversion > 0 && wifePreTaxPostRMD > 0) {
-      const wifeShare = youDeceased ? targetConversion : (targetConversion / 2);
-      wifeConverted = Math.min(wifeShare, wifePreTaxPostRMD);
-      wifePreTaxPostRMD -= wifeConverted;
-      wifeRoth += wifeConverted; // added to Roth immediately
+    if (targetConversion > 0) {
+      if (isSurvivorActive || youDeceased) {
+        wifeConverted = Math.min(targetConversion, wifePreTaxPostRMD);
+        wifePreTaxPostRMD -= wifeConverted;
+        wifeRoth += wifeConverted;
+      } else {
+        const halfTarget = targetConversion / 2;
+        
+        // Draw from husband Pre-Tax
+        const husbandDrawn = Math.min(halfTarget, yourPreTaxPostRMD);
+        yourConverted += husbandDrawn;
+        yourPreTaxPostRMD -= husbandDrawn;
+        yourRoth += husbandDrawn;
+        
+        // Draw from wife Pre-Tax
+        const wifeDrawn = Math.min(halfTarget, wifePreTaxPostRMD);
+        wifeConverted += wifeDrawn;
+        wifePreTaxPostRMD -= wifeDrawn;
+        wifeRoth += wifeDrawn;
+        
+        // Spousal remainder rollover: if one spouse ran out of pre-tax assets, draw the rest from the other
+        const totalDrawn = husbandDrawn + wifeDrawn;
+        const remainder = targetConversion - totalDrawn;
+        if (remainder > 0.01) {
+          if (yourPreTaxPostRMD > 0) {
+            const extra = Math.min(remainder, yourPreTaxPostRMD);
+            yourConverted += extra;
+            yourPreTaxPostRMD -= extra;
+            yourRoth += extra;
+          } else if (wifePreTaxPostRMD > 0) {
+            const extra = Math.min(remainder, wifePreTaxPostRMD);
+            wifeConverted += extra;
+            wifePreTaxPostRMD -= extra;
+            wifeRoth += extra;
+          }
+        }
+      }
     }
     
     const combinedRothConversion = yourConverted + wifeConverted;

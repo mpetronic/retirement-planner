@@ -38,6 +38,8 @@ export interface AppStateInputs {
   annualRothConversion: number; // Custom conversion slider input
   rothConversionStartYear?: number; // Starting year for Roth conversions
   rothConversionEndYear?: number; // Ending year for Roth conversions
+  rothConversionStrategy: 'flat' | 'fill-to-target';
+  rothConversionTargetValue: number | null;
 }
 
 export interface SimulationResultRow {

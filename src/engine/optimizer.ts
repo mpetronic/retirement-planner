@@ -3,6 +3,7 @@ import { runRetirementSimulation } from './simulationEngine';
 
 export interface OptimizationResult {
   bestAnnualRothConversion: number;
+  bestTargetValue: number | null;
   bestYourSSAge: number;
   bestWifeSSAge: number;
   metricValue: number;
@@ -17,7 +18,7 @@ export interface OptimizationResult {
 export type OptimizationGoal = 'min_taxes' | 'max_portfolio' | 'min_surcharges' | 'max_roth';
 
 /**
- * Sweeps the entire 3D input parameter grid (Roth conversions x Your SS Claim Age x Spouse SS Claim Age)
+ * Sweeps the entire 3D input parameter grid (Roth conversions/targets x Your SS Claim Age x Spouse SS Claim Age)
  * to locate the optimal retirement scenario for a specific goal.
  */
 export function optimizeRetirementScenario(
@@ -25,7 +26,10 @@ export function optimizeRetirementScenario(
   goal: OptimizationGoal,
   simulateSurvivor: boolean
 ): OptimizationResult {
+  const isFillToTarget = inputs.rothConversionStrategy === 'fill-to-target';
+
   let bestAnnualRothConversion = inputs.annualRothConversion;
+  let bestTargetValue = inputs.rothConversionTargetValue;
   let bestYourSSAge = inputs.you.targetSSClaimingAge;
   let bestWifeSSAge = inputs.wife.targetSSClaimingAge;
 
@@ -33,22 +37,24 @@ export function optimizeRetirementScenario(
   let bestEndingEstate = -Infinity; // Secondary metric tie-breaker
   let bestResultDetails: OptimizationResult['details'] | null = null;
 
-  // Search ranges
-  const rothConversionChoices: number[] = [];
+  // Search ranges for either flat annual conversion or target MAGI limit
+  const rothChoices: number[] = [];
   for (let amt = 0; amt <= 400000; amt += 5000) {
-    rothConversionChoices.push(amt);
+    rothChoices.push(amt);
   }
 
   const yourAgeChoices = [62, 63, 64, 65, 66, 67, 68, 69, 70];
   const wifeAgeChoices = [62, 63, 64, 65, 66, 67, 68, 69, 70];
 
-  for (const annualConversion of rothConversionChoices) {
+  for (const choiceValue of rothChoices) {
     for (const yourAge of yourAgeChoices) {
       for (const wifeAge of wifeAgeChoices) {
         // Construct hypothetical inputs
         const testInputs: AppStateInputs = {
           ...inputs,
-          annualRothConversion: annualConversion,
+          rothConversionStrategy: inputs.rothConversionStrategy,
+          annualRothConversion: isFillToTarget ? inputs.annualRothConversion : choiceValue,
+          rothConversionTargetValue: isFillToTarget ? choiceValue : inputs.rothConversionTargetValue,
           you: {
             ...inputs.you,
             targetSSClaimingAge: yourAge,
@@ -91,7 +97,6 @@ export function optimizeRetirementScenario(
           if (score > bestScore) {
             isBetter = true;
           } else if (score === bestScore) {
-            // Secondary tie-breaker: maximize total estate
             if (endingEstate > bestEndingEstate) {
               isBetter = true;
             }
@@ -101,7 +106,6 @@ export function optimizeRetirementScenario(
           if (score < bestScore) {
             isBetter = true;
           } else if (score === bestScore) {
-            // Secondary tie-breaker: maximize total estate
             if (endingEstate > bestEndingEstate) {
               isBetter = true;
             }
@@ -111,7 +115,11 @@ export function optimizeRetirementScenario(
         if (isBetter) {
           bestScore = score;
           bestEndingEstate = endingEstate;
-          bestAnnualRothConversion = annualConversion;
+          if (isFillToTarget) {
+            bestTargetValue = choiceValue;
+          } else {
+            bestAnnualRothConversion = choiceValue;
+          }
           bestYourSSAge = yourAge;
           bestWifeSSAge = wifeAge;
           bestResultDetails = {
@@ -127,6 +135,7 @@ export function optimizeRetirementScenario(
 
   return {
     bestAnnualRothConversion,
+    bestTargetValue,
     bestYourSSAge,
     bestWifeSSAge,
     metricValue: bestScore,

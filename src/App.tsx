@@ -52,6 +52,8 @@ const DEFAULT_INPUTS: AppStateInputs = {
   annualRothConversion: 50000,
   rothConversionStartYear: 2026,
   rothConversionEndYear: 2035,
+  rothConversionStrategy: 'flat',
+  rothConversionTargetValue: null,
 };
 
 // Custom hook for LocalStorage persistence
@@ -113,12 +115,29 @@ function App() {
   };
 
   // Handle applying a fully optimized retirement configuration at once
-  const handleApplyOptimization = (annualConversion: number, yourAge: number, wifeAge: number) => {
+  const handleApplyOptimization = (annualConversion: number, targetValue: number | null, yourAge: number, wifeAge: number) => {
     setInputs({
       ...inputs,
       annualRothConversion: annualConversion,
+      rothConversionTargetValue: targetValue,
       you: { ...inputs.you, targetSSClaimingAge: yourAge },
       wife: { ...inputs.wife, targetSSClaimingAge: wifeAge },
+    });
+  };
+
+  // Handle changing conversion strategy
+  const handleUpdateStrategy = (strategy: 'flat' | 'fill-to-target') => {
+    setInputs({
+      ...inputs,
+      rothConversionStrategy: strategy,
+    });
+  };
+
+  // Handle changing target MAGI threshold limit
+  const handleUpdateTargetValue = (val: number | null) => {
+    setInputs({
+      ...inputs,
+      rothConversionTargetValue: val,
     });
   };
 
@@ -157,6 +176,8 @@ function App() {
             onUpdateConversionStartYear={handleUpdateConversionStartYear}
             onUpdateConversionEndYear={handleUpdateConversionEndYear}
             onApplyOptimization={handleApplyOptimization}
+            onUpdateStrategy={handleUpdateStrategy}
+            onUpdateTargetValue={handleUpdateTargetValue}
           />
         )}
         {activeTab === 1 && (

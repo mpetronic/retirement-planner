@@ -35,7 +35,9 @@ interface BracketMapChartProps {
   onUpdateConversion: (val: number) => void;
   onUpdateConversionStartYear: (year: number) => void;
   onUpdateConversionEndYear: (year: number) => void;
-  onApplyOptimization: (annualConversion: number, yourAge: number, wifeAge: number) => void;
+  onApplyOptimization: (annualConversion: number, targetValue: number | null, yourAge: number, wifeAge: number) => void;
+  onUpdateStrategy: (strategy: 'flat' | 'fill-to-target') => void;
+  onUpdateTargetValue: (val: number | null) => void;
 }
 
 export const BracketMapChart: React.FC<BracketMapChartProps> = ({
@@ -46,6 +48,8 @@ export const BracketMapChart: React.FC<BracketMapChartProps> = ({
   onUpdateConversionStartYear,
   onUpdateConversionEndYear,
   onApplyOptimization,
+  onUpdateStrategy,
+  onUpdateTargetValue,
 }) => {
   const [isDragging, setIsDragging] = useState(false);
   const [selectedQuickFill, setSelectedQuickFill] = useState<number | null>(null);
@@ -67,14 +71,15 @@ export const BracketMapChart: React.FC<BracketMapChartProps> = ({
 
   // Dynamic selected quick-fill guideline line calculator
   const quickFillLineData = useMemo(() => {
-    if (!selectedQuickFill) return null;
+    const activeTarget = selectedQuickFill || (inputs.rothConversionStrategy === 'fill-to-target' ? inputs.rothConversionTargetValue : null);
+    if (!activeTarget) return null;
 
     let jointBase = 0;
     let singleBase = 0;
     let label = '';
     let color = 'rgba(16, 185, 129, 0.9)'; // default emerald
 
-    switch (selectedQuickFill) {
+    switch (activeTarget) {
       case 57000:
         jointBase = 57000; singleBase = 28500; label = "Top of 10% Fed Bracket"; color = 'rgba(244, 63, 94, 0.9)';
         break;
@@ -94,22 +99,32 @@ export const BracketMapChart: React.FC<BracketMapChartProps> = ({
         jointBase = 800900; singleBase = 656700; label = "Top of 35% Fed Bracket"; color = 'rgba(239, 68, 68, 0.9)';
         break;
       case 217999:
+      case 218000:
         jointBase = 218000; singleBase = 109000; label = "IRMAA Tier 1 Cliff"; color = 'rgba(16, 185, 129, 0.9)';
         break;
       case 273999:
+      case 274000:
         jointBase = 274000; singleBase = 137000; label = "IRMAA Tier 2 Cliff"; color = 'rgba(245, 158, 11, 0.9)';
         break;
       case 341999:
+      case 342000:
         jointBase = 342000; singleBase = 171000; label = "IRMAA Tier 3 Cliff"; color = 'rgba(59, 130, 246, 0.9)';
         break;
       case 409999:
+      case 410000:
         jointBase = 410000; singleBase = 205000; label = "IRMAA Tier 4 Cliff"; color = 'rgba(236, 72, 153, 0.9)';
         break;
       case 749999:
+      case 750000:
         jointBase = 750000; singleBase = 375000; label = "IRMAA Tier 5 Cliff"; color = 'rgba(239, 68, 68, 0.9)';
         break;
       default:
-        return null;
+        // Draw custom guideline
+        jointBase = activeTarget;
+        singleBase = activeTarget / 2;
+        label = `Target MAGI Limit ($${activeTarget.toLocaleString()})`;
+        color = 'rgba(14, 165, 233, 0.9)'; // sky-500
+        break;
     }
 
     const dataPoints = ledger.map((r) => {
@@ -553,6 +568,7 @@ export const BracketMapChart: React.FC<BracketMapChartProps> = ({
                 onClick={() => {
                   onApplyOptimization(
                     optimizationResult.bestAnnualRothConversion,
+                    optimizationResult.bestTargetValue,
                     optimizationResult.bestYourSSAge,
                     optimizationResult.bestWifeSSAge
                   );
@@ -609,7 +625,11 @@ export const BracketMapChart: React.FC<BracketMapChartProps> = ({
                 const valNum = val === "" ? null : Number(val);
                 setSelectedQuickFill(valNum);
                 if (valNum !== null && valNum > 0) {
-                  handleFillToTarget(valNum);
+                  onUpdateStrategy('fill-to-target');
+                  onUpdateTargetValue(valNum);
+                } else {
+                  onUpdateStrategy('flat');
+                  onUpdateTargetValue(null);
                 }
               }
             }}
@@ -647,8 +667,46 @@ export const BracketMapChart: React.FC<BracketMapChartProps> = ({
       </div>
 
       {/* Slider Control */}
-      <div className="p-5 bg-slate-950/60 rounded-xl border border-slate-800 space-y-4">
-        <h4 className="text-xs font-bold text-slate-400 uppercase tracking-wider">Manual Roth Conversion Plan</h4>
+      <div className="p-5 bg-slate-950/60 rounded-xl border border-slate-800 space-y-5">
+        
+        {/* Strategy Tab Selector */}
+        <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center border-b border-slate-800/60 pb-3 gap-3">
+          <div>
+            <h4 className="text-xs font-bold text-slate-400 uppercase tracking-wider">Roth Conversion Strategy Planning</h4>
+            <p className="text-[10px] text-slate-500">Choose between flat annual conversion amounts or dynamic ceiling bracket targets</p>
+          </div>
+          <div className="flex bg-slate-900 p-0.5 rounded-xl border border-slate-800">
+            <button
+              onClick={() => {
+                onUpdateStrategy('flat');
+                onUpdateTargetValue(null);
+              }}
+              className={`text-[10px] px-3.5 py-1.5 rounded-lg font-bold transition-all ${
+                inputs.rothConversionStrategy === 'flat'
+                  ? 'bg-emerald-500 text-slate-950 shadow'
+                  : 'text-slate-400 hover:text-slate-200'
+              }`}
+            >
+              Flat Annual Target
+            </button>
+            <button
+              onClick={() => {
+                onUpdateStrategy('fill-to-target');
+                if (inputs.rothConversionTargetValue === null) {
+                  onUpdateTargetValue(133000); // default to 12% bracket
+                }
+              }}
+              className={`text-[10px] px-3.5 py-1.5 rounded-lg font-bold transition-all ${
+                inputs.rothConversionStrategy === 'fill-to-target'
+                  ? 'bg-emerald-500 text-slate-950 shadow'
+                  : 'text-slate-400 hover:text-slate-200'
+              }`}
+            >
+              Dynamic Fill-to-Target
+            </button>
+          </div>
+        </div>
+
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6 items-start">
           {/* Start Year Slider */}
           <div className="space-y-3 bg-slate-900/20 p-3 rounded-lg border border-slate-800/40">
@@ -710,39 +768,98 @@ export const BracketMapChart: React.FC<BracketMapChartProps> = ({
             </div>
           </div>
 
-          {/* Annual Amount Slider */}
-          <div className="space-y-3 bg-slate-900/20 p-3 rounded-lg border border-slate-800/40">
-            <div className="flex justify-between items-center">
-              <span className="text-xs font-semibold text-slate-300">Annual Target</span>
-              <span className="text-sm font-black text-emerald-400 font-mono">
-                {new Intl.NumberFormat('en-US', {
-                  style: 'currency',
-                  currency: 'USD',
-                  maximumFractionDigits: 0,
-                }).format(inputs.annualRothConversion)}
-              </span>
-            </div>
+          {/* Column 3: Flat Slider OR Target Presets + Target Slider */}
+          {inputs.rothConversionStrategy === 'flat' ? (
+            /* Flat Annual Amount Slider */
+            <div className="space-y-3 bg-slate-900/20 p-3 rounded-lg border border-slate-800/40">
+              <div className="flex justify-between items-center">
+                <span className="text-xs font-semibold text-slate-300">Annual Target</span>
+                <span className="text-sm font-black text-emerald-400 font-mono">
+                  {formatCurrency(inputs.annualRothConversion)}
+                </span>
+              </div>
 
-            <input
-              type="range"
-              min="0"
-              max="500000"
-              step="5000"
-              value={inputs.annualRothConversion}
-              onMouseDown={() => setIsDragging(true)}
-              onMouseUp={() => setIsDragging(false)}
-              onTouchStart={() => setIsDragging(true)}
-              onTouchEnd={() => setIsDragging(false)}
-              onChange={(e) => onUpdateConversion(Number(e.target.value))}
-              className="w-full h-1.5 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-emerald-500"
-            />
+              <input
+                type="range"
+                min="0"
+                max="500000"
+                step="5000"
+                value={inputs.annualRothConversion}
+                onMouseDown={() => setIsDragging(true)}
+                onMouseUp={() => setIsDragging(false)}
+                onTouchStart={() => setIsDragging(true)}
+                onTouchEnd={() => setIsDragging(false)}
+                onChange={(e) => onUpdateConversion(Number(e.target.value))}
+                className="w-full h-1.5 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-emerald-500"
+              />
 
-            <div className="flex justify-between text-[10px] text-slate-500 font-mono">
-              <span>$0</span>
-              <span>$250k</span>
-              <span>$500k</span>
+              <div className="flex justify-between text-[10px] text-slate-500 font-mono">
+                <span>$0</span>
+                <span>$250k</span>
+                <span>$500k</span>
+              </div>
             </div>
-          </div>
+          ) : (
+            /* Fill-To-Target Dropdown Preset & Target Slider */
+            <div className="space-y-3 bg-slate-900/20 p-3 rounded-lg border border-slate-800/40 flex flex-col justify-between min-h-[125px]">
+              <div className="space-y-1.5">
+                <div className="flex justify-between items-center">
+                  <span className="text-xs font-semibold text-slate-300">MAGI Target Presets</span>
+                  <span className="text-xs font-black text-emerald-400 font-mono">
+                    {formatCurrency(inputs.rothConversionTargetValue || 0)}
+                  </span>
+                </div>
+                <select
+                  value={inputs.rothConversionTargetValue !== null ? inputs.rothConversionTargetValue : ""}
+                  onChange={(e) => {
+                    const val = e.target.value === "" ? null : Number(e.target.value);
+                    onUpdateTargetValue(val);
+                  }}
+                  className="w-full text-xs font-semibold px-2 py-1.5 bg-slate-900 text-slate-100 border border-slate-800 rounded-lg focus:outline-none focus:border-emerald-500 cursor-pointer"
+                >
+                  <option value="">Custom Dollar Limit</option>
+                  <optgroup label="Federal Brackets (MFJ)">
+                    <option value={57000}>Top of 10% Bracket ($57,000)</option>
+                    <option value={133000}>Top of 12% Bracket ($133,000)</option>
+                    <option value={243600}>Top of 22% Bracket ($243,600)</option>
+                    <option value={435750}>Top of 24% Bracket ($435,750)</option>
+                    <option value={544650}>Top of 32% Bracket ($544,650)</option>
+                    <option value={800900}>Top of 35% Bracket ($800,900)</option>
+                  </optgroup>
+                  <optgroup label="Medicare IRMAA Cliffs">
+                    <option value={217999}>Tier 1 Cliff ($217,999)</option>
+                    <option value={273999}>Tier 2 Cliff ($273,999)</option>
+                    <option value={341999}>Tier 3 Cliff ($341,999)</option>
+                    <option value={409999}>Tier 4 Cliff ($409,999)</option>
+                    <option value={749999}>Tier 5 Cliff ($749,999)</option>
+                  </optgroup>
+                </select>
+              </div>
+
+              {/* Slider for Custom Target Value overrides */}
+              <div className="space-y-1">
+                <input
+                  type="range"
+                  min="0"
+                  max="500000"
+                  step="5000"
+                  value={inputs.rothConversionTargetValue || 0}
+                  onMouseDown={() => setIsDragging(true)}
+                  onMouseUp={() => setIsDragging(false)}
+                  onTouchStart={() => setIsDragging(true)}
+                  onTouchEnd={() => setIsDragging(false)}
+                  onChange={(e) => onUpdateTargetValue(Number(e.target.value))}
+                  className="w-full h-1 bg-slate-800 rounded appearance-none cursor-pointer accent-emerald-500"
+                />
+                <div className="flex justify-between text-[9px] text-slate-500 font-mono">
+                  <span>$0</span>
+                  <span>$250k</span>
+                  <span>$500k</span>
+                </div>
+              </div>
+            </div>
+          )}
+
         </div>
       </div>
       {renderOptimizerModal()}
