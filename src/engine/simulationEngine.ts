@@ -295,24 +295,9 @@ export function runRetirementSimulation(
       if (year >= startYear && year <= endYear) {
         const inflatedTarget = inputs.rothConversionTargetValue * cpiFactor;
         
-        // Solve for conversion amount required to perfectly fill up to the inflated target MAGI.
-        // We use a monotonic binary search loop to resolve SS taxability dependencies.
-        let low = 0;
-        let high = Math.max(0, inflatedTarget);
-        
-        for (let step = 0; step < 15; step++) {
-          const mid = (low + high) / 2;
-          const testOtherAGI = combinedRMD + mid + activeSalaryInflow;
-          const testTaxableSS = calculateTaxableSS(combinedSS, testOtherAGI, isSurvivorActive);
-          const testMAGI = testOtherAGI + testTaxableSS;
-          
-          if (testMAGI < inflatedTarget) {
-            low = mid;
-          } else {
-            high = mid;
-          }
-        }
-        targetConversion = low;
+        // Stack uncontrollable incomes first, then convert the remaining space up to the target fill limit.
+        const uncontrollable = activeSalaryInflow + combinedSS + combinedRMD;
+        targetConversion = Math.max(0, inflatedTarget - uncontrollable);
       }
     } else {
       // Flat strategy
