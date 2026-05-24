@@ -14,12 +14,16 @@ const DEFAULT_INPUTS: AppStateInputs = {
     birthDate: '1960-06-27',
     estimatedPIA: 3000,
     targetSSClaimingAge: 67,
+    plannedRetirementAge: 67,
+    activeSalary: 150000,
   },
   wife: {
     name: 'Spouse',
     birthDate: '1964-03-11',
     estimatedPIA: 2800,
     targetSSClaimingAge: 67,
+    plannedRetirementAge: 65,
+    activeSalary: 100000,
   },
   portfolio: {
     yourPreTaxIRA: 1200000,

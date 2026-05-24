@@ -185,6 +185,26 @@ export function runRetirementSimulation(
     // Spouse ages in this calendar year
     const yourAge = year - 1960;
     const wifeAge = year - 1964;
+
+    // Active Salaries pre-retirement calculations
+    let yourSalary = 0;
+    let wifeSalary = 0;
+    
+    if (!(simulateSurvivor && (year >= DEATH_YEAR))) {
+      const youRetireAge = inputs.you.plannedRetirementAge !== undefined ? inputs.you.plannedRetirementAge : 67;
+      if (yourAge < youRetireAge) {
+        const baseSalary = inputs.you.activeSalary !== undefined ? inputs.you.activeSalary : 0;
+        yourSalary = baseSalary * cpiFactor;
+      }
+    }
+    
+    const wifeRetireAge = inputs.wife.plannedRetirementAge !== undefined ? inputs.wife.plannedRetirementAge : 65;
+    if (wifeAge < wifeRetireAge) {
+      const baseSalary = inputs.wife.activeSalary !== undefined ? inputs.wife.activeSalary : 0;
+      wifeSalary = baseSalary * cpiFactor;
+    }
+    
+    const activeSalaryInflow = yourSalary + wifeSalary;
     
     // Survivor state determination
     const isSurvivorActive = simulateSurvivor && (year >= DEATH_YEAR);
@@ -292,7 +312,7 @@ export function runRetirementSimulation(
     } else {
       // Fallback: use first-year MAGI to establish immediate realistic surcharges
       // We will estimate the first year's baseline MAGI
-      const estOtherAGI = combinedSS * 0.85 + combinedRMD + combinedRothConversion;
+      const estOtherAGI = combinedSS * 0.85 + combinedRMD + combinedRothConversion + activeSalaryInflow;
       magiTwoYearsAgo = estOtherAGI;
     }
     
@@ -401,8 +421,8 @@ export function runRetirementSimulation(
       // Outflows: Living Expenses + Base Medicare + Medicare Surcharges + Current estimated Tax Bill
       const totalOutflows = livingExpenses + medicareBasePremiums + combinedSurchargeAnnual + totalTaxBill;
       
-      // Inflow: Social Security (forced inflows) + forced RMD (forced inflows)
-      const baseInflows = combinedSS + combinedRMD;
+      // Inflow: Social Security (forced inflows) + forced RMD (forced inflows) + Active Salary (forced pre-retirement inflows)
+      const baseInflows = combinedSS + combinedRMD + activeSalaryInflow;
       
       let deficit = totalOutflows - baseInflows;
       
@@ -477,8 +497,8 @@ export function runRetirementSimulation(
       const totalTaxablePreTaxDraw = combinedRMD + combinedRothConversion + drawdownPreTax;
       
       // SS Taxability based on AGI excluding SS + 50% of SS
-      // Other AGI includes traditional withdrawals, RMD, capital gains, conversions
-      const otherAGI = totalTaxablePreTaxDraw + capitalGainsTriggered;
+      // Other AGI includes traditional withdrawals, RMD, capital gains, conversions, active salaries
+      const otherAGI = totalTaxablePreTaxDraw + capitalGainsTriggered + activeSalaryInflow;
       const taxableSS = calculateTaxableSS(combinedSS, otherAGI, isSurvivorActive);
       
       const fedAGI = otherAGI + taxableSS;
@@ -530,7 +550,7 @@ export function runRetirementSimulation(
     const totalPortfolioValue = yourTaxable + yourPreTax + yourRoth + wifeTaxable + wifePreTax + wifeRoth;
     
     // Compute total actual inflows, MAGI, and other ledger parameters
-    const finalOtherAGI = combinedRMD + combinedRothConversion + drawdownPreTax + capitalGainsTriggered;
+    const finalOtherAGI = combinedRMD + combinedRothConversion + drawdownPreTax + capitalGainsTriggered + activeSalaryInflow;
     const finalTaxableSS = calculateTaxableSS(combinedSS, finalOtherAGI, isSurvivorActive);
     const finalFedAGI = finalOtherAGI + finalTaxableSS;
     
@@ -538,7 +558,7 @@ export function runRetirementSimulation(
     const magi = finalFedAGI;
     
     const totalExpenses = livingExpenses + fedIncomeTax + stateIncomeTax + medicareBasePremiums + combinedSurchargeAnnual;
-    const incomeInflow = combinedSS + combinedRMD;
+    const incomeInflow = combinedSS + combinedRMD + activeSalaryInflow;
     const deficit = Math.max(0, totalExpenses - incomeInflow);
     
     ledger.push({
@@ -549,6 +569,8 @@ export function runRetirementSimulation(
       wifeSS,
       yourRMD,
       wifeRMD,
+      yourSalary,
+      wifeSalary,
       capitalGainsTriggered,
       intentionalRothConversion: combinedRothConversion,
       otherTaxableIncome: drawdownPreTax,

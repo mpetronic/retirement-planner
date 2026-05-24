@@ -13,7 +13,7 @@ import {
   Filler
 } from 'chart.js';
 import { SimulationResultRow, AppStateInputs } from '../types';
-import { DollarSign, ShieldAlert, Award } from 'lucide-react';
+import { Award } from 'lucide-react';
 
 ChartJS.register(
   CategoryScale,
@@ -47,6 +47,7 @@ export const BracketMapChart: React.FC<BracketMapChartProps> = ({
   const rmds = useMemo(() => ledger.map((r) => r.yourRMD + r.wifeRMD), [ledger]);
   const drawdowns = useMemo(() => ledger.map((r) => r.drawdownPreTax + r.drawdownTaxable + r.capitalGainsTriggered), [ledger]);
   const rothConversions = useMemo(() => ledger.map((r) => r.intentionalRothConversion), [ledger]);
+  const activeSalaries = useMemo(() => ledger.map((r) => (r.yourSalary || 0) + (r.wifeSalary || 0)), [ledger]);
 
   // Guidelines lines (sloping upwards with inflation)
   const fed12PercentLine = useMemo(() => {
@@ -82,6 +83,13 @@ export const BracketMapChart: React.FC<BracketMapChartProps> = ({
     return {
       labels: years.map(String),
       datasets: [
+        {
+          label: 'Active Salaries',
+          data: activeSalaries,
+          backgroundColor: '#8b5cf6', // violet-500
+          stack: 'income',
+          order: 5,
+        },
         {
           label: 'Social Security',
           data: ssIncomes,
@@ -144,7 +152,7 @@ export const BracketMapChart: React.FC<BracketMapChartProps> = ({
         },
       ],
     };
-  }, [years, ssIncomes, rmds, drawdowns, rothConversions, fed12PercentLine, irmaaCliff1Line, irmaaCliff2Line]);
+  }, [years, activeSalaries, ssIncomes, rmds, drawdowns, rothConversions, fed12PercentLine, irmaaCliff1Line, irmaaCliff2Line]);
 
   const chartOptions = useMemo(() => {
     return {
@@ -219,28 +227,14 @@ export const BracketMapChart: React.FC<BracketMapChartProps> = ({
     };
   }, [isDragging]);
 
-  // Macro 1: Fill to Top of 12% Federal Bracket
-  const handleFill12Percent = () => {
-    // Top of 12% bracket MFJ is $94,300 + Standard Deduction ($27,700) = $122,000 in 2026.
-    // Let's compute base income (SS + RMD) in 2026
-    const baseSS = ssIncomes[0];
-    const baseRMD = rmds[0];
-    const totalBase = baseSS + baseRMD;
+  // Generic quick-fill conversion target handler
+  const handleFillToTarget = (limitValue: number) => {
+    const baseSS = ssIncomes[0] || 0;
+    const baseRMD = rmds[0] || 0;
+    const baseSalary = activeSalaries[0] || 0;
+    const totalBase = baseSS + baseRMD + baseSalary;
     
-    const limit = 122000;
-    const gap = Math.max(0, limit - totalBase);
-    onUpdateConversion(gap);
-  };
-
-  // Macro 2: Fill to $1 Below Nearest IRMAA Surcharge Cliff
-  const handleFillIRMAA = () => {
-    // 2026 IRMAA Tier 1 Cliff is $218,000
-    const baseSS = ssIncomes[0];
-    const baseRMD = rmds[0];
-    const totalBase = baseSS + baseRMD;
-    
-    const limit = 218000;
-    const gap = Math.max(0, limit - totalBase - 1);
+    const gap = Math.max(0, limitValue - totalBase);
     onUpdateConversion(gap);
   };
 
@@ -258,22 +252,34 @@ export const BracketMapChart: React.FC<BracketMapChartProps> = ({
           </p>
         </div>
 
-        {/* Macro Toggles */}
-        <div className="flex gap-2">
-          <button
-            onClick={handleFill12Percent}
-            className="text-xs font-semibold px-3 py-2 bg-blue-600/20 text-blue-400 border border-blue-500/30 rounded-xl hover:bg-blue-600/30 transition-all flex items-center gap-1.5"
+        {/* Unified Quick-Fill Optimization Targets Dropdown */}
+        <div className="flex items-center gap-2">
+          <span className="text-xs text-slate-400 font-semibold uppercase tracking-wider">Quick Fills:</span>
+          <select
+            onChange={(e) => {
+              const val = Number(e.target.value);
+              if (val > 0) handleFillToTarget(val);
+            }}
+            defaultValue=""
+            className="text-xs font-semibold px-3 py-2 bg-slate-900 text-slate-100 border border-slate-800 rounded-xl hover:border-slate-600 focus:outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 transition-all cursor-pointer"
           >
-            <DollarSign className="w-3.5 h-3.5" />
-            Fill to Top of 12% Bracket
-          </button>
-          <button
-            onClick={handleFillIRMAA}
-            className="text-xs font-semibold px-3 py-2 bg-emerald-600/20 text-emerald-400 border border-emerald-500/30 rounded-xl hover:bg-emerald-600/30 transition-all flex items-center gap-1.5"
-          >
-            <ShieldAlert className="w-3.5 h-3.5" />
-            Fill to $1 Below IRMAA Cliff
-          </button>
+            <option value="" disabled>Select Optimization Target...</option>
+            <optgroup label="Federal Tax Brackets (MFJ)">
+              <option value={50900}>Fill to Top of 10% Bracket ($50,900)</option>
+              <option value={122000}>Fill to Top of 12% Bracket ($122,000)</option>
+              <option value={228750}>Fill to Top of 22% Bracket ($228,750)</option>
+              <option value={411600}>Fill to Top of 24% Bracket ($411,600)</option>
+              <option value={515150}>Fill to Top of 32% Bracket ($515,150)</option>
+              <option value={758900}>Fill to Top of 35% Bracket ($758,900)</option>
+            </optgroup>
+            <optgroup label="Medicare IRMAA Cliffs ($1 Below Cliff)">
+              <option value={217999}>Fill to $1 Below Tier 1 Cliff ($217,999)</option>
+              <option value={273999}>Fill to $1 Below Tier 2 Cliff ($273,999)</option>
+              <option value={341999}>Fill to $1 Below Tier 3 Cliff ($341,999)</option>
+              <option value={409999}>Fill to $1 Below Tier 4 Cliff ($409,999)</option>
+              <option value={749999}>Fill to $1 Below Tier 5 Cliff ($749,999)</option>
+            </optgroup>
+          </select>
         </div>
       </div>
 

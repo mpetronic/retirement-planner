@@ -3,6 +3,8 @@ export interface SpouseProfile {
   birthDate: string; // YYYY-MM-DD
   estimatedPIA: number; // Primary Insurance Amount at Full Retirement Age (FRA)
   targetSSClaimingAge: number; // Claiming age (62 to 70)
+  plannedRetirementAge?: number; // Planned retirement age (55 to 75)
+  activeSalary?: number; // Pre-retirement annual active salary
 }
 
 export interface PortfolioBalances {
@@ -47,6 +49,8 @@ export interface SimulationResultRow {
   wifeSS: number;
   yourRMD: number;
   wifeRMD: number;
+  yourSalary?: number; // Pre-retirement annual active salary earned
+  wifeSalary?: number; // Pre-retirement annual active salary earned
   capitalGainsTriggered: number;
   intentionalRothConversion: number;
   otherTaxableIncome: number; // Placeholder if needed

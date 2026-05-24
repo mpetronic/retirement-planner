@@ -148,6 +148,40 @@ export const InputControlSidebar: React.FC<InputControlSidebarProps> = ({
                 <span>70 (Max)</span>
               </div>
             </div>
+
+            {/* Planned Retirement & Active Salary side-by-side */}
+            <div className="grid grid-cols-2 gap-3 pt-1 border-t border-slate-800/30">
+              <div className="space-y-1">
+                <label className="text-[10px] text-slate-400 font-bold uppercase tracking-wider flex justify-between block truncate">
+                  <span>Retire Age</span>
+                  <span className="text-emerald-400 font-mono font-semibold">Age {inputs.you.plannedRetirementAge || 67}</span>
+                </label>
+                <input
+                  type="range"
+                  min="55"
+                  max="75"
+                  step="1"
+                  value={inputs.you.plannedRetirementAge || 67}
+                  onChange={(e) => updateNestedState('you', 'plannedRetirementAge', Number(e.target.value))}
+                  className="w-full h-1 bg-slate-800 rounded appearance-none cursor-pointer accent-emerald-500"
+                />
+              </div>
+              <div className="space-y-1">
+                <label className="text-[10px] text-slate-400 font-bold uppercase tracking-wider flex justify-between block truncate">
+                  <span>Active Salary</span>
+                  <span className="text-slate-200 font-mono font-semibold">{formatCurrency(inputs.you.activeSalary || 0)}</span>
+                </label>
+                <input
+                  type="range"
+                  min="0"
+                  max="300000"
+                  step="5000"
+                  value={inputs.you.activeSalary || 0}
+                  onChange={(e) => updateNestedState('you', 'activeSalary', Number(e.target.value))}
+                  className="w-full h-1 bg-slate-800 rounded appearance-none cursor-pointer accent-emerald-500"
+                />
+              </div>
+            </div>
           </div>
 
           {/* Wife Profile */}
@@ -221,6 +255,40 @@ export const InputControlSidebar: React.FC<InputControlSidebarProps> = ({
                 <span>62 (Reduced)</span>
                 <span>67 (FRA)</span>
                 <span>70 (Max)</span>
+              </div>
+            </div>
+
+            {/* Planned Retirement & Active Salary side-by-side */}
+            <div className="grid grid-cols-2 gap-3 pt-1 border-t border-slate-800/30">
+              <div className="space-y-1">
+                <label className="text-[10px] text-slate-400 font-bold uppercase tracking-wider flex justify-between block truncate">
+                  <span>Retire Age</span>
+                  <span className="text-emerald-400 font-mono font-semibold">Age {inputs.wife.plannedRetirementAge || 65}</span>
+                </label>
+                <input
+                  type="range"
+                  min="55"
+                  max="75"
+                  step="1"
+                  value={inputs.wife.plannedRetirementAge || 65}
+                  onChange={(e) => updateNestedState('wife', 'plannedRetirementAge', Number(e.target.value))}
+                  className="w-full h-1 bg-slate-800 rounded appearance-none cursor-pointer accent-emerald-500"
+                />
+              </div>
+              <div className="space-y-1">
+                <label className="text-[10px] text-slate-400 font-bold uppercase tracking-wider flex justify-between block truncate">
+                  <span>Active Salary</span>
+                  <span className="text-slate-200 font-mono font-semibold">{formatCurrency(inputs.wife.activeSalary || 0)}</span>
+                </label>
+                <input
+                  type="range"
+                  min="0"
+                  max="300000"
+                  step="5000"
+                  value={inputs.wife.activeSalary || 0}
+                  onChange={(e) => updateNestedState('wife', 'activeSalary', Number(e.target.value))}
+                  className="w-full h-1 bg-slate-800 rounded appearance-none cursor-pointer accent-emerald-500"
+                />
               </div>
             </div>
           </div>
