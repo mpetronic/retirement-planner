@@ -193,6 +193,21 @@ export const BracketMapChart: React.FC<BracketMapChartProps> = ({
         order: -1,
         pointStyle: 'circle',
         stack: 'line-portfolio',
+      },
+      // BOLD Line for Total Annual Expenses on primary Y-axis
+      {
+        label: 'Total Annual Expenses',
+        data: ledger.map((r) => r.totalExpenses),
+        type: 'line' as const,
+        borderColor: '#f43f5e', // rose-500 representing expenses/outflows
+        borderWidth: 3,
+        pointRadius: 2,
+        pointHoverRadius: 4,
+        fill: false,
+        yAxisID: 'y',
+        order: -2,
+        pointStyle: 'triangle',
+        stack: 'line-expenses',
       }
     ];
 
