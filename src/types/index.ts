@@ -5,6 +5,7 @@ export interface SpouseProfile {
   targetSSClaimingAge: number; // Claiming age (62 to 70)
   plannedRetirementAge?: number; // Planned retirement age (55 to 75)
   activeSalary?: number; // Pre-retirement annual active salary
+  preMedicareMonthlyPremium?: number; // Pre-Medicare monthly premium (e.g. $800)
 }
 
 export interface PortfolioBalances {
@@ -77,7 +78,8 @@ export interface SimulationResultRow {
   // Expenses & Cashflow
   livingExpenses: number;
   medicareBasePremiums: number;
-  totalExpenses: number; // Expenses + Taxes + Medicare Base & Surcharges
+  preMedicareHealthcareCost: number; // Annual pre-Medicare healthcare premium expenses
+  totalExpenses: number; // Expenses + Taxes + Medicare Base & Surcharges + Pre-Medicare Premium
   incomeInflow: number; // SS + RMD
   deficit: number; // totalExpenses - incomeInflow
   

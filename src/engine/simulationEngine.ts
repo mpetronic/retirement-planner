@@ -371,6 +371,23 @@ export function runRetirementSimulation(
     
     // Living expenses inflated
     const livingExpenses = inputs.annualLivingExpenses * cpiFactor;
+
+    // Pre-Medicare healthcare premium calculations
+    const youRetireAge = inputs.you.plannedRetirementAge !== undefined ? inputs.you.plannedRetirementAge : 67;
+    const yourPreMedicareMonthly = inputs.you.preMedicareMonthlyPremium !== undefined ? inputs.you.preMedicareMonthlyPremium : 1000;
+    const wifePreMedicareMonthly = inputs.wife.preMedicareMonthlyPremium !== undefined ? inputs.wife.preMedicareMonthlyPremium : 1000;
+
+    let yourPreMedicareAnnual = 0;
+    if (yourAge < 65 && yourAge >= youRetireAge && !youDeceased) {
+      yourPreMedicareAnnual = yourPreMedicareMonthly * 12 * healthcareFactor;
+    }
+
+    let wifePreMedicareAnnual = 0;
+    if (wifeAge < 65 && (yourAge >= youRetireAge || youDeceased)) {
+      wifePreMedicareAnnual = wifePreMedicareMonthly * 12 * healthcareFactor;
+    }
+
+    const combinedPreMedicarePremium = yourPreMedicareAnnual + wifePreMedicareAnnual;
     
     // 5. Drawdown and Tax Convergence Loop
     // Because tax bills depend on capital gains from drawdowns, we iterate to solve for taxes & drawdowns
@@ -418,8 +435,8 @@ export function runRetirementSimulation(
       // SS taxable portion, forced RMD, capital gains, traditional Roth conversions, and any traditional draws
       
       // Let's solve the current drawdown deficit
-      // Outflows: Living Expenses + Base Medicare + Medicare Surcharges + Current estimated Tax Bill
-      const totalOutflows = livingExpenses + medicareBasePremiums + combinedSurchargeAnnual + totalTaxBill;
+      // Outflows: Living Expenses + Base Medicare + Medicare Surcharges + Pre-Medicare Premiums + Current estimated Tax Bill
+      const totalOutflows = livingExpenses + medicareBasePremiums + combinedSurchargeAnnual + combinedPreMedicarePremium + totalTaxBill;
       
       // Inflow: Social Security (forced inflows) + forced RMD (forced inflows) + Active Salary (forced pre-retirement inflows)
       const baseInflows = combinedSS + combinedRMD + activeSalaryInflow;
@@ -557,7 +574,7 @@ export function runRetirementSimulation(
     // MAGI for IRMAA is Federal AGI + Tax-Exempt Interest. Since we don't have tax-exempt interest in the inputs, MAGI = AGI.
     const magi = finalFedAGI;
     
-    const totalExpenses = livingExpenses + fedIncomeTax + stateIncomeTax + medicareBasePremiums + combinedSurchargeAnnual;
+    const totalExpenses = livingExpenses + fedIncomeTax + stateIncomeTax + medicareBasePremiums + combinedSurchargeAnnual + combinedPreMedicarePremium;
     const incomeInflow = combinedSS + combinedRMD + activeSalaryInflow;
     const deficit = Math.max(0, totalExpenses - incomeInflow);
     
@@ -591,6 +608,7 @@ export function runRetirementSimulation(
       combinedSurchargeAnnual,
       livingExpenses,
       medicareBasePremiums,
+      preMedicareHealthcareCost: combinedPreMedicarePremium,
       totalExpenses,
       incomeInflow,
       deficit,

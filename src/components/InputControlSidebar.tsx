@@ -182,6 +182,23 @@ export const InputControlSidebar: React.FC<InputControlSidebarProps> = ({
                 />
               </div>
             </div>
+
+            {/* Pre-Medicare monthly premium slider */}
+            <div className="space-y-1 pt-2 border-t border-slate-800/30">
+              <label className="text-xs text-slate-400 flex justify-between">
+                <span>Pre-Medicare Premium / Mo</span>
+                <span className="text-emerald-400 font-bold font-mono">{formatCurrency(inputs.you.preMedicareMonthlyPremium !== undefined ? inputs.you.preMedicareMonthlyPremium : 1000)}/mo</span>
+              </label>
+              <input
+                type="range"
+                min="0"
+                max="2500"
+                step="50"
+                value={inputs.you.preMedicareMonthlyPremium !== undefined ? inputs.you.preMedicareMonthlyPremium : 1000}
+                onChange={(e) => updateNestedState('you', 'preMedicareMonthlyPremium', Number(e.target.value))}
+                className="w-full h-1.5 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-emerald-500"
+              />
+            </div>
           </div>
 
           {/* Wife Profile */}
@@ -290,6 +307,23 @@ export const InputControlSidebar: React.FC<InputControlSidebarProps> = ({
                   className="w-full h-1 bg-slate-800 rounded appearance-none cursor-pointer accent-emerald-500"
                 />
               </div>
+            </div>
+
+            {/* Pre-Medicare monthly premium slider */}
+            <div className="space-y-1 pt-2 border-t border-slate-800/30">
+              <label className="text-xs text-slate-400 flex justify-between">
+                <span>Pre-Medicare Premium / Mo</span>
+                <span className="text-emerald-400 font-bold font-mono">{formatCurrency(inputs.wife.preMedicareMonthlyPremium !== undefined ? inputs.wife.preMedicareMonthlyPremium : 1000)}/mo</span>
+              </label>
+              <input
+                type="range"
+                min="0"
+                max="2500"
+                step="50"
+                value={inputs.wife.preMedicareMonthlyPremium !== undefined ? inputs.wife.preMedicareMonthlyPremium : 1000}
+                onChange={(e) => updateNestedState('wife', 'preMedicareMonthlyPremium', Number(e.target.value))}
+                className="w-full h-1.5 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-emerald-500"
+              />
             </div>
           </div>
         </div>

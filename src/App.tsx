@@ -16,6 +16,7 @@ const DEFAULT_INPUTS: AppStateInputs = {
     targetSSClaimingAge: 67,
     plannedRetirementAge: 67,
     activeSalary: 150000,
+    preMedicareMonthlyPremium: 1000,
   },
   wife: {
     name: 'Spouse',
@@ -24,6 +25,7 @@ const DEFAULT_INPUTS: AppStateInputs = {
     targetSSClaimingAge: 67,
     plannedRetirementAge: 65,
     activeSalary: 100000,
+    preMedicareMonthlyPremium: 1000,
   },
   portfolio: {
     yourPreTaxIRA: 1200000,
