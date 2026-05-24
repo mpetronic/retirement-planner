@@ -112,6 +112,16 @@ function App() {
     });
   };
 
+  // Handle applying a fully optimized retirement configuration at once
+  const handleApplyOptimization = (annualConversion: number, yourAge: number, wifeAge: number) => {
+    setInputs({
+      ...inputs,
+      annualRothConversion: annualConversion,
+      you: { ...inputs.you, targetSSClaimingAge: yourAge },
+      wife: { ...inputs.wife, targetSSClaimingAge: wifeAge },
+    });
+  };
+
   // Handle updating the claiming ages directly from the Claiming Matrix Grid
   const handleUpdateClaimingAges = (yourAge: number, wifeAge: number) => {
     setInputs({
@@ -146,6 +156,7 @@ function App() {
             onUpdateConversion={handleUpdateConversion}
             onUpdateConversionStartYear={handleUpdateConversionStartYear}
             onUpdateConversionEndYear={handleUpdateConversionEndYear}
+            onApplyOptimization={handleApplyOptimization}
           />
         )}
         {activeTab === 1 && (
