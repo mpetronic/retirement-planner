@@ -47,7 +47,7 @@ export const BracketMapChart: React.FC<BracketMapChartProps> = ({
   // Extract stack components
   const ssIncomes = useMemo(() => ledger.map((r) => r.yourSS + r.wifeSS), [ledger]);
   const rmds = useMemo(() => ledger.map((r) => r.yourRMD + r.wifeRMD), [ledger]);
-  const drawdowns = useMemo(() => ledger.map((r) => r.drawdownPreTax + r.drawdownTaxable + r.capitalGainsTriggered), [ledger]);
+  const drawdowns = useMemo(() => ledger.map((r) => r.drawdownPreTax + r.drawdownTaxable), [ledger]);
   const rothConversions = useMemo(() => ledger.map((r) => r.intentionalRothConversion), [ledger]);
   const activeSalaries = useMemo(() => ledger.map((r) => (r.yourSalary || 0) + (r.wifeSalary || 0)), [ledger]);
 
