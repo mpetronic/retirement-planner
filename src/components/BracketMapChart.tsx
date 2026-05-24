@@ -768,12 +768,12 @@ export const BracketMapChart: React.FC<BracketMapChartProps> = ({
             </div>
           </div>
 
-          {/* Column 3: Flat Slider OR Target Presets + Target Slider */}
+          {/* Column 3: Flat Slider OR Dynamic Target Override Slider */}
           {inputs.rothConversionStrategy === 'flat' ? (
             /* Flat Annual Amount Slider */
             <div className="space-y-3 bg-slate-900/20 p-3 rounded-lg border border-slate-800/40">
               <div className="flex justify-between items-center">
-                <span className="text-xs font-semibold text-slate-300">Annual Target</span>
+                <span className="text-xs font-semibold text-slate-300">Annual Target Limit</span>
                 <span className="text-sm font-black text-emerald-400 font-mono">
                   {formatCurrency(inputs.annualRothConversion)}
                 </span>
@@ -789,7 +789,10 @@ export const BracketMapChart: React.FC<BracketMapChartProps> = ({
                 onMouseUp={() => setIsDragging(false)}
                 onTouchStart={() => setIsDragging(true)}
                 onTouchEnd={() => setIsDragging(false)}
-                onChange={(e) => onUpdateConversion(Number(e.target.value))}
+                onChange={(e) => {
+                  setSelectedQuickFill(null);
+                  onUpdateConversion(Number(e.target.value));
+                }}
                 className="w-full h-1.5 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-emerald-500"
               />
 
@@ -800,40 +803,18 @@ export const BracketMapChart: React.FC<BracketMapChartProps> = ({
               </div>
             </div>
           ) : (
-            /* Fill-To-Target Dropdown Preset & Target Slider */
+            /* Dynamic Target Override Slider */
             <div className="space-y-3 bg-slate-900/20 p-3 rounded-lg border border-slate-800/40 flex flex-col justify-between min-h-[125px]">
-              <div className="space-y-1.5">
+              <div className="space-y-1">
                 <div className="flex justify-between items-center">
-                  <span className="text-xs font-semibold text-slate-300">MAGI Target Presets</span>
-                  <span className="text-xs font-black text-emerald-400 font-mono">
+                  <span className="text-xs font-semibold text-slate-300">Target MAGI Ceiling</span>
+                  <span className="text-sm font-black text-emerald-400 font-mono">
                     {formatCurrency(inputs.rothConversionTargetValue || 0)}
                   </span>
                 </div>
-                <select
-                  value={inputs.rothConversionTargetValue !== null ? inputs.rothConversionTargetValue : ""}
-                  onChange={(e) => {
-                    const val = e.target.value === "" ? null : Number(e.target.value);
-                    onUpdateTargetValue(val);
-                  }}
-                  className="w-full text-xs font-semibold px-2 py-1.5 bg-slate-900 text-slate-100 border border-slate-800 rounded-lg focus:outline-none focus:border-emerald-500 cursor-pointer"
-                >
-                  <option value="">Custom Dollar Limit</option>
-                  <optgroup label="Federal Brackets (MFJ)">
-                    <option value={57000}>Top of 10% Bracket ($57,000)</option>
-                    <option value={133000}>Top of 12% Bracket ($133,000)</option>
-                    <option value={243600}>Top of 22% Bracket ($243,600)</option>
-                    <option value={435750}>Top of 24% Bracket ($435,750)</option>
-                    <option value={544650}>Top of 32% Bracket ($544,650)</option>
-                    <option value={800900}>Top of 35% Bracket ($800,900)</option>
-                  </optgroup>
-                  <optgroup label="Medicare IRMAA Cliffs">
-                    <option value={217999}>Tier 1 Cliff ($217,999)</option>
-                    <option value={273999}>Tier 2 Cliff ($273,999)</option>
-                    <option value={341999}>Tier 3 Cliff ($341,999)</option>
-                    <option value={409999}>Tier 4 Cliff ($409,999)</option>
-                    <option value={749999}>Tier 5 Cliff ($749,999)</option>
-                  </optgroup>
-                </select>
+                <p className="text-[9px] text-slate-500 leading-relaxed pt-0.5">
+                  Slide to override manually, or choose brackets & cliffs from the **Quick Fills** dropdown at the top.
+                </p>
               </div>
 
               {/* Slider for Custom Target Value overrides */}
@@ -848,8 +829,11 @@ export const BracketMapChart: React.FC<BracketMapChartProps> = ({
                   onMouseUp={() => setIsDragging(false)}
                   onTouchStart={() => setIsDragging(true)}
                   onTouchEnd={() => setIsDragging(false)}
-                  onChange={(e) => onUpdateTargetValue(Number(e.target.value))}
-                  className="w-full h-1 bg-slate-800 rounded appearance-none cursor-pointer accent-emerald-500"
+                  onChange={(e) => {
+                    setSelectedQuickFill(null); // Clear preset to show manual override is active
+                    onUpdateTargetValue(Number(e.target.value));
+                  }}
+                  className="w-full h-1.5 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-emerald-500"
                 />
                 <div className="flex justify-between text-[9px] text-slate-500 font-mono">
                   <span>$0</span>
