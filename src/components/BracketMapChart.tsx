@@ -65,7 +65,6 @@ export const BracketMapChart: React.FC<BracketMapChartProps> = ({
   // Extract stack components
   const ssIncomes = useMemo(() => ledger.map((r) => r.yourSS + r.wifeSS), [ledger]);
   const rmds = useMemo(() => ledger.map((r) => r.yourRMD + r.wifeRMD), [ledger]);
-  const drawdowns = useMemo(() => ledger.map((r) => r.drawdownPreTax + r.drawdownTaxable), [ledger]);
   const rothConversions = useMemo(() => ledger.map((r) => r.intentionalRothConversion), [ledger]);
   const activeSalaries = useMemo(() => ledger.map((r) => (r.yourSalary || 0) + (r.wifeSalary || 0)), [ledger]);
 
@@ -164,9 +163,17 @@ export const BracketMapChart: React.FC<BracketMapChartProps> = ({
         pointStyle: 'rect',
       },
       {
-        label: 'Taxable/Pre-Tax Draws',
-        data: drawdowns,
-        backgroundColor: 'rgba(239, 68, 68, 0.65)', // red-500 @ 65% opacity
+        label: 'Taxable Draws',
+        data: ledger.map((r) => r.drawdownTaxable),
+        backgroundColor: 'rgba(244, 63, 94, 0.65)', // rose-500 representing capital gains brokerage liquidations
+        stack: 'income',
+        order: 2.5,
+        pointStyle: 'rect',
+      },
+      {
+        label: 'Pre-Tax Draws',
+        data: ledger.map((r) => r.drawdownPreTax),
+        backgroundColor: 'rgba(185, 28, 28, 0.65)', // red-700 Representing IRA ordinary income liquidations
         stack: 'income',
         order: 2,
         pointStyle: 'rect',
@@ -232,7 +239,7 @@ export const BracketMapChart: React.FC<BracketMapChartProps> = ({
       labels: years.map(String),
       datasets,
     };
-  }, [years, activeSalaries, ssIncomes, rmds, drawdowns, rothConversions, ledger, quickFillLineData]);
+  }, [years, activeSalaries, ssIncomes, rmds, rothConversions, ledger, quickFillLineData]);
 
   const chartOptions = useMemo(() => {
     return {
