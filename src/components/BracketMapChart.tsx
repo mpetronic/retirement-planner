@@ -142,7 +142,7 @@ export const BracketMapChart: React.FC<BracketMapChartProps> = ({
       {
         label: 'Active Salaries',
         data: activeSalaries,
-        backgroundColor: '#8b5cf6', // violet-500
+        backgroundColor: 'rgba(139, 92, 246, 0.65)', // violet-500 @ 65% opacity
         stack: 'income',
         order: 5,
         pointStyle: 'rect',
@@ -150,7 +150,7 @@ export const BracketMapChart: React.FC<BracketMapChartProps> = ({
       {
         label: 'Social Security',
         data: ssIncomes,
-        backgroundColor: '#3b82f6', // bright blue
+        backgroundColor: 'rgba(59, 130, 246, 0.65)', // blue-500 @ 65% opacity
         stack: 'income',
         order: 4,
         pointStyle: 'rect',
@@ -158,7 +158,7 @@ export const BracketMapChart: React.FC<BracketMapChartProps> = ({
       {
         label: 'Forced RMDs',
         data: rmds,
-        backgroundColor: '#f59e0b', // amber
+        backgroundColor: 'rgba(245, 158, 11, 0.65)', // amber-500 @ 65% opacity
         stack: 'income',
         order: 3,
         pointStyle: 'rect',
@@ -166,7 +166,7 @@ export const BracketMapChart: React.FC<BracketMapChartProps> = ({
       {
         label: 'Taxable/Pre-Tax Draws',
         data: drawdowns,
-        backgroundColor: '#ef4444', // rose/red
+        backgroundColor: 'rgba(239, 68, 68, 0.65)', // red-500 @ 65% opacity
         stack: 'income',
         order: 2,
         pointStyle: 'rect',
@@ -174,7 +174,7 @@ export const BracketMapChart: React.FC<BracketMapChartProps> = ({
       {
         label: 'Roth Conversions',
         data: rothConversions,
-        backgroundColor: '#10b981', // emerald-500 highlighting
+        backgroundColor: 'rgba(16, 185, 129, 0.65)', // emerald-500 @ 65% opacity
         stack: 'income',
         order: 1,
         pointStyle: 'rect',
