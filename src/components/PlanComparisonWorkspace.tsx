@@ -549,11 +549,11 @@ export const PlanComparisonWorkspace: React.FC<PlanComparisonWorkspaceProps> = (
                   <table className="w-full text-left border-collapse text-xs">
                     <thead>
                       <tr className="bg-slate-900/60 border-b border-slate-800 text-slate-400 font-semibold uppercase tracking-wider">
-                        <th className="p-3.5">Lifetime Category (2026 - 2060)</th>
-                        <th className="p-3.5 text-right text-blue-300 font-bold bg-blue-500/5">Plan A: {planA.name}</th>
-                        <th className="p-3.5 text-right text-emerald-300 font-bold bg-emerald-500/5">Plan B: {planB.name}</th>
-                        <th className="p-3.5 text-right">Lifetime Delta</th>
-                        <th className="p-3.5 text-right">Difference %</th>
+                        <th className="py-5 px-6">Lifetime Category (2026 - 2060)</th>
+                        <th className="py-5 px-5 text-right text-blue-300 font-bold bg-blue-500/5">Plan A: {planA.name}</th>
+                        <th className="py-5 px-5 text-right text-emerald-300 font-bold bg-emerald-500/5">Plan B: {planB.name}</th>
+                        <th className="py-5 px-5 text-right">Lifetime Delta</th>
+                        <th className="py-5 px-5 text-right">Difference %</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-800/40">
@@ -578,25 +578,25 @@ export const PlanComparisonWorkspace: React.FC<PlanComparisonWorkspaceProps> = (
 
                         return (
                           <tr key={row.id} className="transition-colors hover:bg-slate-900/20 group">
-                            <td className="p-3.5 font-medium">
-                              <div className="font-bold text-slate-200 flex items-center gap-1.5">
+                            <td className="py-5 px-6 font-medium">
+                              <div className="font-bold text-slate-200 flex items-center gap-1.5 mb-1.5">
                                 {row.name}
                                 <span className="group-hover:opacity-100 opacity-0 transition-opacity" title={row.desc}>
                                   <Info className="w-3.5 h-3.5 text-slate-500 cursor-help" />
                                 </span>
                               </div>
-                              <span className="text-[10px] text-slate-500 block leading-normal">{row.desc}</span>
+                              <span className="text-[11px] text-slate-400 block leading-relaxed">{row.desc}</span>
                             </td>
                             
-                            <td className="p-3.5 text-right font-mono font-bold text-slate-300 bg-blue-500/5">
+                            <td className="py-5 px-5 text-right font-mono font-bold text-slate-300 bg-blue-500/5">
                               {formatCurrency(row.valA)}
                             </td>
                             
-                            <td className="p-3.5 text-right font-mono font-bold text-slate-300 bg-emerald-500/5">
+                            <td className="py-5 px-5 text-right font-mono font-bold text-slate-300 bg-emerald-500/5">
                               {formatCurrency(row.valB)}
                             </td>
                             
-                            <td className={`p-3.5 text-right font-mono font-black ${
+                            <td className={`py-5 px-5 text-right font-mono font-black ${
                               isZero 
                                 ? 'text-slate-400' 
                                 : isFavorable 
@@ -606,7 +606,7 @@ export const PlanComparisonWorkspace: React.FC<PlanComparisonWorkspaceProps> = (
                               {isZero ? '$0' : `${delta > 0 ? '+' : ''}${formatCurrency(delta)}`}
                             </td>
                             
-                            <td className={`p-3.5 text-right font-mono font-black rounded-r-lg ${
+                            <td className={`py-5 px-5 text-right font-mono font-black rounded-r-lg ${
                               isZero 
                                 ? 'text-slate-400' 
                                 : isFavorable 
