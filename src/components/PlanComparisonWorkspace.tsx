@@ -309,7 +309,7 @@ export const PlanComparisonWorkspace: React.FC<PlanComparisonWorkspaceProps> = (
       <div>
         <h3 className="text-lg font-bold text-slate-100 flex items-center gap-2">
           <ArrowRightLeft className="w-5 h-5 text-emerald-400" />
-          Workspace 5: Scenario Saved Plans & Lifetime Comparison
+          Workspace 4: Scenario Saved Plans & Lifetime Comparison
         </h3>
         <p className="text-xs text-slate-400">
           Save different conversion or state tax setups, load them on demand, and perform exhaustive side-by-side lifetime metrics analysis.
