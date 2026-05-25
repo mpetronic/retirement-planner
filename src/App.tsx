@@ -62,7 +62,6 @@ const DEFAULT_INPUTS: AppStateInputs = {
   rothConversionEndYear: 2034,
   rothConversionStrategy: 'flat',
   rothConversionTargetValue: null,
-  lockedReturnSequence: null,
   monteCarloSettings: {
     mode: 'monte-carlo',
     equityVolatility: 0.15,

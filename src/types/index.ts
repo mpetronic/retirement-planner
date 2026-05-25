@@ -56,7 +56,6 @@ export interface AppStateInputs {
   rothConversionEndYear?: number; // Ending year for Roth conversions
   rothConversionStrategy: 'flat' | 'fill-to-target';
   rothConversionTargetValue: number | null;
-  lockedReturnSequence: LockedReturnSequence | null; // Null if using flat rates (deterministic baseline)
   monteCarloSettings: MonteCarloSettings;
   isConfigured: boolean;
   isSingleFiler: boolean;

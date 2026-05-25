@@ -107,11 +107,6 @@ export const DashboardLayout: React.FC<DashboardLayoutProps> = ({
             <div className="space-y-1">
               <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider flex items-center gap-1.5">
                 Ending Net Estate (Age 90)
-                {inputs.lockedReturnSequence && (
-                  <span className="text-amber-500 flex items-center" title="Stochastic return sequence currently locked in as baseline">
-                    <Lock className="w-3 h-3 animate-pulse" />
-                  </span>
-                )}
               </span>
               <span className="text-xl font-black text-emerald-400 font-mono block">
                 {formatCurrency(stats.active.endingEstate)}

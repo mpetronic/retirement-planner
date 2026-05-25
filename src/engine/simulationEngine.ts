@@ -151,7 +151,7 @@ export function calculateMDStateTax(
 export function runRetirementSimulation(
   inputs: AppStateInputs,
   simulateSurvivor: boolean = false,
-  overrideSequence?: LockedReturnSequence | null
+  activeSequence?: LockedReturnSequence | null
 ): SimulationResultRow[] {
   if (!inputs.isConfigured) {
     return []; // Bypass calculations if not configured
@@ -175,7 +175,7 @@ export function runRetirementSimulation(
   const DEATH_YEAR = 2045;
   
   // Check if a stochastic sequence of returns is active
-  const activeSeq = overrideSequence !== undefined ? overrideSequence : inputs.lockedReturnSequence;
+  const activeSeq = activeSequence;
 
   // Let's run year-by-year from 2026 to 2060
   for (let year = 2026; year <= 2060; year++) {
