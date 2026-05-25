@@ -5,7 +5,6 @@ import {
   TrendingUp,
   ShieldAlert,
   ArrowRightLeft,
-  Settings,
   Coins,
   MapPin,
   Sliders
@@ -192,8 +191,8 @@ export const DashboardLayout: React.FC<DashboardLayoutProps> = ({
                 : 'border-transparent text-slate-400 hover:text-slate-200 hover:bg-slate-900/10'
             }`}
           >
-            <Settings className="w-4 h-4" />
-            Workspace 3: Claiming Matrix
+            <Sliders className="w-4 h-4" />
+            Workspace 3: Monte Carlo Analysis
           </button>
           <button
             onClick={() => setActiveTab(3)}
@@ -203,19 +202,8 @@ export const DashboardLayout: React.FC<DashboardLayoutProps> = ({
                 : 'border-transparent text-slate-400 hover:text-slate-200 hover:bg-slate-900/10'
             }`}
           >
-            <Sliders className="w-4 h-4" />
-            Workspace 4: Monte Carlo Analysis
-          </button>
-          <button
-            onClick={() => setActiveTab(4)}
-            className={`py-3 px-6 text-sm font-bold border-b-2 transition-all flex items-center gap-2 ${
-              activeTab === 4
-                ? 'border-emerald-500 text-emerald-400 bg-slate-900/40 rounded-t-xl'
-                : 'border-transparent text-slate-400 hover:text-slate-200 hover:bg-slate-900/10'
-            }`}
-          >
             <ArrowRightLeft className="w-4 h-4" />
-            Workspace 5: Plan Comparison
+            Workspace 4: Plan Comparison
           </button>
         </div>
       </header>

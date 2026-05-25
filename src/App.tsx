@@ -11,7 +11,6 @@ import { InputControlSidebar } from './components/InputControlSidebar';
 import { DashboardLayout } from './components/DashboardLayout';
 import { BracketMapChart } from './components/BracketMapChart';
 import { LookbackLedgerTable } from './components/LookbackLedgerTable';
-import { ClaimingMatrixGrid } from './components/ClaimingMatrixGrid';
 import { MonteCarloWorkspace } from './components/MonteCarloWorkspace';
 import { PlanComparisonWorkspace } from './components/PlanComparisonWorkspace';
 import { OnboardingWizard } from './components/OnboardingWizard';
@@ -137,13 +136,12 @@ function useLocalStorage<T>(key: string, initialValue: T): [T, (value: T | ((val
 function App() {
   const [inputs, setInputs] = useLocalStorage<AppStateInputs>('retirement_planner_inputs', DEFAULT_INPUTS);
   const [activeTab, setActiveTab] = useState<number>(0);
-  const [simulateSurvivor, setSimulateSurvivor] = useLocalStorage<boolean>('retirement_planner_survivor', false);
+  const [simulateSurvivor] = useLocalStorage<boolean>('retirement_planner_survivor', false);
   const [savedPlans, setSavedPlans] = useLocalStorage<SavedPlan[]>('retirement_planner_saved_plans', []);
 
-  // Localized persisted scenarios for Workspace 1, 2, and 3
+  // Localized persisted scenarios for Workspace 1 and 2
   const [ws1Scenario, setWs1Scenario] = useLocalStorage<'flat' | 'p10' | 'p50' | 'p90'>('retirement_planner_ws1_scenario', 'flat');
   const [ws2Scenario, setWs2Scenario] = useLocalStorage<'flat' | 'p10' | 'p50' | 'p90'>('retirement_planner_ws2_scenario', 'flat');
-  const [ws3Scenario, setWs3Scenario] = useLocalStorage<'flat' | 'p10' | 'p50' | 'p90'>('retirement_planner_ws3_scenario', 'flat');
 
   // 1. Generate 1,000 return sequences once, keyed ONLY on volatility/correlation/seed.
   // This preserves stable market return percentages while strategy slider variables are tweaked.
@@ -201,16 +199,14 @@ function App() {
     return {
       ws1: parallelLedgers[ws1Scenario] || parallelLedgers.flat,
       ws2: parallelLedgers[ws2Scenario] || parallelLedgers.flat,
-      ws3: parallelLedgers[ws3Scenario] || parallelLedgers.flat,
     };
-  }, [parallelLedgers, ws1Scenario, ws2Scenario, ws3Scenario]);
+  }, [parallelLedgers, ws1Scenario, ws2Scenario]);
 
   // Compute active ledger for header stats depending on active tab
   const activeLedger = useMemo(() => {
     if (activeTab === 0) return wsLedgers.ws1;
     if (activeTab === 1) return wsLedgers.ws2;
-    if (activeTab === 2) return wsLedgers.ws3;
-    if (activeTab === 3) return parallelLedgers.p50; // Use stochastic Median (P50) for Monte Carlo tab!
+    if (activeTab === 2) return parallelLedgers.p50; // Use stochastic Median (P50) for Monte Carlo tab!
     return wsLedgers.ws1; // fallback
   }, [activeTab, wsLedgers, parallelLedgers]);
 
@@ -221,13 +217,6 @@ function App() {
     if (ws1Scenario === 'p90') return monteCarloSummary.representativeSequences.best;
     return null;
   }, [ws1Scenario, monteCarloSummary]);
-
-  const activeWs3Sequence = useMemo(() => {
-    if (ws3Scenario === 'p10') return monteCarloSummary.representativeSequences.worst;
-    if (ws3Scenario === 'p50') return monteCarloSummary.representativeSequences.median;
-    if (ws3Scenario === 'p90') return monteCarloSummary.representativeSequences.best;
-    return null;
-  }, [ws3Scenario, monteCarloSummary]);
 
   // Handle applying a fully optimized retirement configuration at once
   const handleApplyOptimization = (annualConversion: number, targetValue: number | null, yourAge: number, wifeAge: number) => {
@@ -256,14 +245,7 @@ function App() {
     }));
   };
 
-  // Handle updating the claiming ages directly from the Claiming Matrix Grid
-  const handleUpdateClaimingAges = (yourAge: number, wifeAge: number) => {
-    setInputs((prev) => ({
-      ...prev,
-      you: { ...prev.you, targetSSClaimingAge: yourAge },
-      wife: { ...prev.wife, targetSSClaimingAge: wifeAge },
-    }));
-  };
+
 
   // Sync title and head tags for SEO best practices
   useEffect(() => {
@@ -311,18 +293,6 @@ function App() {
           />
         )}
         {activeTab === 2 && (
-          <ClaimingMatrixGrid
-            inputs={inputs}
-            ledger={wsLedgers.ws3}
-            simulateSurvivor={simulateSurvivor}
-            wsScenario={ws3Scenario}
-            onChangeScenario={setWs3Scenario}
-            activeScenarioSequence={activeWs3Sequence}
-            onUpdateClaimingAges={handleUpdateClaimingAges}
-            onToggleSurvivor={setSimulateSurvivor}
-          />
-        )}
-        {activeTab === 3 && (
           <MonteCarloWorkspace
             inputs={inputs}
             onChangeInputs={setInputs}
@@ -330,7 +300,7 @@ function App() {
             summary={monteCarloSummary}
           />
         )}
-        {activeTab === 4 && (
+        {activeTab === 3 && (
           <PlanComparisonWorkspace
             inputs={inputs}
             onLoadPlan={setInputs}
