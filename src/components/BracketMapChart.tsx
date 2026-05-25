@@ -138,6 +138,14 @@ export const BracketMapChart: React.FC<BracketMapChartProps> = ({
   const chartData = useMemo(() => {
     const datasets: any[] = [
       {
+        label: 'Social Security',
+        data: ssIncomes,
+        backgroundColor: 'rgba(59, 130, 246, 0.65)', // blue-500 @ 65% opacity
+        stack: 'income',
+        order: 7,
+        pointStyle: 'rect',
+      },
+      {
         label: 'Active Salaries',
         data: activeSalaries,
         backgroundColor: 'rgba(139, 92, 246, 0.65)', // violet-500 @ 65% opacity
@@ -151,14 +159,6 @@ export const BracketMapChart: React.FC<BracketMapChartProps> = ({
         backgroundColor: 'rgba(245, 158, 11, 0.65)', // amber-500 @ 65% opacity
         stack: 'income',
         order: 5,
-        pointStyle: 'rect',
-      },
-      {
-        label: 'Social Security',
-        data: ssIncomes,
-        backgroundColor: 'rgba(59, 130, 246, 0.65)', // blue-500 @ 65% opacity
-        stack: 'income',
-        order: 4.5,
         pointStyle: 'rect',
       },
       {
