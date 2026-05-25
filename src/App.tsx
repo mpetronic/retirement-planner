@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo } from 'react';
-import { AppStateInputs, LockedReturnSequence, SimulationResultRow } from './types';
+import { AppStateInputs, LockedReturnSequence } from './types';
 import { runRetirementSimulation } from './engine/simulationEngine';
 import {
   runMonteCarloSimulation,
@@ -208,8 +208,9 @@ function App() {
     if (activeTab === 0) return wsLedgers.ws1;
     if (activeTab === 1) return wsLedgers.ws2;
     if (activeTab === 2) return wsLedgers.ws3;
+    if (activeTab === 3) return parallelLedgers.p50; // Use stochastic Median (P50) for Monte Carlo tab!
     return wsLedgers.ws1; // fallback
-  }, [activeTab, wsLedgers]);
+  }, [activeTab, wsLedgers, parallelLedgers]);
 
   // Active return sequence for optimizer/matrix sweeps
   const activeWs1Sequence = useMemo(() => {

@@ -180,13 +180,13 @@ export const OnboardingWizard: React.FC<OnboardingWizardProps> = ({ onComplete }
       rothConversionEndYear: 2034,   // Default end year 2034
       rothConversionStrategy: 'flat',
       rothConversionTargetValue: null,
-      lockedReturnSequence: null,
       monteCarloSettings: {
         mode: 'monte-carlo',
         equityVolatility: 0.15,
         fixedIncomeVolatility: 0.05,
         correlation: 0.15,
         trials: 1000,
+        seed: null,
       },
       isConfigured: true,
       isSingleFiler,

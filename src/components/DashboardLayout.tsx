@@ -8,8 +8,7 @@ import {
   Settings,
   Coins,
   MapPin,
-  Sliders,
-  Lock
+  Sliders
 } from 'lucide-react';
 
 interface DashboardLayoutProps {

@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React from 'react';
 import { Chart } from 'react-chartjs-2';
 import {
   Chart as ChartJS,
@@ -12,18 +12,11 @@ import {
   Legend,
   Filler
 } from 'chart.js';
-import { AppStateInputs, LockedReturnSequence } from '../types';
-import { runMonteCarloSimulation, MonteCarloSummary, generateSyntheticSequence, generateHistoricalSequence } from '../engine/monteCarloEngine';
-import { runRetirementSimulation } from '../engine/simulationEngine';
+import { AppStateInputs } from '../types';
+import { MonteCarloSummary } from '../engine/monteCarloEngine';
 import { 
   Sliders, 
-  Lock, 
-  Unlock, 
-  RefreshCw, 
-  AlertTriangle, 
-  Check, 
   Info,
-  ShieldCheck,
   Calendar
 } from 'lucide-react';
 
@@ -49,7 +42,6 @@ interface MonteCarloWorkspaceProps {
 export const MonteCarloWorkspace: React.FC<MonteCarloWorkspaceProps> = ({
   inputs,
   onChangeInputs,
-  simulateSurvivor,
   summary,
 }) => {
   const successRate = summary.successRate;

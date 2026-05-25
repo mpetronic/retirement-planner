@@ -1,4 +1,4 @@
-import { AppStateInputs } from '../types';
+import { AppStateInputs, LockedReturnSequence } from '../types';
 import { runRetirementSimulation } from './simulationEngine';
 
 export interface OptimizationResult {
