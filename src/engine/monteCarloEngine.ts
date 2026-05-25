@@ -69,12 +69,24 @@ export const HISTORICAL_RETURNS: HistoricalYear[] = [
 ];
 
 /**
+ * Mulberry32 seedable random number generator
+ */
+export function mulberry32(a: number): () => number {
+  return function() {
+    let t = a += 0x6D2B79F5;
+    t = Math.imul(t ^ (t >>> 15), t | 1);
+    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  }
+}
+
+/**
  * Box-Muller transform to generate standard normal random variables
  */
-function nextGaussian(): number {
+function nextGaussian(rand: () => number = Math.random): number {
   let u = 0, v = 0;
-  while(u === 0) u = Math.random(); // Converting [0,1) to (0,1)
-  while(v === 0) v = Math.random();
+  while(u === 0) u = rand(); // Converting [0,1) to (0,1)
+  while(v === 0) v = rand();
   return Math.sqrt(-2.0 * Math.log(u)) * Math.cos(2.0 * Math.PI * v);
 }
 
@@ -86,14 +98,15 @@ export function generateSyntheticSequence(
   equityVol: number,
   bondMean: number,
   bondVol: number,
-  correlation: number
+  correlation: number,
+  rand: () => number = Math.random
 ): Omit<LockedReturnSequence, 'id'> {
   const equityReturns: number[] = [];
   const fixedIncomeReturns: number[] = [];
   
   for (let i = 0; i < 35; i++) {
-    const z1 = nextGaussian();
-    const z2 = nextGaussian();
+    const z1 = nextGaussian(rand);
+    const z2 = nextGaussian(rand);
     
     // Bivariate correlated transform
     const x1 = z1;
@@ -119,7 +132,8 @@ export function generateSyntheticSequence(
  */
 export function generateHistoricalSequence(
   blockSampling: boolean = false,
-  startYearIndex?: number
+  startYearIndex?: number,
+  rand: () => number = Math.random
 ): Omit<LockedReturnSequence, 'id'> {
   const equityReturns: number[] = [];
   const fixedIncomeReturns: number[] = [];
@@ -130,7 +144,7 @@ export function generateHistoricalSequence(
     const count = HISTORICAL_RETURNS.length;
     let idx = startYearIndex !== undefined 
       ? startYearIndex 
-      : Math.floor(Math.random() * count);
+      : Math.floor(rand() * count);
       
     for (let i = 0; i < 35; i++) {
       const yearData = HISTORICAL_RETURNS[idx % count];
@@ -141,7 +155,7 @@ export function generateHistoricalSequence(
   } else {
     // Standard random year bootstrap (sampling with replacement)
     for (let i = 0; i < 35; i++) {
-      const idx = Math.floor(Math.random() * HISTORICAL_RETURNS.length);
+      const idx = Math.floor(rand() * HISTORICAL_RETURNS.length);
       const yearData = HISTORICAL_RETURNS[idx];
       equityReturns.push(yearData.stock);
       fixedIncomeReturns.push(yearData.bond);
@@ -186,7 +200,8 @@ export interface MonteCarloSummary {
  */
 export function runMonteCarloSimulation(
   inputs: AppStateInputs,
-  simulateSurvivor: boolean = false
+  simulateSurvivor: boolean = false,
+  preGeneratedSequences?: Omit<LockedReturnSequence, 'id'>[]
 ): MonteCarloSummary {
   const trials = inputs.monteCarloSettings?.trials || 1000;
   const mode = inputs.monteCarloSettings?.mode || 'monte-carlo';
@@ -197,17 +212,22 @@ export function runMonteCarloSimulation(
   const bondVol = inputs.monteCarloSettings?.fixedIncomeVolatility ?? 0.05;
   const correlation = inputs.monteCarloSettings?.correlation ?? 0.15;
   
+  const seed = inputs.monteCarloSettings?.seed;
+  const rand = seed !== null && seed !== undefined ? mulberry32(seed) : Math.random;
+  
   const results: MonteCarloTrialResult[] = [];
   
   for (let t = 0; t < trials; t++) {
     // Generate returns for this trial
     let seqData: Omit<LockedReturnSequence, 'id'>;
-    if (mode === 'historical') {
+    if (preGeneratedSequences && preGeneratedSequences[t]) {
+      seqData = preGeneratedSequences[t];
+    } else if (mode === 'historical') {
       // 30% block bootstrapping, 70% random year sampling to preserve real historical cycles
-      const block = Math.random() < 0.35;
-      seqData = generateHistoricalSequence(block);
+      const block = rand() < 0.35;
+      seqData = generateHistoricalSequence(block, undefined, rand);
     } else {
-      seqData = generateSyntheticSequence(equityMean, equityVol, bondMean, bondVol, correlation);
+      seqData = generateSyntheticSequence(equityMean, equityVol, bondMean, bondVol, correlation, rand);
     }
     
     const sequence: LockedReturnSequence = {

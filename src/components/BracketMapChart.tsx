@@ -12,7 +12,7 @@ import {
   Legend,
   Filler
 } from 'chart.js';
-import { SimulationResultRow, AppStateInputs } from '../types';
+import { SimulationResultRow, AppStateInputs, LockedReturnSequence } from '../types';
 import { Award, Zap, Check, X, AlertCircle } from 'lucide-react';
 import { optimizeRetirementScenario, OptimizationResult, OptimizationGoal } from '../engine/optimizer';
 
@@ -32,6 +32,9 @@ interface BracketMapChartProps {
   ledger: SimulationResultRow[];
   inputs: AppStateInputs;
   simulateSurvivor: boolean;
+  wsScenario: 'flat' | 'p10' | 'p50' | 'p90';
+  onChangeScenario: (val: 'flat' | 'p10' | 'p50' | 'p90') => void;
+  activeScenarioSequence: LockedReturnSequence | null;
   onApplyOptimization: (annualConversion: number, targetValue: number | null, yourAge: number, wifeAge: number) => void;
   onUpdateStrategy: (strategy: 'flat' | 'fill-to-target') => void;
   onUpdateTargetValue: (val: number | null) => void;
@@ -41,6 +44,9 @@ export const BracketMapChart: React.FC<BracketMapChartProps> = ({
   ledger,
   inputs,
   simulateSurvivor,
+  wsScenario,
+  onChangeScenario,
+  activeScenarioSequence,
   onApplyOptimization,
   onUpdateStrategy,
   onUpdateTargetValue,
@@ -613,27 +619,70 @@ export const BracketMapChart: React.FC<BracketMapChartProps> = ({
           </p>
         </div>
 
-        {/* Unified Quick-Fill Optimization Targets Dropdown */}
-        <div className="flex items-center gap-2">
-          <span className="text-xs text-slate-400 font-semibold uppercase tracking-wider">Quick Fills:</span>
-          <select
-            value={selectedQuickFill !== null ? selectedQuickFill : ""}
-            onChange={(e) => {
-              const val = e.target.value;
-              if (val.startsWith('opt-')) {
-                setSelectedQuickFill(null);
-                const goal = val.replace('opt-', '') as OptimizationGoal;
-                setOptimizingGoal(goal);
-                setShowOptimizerModal(true);
-                setIsOptimizingScan(true);
-                
-                // Sweep grid in small timeout to allow scanning UI to mount
-                setTimeout(() => {
-                  const res = optimizeRetirementScenario(inputs, goal, simulateSurvivor);
-                  setOptimizationResult(res);
-                  setIsOptimizingScan(false);
-                }, 600);
-              } else {
+        <div className="flex flex-wrap items-center gap-4">
+          {/* Localized Outlook Switcher */}
+          <div className="flex items-center gap-1.5 bg-slate-950/60 p-1 border border-slate-800 rounded-xl">
+            <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider px-2">Outlook:</span>
+            <div className="flex gap-1">
+              <button
+                onClick={() => onChangeScenario('flat')}
+                className={`text-[10px] px-2.5 py-1.5 rounded-lg font-bold transition-all ${
+                  wsScenario === 'flat' ? 'bg-slate-800 text-slate-100 border border-slate-700/60 font-black' : 'text-slate-400 hover:text-slate-200'
+                }`}
+              >
+                Flat
+              </button>
+              <button
+                onClick={() => onChangeScenario('p10')}
+                className={`text-[10px] px-2.5 py-1.5 rounded-lg font-bold transition-all flex items-center gap-1 ${
+                  wsScenario === 'p10' ? 'bg-rose-500/10 text-rose-400 border border-rose-500/20 font-black' : 'text-slate-400 hover:text-slate-200'
+                }`}
+                title="Pessimistic: 10th Percentile Run"
+              >
+                Worst (P10)
+              </button>
+              <button
+                onClick={() => onChangeScenario('p50')}
+                className={`text-[10px] px-2.5 py-1.5 rounded-lg font-bold transition-all flex items-center gap-1 ${
+                  wsScenario === 'p50' ? 'bg-blue-500/10 text-blue-400 border border-blue-500/20 font-black' : 'text-slate-400 hover:text-slate-200'
+                }`}
+                title="Median: 50th Percentile Run"
+              >
+                Median (P50)
+              </button>
+              <button
+                onClick={() => onChangeScenario('p90')}
+                className={`text-[10px] px-2.5 py-1.5 rounded-lg font-bold transition-all flex items-center gap-1 ${
+                  wsScenario === 'p90' ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 font-black' : 'text-slate-400 hover:text-slate-200'
+                }`}
+                title="Optimistic: 90th Percentile Run"
+              >
+                Best (P90)
+              </button>
+            </div>
+          </div>
+
+          {/* Unified Quick-Fill Optimization Targets Dropdown */}
+          <div className="flex items-center gap-2">
+            <span className="text-xs text-slate-400 font-semibold uppercase tracking-wider">Quick Fills:</span>
+            <select
+              value={selectedQuickFill !== null ? selectedQuickFill : ""}
+              onChange={(e) => {
+                const val = e.target.value;
+                if (val.startsWith('opt-')) {
+                  setSelectedQuickFill(null);
+                  const goal = val.replace('opt-', '') as OptimizationGoal;
+                  setOptimizingGoal(goal);
+                  setShowOptimizerModal(true);
+                  setIsOptimizingScan(true);
+                  
+                  // Sweep grid in small timeout to allow scanning UI to mount
+                  setTimeout(() => {
+                    const res = optimizeRetirementScenario(inputs, goal, simulateSurvivor, activeScenarioSequence);
+                    setOptimizationResult(res);
+                    setIsOptimizingScan(false);
+                  }, 600);
+                } else {
                 const valNum = val === "" ? null : Number(val);
                 setSelectedQuickFill(valNum);
                 if (valNum !== null && valNum > 0) {
@@ -672,6 +721,7 @@ export const BracketMapChart: React.FC<BracketMapChartProps> = ({
           </select>
         </div>
       </div>
+    </div>
 
       {/* Chart Canvas */}
       <div className="h-[580px] relative bg-slate-950/40 rounded-xl border border-slate-800/40 p-4">

@@ -43,22 +43,18 @@ interface MonteCarloWorkspaceProps {
   inputs: AppStateInputs;
   onChangeInputs: (newInputs: AppStateInputs) => void;
   simulateSurvivor: boolean;
+  summary: MonteCarloSummary;
 }
 
 export const MonteCarloWorkspace: React.FC<MonteCarloWorkspaceProps> = ({
   inputs,
   onChangeInputs,
   simulateSurvivor,
+  summary,
 }) => {
   // Confirmation modal states
   const [showRegenConfirm, setShowRegenConfirm] = useState(false);
   const [pendingSequence, setPendingSequence] = useState<LockedReturnSequence | null>(null);
-
-
-  // Trigger reactive batch Monte Carlo simulation on parameter changes
-  const summary: MonteCarloSummary = useMemo(() => {
-    return runMonteCarloSimulation(inputs, simulateSurvivor);
-  }, [inputs, simulateSurvivor]);
 
   const successRate = summary.successRate;
   const isLocked = inputs.lockedReturnSequence !== null;
@@ -493,6 +489,45 @@ export const MonteCarloWorkspace: React.FC<MonteCarloWorkspaceProps> = ({
                   <span>1000 (Recommended)</span>
                   <span>5000 (Detailed)</span>
                 </div>
+              </div>
+
+              {/* Seedable Reproducibility */}
+              <div className="space-y-2 pt-3 border-t border-slate-800/40">
+                <label className="text-xs font-semibold text-slate-300 flex justify-between items-center">
+                  <span>Deterministic Random Seed</span>
+                  <span className="text-[10px] text-slate-500 font-mono">Reproducibility</span>
+                </label>
+                <div className="flex gap-2 items-center">
+                  <input
+                    type="checkbox"
+                    id="useSeedCheckbox"
+                    checked={inputs.monteCarloSettings.seed !== null}
+                    onChange={(e) => {
+                      const useSeed = e.target.checked;
+                      updateSettings('seed', useSeed ? 42 : null);
+                    }}
+                    className="w-4 h-4 bg-slate-950 rounded border-slate-800 text-emerald-500 focus:ring-emerald-500 accent-emerald-500 cursor-pointer"
+                  />
+                  <label htmlFor="useSeedCheckbox" className="text-xs text-slate-400 cursor-pointer select-none">
+                    Lock Seed Value
+                  </label>
+                  
+                  {inputs.monteCarloSettings.seed !== null && (
+                    <input
+                      type="number"
+                      value={inputs.monteCarloSettings.seed}
+                      onChange={(e) => {
+                        const val = e.target.value === '' ? 42 : Number(e.target.value);
+                        updateSettings('seed', val);
+                      }}
+                      className="flex-1 text-xs font-mono font-bold px-2.5 py-1 bg-slate-950 text-slate-100 border border-slate-800 rounded-lg focus:outline-none focus:border-emerald-500"
+                      placeholder="e.g. 42"
+                    />
+                  )}
+                </div>
+                <p className="text-[9px] text-slate-500 leading-normal">
+                  Locking a seed value ensures simulation returns remain 100% identical on page reloads or slider edits for debugging and repeatable analysis.
+                </p>
               </div>
             </div>
 

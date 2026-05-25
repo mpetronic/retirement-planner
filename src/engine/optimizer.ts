@@ -24,7 +24,8 @@ export type OptimizationGoal = 'min_taxes' | 'max_portfolio' | 'min_surcharges' 
 export function optimizeRetirementScenario(
   inputs: AppStateInputs,
   goal: OptimizationGoal,
-  simulateSurvivor: boolean
+  simulateSurvivor: boolean,
+  overrideSequence?: LockedReturnSequence | null
 ): OptimizationResult {
   const isFillToTarget = inputs.rothConversionStrategy === 'fill-to-target';
 
@@ -65,7 +66,7 @@ export function optimizeRetirementScenario(
           },
         };
 
-        const ledger = runRetirementSimulation(testInputs, simulateSurvivor);
+        const ledger = runRetirementSimulation(testInputs, simulateSurvivor, overrideSequence);
         if (ledger.length === 0) continue;
 
         // Compute metrics

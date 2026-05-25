@@ -14,6 +14,13 @@ import {
 
 interface DashboardLayoutProps {
   ledger: SimulationResultRow[];
+  parallelLedgers: {
+    flat: SimulationResultRow[];
+    p10: SimulationResultRow[];
+    p50: SimulationResultRow[];
+    p90: SimulationResultRow[];
+  };
+  successRate: number;
   inputs: AppStateInputs;
   activeTab: number;
   setActiveTab: (tab: number) => void;
@@ -22,6 +29,8 @@ interface DashboardLayoutProps {
 
 export const DashboardLayout: React.FC<DashboardLayoutProps> = ({
   ledger,
+  parallelLedgers,
+  successRate,
   inputs,
   activeTab,
   setActiveTab,
@@ -35,28 +44,25 @@ export const DashboardLayout: React.FC<DashboardLayoutProps> = ({
     }).format(val);
   };
 
-  // Compute key summary statistics from the computed ledger
+  // Compute key summary statistics for active ledger and all percentiles
   const stats = useMemo(() => {
-    // 1. Ending Net Estate Value (the final year's portfolio value)
-    const finalRow = ledger[ledger.length - 1];
-    const endingEstate = finalRow ? finalRow.totalPortfolioValue : 0;
-
-    // 2. Total Lifetime Taxes paid (sum of totalIncomeTax across all years)
-    const totalTaxes = ledger.reduce((sum, r) => sum + r.totalIncomeTax, 0);
-
-    // 3. Total Medicare surcharges paid (sum of combinedSurchargeAnnual)
-    const totalSurcharges = ledger.reduce((sum, r) => sum + r.combinedSurchargeAnnual, 0);
-
-    // 4. Medicare base premiums paid
-    const totalBasePremiums = ledger.reduce((sum, r) => sum + r.medicareBasePremiums, 0);
+    const computeForLedger = (l: SimulationResultRow[]) => {
+      const finalRow = l[l.length - 1];
+      const endingEstate = finalRow ? finalRow.totalPortfolioValue : 0;
+      const totalTaxes = l.reduce((sum, r) => sum + r.totalIncomeTax, 0);
+      const totalSurcharges = l.reduce((sum, r) => sum + r.combinedSurchargeAnnual, 0);
+      const totalBasePremiums = l.reduce((sum, r) => sum + r.medicareBasePremiums, 0);
+      return { endingEstate, totalTaxes, totalSurcharges, totalBasePremiums };
+    };
 
     return {
-      endingEstate,
-      totalTaxes,
-      totalSurcharges,
-      totalBasePremiums,
+      active: computeForLedger(ledger),
+      p10: computeForLedger(parallelLedgers.p10),
+      p50: computeForLedger(parallelLedgers.p50),
+      p90: computeForLedger(parallelLedgers.p90),
+      flat: computeForLedger(parallelLedgers.flat),
     };
-  }, [ledger]);
+  }, [ledger, parallelLedgers]);
 
   const stateTaxContext = useMemo(() => {
     const current = inputs.jurisdiction.currentState;
@@ -108,7 +114,10 @@ export const DashboardLayout: React.FC<DashboardLayoutProps> = ({
                 )}
               </span>
               <span className="text-xl font-black text-emerald-400 font-mono block">
-                {formatCurrency(stats.endingEstate)}
+                {formatCurrency(stats.active.endingEstate)}
+              </span>
+              <span className="text-[9px] text-slate-500 font-mono block">
+                Range: {formatCurrency(stats.p10.endingEstate)} to {formatCurrency(stats.p90.endingEstate)}
               </span>
             </div>
             <TrendingUp className="w-8 h-8 text-emerald-500/50" />
@@ -119,7 +128,10 @@ export const DashboardLayout: React.FC<DashboardLayoutProps> = ({
             <div className="space-y-1">
               <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider block">Lifetime Income Taxes</span>
               <span className="text-xl font-black text-rose-400 font-mono block">
-                {formatCurrency(stats.totalTaxes)}
+                {formatCurrency(stats.active.totalTaxes)}
+              </span>
+              <span className="text-[9px] text-slate-500 font-mono block">
+                Range: {formatCurrency(stats.p10.totalTaxes)} to {formatCurrency(stats.p90.totalTaxes)}
               </span>
             </div>
             <DollarSign className="w-8 h-8 text-rose-500/50" />
@@ -130,18 +142,24 @@ export const DashboardLayout: React.FC<DashboardLayoutProps> = ({
             <div className="space-y-1">
               <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider block">Lifetime IRMAA Surcharges</span>
               <span className="text-xl font-black text-amber-400 font-mono block">
-                {formatCurrency(stats.totalSurcharges)}
+                {formatCurrency(stats.active.totalSurcharges)}
+              </span>
+              <span className="text-[9px] text-slate-500 font-mono block">
+                Range: {formatCurrency(stats.p10.totalSurcharges)} to {formatCurrency(stats.p90.totalSurcharges)}
               </span>
             </div>
             <ShieldAlert className="w-8 h-8 text-amber-500/50" />
           </div>
 
-          {/* Card 4: Medicare Base Premiums */}
+          {/* Card 4: Plan Success Rate */}
           <div className="glass-panel rounded-2xl p-4 flex items-center justify-between border-l-4 border-l-blue-500 hover:scale-102 transition-transform duration-300">
             <div className="space-y-1">
-              <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider block">Base Medicare Premiums</span>
+              <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider block">Plan Success Rate</span>
               <span className="text-xl font-black text-blue-400 font-mono block">
-                {formatCurrency(stats.totalBasePremiums)}
+                {(successRate * 100).toFixed(1)}%
+              </span>
+              <span className="text-[9px] text-slate-500 font-mono block">
+                Across {inputs.monteCarloSettings.trials} stress test trials
               </span>
             </div>
             <ArrowRightLeft className="w-8 h-8 text-blue-500/50" />

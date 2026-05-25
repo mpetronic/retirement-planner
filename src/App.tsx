@@ -1,6 +1,12 @@
 import { useState, useEffect, useMemo } from 'react';
-import { AppStateInputs } from './types';
+import { AppStateInputs, LockedReturnSequence, SimulationResultRow } from './types';
 import { runRetirementSimulation } from './engine/simulationEngine';
+import {
+  runMonteCarloSimulation,
+  generateSyntheticSequence,
+  generateHistoricalSequence,
+  mulberry32
+} from './engine/monteCarloEngine';
 import { InputControlSidebar } from './components/InputControlSidebar';
 import { DashboardLayout } from './components/DashboardLayout';
 import { BracketMapChart } from './components/BracketMapChart';
@@ -63,6 +69,7 @@ const DEFAULT_INPUTS: AppStateInputs = {
     fixedIncomeVolatility: 0.05,
     correlation: 0.15,
     trials: 1000,
+    seed: null, // Default is standard random
   },
   isConfigured: false,
   isSingleFiler: false,
@@ -132,12 +139,93 @@ function App() {
   const [activeTab, setActiveTab] = useState<number>(0);
   const [simulateSurvivor, setSimulateSurvivor] = useLocalStorage<boolean>('retirement_planner_survivor', false);
 
-  // Re-trigger the simulation loop dynamically whenever inputs or survivor view changes
-  const ledger = useMemo(() => {
-    return runRetirementSimulation(inputs, simulateSurvivor);
-  }, [inputs, simulateSurvivor]);
+  // Localized persisted scenarios for Workspace 1, 2, and 3
+  const [ws1Scenario, setWs1Scenario] = useLocalStorage<'flat' | 'p10' | 'p50' | 'p90'>('retirement_planner_ws1_scenario', 'flat');
+  const [ws2Scenario, setWs2Scenario] = useLocalStorage<'flat' | 'p10' | 'p50' | 'p90'>('retirement_planner_ws2_scenario', 'flat');
+  const [ws3Scenario, setWs3Scenario] = useLocalStorage<'flat' | 'p10' | 'p50' | 'p90'>('retirement_planner_ws3_scenario', 'flat');
 
-  // Conversion updates are now handled directly by the left sidebar panel inputs
+  // 1. Generate 1,000 return sequences once, keyed ONLY on volatility/correlation/seed.
+  // This preserves stable market return percentages while strategy slider variables are tweaked.
+  const returnSequences = useMemo(() => {
+    const trials = inputs.monteCarloSettings?.trials || 1000;
+    const mode = inputs.monteCarloSettings?.mode || 'monte-carlo';
+    
+    const equityMean = inputs.growthAssumptions.equityReturnRate;
+    const bondMean = inputs.growthAssumptions.fixedIncomeReturnRate;
+    const equityVol = inputs.monteCarloSettings?.equityVolatility ?? 0.15;
+    const bondVol = inputs.monteCarloSettings?.fixedIncomeVolatility ?? 0.05;
+    const correlation = inputs.monteCarloSettings?.correlation ?? 0.15;
+    const seed = inputs.monteCarloSettings?.seed;
+    
+    const rand = seed !== null && seed !== undefined ? mulberry32(seed) : Math.random;
+    
+    const list: Omit<LockedReturnSequence, 'id'>[] = [];
+    for (let t = 0; t < trials; t++) {
+      if (mode === 'historical') {
+        const block = rand() < 0.35;
+        list.push(generateHistoricalSequence(block, undefined, rand));
+      } else {
+        list.push(generateSyntheticSequence(equityMean, equityVol, bondMean, bondVol, correlation, rand));
+      }
+    }
+    return list;
+  }, [
+    inputs.growthAssumptions.equityReturnRate,
+    inputs.growthAssumptions.fixedIncomeReturnRate,
+    inputs.monteCarloSettings.mode,
+    inputs.monteCarloSettings.trials,
+    inputs.monteCarloSettings.equityVolatility,
+    inputs.monteCarloSettings.fixedIncomeVolatility,
+    inputs.monteCarloSettings.correlation,
+    inputs.monteCarloSettings.seed,
+  ]);
+
+  // 2. Reactively compute the Monte Carlo simulation. Takes ~25ms since returns are pre-generated.
+  const monteCarloSummary = useMemo(() => {
+    return runMonteCarloSimulation(inputs, simulateSurvivor, returnSequences);
+  }, [inputs, simulateSurvivor, returnSequences]);
+
+  // 3. Compute parallel ledgers for flat expected returns and the representative percentiles.
+  const parallelLedgers = useMemo(() => {
+    return {
+      flat: runRetirementSimulation(inputs, simulateSurvivor, null),
+      p10: runRetirementSimulation(inputs, simulateSurvivor, monteCarloSummary.representativeSequences.worst),
+      p50: runRetirementSimulation(inputs, simulateSurvivor, monteCarloSummary.representativeSequences.median),
+      p90: runRetirementSimulation(inputs, simulateSurvivor, monteCarloSummary.representativeSequences.best),
+    };
+  }, [inputs, simulateSurvivor, monteCarloSummary]);
+
+  // Compute active ledger for each worksheet depending on its localized switcher state
+  const wsLedgers = useMemo(() => {
+    return {
+      ws1: parallelLedgers[ws1Scenario] || parallelLedgers.flat,
+      ws2: parallelLedgers[ws2Scenario] || parallelLedgers.flat,
+      ws3: parallelLedgers[ws3Scenario] || parallelLedgers.flat,
+    };
+  }, [parallelLedgers, ws1Scenario, ws2Scenario, ws3Scenario]);
+
+  // Compute active ledger for header stats depending on active tab
+  const activeLedger = useMemo(() => {
+    if (activeTab === 0) return wsLedgers.ws1;
+    if (activeTab === 1) return wsLedgers.ws2;
+    if (activeTab === 2) return wsLedgers.ws3;
+    return wsLedgers.ws1; // fallback
+  }, [activeTab, wsLedgers]);
+
+  // Active return sequence for optimizer/matrix sweeps
+  const activeWs1Sequence = useMemo(() => {
+    if (ws1Scenario === 'p10') return monteCarloSummary.representativeSequences.worst;
+    if (ws1Scenario === 'p50') return monteCarloSummary.representativeSequences.median;
+    if (ws1Scenario === 'p90') return monteCarloSummary.representativeSequences.best;
+    return null;
+  }, [ws1Scenario, monteCarloSummary]);
+
+  const activeWs3Sequence = useMemo(() => {
+    if (ws3Scenario === 'p10') return monteCarloSummary.representativeSequences.worst;
+    if (ws3Scenario === 'p50') return monteCarloSummary.representativeSequences.median;
+    if (ws3Scenario === 'p90') return monteCarloSummary.representativeSequences.best;
+    return null;
+  }, [ws3Scenario, monteCarloSummary]);
 
   // Handle applying a fully optimized retirement configuration at once
   const handleApplyOptimization = (annualConversion: number, targetValue: number | null, yourAge: number, wifeAge: number) => {
@@ -191,16 +279,21 @@ function App() {
 
       {/* Main Orchestration Dashboard Layout */}
       <DashboardLayout
-        ledger={ledger}
+        ledger={activeLedger}
+        parallelLedgers={parallelLedgers}
+        successRate={monteCarloSummary.successRate}
         inputs={inputs}
         activeTab={activeTab}
         setActiveTab={setActiveTab}
       >
         {activeTab === 0 && (
           <BracketMapChart
-            ledger={ledger}
+            ledger={wsLedgers.ws1}
             inputs={inputs}
             simulateSurvivor={simulateSurvivor}
+            wsScenario={ws1Scenario}
+            onChangeScenario={setWs1Scenario}
+            activeScenarioSequence={activeWs1Sequence}
             onApplyOptimization={handleApplyOptimization}
             onUpdateStrategy={handleUpdateStrategy}
             onUpdateTargetValue={handleUpdateTargetValue}
@@ -208,16 +301,21 @@ function App() {
         )}
         {activeTab === 1 && (
           <LookbackLedgerTable
-            ledger={ledger}
+            ledger={wsLedgers.ws2}
             inputs={inputs}
             simulateSurvivor={simulateSurvivor}
+            wsScenario={ws2Scenario}
+            onChangeScenario={setWs2Scenario}
           />
         )}
         {activeTab === 2 && (
           <ClaimingMatrixGrid
             inputs={inputs}
-            ledger={ledger}
+            ledger={wsLedgers.ws3}
             simulateSurvivor={simulateSurvivor}
+            wsScenario={ws3Scenario}
+            onChangeScenario={setWs3Scenario}
+            activeScenarioSequence={activeWs3Sequence}
             onUpdateClaimingAges={handleUpdateClaimingAges}
             onToggleSurvivor={setSimulateSurvivor}
           />
@@ -227,6 +325,7 @@ function App() {
             inputs={inputs}
             onChangeInputs={setInputs}
             simulateSurvivor={simulateSurvivor}
+            summary={monteCarloSummary}
           />
         )}
       </DashboardLayout>

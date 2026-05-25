@@ -32,6 +32,7 @@ export interface MonteCarloSettings {
   fixedIncomeVolatility: number; // e.g. 0.05 (5%)
   correlation: number;           // e.g. 0.15
   trials: number;                // e.g. 1000
+  seed: number | null;           // Null for standard random, integer for deterministic reproducibility
 }
 
 export interface AppStateInputs {
