@@ -168,9 +168,10 @@ export const LookbackLedgerTable: React.FC<LookbackLedgerTableProps> = ({
       <div className="overflow-x-auto rounded-xl border border-slate-800 bg-slate-950/20">
         <table className="w-full text-left border-collapse text-sm">
           <thead>
-            <tr className="bg-slate-900/60 border-b border-slate-800 text-slate-400 text-xs font-semibold uppercase tracking-wider whitespace-nowrap">
+             <tr className="bg-slate-900/60 border-b border-slate-800 text-slate-400 text-xs font-semibold uppercase tracking-wider whitespace-nowrap">
               <th className="p-4">Year (t)</th>
               <th className="p-4">MAGI (Income)</th>
+              <th className="p-4">Roth Conv. Tax</th>
               <th className="p-4">Total Expenses</th>
               <th className="p-4">Brokerage (Taxable)</th>
               <th className="p-4">Tax-Deferred (Pre-Tax)</th>
@@ -187,6 +188,10 @@ export const LookbackLedgerTable: React.FC<LookbackLedgerTableProps> = ({
               // Determine if this row is highlighted for crossing a cliff by < $5,000
               const isWarningRow = warnings.some((w) => w.year === r.year);
 
+              const conversionTax = r.intentionalRothConversion > 0
+                ? r.intentionalRothConversion * (r.totalIncomeTax / (r.fedAGI > 0 ? r.fedAGI : 1))
+                : 0;
+
               return (
                 <tr
                   key={r.year}
@@ -198,6 +203,15 @@ export const LookbackLedgerTable: React.FC<LookbackLedgerTableProps> = ({
                 >
                   <td className="p-4 font-mono font-semibold">{r.year}</td>
                   <td className="p-4 font-mono">{formatCurrency(r.magi)}</td>
+                  <td className="p-4 font-mono">
+                    {r.intentionalRothConversion > 0 ? (
+                      <span className="text-amber-400/90 font-semibold font-mono" title={`Pro-rata tax on ${formatCurrency(r.intentionalRothConversion)} conversion`}>
+                        {formatCurrency(conversionTax)}
+                      </span>
+                    ) : (
+                      <span className="text-slate-600 font-mono">$0</span>
+                    )}
+                  </td>
                   <td className="p-4 font-mono text-rose-400/90">{formatCurrency(r.totalExpenses)}</td>
                   <td className="p-4 font-mono text-slate-300">{formatCurrency(r.endYourTaxableBrokerage + r.endWifeTaxableBrokerage)}</td>
                   <td className="p-4 font-mono text-slate-300">{formatCurrency(r.endYourPreTaxIRA + r.endWifePreTaxIRA)}</td>
