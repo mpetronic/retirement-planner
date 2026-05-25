@@ -191,14 +191,6 @@ export const PlanComparisonWorkspace: React.FC<PlanComparisonWorkspaceProps> = (
         lowerIsBetter: true,
       },
       {
-        id: 'medicareBase',
-        name: 'Medicare Base Premiums',
-        desc: 'Combined standard annual Part B & Part D premiums for the couple.',
-        valA: statsA.medicareBase,
-        valB: statsB.medicareBase,
-        lowerIsBetter: true,
-      },
-      {
         id: 'irmaa',
         name: 'Medicare IRMAA Surcharges',
         desc: 'Income-Related Monthly Adjustment Amount surcharges triggered by lookback MAGI.',
