@@ -336,7 +336,7 @@ export const PlanComparisonWorkspace: React.FC<PlanComparisonWorkspaceProps> = (
                 onChange={(e) => setNewPlanName(e.target.value)}
                 placeholder="e.g. Baseline - No Conversions"
                 maxLength={40}
-                className="w-full bg-slate-950/60 border border-slate-800 focus:border-emerald-500/60 focus:ring-1 focus:ring-emerald-500/20 text-xs px-3.5 py-2.5 rounded-xl text-slate-100 placeholder-slate-500 focus:outline-none transition-colors"
+                className="w-full bg-slate-950/60 border border-slate-800 focus:border-emerald-500/60 focus:ring-1 focus:ring-emerald-500/20 text-xs px-5 py-3 rounded-xl text-slate-100 placeholder-slate-500 focus:outline-none transition-colors"
               />
               <button
                 type="submit"
