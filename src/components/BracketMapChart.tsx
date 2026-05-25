@@ -142,7 +142,7 @@ export const BracketMapChart: React.FC<BracketMapChartProps> = ({
         data: ssIncomes,
         backgroundColor: 'rgba(59, 130, 246, 0.65)', // blue-500 @ 65% opacity
         stack: 'income',
-        order: 7,
+        order: 6,
         pointStyle: 'rect',
       },
       {
@@ -150,7 +150,7 @@ export const BracketMapChart: React.FC<BracketMapChartProps> = ({
         data: activeSalaries,
         backgroundColor: 'rgba(139, 92, 246, 0.65)', // violet-500 @ 65% opacity
         stack: 'income',
-        order: 6,
+        order: 5,
         pointStyle: 'rect',
       },
       {
@@ -158,7 +158,7 @@ export const BracketMapChart: React.FC<BracketMapChartProps> = ({
         data: rmds,
         backgroundColor: 'rgba(245, 158, 11, 0.65)', // amber-500 @ 65% opacity
         stack: 'income',
-        order: 5,
+        order: 4.5,
         pointStyle: 'rect',
       },
       {
