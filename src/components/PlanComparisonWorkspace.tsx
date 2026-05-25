@@ -430,14 +430,14 @@ export const PlanComparisonWorkspace: React.FC<PlanComparisonWorkspaceProps> = (
                       </div>
 
                       {/* Config Summary Badges */}
-                      <div className="mt-3 flex flex-wrap gap-1 text-[8px] font-bold tracking-wide uppercase">
-                        <span className="bg-slate-850 text-slate-400 px-1.5 py-0.5 rounded border border-slate-850">
+                      <div className="mt-2.5 flex flex-wrap gap-1.5 text-[9px] font-bold tracking-wide uppercase">
+                        <span className="bg-slate-800/80 text-slate-300 px-2 py-0.5 rounded-md">
                           {isFL}
                         </span>
-                        <span className="bg-slate-850 text-slate-400 px-1.5 py-0.5 rounded border border-slate-850">
+                        <span className="bg-slate-800/80 text-slate-300 px-2 py-0.5 rounded-md">
                           {cStrategy}: {cAmount}
                         </span>
-                        <span className="bg-slate-850 text-slate-400 px-1.5 py-0.5 rounded border border-slate-850">
+                        <span className="bg-slate-800/80 text-slate-300 px-2 py-0.5 rounded-md">
                           Claim: {plan.inputs.you.targetSSClaimingAge}/{plan.inputs.wife.targetSSClaimingAge}
                         </span>
                       </div>
