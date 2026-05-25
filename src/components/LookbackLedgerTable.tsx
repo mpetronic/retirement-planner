@@ -212,7 +212,45 @@ export const LookbackLedgerTable: React.FC<LookbackLedgerTableProps> = ({
                       <span className="text-slate-600 font-mono">$0</span>
                     )}
                   </td>
-                  <td className="p-4 font-mono text-rose-400/90">{formatCurrency(r.totalExpenses)}</td>
+                  <td className="p-4 font-mono text-rose-400/90 relative group cursor-help">
+                    <span>{formatCurrency(r.totalExpenses)}</span>
+                    <div className="absolute left-1/2 bottom-full mb-2 -translate-x-1/2 w-64 bg-slate-950/95 backdrop-blur-md border border-slate-800 rounded-2xl p-4 shadow-2xl opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 z-50 text-xs text-slate-300 pointer-events-none space-y-2 font-sans normal-case">
+                      <div className="flex items-center justify-between border-b border-slate-800/80 pb-1.5 mb-1">
+                        <span className="font-bold text-slate-200 uppercase tracking-wider text-[9px]">Expense Component</span>
+                        <span className="font-bold text-rose-400 uppercase tracking-wider text-[9px]">Amount</span>
+                      </div>
+                      <div className="flex justify-between items-center text-[11px]">
+                        <span className="text-slate-400">Living Expenses:</span>
+                        <span className="font-mono text-slate-200 font-medium">{formatCurrency(r.livingExpenses)}</span>
+                      </div>
+                      <div className="flex justify-between items-center text-[11px]">
+                        <span className="text-slate-400">Federal Income Tax:</span>
+                        <span className="font-mono text-slate-200 font-medium">{formatCurrency(r.fedIncomeTax)}</span>
+                      </div>
+                      <div className="flex justify-between items-center text-[11px]">
+                        <span className="text-slate-400">State Income Tax:</span>
+                        <span className="font-mono text-slate-200 font-medium">{formatCurrency(r.stateIncomeTax)}</span>
+                      </div>
+                      <div className="flex justify-between items-center text-[11px]">
+                        <span className="text-slate-400">Medicare Base:</span>
+                        <span className="font-mono text-slate-200 font-medium">{formatCurrency(r.medicareBasePremiums)}</span>
+                      </div>
+                      <div className="flex justify-between items-center text-[11px]">
+                        <span className="text-slate-400">Medicare IRMAA Hikes:</span>
+                        <span className="font-mono text-slate-200 font-medium">{formatCurrency(r.combinedSurchargeAnnual)}</span>
+                      </div>
+                      {r.preMedicareHealthcareCost > 0 && (
+                        <div className="flex justify-between items-center text-[11px]">
+                          <span className="text-slate-400">Pre-Medicare Premium:</span>
+                          <span className="font-mono text-slate-200 font-medium">{formatCurrency(r.preMedicareHealthcareCost)}</span>
+                        </div>
+                      )}
+                      <div className="flex justify-between items-center border-t border-slate-800/80 pt-2 mt-1 text-[11px] font-bold">
+                        <span className="text-slate-200">Total Outflow:</span>
+                        <span className="font-mono text-rose-400">{formatCurrency(r.totalExpenses)}</span>
+                      </div>
+                    </div>
+                  </td>
                   <td className="p-4 font-mono text-slate-300">{formatCurrency(r.endYourTaxableBrokerage + r.endWifeTaxableBrokerage)}</td>
                   <td className="p-4 font-mono text-slate-300">{formatCurrency(r.endYourPreTaxIRA + r.endWifePreTaxIRA)}</td>
                   <td className="p-4 font-mono text-emerald-400/90">{formatCurrency(r.endYourRothIRA + r.endWifeRothIRA)}</td>
