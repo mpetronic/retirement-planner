@@ -182,7 +182,7 @@ export const LookbackLedgerTable: React.FC<LookbackLedgerTableProps> = ({
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-800/40">
-            {ledger.map((r) => {
+            {ledger.map((r, idx) => {
               const affectedYear = r.year + 2;
               
               // Determine if this row is highlighted for crossing a cliff by < $5,000
@@ -191,6 +191,8 @@ export const LookbackLedgerTable: React.FC<LookbackLedgerTableProps> = ({
               const conversionTax = r.intentionalRothConversion > 0
                 ? r.intentionalRothConversion * (r.totalIncomeTax / (r.fedAGI > 0 ? r.fedAGI : 1))
                 : 0;
+
+              const isTopRow = idx < 4;
 
               return (
                 <tr
@@ -214,7 +216,9 @@ export const LookbackLedgerTable: React.FC<LookbackLedgerTableProps> = ({
                   </td>
                   <td className="p-4 font-mono text-rose-400/90 relative group cursor-help">
                     <span>{formatCurrency(r.totalExpenses)}</span>
-                    <div className="absolute left-1/2 bottom-full mb-2 -translate-x-1/2 w-64 bg-slate-950/95 backdrop-blur-md border border-slate-800 rounded-2xl p-4 shadow-2xl opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 z-50 text-xs text-slate-300 pointer-events-none space-y-2 font-sans normal-case">
+                    <div className={`absolute left-1/2 -translate-x-1/2 w-64 bg-slate-950/95 backdrop-blur-md border border-slate-800 rounded-2xl p-4 shadow-2xl opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 z-50 text-xs text-slate-300 pointer-events-none space-y-2 font-sans normal-case ${
+                      isTopRow ? 'top-full mt-2' : 'bottom-full mb-2'
+                    }`}>
                       <div className="flex items-center justify-between border-b border-slate-800/80 pb-1.5 mb-1">
                         <span className="font-bold text-slate-200 uppercase tracking-wider text-[9px]">Expense Component</span>
                         <span className="font-bold text-rose-400 uppercase tracking-wider text-[9px]">Amount</span>
