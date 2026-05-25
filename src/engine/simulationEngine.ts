@@ -595,6 +595,15 @@ export function runRetirementSimulation(
       // Federal Income Tax
       fedIncomeTax = calculateFedTax(fedTaxableIncome, isSingle, cpiFactor);
       
+      // Calculate 3.8% Net Investment Income Tax (NIIT)
+      // Thresholds: $200k for Single / $250k for MFJ (under tax code, these are NOT adjusted for inflation)
+      const niitThreshold = isSingle ? 200000 : 250000;
+      const excessMAGI = Math.max(0, fedAGI - niitThreshold);
+      const niitBase = Math.min(capitalGainsTriggered, excessMAGI);
+      const niitTax = niitBase * 0.038;
+      
+      fedIncomeTax += niitTax;
+      
       // State Income Tax
       const isStateFL = (inputs.jurisdiction.relocationYear !== null && year >= inputs.jurisdiction.relocationYear)
         ? (inputs.jurisdiction.targetState === 'FL')
