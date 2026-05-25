@@ -81,35 +81,40 @@ function useLocalStorage<T>(key: string, initialValue: T): [T, (value: T | ((val
       const item = window.localStorage.getItem(key);
       if (item) {
         const parsed = JSON.parse(item);
+        
         // Robust deep merge to ensure new Monte Carlo fields are populated for users with old saved states
-        return {
-          ...initialValue,
-          ...parsed,
-          growthAssumptions: {
-            ...(initialValue as any).growthAssumptions,
-            ...parsed.growthAssumptions,
-          },
-          you: {
-            ...(initialValue as any).you,
-            ...parsed.you,
-          },
-          wife: {
-            ...(initialValue as any).wife,
-            ...parsed.wife,
-          },
-          portfolio: {
-            ...(initialValue as any).portfolio,
-            ...parsed.portfolio,
-          },
-          jurisdiction: {
-            ...(initialValue as any).jurisdiction,
-            ...parsed.jurisdiction,
-          },
-          monteCarloSettings: {
-            ...(initialValue as any).monteCarloSettings,
-            ...parsed.monteCarloSettings,
-          },
-        };
+        if (key === 'retirement_planner_inputs') {
+          return {
+            ...initialValue,
+            ...parsed,
+            growthAssumptions: {
+              ...(initialValue as any).growthAssumptions,
+              ...parsed.growthAssumptions,
+            },
+            you: {
+              ...(initialValue as any).you,
+              ...parsed.you,
+            },
+            wife: {
+              ...(initialValue as any).wife,
+              ...parsed.wife,
+            },
+            portfolio: {
+              ...(initialValue as any).portfolio,
+              ...parsed.portfolio,
+            },
+            jurisdiction: {
+              ...(initialValue as any).jurisdiction,
+              ...parsed.jurisdiction,
+            },
+            monteCarloSettings: {
+              ...(initialValue as any).monteCarloSettings,
+              ...parsed.monteCarloSettings,
+            },
+          } as any;
+        }
+        
+        return parsed;
       }
       return initialValue;
     } catch (error) {
