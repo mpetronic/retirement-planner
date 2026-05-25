@@ -225,6 +225,8 @@ export const PlanComparisonWorkspace: React.FC<PlanComparisonWorkspaceProps> = (
     const estateDelta = statsB.endingEstate - statsA.endingEstate;
     const surchargeSavings = statsA.irmaa - statsB.irmaa;
 
+    const isIdentical = selectedPlanAId === selectedPlanBId || (Math.abs(taxSavings) < 0.1 && Math.abs(estateDelta) < 0.1);
+
     const isTaxFavorable = taxSavings > 0;
     const isEstateFavorable = estateDelta > 0;
     const isSurchargeFavorable = surchargeSavings > 0;
@@ -251,7 +253,10 @@ export const PlanComparisonWorkspace: React.FC<PlanComparisonWorkspaceProps> = (
     let benefitSummary = '';
     let isPositiveOverall = false;
 
-    if (isTaxFavorable && isEstateFavorable) {
+    if (isIdentical) {
+      benefitSummary = `Plan A ("${planA.name}") and Plan B ("${planB.name}") are identical scenarios. The lifetime taxes, Medicare premiums, surcharges, and portfolio trajectories are mathematically equivalent. Use the dropdown selectors to load or compare different configurations.`;
+      isPositiveOverall = true;
+    } else if (isTaxFavorable && isEstateFavorable) {
       benefitSummary = `Plan B ("${planB.name}") is a highly superior scenario. It successfully optimizes your portfolio to save ${formatCurrency(taxSavings)} in lifetime taxes while generating a larger terminal estate (+${formatCurrency(estateDelta)}). This is a clear win-win outcome.`;
       isPositiveOverall = true;
     } else if (isTaxFavorable && !isEstateFavorable) {
@@ -287,9 +292,10 @@ export const PlanComparisonWorkspace: React.FC<PlanComparisonWorkspaceProps> = (
       benefitSummary,
       isPositiveOverall,
       netTaxesDesc,
-      estateDesc
+      estateDesc,
+      isIdentical
     };
-  }, [statsA, statsB, planA, planB]);
+  }, [statsA, statsB, planA, planB, selectedPlanAId, selectedPlanBId]);
 
   return (
     <div className="space-y-6">
@@ -619,18 +625,28 @@ export const PlanComparisonWorkspace: React.FC<PlanComparisonWorkspaceProps> = (
                 {/* 2. Premium Visual TakeawayInsight Card */}
                 {summaryInsight && (
                   <div className={`border rounded-2xl p-5 shadow-xl transition-all relative overflow-hidden ${
-                    summaryInsight.isPositiveOverall
-                      ? 'bg-emerald-950/20 border-emerald-500/30'
-                      : 'bg-rose-950/10 border-rose-500/20'
+                    summaryInsight.isIdentical
+                      ? 'bg-slate-900/40 border-slate-700/50'
+                      : summaryInsight.isPositiveOverall
+                        ? 'bg-emerald-950/20 border-emerald-500/30'
+                        : 'bg-rose-950/10 border-rose-500/20'
                   }`}>
                     {/* Background glows */}
                     <div className={`absolute -right-10 -bottom-10 w-40 h-40 rounded-full blur-3xl opacity-10 ${
-                      summaryInsight.isPositiveOverall ? 'bg-emerald-400' : 'bg-rose-400'
+                      summaryInsight.isIdentical
+                        ? 'bg-slate-500'
+                        : summaryInsight.isPositiveOverall 
+                          ? 'bg-emerald-400' 
+                          : 'bg-rose-400'
                     }`} />
                     
                     <div className="flex gap-4">
                       <div className="mt-1 flex-shrink-0">
-                        {summaryInsight.isPositiveOverall ? (
+                        {summaryInsight.isIdentical ? (
+                          <div className="bg-slate-800/80 border border-slate-700/60 p-2.5 rounded-xl">
+                            <Sparkles className="w-5 h-5 text-slate-400" />
+                          </div>
+                        ) : summaryInsight.isPositiveOverall ? (
                           <div className="bg-emerald-500/10 border border-emerald-500/20 p-2.5 rounded-xl">
                             <TrendingUp className="w-5 h-5 text-emerald-400" />
                           </div>
@@ -643,32 +659,44 @@ export const PlanComparisonWorkspace: React.FC<PlanComparisonWorkspaceProps> = (
                       
                       <div className="space-y-2">
                         <h4 className={`text-sm font-black ${
-                          summaryInsight.isPositiveOverall ? 'text-emerald-400' : 'text-rose-400'
+                          summaryInsight.isIdentical
+                            ? 'text-slate-300'
+                            : summaryInsight.isPositiveOverall 
+                              ? 'text-emerald-400' 
+                              : 'text-rose-400'
                         }`}>
-                          Plan comparison analysis: {summaryInsight.isPositiveOverall ? 'Optimal Setup Identified' : 'Caution Advised'}
+                          Plan comparison analysis: {
+                            summaryInsight.isIdentical 
+                              ? 'Identical Scenarios' 
+                              : summaryInsight.isPositiveOverall 
+                                ? 'Optimal Setup Identified' 
+                                : 'Caution Advised'
+                          }
                         </h4>
                         
                         <p className="text-xs text-slate-300 leading-relaxed font-medium">
                           {summaryInsight.benefitSummary}
                         </p>
 
-                        <div className="pt-2 flex flex-wrap gap-x-4 gap-y-2 text-[10px] font-mono">
-                          <span className="flex items-center gap-1 text-slate-400">
-                            🛡️ Surcharges: <strong className={summaryInsight.isSurchargeFavorable ? 'text-emerald-400' : 'text-slate-300'}>
-                              {summaryInsight.surchargeSavings > 0 
-                                ? `${formatCurrency(summaryInsight.surchargeSavings)} saved` 
-                                : summaryInsight.surchargeSavings < 0
-                                  ? `${formatCurrency(Math.abs(summaryInsight.surchargeSavings))} increase`
-                                  : 'No change'}
-                            </strong>
-                          </span>
-                          
-                          <span className="flex items-center gap-1 text-slate-400">
-                            💸 Income Tax: <strong className={summaryInsight.isTaxFavorable ? 'text-emerald-400' : 'text-rose-400'}>
-                              {summaryInsight.netTaxesDesc}
-                            </strong>
-                          </span>
-                        </div>
+                        {!summaryInsight.isIdentical && (
+                          <div className="pt-2 flex flex-wrap gap-x-4 gap-y-2 text-[10px] font-mono">
+                            <span className="flex items-center gap-1 text-slate-400">
+                              🛡️ Surcharges: <strong className={summaryInsight.isSurchargeFavorable ? 'text-emerald-400' : 'text-slate-300'}>
+                                {summaryInsight.surchargeSavings > 0 
+                                  ? `${formatCurrency(summaryInsight.surchargeSavings)} saved` 
+                                  : summaryInsight.surchargeSavings < 0
+                                    ? `${formatCurrency(Math.abs(summaryInsight.surchargeSavings))} increase`
+                                    : 'No change'}
+                              </strong>
+                            </span>
+                            
+                            <span className="flex items-center gap-1 text-slate-400">
+                              💸 Income Tax: <strong className={summaryInsight.isTaxFavorable ? 'text-emerald-400' : 'text-rose-400'}>
+                                {summaryInsight.netTaxesDesc}
+                              </strong>
+                            </span>
+                          </div>
+                        )}
                       </div>
                     </div>
                   </div>
