@@ -461,6 +461,7 @@ export function runRetirementSimulation(
     let capitalGainsTriggered = 0;
     let fedIncomeTax = 0;
     let stateIncomeTax = 0;
+    let niitTax = 0;
     
     let currentYourTaxable = yourTaxable;
     let currentYourBasis = yourBasis;
@@ -600,7 +601,7 @@ export function runRetirementSimulation(
       const niitThreshold = isSingle ? 200000 : 250000;
       const excessMAGI = Math.max(0, fedAGI - niitThreshold);
       const niitBase = Math.min(capitalGainsTriggered, excessMAGI);
-      const niitTax = niitBase * 0.038;
+      niitTax = niitBase * 0.038;
       
       fedIncomeTax += niitTax;
       
@@ -673,6 +674,7 @@ export function runRetirementSimulation(
       fedIncomeTax,
       stateIncomeTax,
       totalIncomeTax: fedIncomeTax + stateIncomeTax,
+      niitTax,
       magiTwoYearsAgo,
       surchargeTier,
       yourPartBSurcharge,

@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo } from 'react';
-import { AppStateInputs, LockedReturnSequence } from './types';
+import { AppStateInputs, LockedReturnSequence, SavedPlan } from './types';
 import { runRetirementSimulation } from './engine/simulationEngine';
 import {
   runMonteCarloSimulation,
@@ -13,6 +13,7 @@ import { BracketMapChart } from './components/BracketMapChart';
 import { LookbackLedgerTable } from './components/LookbackLedgerTable';
 import { ClaimingMatrixGrid } from './components/ClaimingMatrixGrid';
 import { MonteCarloWorkspace } from './components/MonteCarloWorkspace';
+import { PlanComparisonWorkspace } from './components/PlanComparisonWorkspace';
 import { OnboardingWizard } from './components/OnboardingWizard';
 
 // Default initial state matching specifications
@@ -137,6 +138,7 @@ function App() {
   const [inputs, setInputs] = useLocalStorage<AppStateInputs>('retirement_planner_inputs', DEFAULT_INPUTS);
   const [activeTab, setActiveTab] = useState<number>(0);
   const [simulateSurvivor, setSimulateSurvivor] = useLocalStorage<boolean>('retirement_planner_survivor', false);
+  const [savedPlans, setSavedPlans] = useLocalStorage<SavedPlan[]>('retirement_planner_saved_plans', []);
 
   // Localized persisted scenarios for Workspace 1, 2, and 3
   const [ws1Scenario, setWs1Scenario] = useLocalStorage<'flat' | 'p10' | 'p50' | 'p90'>('retirement_planner_ws1_scenario', 'flat');
@@ -326,6 +328,15 @@ function App() {
             onChangeInputs={setInputs}
             simulateSurvivor={simulateSurvivor}
             summary={monteCarloSummary}
+          />
+        )}
+        {activeTab === 4 && (
+          <PlanComparisonWorkspace
+            inputs={inputs}
+            onLoadPlan={setInputs}
+            savedPlans={savedPlans}
+            onSavePlans={setSavedPlans}
+            simulateSurvivor={simulateSurvivor}
           />
         )}
       </DashboardLayout>

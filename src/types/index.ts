@@ -88,6 +88,7 @@ export interface SimulationResultRow {
   fedIncomeTax: number;
   stateIncomeTax: number;
   totalIncomeTax: number;
+  niitTax: number;
   
   // Medicare Surcharges (applied in Year t based on Year t-2 MAGI)
   magiTwoYearsAgo: number;
@@ -124,4 +125,11 @@ export interface SimulationResultRow {
   endWifeTaxableBasis: number;
   
   totalPortfolioValue: number;
+}
+
+export interface SavedPlan {
+  id: string;
+  name: string;
+  inputs: AppStateInputs;
+  createdAt: string;
 }
