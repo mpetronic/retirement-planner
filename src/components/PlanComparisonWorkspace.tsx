@@ -20,6 +20,7 @@ interface PlanComparisonWorkspaceProps {
   savedPlans: SavedPlan[];
   onSavePlans: (plans: SavedPlan[] | ((prev: SavedPlan[]) => SavedPlan[])) => void;
   simulateSurvivor: boolean;
+  useTodayDollars: boolean;
 }
 
 export const PlanComparisonWorkspace: React.FC<PlanComparisonWorkspaceProps> = ({
@@ -28,6 +29,7 @@ export const PlanComparisonWorkspace: React.FC<PlanComparisonWorkspaceProps> = (
   savedPlans,
   onSavePlans,
   simulateSurvivor,
+  useTodayDollars,
 }) => {
   const [newPlanName, setNewPlanName] = useState('');
   const [selectedPlanAId, setSelectedPlanAId] = useState<string>('');
@@ -138,16 +140,39 @@ export const PlanComparisonWorkspace: React.FC<PlanComparisonWorkspaceProps> = (
   const planA = useMemo(() => savedPlans.find((p) => p.id === selectedPlanAId), [savedPlans, selectedPlanAId]);
   const planB = useMemo(() => savedPlans.find((p) => p.id === selectedPlanBId), [savedPlans, selectedPlanBId]);
 
+  // Helper to discount a row's nominal values back to today's purchasing power (real value)
+  const discountRow = (row: SimulationResultRow, cpiRate: number): SimulationResultRow => {
+    const yearsElapsed = row.year - 2026;
+    const factor = Math.pow(1 + cpiRate, yearsElapsed);
+    if (factor <= 1) return row;
+
+    const discounted = { ...row };
+    const nonCurrencyKeys = new Set(['year', 'yourAge', 'wifeAge', 'surchargeTier']);
+    
+    for (const key of Object.keys(discounted) as Array<keyof SimulationResultRow>) {
+      if (!nonCurrencyKeys.has(key) && typeof discounted[key] === 'number') {
+        (discounted as any)[key] = (discounted[key] as number) / factor;
+      }
+    }
+    return discounted;
+  };
+
   // Run dynamic simulations on standard flat returns
   const simResultA = useMemo(() => {
     if (!planA) return null;
-    return runRetirementSimulation(planA.inputs, simulateSurvivor, null);
-  }, [planA, simulateSurvivor]);
+    const rawResult = runRetirementSimulation(planA.inputs, simulateSurvivor, null);
+    if (!useTodayDollars) return rawResult;
+    const cpi = planA.inputs.growthAssumptions.cpiInflationRate;
+    return rawResult.map((r) => discountRow(r, cpi));
+  }, [planA, simulateSurvivor, useTodayDollars]);
 
   const simResultB = useMemo(() => {
     if (!planB) return null;
-    return runRetirementSimulation(planB.inputs, simulateSurvivor, null);
-  }, [planB, simulateSurvivor]);
+    const rawResult = runRetirementSimulation(planB.inputs, simulateSurvivor, null);
+    if (!useTodayDollars) return rawResult;
+    const cpi = planB.inputs.growthAssumptions.cpiInflationRate;
+    return rawResult.map((r) => discountRow(r, cpi));
+  }, [planB, simulateSurvivor, useTodayDollars]);
 
   // Sum lifetime stats
   const statsA = useMemo(() => simResultA ? calculateLifetimeMetrics(simResultA) : null, [simResultA]);

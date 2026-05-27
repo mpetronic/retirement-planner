@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo } from 'react';
-import { AppStateInputs, LockedReturnSequence, SavedPlan } from './types';
+import { AppStateInputs, LockedReturnSequence, SavedPlan, SimulationResultRow } from './types';
 import { runRetirementSimulation } from './engine/simulationEngine';
 import {
   runMonteCarloSimulation,
@@ -143,6 +143,7 @@ function App() {
   const [activeTab, setActiveTab] = useState<number>(0);
   const [simulateSurvivor] = useLocalStorage<boolean>('retirement_planner_survivor', false);
   const [savedPlans, setSavedPlans] = useLocalStorage<SavedPlan[]>('retirement_planner_saved_plans', []);
+  const [useTodayDollars, setUseTodayDollars] = useLocalStorage<boolean>('retirement_planner_use_today_dollars', false);
 
   // Localized persisted scenarios for Workspace 1 and 2
   const [ws1Scenario, setWs1Scenario] = useLocalStorage<'flat' | 'p10' | 'p50' | 'p90'>('retirement_planner_ws1_scenario', 'flat');
@@ -207,14 +208,6 @@ function App() {
     };
   }, [parallelLedgers, ws1Scenario, ws2Scenario]);
 
-  // Compute active ledger for header stats depending on active tab
-  const activeLedger = useMemo(() => {
-    if (activeTab === 0) return wsLedgers.ws1;
-    if (activeTab === 1) return wsLedgers.ws2;
-    if (activeTab === 2) return parallelLedgers.p50; // Use stochastic Median (P50) for Monte Carlo tab!
-    return wsLedgers.ws1; // fallback
-  }, [activeTab, wsLedgers, parallelLedgers]);
-
   // Active return sequence for optimizer/matrix sweeps
   const activeWs1Sequence = useMemo(() => {
     if (ws1Scenario === 'p10') return monteCarloSummary.representativeSequences.worst;
@@ -222,6 +215,74 @@ function App() {
     if (ws1Scenario === 'p90') return monteCarloSummary.representativeSequences.best;
     return null;
   }, [ws1Scenario, monteCarloSummary]);
+
+  // Helper to discount a row's nominal values back to today's purchasing power (real value)
+  const discountRow = (row: SimulationResultRow, cpiRate: number): SimulationResultRow => {
+    const yearsElapsed = row.year - 2026;
+    const factor = Math.pow(1 + cpiRate, yearsElapsed);
+    if (factor <= 1) return row;
+
+    const discounted = { ...row };
+    const nonCurrencyKeys = new Set(['year', 'yourAge', 'wifeAge', 'surchargeTier']);
+    
+    for (const key of Object.keys(discounted) as Array<keyof SimulationResultRow>) {
+      if (!nonCurrencyKeys.has(key as string) && typeof discounted[key] === 'number') {
+        (discounted as any)[key] = (discounted[key] as number) / factor;
+      }
+    }
+    return discounted;
+  };
+
+  // Conditionally apply inflation discounting for real-dollar displays
+  const displayParallelLedgers = useMemo(() => {
+    if (!useTodayDollars) return parallelLedgers;
+    const cpi = inputs.growthAssumptions.cpiInflationRate;
+    return {
+      flat: parallelLedgers.flat.map((r) => discountRow(r, cpi)),
+      p10: parallelLedgers.p10.map((r) => discountRow(r, cpi)),
+      p50: parallelLedgers.p50.map((r) => discountRow(r, cpi)),
+      p90: parallelLedgers.p90.map((r) => discountRow(r, cpi)),
+    };
+  }, [parallelLedgers, useTodayDollars, inputs.growthAssumptions.cpiInflationRate]);
+
+  const displayWsLedgers = useMemo(() => {
+    if (!useTodayDollars) return wsLedgers;
+    const cpi = inputs.growthAssumptions.cpiInflationRate;
+    return {
+      ws1: wsLedgers.ws1.map((r) => discountRow(r, cpi)),
+      ws2: wsLedgers.ws2.map((r) => discountRow(r, cpi)),
+    };
+  }, [wsLedgers, useTodayDollars, inputs.growthAssumptions.cpiInflationRate]);
+
+  const displayActiveLedger = useMemo(() => {
+    if (activeTab === 0) return displayWsLedgers.ws1;
+    if (activeTab === 1) return displayWsLedgers.ws2;
+    if (activeTab === 2) return displayParallelLedgers.p50;
+    return displayWsLedgers.ws1;
+  }, [activeTab, displayWsLedgers, displayParallelLedgers]);
+
+  const displayMonteCarloSummary = useMemo(() => {
+    if (!useTodayDollars) return monteCarloSummary;
+    const cpi = inputs.growthAssumptions.cpiInflationRate;
+    
+    const discountedPercentiles = monteCarloSummary.percentiles.map((p) => {
+      const yearsElapsed = p.year - 2026;
+      const factor = Math.pow(1 + cpi, yearsElapsed);
+      return {
+        year: p.year,
+        p10: p.p10 / factor,
+        p25: p.p25 / factor,
+        p50: p.p50 / factor,
+        p75: p.p75 / factor,
+        p90: p.p90 / factor,
+      };
+    });
+
+    return {
+      ...monteCarloSummary,
+      percentiles: discountedPercentiles,
+    };
+  }, [monteCarloSummary, useTodayDollars, inputs.growthAssumptions.cpiInflationRate]);
 
   // Handle applying a fully optimized retirement configuration at once
   const handleApplyOptimization = (annualConversion: number, targetValue: number | null, yourAge: number, wifeAge: number) => {
@@ -264,12 +325,18 @@ function App() {
       )}
 
       {/* Sidebar Parameter Controls */}
-      <InputControlSidebar inputs={inputs} onChange={setInputs} onReset={() => setInputs(DEFAULT_INPUTS)} />
+      <InputControlSidebar 
+        inputs={inputs} 
+        onChange={setInputs} 
+        onReset={() => setInputs(DEFAULT_INPUTS)} 
+        useTodayDollars={useTodayDollars}
+        setUseTodayDollars={setUseTodayDollars}
+      />
 
       {/* Main Orchestration Dashboard Layout */}
       <DashboardLayout
-        ledger={activeLedger}
-        parallelLedgers={parallelLedgers}
+        ledger={displayActiveLedger}
+        parallelLedgers={displayParallelLedgers}
         successRate={monteCarloSummary.successRate}
         inputs={inputs}
         activeTab={activeTab}
@@ -277,7 +344,7 @@ function App() {
       >
         {activeTab === 0 && (
           <BracketMapChart
-            ledger={wsLedgers.ws1}
+            ledger={displayWsLedgers.ws1}
             inputs={inputs}
             simulateSurvivor={simulateSurvivor}
             wsScenario={ws1Scenario}
@@ -290,7 +357,7 @@ function App() {
         )}
         {activeTab === 1 && (
           <LookbackLedgerTable
-            ledger={wsLedgers.ws2}
+            ledger={displayWsLedgers.ws2}
             inputs={inputs}
             simulateSurvivor={simulateSurvivor}
             wsScenario={ws2Scenario}
@@ -302,7 +369,7 @@ function App() {
             inputs={inputs}
             onChangeInputs={setInputs}
             simulateSurvivor={simulateSurvivor}
-            summary={monteCarloSummary}
+            summary={displayMonteCarloSummary}
           />
         )}
         {activeTab === 3 && (
@@ -312,6 +379,7 @@ function App() {
             savedPlans={savedPlans}
             onSavePlans={setSavedPlans}
             simulateSurvivor={simulateSurvivor}
+            useTodayDollars={useTodayDollars}
           />
         )}
       </DashboardLayout>

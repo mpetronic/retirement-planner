@@ -9,19 +9,24 @@ import {
   DollarSign,
   Pencil,
   Check,
-  RefreshCw
+  RefreshCw,
+  Info
 } from 'lucide-react';
 
 interface InputControlSidebarProps {
   inputs: AppStateInputs;
   onChange: (newInputs: AppStateInputs) => void;
   onReset: () => void;
+  useTodayDollars: boolean;
+  setUseTodayDollars: (val: boolean) => void;
 }
 
 export const InputControlSidebar: React.FC<InputControlSidebarProps> = ({
   inputs,
   onChange,
   onReset,
+  useTodayDollars,
+  setUseTodayDollars,
 }) => {
   const [isEditingYou, setIsEditingYou] = useState(false);
   const [isEditingWife, setIsEditingWife] = useState(false);
@@ -71,6 +76,48 @@ export const InputControlSidebar: React.FC<InputControlSidebarProps> = ({
       </div>
 
       <div className="p-4 space-y-6 flex-1">
+        {/* Global Valuation Toggle */}
+        <div className="space-y-3">
+          <div className="flex items-center gap-2 text-emerald-400 font-semibold border-b border-slate-800 pb-2">
+            <DollarSign className="w-5 h-5" />
+            <h2>Currency Valuation</h2>
+          </div>
+          <div className="p-4 bg-slate-950/60 rounded-xl border border-slate-800 space-y-3">
+            <div className="flex bg-slate-900 p-0.5 rounded-xl border border-slate-800">
+              <button
+                type="button"
+                onClick={() => setUseTodayDollars(false)}
+                className={`flex-1 text-[10px] py-2 rounded-lg font-bold transition-all ${
+                  !useTodayDollars
+                    ? 'bg-emerald-500 text-slate-950 shadow'
+                    : 'text-slate-400 hover:text-slate-200'
+                }`}
+              >
+                Future Dollars (Nominal)
+              </button>
+              <button
+                type="button"
+                onClick={() => setUseTodayDollars(true)}
+                className={`flex-1 text-[10px] py-2 rounded-lg font-bold transition-all ${
+                  useTodayDollars
+                    ? 'bg-emerald-500 text-slate-950 shadow'
+                    : 'text-slate-400 hover:text-slate-200'
+                }`}
+              >
+                Today's Dollars (Real)
+              </button>
+            </div>
+            <p className="text-[10px] text-slate-400 leading-normal flex items-start gap-1.5">
+              <Info className="w-4 h-4 text-emerald-500/80 flex-shrink-0 mt-0.5" />
+              <span>
+                {!useTodayDollars
+                  ? "Displaying actual nominal dollar amounts including standard CPI adjustments and compounding growth."
+                  : "Discounting all future balances and expenses back by the CPI inflation factor to reflect today's real purchasing power."}
+              </span>
+            </p>
+          </div>
+        </div>
+
         {/* Section 1: Spouses Profiles */}
         <div className="space-y-3">
           <div className="flex items-center gap-2 text-emerald-400 font-semibold border-b border-slate-800 pb-2">
