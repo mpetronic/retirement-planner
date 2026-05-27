@@ -277,6 +277,50 @@ export const BracketMapChart: React.FC<BracketMapChartProps> = ({
           callbacks: {
             label: function (context: any) {
               let label = context.dataset.label || '';
+              const row = ledger[context.dataIndex];
+              
+              if (row) {
+                const youName = inputs.you.name || 'You';
+                const wifeName = inputs.wife.name || 'Spouse';
+                const fmt = (v: number) => new Intl.NumberFormat('en-US', {
+                  style: 'currency',
+                  currency: 'USD',
+                  maximumFractionDigits: 0,
+                }).format(v);
+
+                if (context.dataset.label === 'Active Salaries') {
+                  const yourSal = row.yourSalary || 0;
+                  const wifeSal = row.wifeSalary || 0;
+                  if (yourSal > 0 && wifeSal > 0) {
+                    label = `Active Salaries (${youName}: ${fmt(yourSal)}, ${wifeName}: ${fmt(wifeSal)})`;
+                  } else if (yourSal > 0) {
+                    label = `Active Salaries (${youName})`;
+                  } else if (wifeSal > 0) {
+                    label = `Active Salaries (${wifeName})`;
+                  }
+                } else if (context.dataset.label === 'Social Security') {
+                  const yourSS = row.yourSS || 0;
+                  const wifeSS = row.wifeSS || 0;
+                  if (yourSS > 0 && wifeSS > 0) {
+                    label = `Social Security (${youName}: ${fmt(yourSS)}, ${wifeName}: ${fmt(wifeSS)})`;
+                  } else if (yourSS > 0) {
+                    label = `Social Security (${youName})`;
+                  } else if (wifeSS > 0) {
+                    label = `Social Security (${wifeName})`;
+                  }
+                } else if (context.dataset.label === 'Forced RMDs') {
+                  const yourRMD = row.yourRMD || 0;
+                  const wifeRMD = row.wifeRMD || 0;
+                  if (yourRMD > 0 && wifeRMD > 0) {
+                    label = `Forced RMDs (${youName}: ${fmt(yourRMD)}, ${wifeName}: ${fmt(wifeRMD)})`;
+                  } else if (yourRMD > 0) {
+                    label = `Forced RMDs (${youName})`;
+                  } else if (wifeRMD > 0) {
+                    label = `Forced RMDs (${wifeName})`;
+                  }
+                }
+              }
+              
               if (label) {
                 label += ': ';
               }
