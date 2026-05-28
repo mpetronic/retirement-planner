@@ -42,6 +42,39 @@ export function calculateSSBenefit(pia: number, claimingAge: number): number {
   }
 }
 
+/**
+ * Calculates the spousal benefit amount for the lower-earning spouse.
+ * The spousal benefit is 50% of the primary earner's PIA, reduced if the
+ * spouse claims before their own FRA. Critically, this uses the SPOUSAL
+ * early-reduction schedule (slower than the worker schedule) and provides
+ * NO delayed credits for claiming after FRA.
+ *
+ * Spousal early reduction schedule (months before own FRA = 67):
+ *   First 36 months: 25/36 of 1% per month
+ *   Additional months: 5/12 of 1% per month
+ *   Maximum reduction at 62 (60 months before FRA): ~35%
+ */
+export function calculateSpousalBenefit(primaryPIA: number, spouseClaimingAge: number): number {
+  if (primaryPIA <= 0) return 0;
+
+  const FRA = 67;
+  const baseSpousal = primaryPIA * 0.50;
+
+  // Spousal benefit is NOT enhanced for delaying past FRA
+  if (spouseClaimingAge >= FRA) {
+    return baseSpousal;
+  }
+
+  // Apply spousal early-claim reduction (different schedule from worker benefit)
+  const claimAge = Math.max(62, spouseClaimingAge);
+  const totalMonthsBefore = (FRA - claimAge) * 12;
+  const first36 = Math.min(totalMonthsBefore, 36);
+  const additional = Math.max(0, totalMonthsBefore - 36);
+
+  const reduction = (first36 * (25 / 3600)) + (additional * (5 / 1200));
+  return baseSpousal * (1 - reduction);
+}
+
 // Calculate Social Security Taxability based on Provisional Income
 export function calculateTaxableSS(
   totalSS: number,
@@ -255,23 +288,37 @@ export function runRetirementSimulation(
     }
     
     if (!inputs.isSingleFiler && inputs.wife.targetSSClaimingAge && wifeAge >= inputs.wife.targetSSClaimingAge) {
-      const baseSS = calculateSSBenefit(inputs.wife.estimatedPIA || 0, inputs.wife.targetSSClaimingAge) * 12;
-      wifeSS = baseSS * cpiFactor;
+      const baseWifeSS = calculateSSBenefit(inputs.wife.estimatedPIA || 0, inputs.wife.targetSSClaimingAge) * 12;
+      wifeSS = baseWifeSS * cpiFactor;
+
+      // Apply spousal benefit floor: wife is entitled to the greater of her own benefit
+      // or 50% of husband's PIA (reduced if she claims before her own FRA).
+      // The spousal add-on only kicks in once the primary earner (husband) has claimed.
+      if (yourSS > 0) {
+        const spousalFloor = calculateSpousalBenefit(inputs.you.estimatedPIA || 0, inputs.wife.targetSSClaimingAge) * 12 * cpiFactor;
+        wifeSS = Math.max(wifeSS, spousalFloor);
+      }
     }
     
     // Survivor Social Security benefit rules:
     // Surviving spouse inherits the larger of the two Social Security benefit streams, smaller is eliminated.
+    // SSA also guarantees a floor of 82.5% of the deceased's PIA even if they claimed early.
     if (youDeceased && !inputs.isSingleFiler) {
       const baseYourSS = calculateSSBenefit(inputs.you.estimatedPIA || 0, inputs.you.targetSSClaimingAge || 67) * 12 * cpiFactor;
       const baseWifeSS = calculateSSBenefit(inputs.wife.estimatedPIA || 0, inputs.wife.targetSSClaimingAge || 67) * 12 * cpiFactor;
-      
+
+      // 82.5% of the deceased's PIA is the SSA-guaranteed minimum survivor benefit,
+      // regardless of what the deceased actually received (protects against early-claim penalty).
+      const survivorFloor = (inputs.you.estimatedPIA || 0) * 0.825 * 12 * cpiFactor;
+
       if (inputs.wife.targetSSClaimingAge && wifeAge >= inputs.wife.targetSSClaimingAge) {
-        // If wife has claimed, she receives the maximum of her own or your SS benefit
-        wifeSS = Math.max(baseYourSS, baseWifeSS);
+        // Wife has claimed — she receives the maximum of her own benefit, your SS (with delay credits),
+        // or the guaranteed 82.5% survivor floor.
+        wifeSS = Math.max(baseYourSS, baseWifeSS, survivorFloor);
       } else {
-        // Wife hasn't claimed yet, but is eligible for survivor benefits (at or after 60).
-        // Let's assume survivor claiming inherits your SS.
-        wifeSS = baseYourSS;
+        // Wife hasn't claimed her own benefit yet, but is eligible for survivor benefits (age 60+).
+        // She receives the higher of the deceased's benefit or the 82.5% floor.
+        wifeSS = Math.max(baseYourSS, survivorFloor);
       }
       yourSS = 0;
     }

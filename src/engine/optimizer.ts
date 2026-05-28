@@ -1,5 +1,5 @@
 import { AppStateInputs, LockedReturnSequence } from '../types';
-import { runRetirementSimulation } from './simulationEngine';
+import { runRetirementSimulation, calculateSSBenefit, calculateSpousalBenefit } from './simulationEngine';
 
 export interface OptimizationResult {
   bestAnnualRothConversion: number;
@@ -12,6 +12,8 @@ export interface OptimizationResult {
     lifetimeTaxes: number;
     lifetimeIRMAA: number;
     endingRoth: number;
+    spousalAddOnAnnual: number;   // Annual $ boost from spousal floor (0 if wife's own benefit exceeds floor)
+    survivorBenefitAnnual: number; // Wife's annual SS in the first survivor year under the optimal plan
   };
 }
 
@@ -76,6 +78,19 @@ export function optimizeRetirementScenario(
         const lifetimeIRMAA = ledger.reduce((sum, r) => sum + r.combinedSurchargeAnnual, 0);
         const endingRoth = finalRow.endYourRothIRA + finalRow.endWifeRothIRA;
 
+        // Spousal add-on: find the first year where wife is collecting SS and measure
+        // how much the spousal floor boosted her above her own earned benefit.
+        let spousalAddOnAnnual = 0;
+        if (!testInputs.isSingleFiler && testInputs.wife.targetSSClaimingAge) {
+          const ownWifeSS = calculateSSBenefit(testInputs.wife.estimatedPIA || 0, testInputs.wife.targetSSClaimingAge) * 12;
+          const spousalFloor = calculateSpousalBenefit(testInputs.you.estimatedPIA || 0, testInputs.wife.targetSSClaimingAge) * 12;
+          spousalAddOnAnnual = Math.max(0, spousalFloor - ownWifeSS);
+        }
+
+        // Survivor benefit: wife's SS in the first survivor year (2045), already inflation-adjusted in the ledger.
+        const survivorRow = ledger.find((r) => r.year === 2045);
+        const survivorBenefitAnnual = survivorRow ? survivorRow.wifeSS : 0;
+
         let score = 0;
         switch (goal) {
           case 'min_taxes':
@@ -128,6 +143,8 @@ export function optimizeRetirementScenario(
             lifetimeTaxes,
             lifetimeIRMAA,
             endingRoth,
+            spousalAddOnAnnual,
+            survivorBenefitAnnual,
           };
         }
       }
@@ -145,6 +162,8 @@ export function optimizeRetirementScenario(
       lifetimeTaxes: 0,
       lifetimeIRMAA: 0,
       endingRoth: 0,
+      spousalAddOnAnnual: 0,
+      survivorBenefitAnnual: 0,
     },
   };
 }

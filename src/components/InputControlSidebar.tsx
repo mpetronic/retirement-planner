@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import { AppStateInputs } from '../types';
 import {
   User,
@@ -32,6 +32,8 @@ export const InputControlSidebar: React.FC<InputControlSidebarProps> = ({
 }) => {
   const [isEditingYou, setIsEditingYou] = useState(false);
   const [isEditingWife, setIsEditingWife] = useState(false);
+  // Remembers the last non-null relocation year so toggling off then back on restores it.
+  const lastRelocationYear = useRef<number>(inputs.jurisdiction.relocationYear ?? 2032);
   const updateNestedState = (
     category: keyof AppStateInputs | 'you' | 'wife' | 'jurisdiction' | 'growthAssumptions' | 'portfolio',
     field: string,
@@ -220,7 +222,7 @@ export const InputControlSidebar: React.FC<InputControlSidebarProps> = ({
               </div>
               <div className="space-y-1">
                 <label className="text-[10px] text-slate-400 font-bold uppercase tracking-wider flex justify-between block truncate">
-                  <span>Active Salary</span>
+                  <span>Salary</span>
                   <span className="text-slate-200 font-mono font-semibold">{formatCurrency(inputs.you.activeSalary)}</span>
                 </label>
                 <input
@@ -347,7 +349,7 @@ export const InputControlSidebar: React.FC<InputControlSidebarProps> = ({
                 </div>
                 <div className="space-y-1">
                   <label className="text-[10px] text-slate-400 font-bold uppercase tracking-wider flex justify-between block truncate">
-                    <span>Active Salary</span>
+                    <span>Salary</span>
                     <span className="text-slate-200 font-mono font-semibold">{formatCurrency(inputs.wife.activeSalary)}</span>
                   </label>
                   <input
@@ -535,13 +537,23 @@ export const InputControlSidebar: React.FC<InputControlSidebarProps> = ({
                   max="2060"
                   step="1"
                   disabled={inputs.jurisdiction.relocationYear === null}
-                  value={inputs.jurisdiction.relocationYear || 2032}
-                  onChange={(e) => updateNestedState('jurisdiction', 'relocationYear', Number(e.target.value))}
+                  value={inputs.jurisdiction.relocationYear ?? lastRelocationYear.current}
+                  onChange={(e) => {
+                    const val = Number(e.target.value);
+                    lastRelocationYear.current = val;
+                    updateNestedState('jurisdiction', 'relocationYear', val);
+                  }}
                   className="w-full h-1.5 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-emerald-500 disabled:opacity-30"
                 />
                 <button
                   onClick={() => {
-                    const nextVal = inputs.jurisdiction.relocationYear === null ? 2032 : null;
+                    const nextVal = inputs.jurisdiction.relocationYear === null
+                      ? lastRelocationYear.current  // restore the last year the slider was on
+                      : null;
+                    if (inputs.jurisdiction.relocationYear !== null) {
+                      // Remember current year before clearing it
+                      lastRelocationYear.current = inputs.jurisdiction.relocationYear;
+                    }
                     updateNestedState('jurisdiction', 'relocationYear', nextVal);
                   }}
                   className={`text-xs px-2 py-1 rounded transition-colors font-semibold ${
