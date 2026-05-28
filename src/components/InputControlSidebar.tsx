@@ -19,6 +19,7 @@ interface InputControlSidebarProps {
   onReset: () => void;
   useTodayDollars: boolean;
   setUseTodayDollars: (val: boolean) => void;
+  globalScenario: 'flat' | 'p10' | 'p50' | 'p90';
 }
 
 export const InputControlSidebar: React.FC<InputControlSidebarProps> = ({
@@ -27,6 +28,7 @@ export const InputControlSidebar: React.FC<InputControlSidebarProps> = ({
   onReset,
   useTodayDollars,
   setUseTodayDollars,
+  globalScenario,
 }) => {
   const [isEditingYou, setIsEditingYou] = useState(false);
   const [isEditingWife, setIsEditingWife] = useState(false);
@@ -570,9 +572,9 @@ export const InputControlSidebar: React.FC<InputControlSidebarProps> = ({
 
           <div className="p-3 bg-slate-950/60 rounded-xl border border-slate-800 space-y-3">
             <div className="grid grid-cols-2 gap-3">
-              <div className="space-y-1">
+              <div className={`space-y-1 transition-opacity duration-200 ${globalScenario !== 'flat' ? 'opacity-40' : ''}`}>
                 <label className="text-[10px] text-slate-400 font-bold uppercase tracking-wider block truncate">Equity Return</label>
-                <div className="flex justify-between items-center text-xs font-mono font-bold text-slate-200">
+                <div className={`flex justify-between items-center text-xs font-mono font-bold ${globalScenario !== 'flat' ? 'text-slate-500' : 'text-slate-200'}`}>
                   <span>Rate:</span>
                   <span>{formatPercent(inputs.growthAssumptions.equityReturnRate)}</span>
                 </div>
@@ -582,14 +584,15 @@ export const InputControlSidebar: React.FC<InputControlSidebarProps> = ({
                   max="0.15"
                   step="0.005"
                   value={inputs.growthAssumptions.equityReturnRate}
+                  disabled={globalScenario !== 'flat'}
                   onChange={(e) => updateNestedState('growthAssumptions', 'equityReturnRate', Number(e.target.value))}
-                  className="w-full h-1 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-emerald-500"
+                  className={`w-full h-1 bg-slate-800 rounded-lg appearance-none accent-emerald-500 ${globalScenario !== 'flat' ? 'cursor-not-allowed' : 'cursor-pointer'}`}
                 />
               </div>
 
-              <div className="space-y-1">
+              <div className={`space-y-1 transition-opacity duration-200 ${globalScenario !== 'flat' ? 'opacity-40' : ''}`}>
                 <label className="text-[10px] text-slate-400 font-bold uppercase tracking-wider block truncate">Fixed Income</label>
-                <div className="flex justify-between items-center text-xs font-mono font-bold text-slate-200">
+                <div className={`flex justify-between items-center text-xs font-mono font-bold ${globalScenario !== 'flat' ? 'text-slate-500' : 'text-slate-200'}`}>
                   <span>Rate:</span>
                   <span>{formatPercent(inputs.growthAssumptions.fixedIncomeReturnRate)}</span>
                 </div>
@@ -599,11 +602,21 @@ export const InputControlSidebar: React.FC<InputControlSidebarProps> = ({
                   max="0.10"
                   step="0.005"
                   value={inputs.growthAssumptions.fixedIncomeReturnRate}
+                  disabled={globalScenario !== 'flat'}
                   onChange={(e) => updateNestedState('growthAssumptions', 'fixedIncomeReturnRate', Number(e.target.value))}
-                  className="w-full h-1 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-emerald-500"
+                  className={`w-full h-1 bg-slate-800 rounded-lg appearance-none accent-emerald-500 ${globalScenario !== 'flat' ? 'cursor-not-allowed' : 'cursor-pointer'}`}
                 />
               </div>
             </div>
+
+            {globalScenario !== 'flat' && (
+              <div className="text-[9px] text-amber-400/90 bg-amber-950/20 p-2 rounded-lg border border-amber-900/30 flex items-start gap-1.5 leading-relaxed font-semibold">
+                <span className="flex-shrink-0 mt-0.5">🔒</span>
+                <span>
+                  Locked: Overridden by the active stochastic <strong>Global Outlook ({globalScenario === 'p10' ? 'Worst' : globalScenario === 'p50' ? 'Median' : 'Best'})</strong> sequence. Switch to <strong>Flat</strong> to manually set static rates.
+                </span>
+              </div>
+            )}
 
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1">

@@ -339,6 +339,7 @@ function App() {
         onReset={() => setInputs(DEFAULT_INPUTS)} 
         useTodayDollars={useTodayDollars}
         setUseTodayDollars={setUseTodayDollars}
+        globalScenario={globalScenario}
       />
 
       {/* Main Orchestration Dashboard Layout */}
