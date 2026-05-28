@@ -127,6 +127,7 @@ export const LookbackLedgerTable: React.FC<LookbackLedgerTableProps> = ({
              <tr className="bg-slate-900/60 border-b border-slate-800 text-slate-400 text-xs font-semibold uppercase tracking-wider whitespace-nowrap">
               <th className="p-4">Year (t)</th>
               <th className="p-4">MAGI (Income)</th>
+              <th className="p-4">Roth Conv. Amt</th>
               <th className="p-4">Roth Conv. Tax</th>
               <th className="p-4">Total Expenses</th>
               <th className="p-4">Brokerage (Taxable)</th>
@@ -161,6 +162,15 @@ export const LookbackLedgerTable: React.FC<LookbackLedgerTableProps> = ({
                 >
                   <td className="p-4 font-mono font-semibold">{r.year}</td>
                   <td className="p-4 font-mono">{formatCurrency(r.magi)}</td>
+                  <td className="p-4 font-mono text-slate-300">
+                    {r.intentionalRothConversion > 0 ? (
+                      <span className="text-slate-300 font-mono">
+                        {formatCurrency(r.intentionalRothConversion)}
+                      </span>
+                    ) : (
+                      <span className="text-slate-600 font-mono">$0</span>
+                    )}
+                  </td>
                   <td className="p-4 font-mono">
                     {r.intentionalRothConversion > 0 ? (
                       <span className="text-amber-400/90 font-semibold font-mono" title={`Pro-rata tax on ${formatCurrency(r.intentionalRothConversion)} conversion`}>
