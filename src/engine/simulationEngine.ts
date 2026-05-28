@@ -485,6 +485,7 @@ export function runRetirementSimulation(
     let fedIncomeTax = 0;
     let stateIncomeTax = 0;
     let niitTax = 0;
+    let stdDeduction = 0;
     
     let currentYourTaxable = yourTaxable;
     let currentYourBasis = yourBasis;
@@ -610,9 +611,38 @@ export function runRetirementSimulation(
       const fedAGI = otherAGI + taxableSS;
       
       // Federal Taxable Income
-      const stdDeduction = isSingle
+      // 1. Base Standard Deduction
+      const stdDeductionBase = isSingle
         ? FED_STANDARD_DEDUCTION_SINGLE * cpiFactor
         : FED_STANDARD_DEDUCTION_MFJ * cpiFactor;
+
+      // 2. Age 65+ Additional Standard Deduction
+      let ageAddition = 0;
+      if (isSingle) {
+        if (yourAge >= 65) {
+          ageAddition += 1950 * cpiFactor;
+        }
+      } else {
+        if (yourAge >= 65) ageAddition += 1650 * cpiFactor;
+        if (wifeAge >= 65) ageAddition += 1650 * cpiFactor;
+      }
+
+      // 3. Senior "Bonus" Deduction ($6,000 per person aged 65+)
+      let seniorBonusRaw = 0;
+      if (isSingle) {
+        if (yourAge >= 65) seniorBonusRaw += 6000 * cpiFactor;
+      } else {
+        if (yourAge >= 65) seniorBonusRaw += 6000 * cpiFactor;
+        if (wifeAge >= 65) seniorBonusRaw += 6000 * cpiFactor;
+      }
+
+      // 4. Senior "Bonus" Phase-out (threshold: $150,000 MFJ / $75,000 Single)
+      const bonusThreshold = (isSingle ? 75000 : 150000) * cpiFactor;
+      const excessBonusMAGI = Math.max(0, fedAGI - bonusThreshold);
+      const bonusReduction = excessBonusMAGI * 0.06;
+      const seniorBonusFinal = Math.max(0, seniorBonusRaw - bonusReduction);
+
+      stdDeduction = stdDeductionBase + ageAddition + seniorBonusFinal;
         
       const fedTaxableIncome = Math.max(0, fedAGI - stdDeduction);
       
@@ -692,8 +722,8 @@ export function runRetirementSimulation(
       otherTaxableIncome: drawdownPreTax,
       magi,
       fedAGI: finalFedAGI,
-      standardDeduction: isSingle ? FED_STANDARD_DEDUCTION_SINGLE * cpiFactor : FED_STANDARD_DEDUCTION_MFJ * cpiFactor,
-      taxableIncome: Math.max(0, finalFedAGI - (isSingle ? FED_STANDARD_DEDUCTION_SINGLE * cpiFactor : FED_STANDARD_DEDUCTION_MFJ * cpiFactor)),
+      standardDeduction: stdDeduction,
+      taxableIncome: Math.max(0, finalFedAGI - stdDeduction),
       fedIncomeTax,
       stateIncomeTax,
       totalIncomeTax: fedIncomeTax + stateIncomeTax,

@@ -37,7 +37,7 @@ export const LookbackLedgerTable: React.FC<LookbackLedgerTableProps> = ({
       const year = r.year;
       const magi = r.magi;
       
-      const cpiFactor = r.standardDeduction / (r.yourAge >= 85 && simulateSurvivor ? 13850 : 27700);
+      const cpiFactor = Math.pow(1 + inputs.growthAssumptions.cpiInflationRate, year - 2026);
       const isSingle = simulateSurvivor && year >= 2045;
       const tiers = isSingle ? IRMAA_TIERS_SINGLE : IRMAA_TIERS_MFJ;
 
