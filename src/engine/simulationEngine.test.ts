@@ -5,6 +5,7 @@ import {
   calculateTaxableSS,
   calculateFedTax,
   calculateMDStateTax,
+  runRetirementSimulation,
 } from './simulationEngine';
 
 describe('calculateSSBenefit', () => {
@@ -146,5 +147,112 @@ describe('Tax calculations', () => {
     // AGI: 60000, taxableSS: 0, isSingle: true
     const mdTaxSingle = calculateMDStateTax(60000, 0, true);
     expect(mdTaxSingle).toBeGreaterThan(0);
+  });
+});
+
+describe('runRetirementSimulation', () => {
+  const getMockInputs = (): any => ({
+    you: {
+      name: 'John',
+      birthDate: '1965-06-15',
+      estimatedPIA: 2000,
+      targetSSClaimingAge: 67,
+      plannedRetirementAge: 65,
+      activeSalary: 120000,
+      preMedicareMonthlyPremium: 500,
+    },
+    wife: {
+      name: 'Jane',
+      birthDate: '1968-09-20',
+      estimatedPIA: 1200,
+      targetSSClaimingAge: 67,
+      plannedRetirementAge: 62,
+      activeSalary: 80000,
+      preMedicareMonthlyPremium: 500,
+    },
+    portfolio: {
+      yourPreTaxIRA: 500000,
+      yourRothIRA: 100000,
+      yourTaxableBrokerage: 200000,
+      yourTaxableBasis: 150000,
+      wifePreTaxIRA: 300000,
+      wifeRothIRA: 50000,
+      wifeTaxableBrokerage: 100000,
+      wifeTaxableBasis: 80000,
+    },
+    jurisdiction: {
+      currentState: 'MD',
+      targetState: 'FL',
+      relocationYear: null,
+    },
+    growthAssumptions: {
+      equityReturnRate: 0.07,
+      fixedIncomeReturnRate: 0.04,
+      cpiInflationRate: 0.025,
+      healthcareInflationRate: 0.05,
+    },
+    annualLivingExpenses: 80000,
+    annualRothConversion: 0,
+    rothConversionStartYear: 2026,
+    rothConversionEndYear: 2030,
+    rothConversionStrategy: 'flat',
+    rothConversionTargetValue: null,
+    monteCarloSettings: {
+      mode: 'monte-carlo',
+      equityVolatility: 0.15,
+      fixedIncomeVolatility: 0.05,
+      correlation: 0.15,
+      trials: 10,
+      seed: 42,
+    },
+    isConfigured: true,
+    isSingleFiler: false,
+  });
+
+  it('should run simulation and return a sequence of years starting from 2026', () => {
+    const inputs = getMockInputs();
+    const results = runRetirementSimulation(inputs);
+
+    expect(results).toBeInstanceOf(Array);
+    expect(results.length).toBeGreaterThan(0);
+    expect(results[0].year).toBe(2026);
+  });
+
+  it('should correctly drop state income taxes to 0 when relocating to Florida', () => {
+    const inputs = getMockInputs();
+    // Relocate to Florida in 2030
+    inputs.jurisdiction.relocationYear = 2030;
+    inputs.jurisdiction.currentState = 'MD';
+    inputs.jurisdiction.targetState = 'FL';
+
+    const results = runRetirementSimulation(inputs);
+
+    // Verify state taxes in MD (before 2030) are positive and become 0 starting in 2030
+    const row2026 = results.find(r => r.year === 2026);
+    const row2030 = results.find(r => r.year === 2030);
+
+    expect(row2026).toBeDefined();
+    expect(row2026!.stateIncomeTax).toBeGreaterThan(0);
+
+    expect(row2030).toBeDefined();
+    expect(row2030!.stateIncomeTax).toBe(0);
+  });
+
+  it('should calculate Social Security income starting at target claiming ages', () => {
+    const inputs = getMockInputs();
+    inputs.you.targetSSClaimingAge = 67; // John born 1965 => claims at 2032
+    inputs.wife.targetSSClaimingAge = 66; // Jane born 1968 => claims at 2034
+
+    const results = runRetirementSimulation(inputs);
+
+    const row2026 = results.find(r => r.year === 2026); // John age 61, Jane age 58 => no SS
+    const row2032 = results.find(r => r.year === 2032); // John age 67 => John claims SS
+    const row2034 = results.find(r => r.year === 2034); // Jane age 66 => Jane claims SS
+
+    expect(row2026!.yourSS).toBe(0);
+    expect(row2026!.wifeSS).toBe(0);
+
+    expect(row2032!.yourSS).toBeGreaterThan(0);
+    expect(row2034!.wifeSS).toBeGreaterThan(0);
   });
 });
