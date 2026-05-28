@@ -2,6 +2,7 @@ import React, { useMemo } from 'react';
 import { SimulationResultRow, AppStateInputs } from '../types';
 import { ShieldAlert, Info, AlertTriangle } from 'lucide-react';
 import { IRMAA_TIERS_MFJ, IRMAA_TIERS_SINGLE } from '../engine/taxRates2026';
+import { calculateFedTax } from '../engine/simulationEngine';
 
 interface LookbackLedgerTableProps {
   ledger: SimulationResultRow[];
@@ -65,8 +66,8 @@ export const LookbackLedgerTable: React.FC<LookbackLedgerTableProps> = ({
           const monthlyDiff = (currentTier.partBSurcharge + currentTier.partDSurcharge) - 
                               (prevTier.partBSurcharge + prevTier.partDSurcharge);
           
-          // Surcharges are inflated by healthcare factor
-          const healthcareFactor = Math.pow(1 + inputs.growthAssumptions.healthcareInflationRate, idx);
+          // Surcharges are inflated by healthcare factor (use year offset, not array index, to match engine convention)
+          const healthcareFactor = Math.pow(1 + inputs.growthAssumptions.healthcareInflationRate, year - 2026);
           const penalty = monthlyDiff * 12 * numOnMedicare * healthcareFactor;
 
           if (penalty > 0) {
@@ -145,9 +146,18 @@ export const LookbackLedgerTable: React.FC<LookbackLedgerTableProps> = ({
               // Determine if this row is highlighted for crossing a cliff by < $5,000
               const isWarningRow = warnings.some((w) => w.year === r.year);
 
-              const conversionTax = r.intentionalRothConversion > 0
-                ? r.intentionalRothConversion * (r.totalIncomeTax / (r.fedAGI > 0 ? r.fedAGI : 1))
-                : 0;
+              // Marginal-rate conversion tax: difference in federal tax with vs. without the conversion.
+              // This is more accurate than the blended effective rate because conversions are stacked
+              // on top of all other income and are taxed at the marginal bracket rate.
+              const conversionTax = (() => {
+                if (r.intentionalRothConversion <= 0) return 0;
+                const cpiFactor = Math.pow(1 + inputs.growthAssumptions.cpiInflationRate, r.year - 2026);
+                const isSingle = simulateSurvivor && r.year >= 2045;
+                const agiWithout = Math.max(0, r.fedAGI - r.intentionalRothConversion);
+                const taxableWithout = Math.max(0, agiWithout - r.standardDeduction);
+                const taxableWith = Math.max(0, r.fedAGI - r.standardDeduction);
+                return calculateFedTax(taxableWith, isSingle, cpiFactor) - calculateFedTax(taxableWithout, isSingle, cpiFactor);
+              })();
 
               const isTopRow = idx < 4;
 
@@ -160,7 +170,9 @@ export const LookbackLedgerTable: React.FC<LookbackLedgerTableProps> = ({
               const otherAGI = salary + rmd + rothConv + capitalGains + pretaxDrawdown;
               const taxableSS = Math.max(0, r.magi - otherAGI);
               const totalSS = r.yourSS + r.wifeSS;
-              const ssTaxedPercent = totalSS > 0 ? Math.round((taxableSS / totalSS) * 100) : 0;
+              const ssTaxedPercent = totalSS > 0 && taxableSS > 0
+                ? Math.round((taxableSS / totalSS) * 100)
+                : 0;
 
               return (
                 <tr
@@ -204,7 +216,14 @@ export const LookbackLedgerTable: React.FC<LookbackLedgerTableProps> = ({
                       <div className="flex justify-between items-center text-[11px]">
                         <span className="text-slate-400">Taxable Social Security:</span>
                         <span className="font-mono text-slate-200 font-medium">
-                          {formatCurrency(taxableSS)} <span className="text-[10px] text-slate-500 font-normal">({ssTaxedPercent}% of {formatCurrency(totalSS)})</span>
+                          {formatCurrency(taxableSS)}{' '}
+                          {totalSS > 0 && (
+                            <span className="text-[10px] text-slate-500 font-normal">
+                              {ssTaxedPercent > 0
+                                ? `(${ssTaxedPercent}% of ${formatCurrency(totalSS)} taxable)`
+                                : '(0% taxable — below provisional income threshold)'}
+                            </span>
+                          )}
                         </span>
                       </div>
                       <div className="flex justify-between items-center border-t border-slate-800/80 pt-2 mt-1 text-[11px] font-bold">
@@ -224,7 +243,7 @@ export const LookbackLedgerTable: React.FC<LookbackLedgerTableProps> = ({
                   </td>
                   <td className="p-4 font-mono">
                     {r.intentionalRothConversion > 0 ? (
-                      <span className="text-amber-400/90 font-semibold font-mono" title={`Pro-rata tax on ${formatCurrency(r.intentionalRothConversion)} conversion`}>
+                      <span className="text-amber-400/90 font-semibold font-mono" title={`Marginal federal tax on ${formatCurrency(r.intentionalRothConversion)} Roth conversion (bracket-accurate)`}>
                         {formatCurrency(conversionTax)}
                       </span>
                     ) : (

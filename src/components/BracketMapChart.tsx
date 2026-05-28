@@ -132,7 +132,7 @@ export const BracketMapChart: React.FC<BracketMapChartProps> = ({
     });
 
     return { label, color, data: dataPoints };
-  }, [selectedQuickFill, ledger, simulateSurvivor]);
+  }, [selectedQuickFill, ledger, simulateSurvivor, inputs]);
 
   const chartData = useMemo(() => {
     const datasets: any[] = [
