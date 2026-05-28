@@ -110,16 +110,20 @@ export const LookbackLedgerTable: React.FC<LookbackLedgerTableProps> = ({
           <div className="flex gap-1">
             <button
               onClick={() => onChangeScenario('flat')}
-              className={`text-[10px] px-2.5 py-1.5 rounded-lg font-bold transition-all ${
-                wsScenario === 'flat' ? 'bg-slate-800 text-slate-100 border border-slate-700/60 font-black' : 'text-slate-400 hover:text-slate-200'
+              className={`text-[10px] px-2.5 py-1.5 rounded-lg font-bold transition-all border ${
+                wsScenario === 'flat'
+                  ? 'bg-slate-800 text-slate-100 border-slate-700/60 font-black'
+                  : 'bg-transparent text-slate-400 hover:text-slate-200 border-transparent'
               }`}
             >
               Flat
             </button>
             <button
               onClick={() => onChangeScenario('p10')}
-              className={`text-[10px] px-2.5 py-1.5 rounded-lg font-bold transition-all flex items-center gap-1 ${
-                wsScenario === 'p10' ? 'bg-rose-500/10 text-rose-400 border border-rose-500/20 font-black' : 'text-slate-400 hover:text-slate-200'
+              className={`text-[10px] px-2.5 py-1.5 rounded-lg font-bold transition-all flex items-center gap-1 border ${
+                wsScenario === 'p10'
+                  ? 'bg-rose-500/10 text-rose-400 border-rose-500/20 font-black'
+                  : 'bg-transparent text-slate-400 hover:text-slate-200 border-transparent'
               }`}
               title="Pessimistic: 10th Percentile Run"
             >
@@ -127,8 +131,10 @@ export const LookbackLedgerTable: React.FC<LookbackLedgerTableProps> = ({
             </button>
             <button
               onClick={() => onChangeScenario('p50')}
-              className={`text-[10px] px-2.5 py-1.5 rounded-lg font-bold transition-all flex items-center gap-1 ${
-                wsScenario === 'p50' ? 'bg-blue-500/10 text-blue-400 border border-blue-500/20 font-black' : 'text-slate-400 hover:text-slate-200'
+              className={`text-[10px] px-2.5 py-1.5 rounded-lg font-bold transition-all flex items-center gap-1 border ${
+                wsScenario === 'p50'
+                  ? 'bg-indigo-500/10 text-indigo-400 border-indigo-500/20 font-black'
+                  : 'bg-transparent text-slate-400 hover:text-slate-200 border-transparent'
               }`}
               title="Median: 50th Percentile Run"
             >
@@ -136,11 +142,13 @@ export const LookbackLedgerTable: React.FC<LookbackLedgerTableProps> = ({
             </button>
             <button
               onClick={() => onChangeScenario('p90')}
-              className={`text-[10px] px-2.5 py-1.5 rounded-lg font-bold transition-all flex items-center gap-1 ${
-                wsScenario === 'p90' ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 font-black' : 'text-slate-400 hover:text-slate-200'
+              className={`text-[10px] px-2.5 py-1.5 rounded-lg font-bold transition-all flex items-center gap-1 border ${
+                wsScenario === 'p90'
+                  ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20 font-black'
+                  : 'bg-transparent text-slate-400 hover:text-slate-200 border-transparent'
               }`}
               title="Optimistic: 90th Percentile Run"
-            >
+              >
               Best (P90)
             </button>
           </div>

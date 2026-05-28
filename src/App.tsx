@@ -149,6 +149,11 @@ function App() {
   const [ws1Scenario, setWs1Scenario] = useLocalStorage<'flat' | 'p10' | 'p50' | 'p90'>('retirement_planner_ws1_scenario', 'flat');
   const [ws2Scenario, setWs2Scenario] = useLocalStorage<'flat' | 'p10' | 'p50' | 'p90'>('retirement_planner_ws2_scenario', 'flat');
 
+  // Persisted plan selections for Workspace 4 comparison
+  const [selectedPlanAId, setSelectedPlanAId] = useLocalStorage<string>('retirement_planner_selected_plan_a', '');
+  const [selectedPlanBId, setSelectedPlanBId] = useLocalStorage<string>('retirement_planner_selected_plan_b', '');
+
+
   // 1. Generate 1,000 return sequences once, keyed ONLY on volatility/correlation/seed.
   // This preserves stable market return percentages while strategy slider variables are tweaked.
   const returnSequences = useMemo(() => {
@@ -380,6 +385,10 @@ function App() {
             onSavePlans={setSavedPlans}
             simulateSurvivor={simulateSurvivor}
             useTodayDollars={useTodayDollars}
+            selectedPlanAId={selectedPlanAId}
+            setSelectedPlanAId={setSelectedPlanAId}
+            selectedPlanBId={selectedPlanBId}
+            setSelectedPlanBId={setSelectedPlanBId}
           />
         )}
       </DashboardLayout>

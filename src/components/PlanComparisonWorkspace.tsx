@@ -21,6 +21,10 @@ interface PlanComparisonWorkspaceProps {
   onSavePlans: (plans: SavedPlan[] | ((prev: SavedPlan[]) => SavedPlan[])) => void;
   simulateSurvivor: boolean;
   useTodayDollars: boolean;
+  selectedPlanAId: string;
+  setSelectedPlanAId: (id: string) => void;
+  selectedPlanBId: string;
+  setSelectedPlanBId: (id: string) => void;
 }
 
 export const PlanComparisonWorkspace: React.FC<PlanComparisonWorkspaceProps> = ({
@@ -30,10 +34,12 @@ export const PlanComparisonWorkspace: React.FC<PlanComparisonWorkspaceProps> = (
   onSavePlans,
   simulateSurvivor,
   useTodayDollars,
+  selectedPlanAId,
+  setSelectedPlanAId,
+  selectedPlanBId,
+  setSelectedPlanBId,
 }) => {
   const [newPlanName, setNewPlanName] = useState('');
-  const [selectedPlanAId, setSelectedPlanAId] = useState<string>('');
-  const [selectedPlanBId, setSelectedPlanBId] = useState<string>('');
   const [notification, setNotification] = useState<{ message: string; type: 'success' | 'info' | 'error' } | null>(null);
 
   // Trigger alert messages that auto-dismiss
