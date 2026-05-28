@@ -177,10 +177,10 @@ export const BracketMapChart: React.FC<BracketMapChartProps> = ({
         pointStyle: 'rect',
       },
       {
-        label: 'Roth Draws',
+        label: 'Roth Draws (Tax-Free)',
         data: ledger.map((r) => r.drawdownRoth),
         backgroundColor: 'rgba(52, 211, 153, 0.75)', // emerald-400 representing tax-free Roth draws
-        stack: 'income',
+        stack: 'tax-free', // excluded from 'Total Stacked Income' footer sum — these are non-taxable cash flows
         order: 2,
         pointStyle: 'rect',
       },
@@ -380,7 +380,7 @@ export const BracketMapChart: React.FC<BracketMapChartProps> = ({
           },
           title: {
             display: true,
-            text: 'Annual Inflows / Brackets',
+            text: 'Annual Cash Flow / Tax Brackets',
             color: '#94a3b8',
             font: { size: 10, weight: 'bold' }
           }
