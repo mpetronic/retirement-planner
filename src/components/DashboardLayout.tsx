@@ -22,6 +22,8 @@ interface DashboardLayoutProps {
   inputs: AppStateInputs;
   activeTab: number;
   setActiveTab: (tab: number) => void;
+  globalScenario: 'flat' | 'p10' | 'p50' | 'p90';
+  setGlobalScenario: (val: 'flat' | 'p10' | 'p50' | 'p90') => void;
   children: React.ReactNode;
 }
 
@@ -32,6 +34,8 @@ export const DashboardLayout: React.FC<DashboardLayoutProps> = ({
   inputs,
   activeTab,
   setActiveTab,
+  globalScenario,
+  setGlobalScenario,
   children,
 }) => {
   const formatCurrency = (val: number) => {
@@ -86,7 +90,7 @@ export const DashboardLayout: React.FC<DashboardLayoutProps> = ({
             </p>
           </div>
           
-          <div className="flex items-center gap-4 text-xs font-semibold text-slate-300">
+          <div className="flex flex-wrap items-center gap-3 text-xs font-semibold text-slate-300">
             <span className="flex items-center gap-1 bg-slate-800/80 px-3 py-1.5 rounded-xl border border-slate-700/60 font-mono">
               <Coins className="w-3.5 h-3.5 text-emerald-400" />
               Claim Combo ({inputs.you.name || 'You'} / {inputs.wife.name || 'Spouse'}): {inputs.you.targetSSClaimingAge} / {inputs.wife.targetSSClaimingAge}
@@ -95,6 +99,58 @@ export const DashboardLayout: React.FC<DashboardLayoutProps> = ({
               <MapPin className="w-3.5 h-3.5 text-blue-400" />
               {stateTaxContext}
             </span>
+
+            {/* Global Scenario Switcher */}
+            <div className="flex items-center gap-1 bg-slate-950/60 p-1 border border-slate-800 rounded-xl">
+              <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider px-2">Global Outlook:</span>
+              <button
+                type="button"
+                onClick={() => setGlobalScenario('flat')}
+                className={`text-[10px] px-2.5 py-1 rounded-lg font-bold transition-all border ${
+                  globalScenario === 'flat'
+                    ? 'bg-slate-800 text-slate-100 border-slate-700/60 font-black'
+                    : 'bg-transparent text-slate-400 hover:text-slate-200 border-transparent'
+                }`}
+              >
+                Flat
+              </button>
+              <button
+                type="button"
+                onClick={() => setGlobalScenario('p10')}
+                className={`text-[10px] px-2.5 py-1 rounded-lg font-bold transition-all border ${
+                  globalScenario === 'p10'
+                    ? 'bg-rose-500/10 text-rose-400 border-rose-500/20 font-black'
+                    : 'bg-transparent text-slate-400 hover:text-slate-200 border-transparent'
+                }`}
+                title="Pessimistic: 10th Percentile Run"
+              >
+                Worst (P10)
+              </button>
+              <button
+                type="button"
+                onClick={() => setGlobalScenario('p50')}
+                className={`text-[10px] px-2.5 py-1 rounded-lg font-bold transition-all border ${
+                  globalScenario === 'p50'
+                    ? 'bg-indigo-500/10 text-indigo-400 border-indigo-500/20 font-black'
+                    : 'bg-transparent text-slate-400 hover:text-slate-200 border-transparent'
+                }`}
+                title="Median: 50th Percentile Run"
+              >
+                Median (P50)
+              </button>
+              <button
+                type="button"
+                onClick={() => setGlobalScenario('p90')}
+                className={`text-[10px] px-2.5 py-1 rounded-lg font-bold transition-all border ${
+                  globalScenario === 'p90'
+                    ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20 font-black'
+                    : 'bg-transparent text-slate-400 hover:text-slate-200 border-transparent'
+                }`}
+                title="Optimistic: 90th Percentile Run"
+              >
+                Best (P90)
+              </button>
+            </div>
           </div>
         </div>
 
@@ -170,7 +226,7 @@ export const DashboardLayout: React.FC<DashboardLayoutProps> = ({
             }`}
           >
             <Coins className="w-4 h-4" />
-            Workspace 1: Bracket Map Chart
+            Overview
           </button>
           <button
             onClick={() => setActiveTab(1)}
@@ -181,7 +237,7 @@ export const DashboardLayout: React.FC<DashboardLayoutProps> = ({
             }`}
           >
             <ShieldAlert className="w-4 h-4" />
-            Workspace 2: Lookback Ledger
+            Lookback Ledger
           </button>
           <button
             onClick={() => setActiveTab(2)}
@@ -192,7 +248,7 @@ export const DashboardLayout: React.FC<DashboardLayoutProps> = ({
             }`}
           >
             <Sliders className="w-4 h-4" />
-            Workspace 3: Monte Carlo Analysis
+            Monte Carlo Analysis
           </button>
           <button
             onClick={() => setActiveTab(3)}
@@ -203,7 +259,7 @@ export const DashboardLayout: React.FC<DashboardLayoutProps> = ({
             }`}
           >
             <ArrowRightLeft className="w-4 h-4" />
-            Workspace 4: Plan Comparison
+            Plan Comparison
           </button>
         </div>
       </header>

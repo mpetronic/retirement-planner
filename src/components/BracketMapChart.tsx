@@ -32,26 +32,25 @@ interface BracketMapChartProps {
   ledger: SimulationResultRow[];
   inputs: AppStateInputs;
   simulateSurvivor: boolean;
-  wsScenario: 'flat' | 'p10' | 'p50' | 'p90';
-  onChangeScenario: (val: 'flat' | 'p10' | 'p50' | 'p90') => void;
   activeScenarioSequence: LockedReturnSequence | null;
   onApplyOptimization: (annualConversion: number, targetValue: number | null, yourAge: number, wifeAge: number) => void;
   onUpdateStrategy: (strategy: 'flat' | 'fill-to-target') => void;
   onUpdateTargetValue: (val: number | null) => void;
+  selectedQuickFill: number | null;
+  setSelectedQuickFill: (val: number | null) => void;
 }
 
 export const BracketMapChart: React.FC<BracketMapChartProps> = ({
   ledger,
   inputs,
   simulateSurvivor,
-  wsScenario,
-  onChangeScenario,
   activeScenarioSequence,
   onApplyOptimization,
   onUpdateStrategy,
   onUpdateTargetValue,
+  selectedQuickFill,
+  setSelectedQuickFill,
 }) => {
-  const [selectedQuickFill, setSelectedQuickFill] = useState<number | null>(null);
   
   // Optimizer visual state hooks
   const [optimizingGoal, setOptimizingGoal] = useState<OptimizationGoal | null>(null);
@@ -423,7 +422,7 @@ export const BracketMapChart: React.FC<BracketMapChartProps> = ({
       case 'min_taxes':
         return 'Optimize for Minimum Taxes 🎯';
       case 'max_portfolio':
-        return 'Optimize for Maximum Portfolio 🎯';
+        return 'Auto-Optimized Retirement Strategy 🚀';
       case 'min_surcharges':
         return 'Optimize for Minimum Surcharges 🎯';
       case 'max_roth':
@@ -514,12 +513,18 @@ export const BracketMapChart: React.FC<BracketMapChartProps> = ({
                 <div className="space-y-3">
                   <h4 className="text-xs font-bold text-slate-400 uppercase tracking-wider">Optimal Parameter Set</h4>
                   <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                    {/* Roth Conversion */}
+                    {/* Roth Conversion / Target MAGI Ceiling */}
                     <div className="bg-slate-950/40 border border-slate-800/60 p-4 rounded-xl space-y-1">
-                      <span className="text-[10px] text-slate-500 font-bold uppercase tracking-wider block">Annual Roth Conversion</span>
+                      <span className="text-[10px] text-slate-500 font-bold uppercase tracking-wider block">
+                        {inputs.rothConversionStrategy === 'fill-to-target' ? 'Target MAGI Ceiling' : 'Annual Roth Conversion'}
+                      </span>
                       <div className="flex justify-between items-baseline font-mono">
-                        <span className="text-xs text-slate-400 line-through">{formatCurrency(inputs.annualRothConversion)}</span>
-                        <span className="text-base font-black text-emerald-400">{formatCurrency(optimizationResult.bestAnnualRothConversion)}</span>
+                        <span className="text-xs text-slate-400 line-through">
+                          {formatCurrency(inputs.rothConversionStrategy === 'fill-to-target' ? (inputs.rothConversionTargetValue || 0) : inputs.annualRothConversion)}
+                        </span>
+                        <span className="text-base font-black text-emerald-400">
+                          {formatCurrency(inputs.rothConversionStrategy === 'fill-to-target' ? (optimizationResult.bestTargetValue || 0) : optimizationResult.bestAnnualRothConversion)}
+                        </span>
                       </div>
                     </div>
                     {/* Your Claiming Age */}
@@ -656,7 +661,7 @@ export const BracketMapChart: React.FC<BracketMapChartProps> = ({
         <div>
           <h3 className="text-lg font-bold text-slate-100 flex items-center gap-2">
             <Award className="w-5 h-5 text-emerald-400" />
-            Workspace 1: Interactive Tax and IRMAA Bracket Map
+            Interactive Tax and IRMAA Bracket Map
           </h3>
           <p className="text-xs text-slate-400">
             Compare annual income streams against Federal brackets and Medicare IRMAA surcharge cliffs.
@@ -664,56 +669,6 @@ export const BracketMapChart: React.FC<BracketMapChartProps> = ({
         </div>
 
         <div className="flex flex-wrap items-center gap-4">
-          {/* Localized Outlook Switcher */}
-          <div className="flex items-center gap-1.5 bg-slate-950/60 p-1 border border-slate-800 rounded-xl">
-            <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider px-2">Outlook:</span>
-            <div className="flex gap-1">
-              <button
-                onClick={() => onChangeScenario('flat')}
-                className={`text-[10px] px-2.5 py-1.5 rounded-lg font-bold transition-all border ${
-                  wsScenario === 'flat'
-                    ? 'bg-slate-800 text-slate-100 border-slate-700/60 font-black'
-                    : 'bg-transparent text-slate-400 hover:text-slate-200 border-transparent'
-                }`}
-              >
-                Flat
-              </button>
-              <button
-                onClick={() => onChangeScenario('p10')}
-                className={`text-[10px] px-2.5 py-1.5 rounded-lg font-bold transition-all flex items-center gap-1 border ${
-                  wsScenario === 'p10'
-                    ? 'bg-rose-500/10 text-rose-400 border-rose-500/20 font-black'
-                    : 'bg-transparent text-slate-400 hover:text-slate-200 border-transparent'
-                }`}
-                title="Pessimistic: 10th Percentile Run"
-              >
-                Worst (P10)
-              </button>
-              <button
-                onClick={() => onChangeScenario('p50')}
-                className={`text-[10px] px-2.5 py-1.5 rounded-lg font-bold transition-all flex items-center gap-1 border ${
-                  wsScenario === 'p50'
-                    ? 'bg-indigo-500/10 text-indigo-400 border-indigo-500/20 font-black'
-                    : 'bg-transparent text-slate-400 hover:text-slate-200 border-transparent'
-                }`}
-                title="Median: 50th Percentile Run"
-              >
-                Median (P50)
-              </button>
-              <button
-                onClick={() => onChangeScenario('p90')}
-                className={`text-[10px] px-2.5 py-1.5 rounded-lg font-bold transition-all flex items-center gap-1 border ${
-                  wsScenario === 'p90'
-                    ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20 font-black'
-                    : 'bg-transparent text-slate-400 hover:text-slate-200 border-transparent'
-                }`}
-                title="Optimistic: 90th Percentile Run"
-              >
-                Best (P90)
-              </button>
-            </div>
-          </div>
-
           {/* Unified Quick-Fill Optimization Targets Dropdown */}
           <div className="flex items-center gap-2">
             <span className="text-xs text-slate-400 font-semibold uppercase tracking-wider">Quick Fills:</span>
@@ -750,10 +705,7 @@ export const BracketMapChart: React.FC<BracketMapChartProps> = ({
           >
             <option value="">No Active Target (Decluttered)</option>
             <optgroup label="Retirement Goal Optimizers">
-              <option value="opt-min-taxes">Optimize for Minimum Taxes 🎯</option>
-              <option value="opt-max-portfolio">Optimize for Maximum Portfolio 🎯</option>
-              <option value="opt-min-surcharges">Optimize for Minimum Surcharges 🎯</option>
-              <option value="opt-max-roth">Optimize for Maximum Roth Value 🎯</option>
+              <option value="opt-max-portfolio">Auto-Optimize Plan 🚀</option>
             </optgroup>
             <optgroup label="Federal Tax Brackets (MFJ)">
               <option value={57000}>Fill to Top of 10% Bracket ($57,000)</option>

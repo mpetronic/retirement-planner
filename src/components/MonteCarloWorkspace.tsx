@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useMemo } from 'react';
 import { Chart } from 'react-chartjs-2';
 import {
   Chart as ChartJS,
@@ -37,17 +37,16 @@ interface MonteCarloWorkspaceProps {
   onChangeInputs: (newInputs: AppStateInputs) => void;
   simulateSurvivor: boolean;
   summary: MonteCarloSummary;
+  globalScenario: 'flat' | 'p10' | 'p50' | 'p90';
 }
 
 export const MonteCarloWorkspace: React.FC<MonteCarloWorkspaceProps> = ({
   inputs,
   onChangeInputs,
   summary,
+  globalScenario,
 }) => {
   const successRate = summary.successRate;
-
-  // Local state to select scenario sequence for return rates bar chart
-  const [chartScenario, setChartScenario] = useState<'p50' | 'p10' | 'p90' | 'flat'>('p50');
 
   // Formatting helpers
   const formatCurrency = (val: number) => {
@@ -164,24 +163,24 @@ export const MonteCarloWorkspace: React.FC<MonteCarloWorkspaceProps> = ({
 
   // Return rates dataset preparation
   const activeEquityReturns = useMemo(() => {
-    if (chartScenario === 'flat') {
+    if (globalScenario === 'flat') {
       return Array(35).fill(inputs.growthAssumptions.equityReturnRate);
     }
-    const seq = chartScenario === 'p10' ? summary.representativeSequences.worst
-              : chartScenario === 'p90' ? summary.representativeSequences.best
+    const seq = globalScenario === 'p10' ? summary.representativeSequences.worst
+              : globalScenario === 'p90' ? summary.representativeSequences.best
               : summary.representativeSequences.median;
     return seq ? seq.equityReturns : Array(35).fill(inputs.growthAssumptions.equityReturnRate);
-  }, [chartScenario, inputs.growthAssumptions.equityReturnRate, summary.representativeSequences]);
+  }, [globalScenario, inputs.growthAssumptions.equityReturnRate, summary.representativeSequences]);
 
   const activeFixedIncomeReturns = useMemo(() => {
-    if (chartScenario === 'flat') {
+    if (globalScenario === 'flat') {
       return Array(35).fill(inputs.growthAssumptions.fixedIncomeReturnRate);
     }
-    const seq = chartScenario === 'p10' ? summary.representativeSequences.worst
-              : chartScenario === 'p90' ? summary.representativeSequences.best
+    const seq = globalScenario === 'p10' ? summary.representativeSequences.worst
+              : globalScenario === 'p90' ? summary.representativeSequences.best
               : summary.representativeSequences.median;
     return seq ? seq.fixedIncomeReturns : Array(35).fill(inputs.growthAssumptions.fixedIncomeReturnRate);
-  }, [chartScenario, inputs.growthAssumptions.fixedIncomeReturnRate, summary.representativeSequences]);
+  }, [globalScenario, inputs.growthAssumptions.fixedIncomeReturnRate, summary.representativeSequences]);
 
   const barChartData = {
     labels: years.map(String),
@@ -261,7 +260,7 @@ export const MonteCarloWorkspace: React.FC<MonteCarloWorkspaceProps> = ({
         <div>
           <h3 className="text-lg font-bold text-slate-100 flex items-center gap-2">
             <Sliders className="w-5 h-5 text-emerald-400" />
-            Workspace 4: Monte Carlo Analysis & Stress Testing
+            Monte Carlo Analysis & Stress Testing
           </h3>
           <p className="text-xs text-slate-400">
             Model stock/bond return variances, run batch trial stress tests, and explore statistical probabilities of success.
@@ -528,68 +527,14 @@ export const MonteCarloWorkspace: React.FC<MonteCarloWorkspaceProps> = ({
         <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-4">
           <div>
             <h4 className="text-xs font-bold text-slate-200 uppercase tracking-wider">
-              {chartScenario === 'flat' ? 'Deterministic Flat Return Rates Baseline' : 'Stochastic Simulated Return Rates Sequence'}
+              {globalScenario === 'flat' ? 'Deterministic Flat Return Rates Baseline' : 'Stochastic Simulated Return Rates Sequence'}
             </h4>
             <p className="text-[10px] text-slate-400">
-              {chartScenario === 'flat'
+              {globalScenario === 'flat'
                 ? 'Showing the baseline flat equity and fixed income return rates currently configured for the deterministic scenario.'
                 : 'View the specific stock (Equity) and bond (Fixed Income) return rates simulated for each year of the selected path.'
               }
             </p>
-          </div>
-
-          {/* Inline Selector for the Return Rate Outlook */}
-          <div className="flex items-center gap-1.5 bg-slate-950/60 p-1 border border-slate-800 rounded-xl self-start sm:self-auto">
-            <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider px-2">Sequence:</span>
-            <div className="flex gap-1">
-              <button
-                type="button"
-                onClick={() => setChartScenario('flat')}
-                className={`text-[10px] px-2.5 py-1.5 rounded-lg font-bold transition-all border ${
-                  chartScenario === 'flat'
-                    ? 'bg-slate-800 text-slate-100 border-slate-700/60 font-black'
-                    : 'bg-transparent text-slate-400 hover:text-slate-200 border-transparent'
-                }`}
-              >
-                Flat
-              </button>
-              <button
-                type="button"
-                onClick={() => setChartScenario('p10')}
-                className={`text-[10px] px-2.5 py-1.5 rounded-lg font-bold transition-all flex items-center gap-1 border ${
-                  chartScenario === 'p10'
-                    ? 'bg-rose-500/10 text-rose-400 border-rose-500/20 font-black'
-                    : 'bg-transparent text-slate-400 hover:text-slate-200 border-transparent'
-                }`}
-                title="Pessimistic: 10th Percentile Run"
-              >
-                Worst (P10)
-              </button>
-              <button
-                type="button"
-                onClick={() => setChartScenario('p50')}
-                className={`text-[10px] px-2.5 py-1.5 rounded-lg font-bold transition-all flex items-center gap-1 border ${
-                  chartScenario === 'p50'
-                    ? 'bg-indigo-500/10 text-indigo-400 border-indigo-500/20 font-black'
-                    : 'bg-transparent text-slate-400 hover:text-slate-200 border-transparent'
-                }`}
-                title="Median: 50th Percentile Run"
-              >
-                Median (P50)
-              </button>
-              <button
-                type="button"
-                onClick={() => setChartScenario('p90')}
-                className={`text-[10px] px-2.5 py-1.5 rounded-lg font-bold transition-all flex items-center gap-1 border ${
-                  chartScenario === 'p90'
-                    ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20 font-black'
-                    : 'bg-transparent text-slate-400 hover:text-slate-200 border-transparent'
-                }`}
-                title="Optimistic: 90th Percentile Run"
-              >
-                Best (P90)
-              </button>
-            </div>
           </div>
         </div>
 

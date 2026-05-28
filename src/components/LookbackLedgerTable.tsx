@@ -7,16 +7,12 @@ interface LookbackLedgerTableProps {
   ledger: SimulationResultRow[];
   inputs: AppStateInputs;
   simulateSurvivor: boolean;
-  wsScenario: 'flat' | 'p10' | 'p50' | 'p90';
-  onChangeScenario: (val: 'flat' | 'p10' | 'p50' | 'p90') => void;
 }
 
 export const LookbackLedgerTable: React.FC<LookbackLedgerTableProps> = ({
   ledger,
   inputs,
   simulateSurvivor,
-  wsScenario,
-  onChangeScenario,
 }) => {
   const formatCurrency = (val: number) => {
     return new Intl.NumberFormat('en-US', {
@@ -97,62 +93,14 @@ export const LookbackLedgerTable: React.FC<LookbackLedgerTableProps> = ({
         <div>
           <h3 className="text-lg font-bold text-slate-100 flex items-center gap-2">
             <ShieldAlert className="w-5 h-5 text-amber-500 animate-pulse" />
-            Workspace 2: Lookback Linkage Ledger Table
+            Lookback Linkage Ledger Table
           </h3>
           <p className="text-xs text-slate-400">
             Under Medicare guidelines, your Modified Adjusted Gross Income (MAGI) in a tax year dictates your premium surcharges exactly 2 years later.
           </p>
         </div>
 
-        {/* Localized Outlook Switcher */}
-        <div className="flex items-center gap-1.5 bg-slate-950/60 p-1 border border-slate-800 rounded-xl">
-          <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider px-2">Outlook:</span>
-          <div className="flex gap-1">
-            <button
-              onClick={() => onChangeScenario('flat')}
-              className={`text-[10px] px-2.5 py-1.5 rounded-lg font-bold transition-all border ${
-                wsScenario === 'flat'
-                  ? 'bg-slate-800 text-slate-100 border-slate-700/60 font-black'
-                  : 'bg-transparent text-slate-400 hover:text-slate-200 border-transparent'
-              }`}
-            >
-              Flat
-            </button>
-            <button
-              onClick={() => onChangeScenario('p10')}
-              className={`text-[10px] px-2.5 py-1.5 rounded-lg font-bold transition-all flex items-center gap-1 border ${
-                wsScenario === 'p10'
-                  ? 'bg-rose-500/10 text-rose-400 border-rose-500/20 font-black'
-                  : 'bg-transparent text-slate-400 hover:text-slate-200 border-transparent'
-              }`}
-              title="Pessimistic: 10th Percentile Run"
-            >
-              Worst (P10)
-            </button>
-            <button
-              onClick={() => onChangeScenario('p50')}
-              className={`text-[10px] px-2.5 py-1.5 rounded-lg font-bold transition-all flex items-center gap-1 border ${
-                wsScenario === 'p50'
-                  ? 'bg-indigo-500/10 text-indigo-400 border-indigo-500/20 font-black'
-                  : 'bg-transparent text-slate-400 hover:text-slate-200 border-transparent'
-              }`}
-              title="Median: 50th Percentile Run"
-            >
-              Median (P50)
-            </button>
-            <button
-              onClick={() => onChangeScenario('p90')}
-              className={`text-[10px] px-2.5 py-1.5 rounded-lg font-bold transition-all flex items-center gap-1 border ${
-                wsScenario === 'p90'
-                  ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20 font-black'
-                  : 'bg-transparent text-slate-400 hover:text-slate-200 border-transparent'
-              }`}
-              title="Optimistic: 90th Percentile Run"
-              >
-              Best (P90)
-            </button>
-          </div>
-        </div>
+
       </div>
 
       {/* Safety Alerts Box */}

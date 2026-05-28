@@ -326,6 +326,29 @@ export function runRetirementSimulation(
       }
     }
     
+    // To prevent using pre-tax funds to pay for Roth conversion taxes (which is financially suboptimal),
+    // we dynamically cap the target conversion based on the available taxable brokerage assets.
+    if (targetConversion > 0) {
+      const totalTaxableBrokerage = yourTaxable + (inputs.isSingleFiler ? 0 : wifeTaxable);
+      
+      // Estimate this year's net outflows before conversions
+      const estLiving = (inputs.annualLivingExpenses ?? 120000) * cpiFactor;
+      const estSS = combinedSS;
+      const estSalary = activeSalaryInflow;
+      
+      // Deficit in base living expenses that must be funded by taxable brokerage
+      const estBaseDeficit = Math.max(0, estLiving - (estSS + estSalary));
+      
+      // Taxable cash left specifically to pay for Roth conversion taxes
+      const taxableCashForTaxes = Math.max(0, totalTaxableBrokerage - estBaseDeficit);
+      
+      // Safe conversion ceiling assuming 25% average tax rate (tax = 0.25 * conversion)
+      // Every $1.00 of conversion requires roughly $0.25 of taxable cash to pay the tax.
+      const maxSafeConversion = taxableCashForTaxes * 4;
+      
+      targetConversion = Math.min(targetConversion, maxSafeConversion);
+    }
+
     if (targetConversion > 0) {
       if (isSurvivorActive || youDeceased) {
         wifeConverted = Math.min(targetConversion, wifePreTaxPostRMD);

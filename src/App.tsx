@@ -145,13 +145,15 @@ function App() {
   const [savedPlans, setSavedPlans] = useLocalStorage<SavedPlan[]>('retirement_planner_saved_plans', []);
   const [useTodayDollars, setUseTodayDollars] = useLocalStorage<boolean>('retirement_planner_use_today_dollars', false);
 
-  // Localized persisted scenarios for Workspace 1 and 2
-  const [ws1Scenario, setWs1Scenario] = useLocalStorage<'flat' | 'p10' | 'p50' | 'p90'>('retirement_planner_ws1_scenario', 'flat');
-  const [ws2Scenario, setWs2Scenario] = useLocalStorage<'flat' | 'p10' | 'p50' | 'p90'>('retirement_planner_ws2_scenario', 'flat');
+  // Global persisted scenario for all worksheets
+  const [globalScenario, setGlobalScenario] = useLocalStorage<'flat' | 'p10' | 'p50' | 'p90'>('retirement_planner_global_scenario', 'p50');
 
   // Persisted plan selections for Workspace 4 comparison
   const [selectedPlanAId, setSelectedPlanAId] = useLocalStorage<string>('retirement_planner_selected_plan_a', '');
   const [selectedPlanBId, setSelectedPlanBId] = useLocalStorage<string>('retirement_planner_selected_plan_b', '');
+
+  // Persisted Quick Fill selection for Workspace 1 Bracket Map
+  const [selectedQuickFill, setSelectedQuickFill] = useLocalStorage<number | null>('retirement_planner_selected_quick_fill', null);
 
 
   // 1. Generate 1,000 return sequences once, keyed ONLY on volatility/correlation/seed.
@@ -205,21 +207,18 @@ function App() {
     };
   }, [inputs, simulateSurvivor, monteCarloSummary]);
 
-  // Compute active ledger for each worksheet depending on its localized switcher state
-  const wsLedgers = useMemo(() => {
-    return {
-      ws1: parallelLedgers[ws1Scenario] || parallelLedgers.flat,
-      ws2: parallelLedgers[ws2Scenario] || parallelLedgers.flat,
-    };
-  }, [parallelLedgers, ws1Scenario, ws2Scenario]);
-
-  // Active return sequence for optimizer/matrix sweeps
-  const activeWs1Sequence = useMemo(() => {
-    if (ws1Scenario === 'p10') return monteCarloSummary.representativeSequences.worst;
-    if (ws1Scenario === 'p50') return monteCarloSummary.representativeSequences.median;
-    if (ws1Scenario === 'p90') return monteCarloSummary.representativeSequences.best;
+  // Active return sequence for optimizer/matrix sweeps depending on global scenario
+  const activeSequence = useMemo(() => {
+    if (globalScenario === 'p10') return monteCarloSummary.representativeSequences.worst;
+    if (globalScenario === 'p50') return monteCarloSummary.representativeSequences.median;
+    if (globalScenario === 'p90') return monteCarloSummary.representativeSequences.best;
     return null;
-  }, [ws1Scenario, monteCarloSummary]);
+  }, [globalScenario, monteCarloSummary]);
+
+  // Compute active ledger depending on the global switcher state
+  const activeLedger = useMemo(() => {
+    return parallelLedgers[globalScenario] || parallelLedgers.flat;
+  }, [parallelLedgers, globalScenario]);
 
   // Helper to discount a row's nominal values back to today's purchasing power (real value)
   const discountRow = (row: SimulationResultRow, cpiRate: number): SimulationResultRow => {
@@ -250,21 +249,11 @@ function App() {
     };
   }, [parallelLedgers, useTodayDollars, inputs.growthAssumptions.cpiInflationRate]);
 
-  const displayWsLedgers = useMemo(() => {
-    if (!useTodayDollars) return wsLedgers;
-    const cpi = inputs.growthAssumptions.cpiInflationRate;
-    return {
-      ws1: wsLedgers.ws1.map((r) => discountRow(r, cpi)),
-      ws2: wsLedgers.ws2.map((r) => discountRow(r, cpi)),
-    };
-  }, [wsLedgers, useTodayDollars, inputs.growthAssumptions.cpiInflationRate]);
-
   const displayActiveLedger = useMemo(() => {
-    if (activeTab === 0) return displayWsLedgers.ws1;
-    if (activeTab === 1) return displayWsLedgers.ws2;
-    if (activeTab === 2) return displayParallelLedgers.p50;
-    return displayWsLedgers.ws1;
-  }, [activeTab, displayWsLedgers, displayParallelLedgers]);
+    if (!useTodayDollars) return activeLedger;
+    const cpi = inputs.growthAssumptions.cpiInflationRate;
+    return activeLedger.map((r) => discountRow(r, cpi));
+  }, [activeLedger, useTodayDollars, inputs.growthAssumptions.cpiInflationRate]);
 
   const displayMonteCarloSummary = useMemo(() => {
     if (!useTodayDollars) return monteCarloSummary;
@@ -318,6 +307,20 @@ function App() {
 
 
 
+  // Keep selectedQuickFill synchronized with rothConversionStrategy & rothConversionTargetValue
+  useEffect(() => {
+    if (inputs.rothConversionStrategy !== 'fill-to-target' || inputs.rothConversionTargetValue === null) {
+      setSelectedQuickFill(null);
+    } else {
+      const validFills = [57000, 133000, 243600, 435750, 206000, 258000, 322000, 382000, 461000];
+      if (validFills.includes(inputs.rothConversionTargetValue)) {
+        setSelectedQuickFill(inputs.rothConversionTargetValue);
+      } else {
+        setSelectedQuickFill(null);
+      }
+    }
+  }, [inputs.rothConversionStrategy, inputs.rothConversionTargetValue, setSelectedQuickFill]);
+
   // Sync title and head tags for SEO best practices
   useEffect(() => {
     document.title = 'Retirement Planner - Tax, Medicare & SS Planner';
@@ -346,27 +349,27 @@ function App() {
         inputs={inputs}
         activeTab={activeTab}
         setActiveTab={setActiveTab}
+        globalScenario={globalScenario}
+        setGlobalScenario={setGlobalScenario}
       >
         {activeTab === 0 && (
           <BracketMapChart
-            ledger={displayWsLedgers.ws1}
+            ledger={displayActiveLedger}
             inputs={inputs}
             simulateSurvivor={simulateSurvivor}
-            wsScenario={ws1Scenario}
-            onChangeScenario={setWs1Scenario}
-            activeScenarioSequence={activeWs1Sequence}
+            activeScenarioSequence={activeSequence}
             onApplyOptimization={handleApplyOptimization}
             onUpdateStrategy={handleUpdateStrategy}
             onUpdateTargetValue={handleUpdateTargetValue}
+            selectedQuickFill={selectedQuickFill}
+            setSelectedQuickFill={setSelectedQuickFill}
           />
         )}
         {activeTab === 1 && (
           <LookbackLedgerTable
-            ledger={displayWsLedgers.ws2}
+            ledger={displayActiveLedger}
             inputs={inputs}
             simulateSurvivor={simulateSurvivor}
-            wsScenario={ws2Scenario}
-            onChangeScenario={setWs2Scenario}
           />
         )}
         {activeTab === 2 && (
@@ -375,6 +378,7 @@ function App() {
             onChangeInputs={setInputs}
             simulateSurvivor={simulateSurvivor}
             summary={displayMonteCarloSummary}
+            globalScenario={globalScenario}
           />
         )}
         {activeTab === 3 && (
