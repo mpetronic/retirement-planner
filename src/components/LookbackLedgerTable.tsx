@@ -151,6 +151,15 @@ export const LookbackLedgerTable: React.FC<LookbackLedgerTableProps> = ({
 
               const isTopRow = idx < 4;
 
+              const salary = (r.yourSalary || 0) + (r.wifeSalary || 0);
+              const rmd = r.yourRMD + r.wifeRMD;
+              const rothConv = r.intentionalRothConversion;
+              const capitalGains = r.capitalGainsTriggered;
+              const pretaxDrawdown = r.otherTaxableIncome;
+              
+              const otherAGI = salary + rmd + rothConv + capitalGains + pretaxDrawdown;
+              const taxableSS = Math.max(0, r.magi - otherAGI);
+
               return (
                 <tr
                   key={r.year}
@@ -161,7 +170,47 @@ export const LookbackLedgerTable: React.FC<LookbackLedgerTableProps> = ({
                   }`}
                 >
                   <td className="p-4 font-mono font-semibold">{r.year}</td>
-                  <td className="p-4 font-mono">{formatCurrency(r.magi)}</td>
+                  <td className="p-4 font-mono relative group cursor-help text-slate-300">
+                    <span>{formatCurrency(r.magi)}</span>
+                    <div className={`absolute left-1/2 -translate-x-1/2 w-72 bg-slate-950/95 backdrop-blur-md border border-slate-800 rounded-2xl p-4 shadow-2xl opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 z-50 text-xs text-slate-300 pointer-events-none space-y-2 font-sans normal-case ${
+                      isTopRow ? 'top-full mt-2' : 'bottom-full mb-2'
+                    }`}>
+                      <div className="flex items-center justify-between border-b border-slate-800/80 pb-1.5 mb-1">
+                        <span className="font-bold text-slate-200 uppercase tracking-wider text-[9px]">Income / MAGI Component</span>
+                        <span className="font-bold text-emerald-400 uppercase tracking-wider text-[9px]">Amount</span>
+                      </div>
+                      <div className="flex justify-between items-center text-[11px]">
+                        <span className="text-slate-400">Active Salary (Earned):</span>
+                        <span className="font-mono text-slate-200 font-medium">{formatCurrency(salary)}</span>
+                      </div>
+                      <div className="flex justify-between items-center text-[11px]">
+                        <span className="text-slate-400">Required Minimum Dist. (RMD):</span>
+                        <span className="font-mono text-slate-200 font-medium">{formatCurrency(rmd)}</span>
+                      </div>
+                      <div className="flex justify-between items-center text-[11px]">
+                        <span className="text-slate-400">Extra Pre-Tax Drawdowns:</span>
+                        <span className="font-mono text-slate-200 font-medium">{formatCurrency(pretaxDrawdown)}</span>
+                      </div>
+                      <div className="flex justify-between items-center text-[11px]">
+                        <span className="text-slate-400">Roth Conversions:</span>
+                        <span className="font-mono text-slate-200 font-medium">{formatCurrency(rothConv)}</span>
+                      </div>
+                      <div className="flex justify-between items-center text-[11px]">
+                        <span className="text-slate-400">Realized Capital Gains:</span>
+                        <span className="font-mono text-slate-200 font-medium">{formatCurrency(capitalGains)}</span>
+                      </div>
+                      <div className="flex justify-between items-center text-[11px]">
+                        <span className="text-slate-400">Taxable Social Security:</span>
+                        <span className="font-mono text-slate-200 font-medium">
+                          {formatCurrency(taxableSS)} <span className="text-[10px] text-slate-500 font-normal">of {formatCurrency(r.yourSS + r.wifeSS)}</span>
+                        </span>
+                      </div>
+                      <div className="flex justify-between items-center border-t border-slate-800/80 pt-2 mt-1 text-[11px] font-bold">
+                        <span className="text-slate-200">Total MAGI (Income):</span>
+                        <span className="font-mono text-emerald-400">{formatCurrency(r.magi)}</span>
+                      </div>
+                    </div>
+                  </td>
                   <td className="p-4 font-mono text-slate-300">
                     {r.intentionalRothConversion > 0 ? (
                       <span className="text-slate-300 font-mono">
