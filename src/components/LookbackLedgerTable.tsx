@@ -159,6 +159,8 @@ export const LookbackLedgerTable: React.FC<LookbackLedgerTableProps> = ({
               
               const otherAGI = salary + rmd + rothConv + capitalGains + pretaxDrawdown;
               const taxableSS = Math.max(0, r.magi - otherAGI);
+              const totalSS = r.yourSS + r.wifeSS;
+              const ssTaxedPercent = totalSS > 0 ? Math.round((taxableSS / totalSS) * 100) : 0;
 
               return (
                 <tr
@@ -202,7 +204,7 @@ export const LookbackLedgerTable: React.FC<LookbackLedgerTableProps> = ({
                       <div className="flex justify-between items-center text-[11px]">
                         <span className="text-slate-400">Taxable Social Security:</span>
                         <span className="font-mono text-slate-200 font-medium">
-                          {formatCurrency(taxableSS)} <span className="text-[10px] text-slate-500 font-normal">of {formatCurrency(r.yourSS + r.wifeSS)}</span>
+                          {formatCurrency(taxableSS)} <span className="text-[10px] text-slate-500 font-normal">({ssTaxedPercent}% of {formatCurrency(totalSS)})</span>
                         </span>
                       </div>
                       <div className="flex justify-between items-center border-t border-slate-800/80 pt-2 mt-1 text-[11px] font-bold">
