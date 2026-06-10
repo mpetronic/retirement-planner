@@ -23,29 +23,29 @@ export const OnboardingWizard: React.FC<OnboardingWizardProps> = ({ onComplete }
   const [youName, setYouName] = useState('You');
   const [youBirthDate, setYouBirthDate] = useState('1960-01-01');
   const [youRetireAge, setYouRetireAge] = useState<number>(67);
-  const [youSalary, setYouSalary] = useState<number>(0);
+  const [youSalary, setYouSalary] = useState<number | null>(0);
   const [youIsRetired, setYouIsRetired] = useState(false);
-  const [youPIA, setYouPIA] = useState<number>(0);
+  const [youPIA, setYouPIA] = useState<number | null>(0);
   const [youClaimAge, setYouClaimAge] = useState<number>(67);
 
   const [wifeName, setWifeName] = useState('Spouse');
   const [wifeBirthDate, setWifeBirthDate] = useState('1960-01-01');
   const [wifeRetireAge, setWifeRetireAge] = useState<number>(65);
-  const [wifeSalary, setWifeSalary] = useState<number>(0);
+  const [wifeSalary, setWifeSalary] = useState<number | null>(0);
   // Default spouse not retired
   const [wifeIsRetired, setWifeIsRetired] = useState(false);
-  const [wifePIA, setWifePIA] = useState<number>(0);
+  const [wifePIA, setWifePIA] = useState<number | null>(0);
   const [wifeClaimAge, setWifeClaimAge] = useState<number>(67);
 
-  const [yourPreTax, setYourPreTax] = useState<number>(0);
-  const [yourRoth, setYourRoth] = useState<number>(0);
-  const [yourTaxable, setYourTaxable] = useState<number>(0);
-  const [yourBasis, setYourBasis] = useState<number>(0);
+  const [yourPreTax, setYourPreTax] = useState<number | null>(0);
+  const [yourRoth, setYourRoth] = useState<number | null>(0);
+  const [yourTaxable, setYourTaxable] = useState<number | null>(0);
+  const [yourBasis, setYourBasis] = useState<number | null>(0);
 
-  const [wifePreTax, setWifePreTax] = useState<number>(0);
-  const [wifeRoth, setWifeRoth] = useState<number>(0);
-  const [wifeTaxable, setWifeTaxable] = useState<number>(0);
-  const [wifeBasis, setWifeBasis] = useState<number>(0);
+  const [wifePreTax, setWifePreTax] = useState<number | null>(0);
+  const [wifeRoth, setWifeRoth] = useState<number | null>(0);
+  const [wifeTaxable, setWifeTaxable] = useState<number | null>(0);
+  const [wifeBasis, setWifeBasis] = useState<number | null>(0);
 
   const [livingExpenses, setLivingExpenses] = useState<number>(120000);
   const [currentState, setCurrentState] = useState<'MD' | 'FL'>('MD');
@@ -67,11 +67,11 @@ export const OnboardingWizard: React.FC<OnboardingWizardProps> = ({ onComplete }
         setError('Please select your birth date.');
         return;
       }
-      if (!youIsRetired && (youSalary === null || youSalary < 0)) {
+      if (!youIsRetired && youSalary !== null && youSalary < 0) {
         setError('Please enter a valid salary amount or mark yourself as retired.');
         return;
       }
-      if (youPIA === null || youPIA < 0) {
+      if (youPIA !== null && youPIA < 0) {
         setError('Please enter a valid estimated Social Security Monthly PIA.');
         return;
       }
@@ -86,11 +86,11 @@ export const OnboardingWizard: React.FC<OnboardingWizardProps> = ({ onComplete }
           setError("Please select your spouse's birth date.");
           return;
         }
-        if (!wifeIsRetired && (wifeSalary === null || wifeSalary < 0)) {
+        if (!wifeIsRetired && wifeSalary !== null && wifeSalary < 0) {
           setError('Please enter a valid salary amount or mark your spouse as retired.');
           return;
         }
-        if (wifePIA === null || wifePIA < 0) {
+        if (wifePIA !== null && wifePIA < 0) {
           setError('Please enter a valid estimated Social Security Monthly PIA.');
           return;
         }
@@ -98,20 +98,20 @@ export const OnboardingWizard: React.FC<OnboardingWizardProps> = ({ onComplete }
       setStep(3);
     } else if (step === 3) {
       if (
-        yourPreTax === null || yourPreTax < 0 ||
-        yourRoth === null || yourRoth < 0 ||
-        yourTaxable === null || yourTaxable < 0 ||
-        yourBasis === null || yourBasis < 0
+        (yourPreTax !== null && yourPreTax < 0) ||
+        (yourRoth !== null && yourRoth < 0) ||
+        (yourTaxable !== null && yourTaxable < 0) ||
+        (yourBasis !== null && yourBasis < 0)
       ) {
         setError('Please enter valid, non-negative amounts for your starting balances.');
         return;
       }
       if (!isSingleFiler) {
         if (
-          wifePreTax === null || wifePreTax < 0 ||
-          wifeRoth === null || wifeRoth < 0 ||
-          wifeTaxable === null || wifeTaxable < 0 ||
-          wifeBasis === null || wifeBasis < 0
+          (wifePreTax !== null && wifePreTax < 0) ||
+          (wifeRoth !== null && wifeRoth < 0) ||
+          (wifeTaxable !== null && wifeTaxable < 0) ||
+          (wifeBasis !== null && wifeBasis < 0)
         ) {
           setError("Please enter valid, non-negative amounts for your spouse's starting balances.");
           return;
@@ -324,7 +324,7 @@ export const OnboardingWizard: React.FC<OnboardingWizardProps> = ({ onComplete }
                           <input
                             type="number"
                             value={youSalary === null ? '' : youSalary}
-                            onChange={(e) => setYouSalary(e.target.value === '' ? 0 : Number(e.target.value))}
+                            onChange={(e) => setYouSalary(e.target.value === '' ? null : Number(e.target.value))}
                             placeholder="e.g. 150000"
                             className="w-full bg-slate-950 border border-slate-800 rounded-xl pl-7 pr-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500"
                           />
@@ -355,19 +355,17 @@ export const OnboardingWizard: React.FC<OnboardingWizardProps> = ({ onComplete }
 
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div className="space-y-1.5">
-                    <label className="text-xs font-bold text-slate-400 flex justify-between">
-                      <span>SS Monthly PIA (at Age 67)</span>
-                      <span className="text-emerald-400 font-mono font-bold">${youPIA.toLocaleString()}</span>
-                    </label>
-                    <input
-                      type="range"
-                      min="0"
-                      max="4500"
-                      step="50"
-                      value={youPIA}
-                      onChange={(e) => setYouPIA(Number(e.target.value))}
-                      className="w-full h-1.5 bg-slate-950 rounded-lg appearance-none cursor-pointer accent-emerald-500"
-                    />
+                    <label className="text-xs font-bold text-slate-400">SS Monthly PIA (at Age 67)</label>
+                    <div className="relative">
+                      <span className="absolute left-3 top-2 text-slate-500 text-sm font-semibold">$</span>
+                      <input
+                        type="number"
+                        value={youPIA === null ? '' : youPIA}
+                        onChange={(e) => setYouPIA(e.target.value === '' ? null : Number(e.target.value))}
+                        placeholder="e.g. 3000"
+                        className="w-full bg-slate-950 border border-slate-800 rounded-xl pl-7 pr-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500"
+                      />
+                    </div>
                   </div>
                   <div className="space-y-1.5">
                     <label className="text-xs font-bold text-slate-400 flex justify-between">
@@ -468,7 +466,7 @@ export const OnboardingWizard: React.FC<OnboardingWizardProps> = ({ onComplete }
                               <input
                                 type="number"
                                 value={wifeSalary === null ? '' : wifeSalary}
-                                onChange={(e) => setWifeSalary(e.target.value === '' ? 0 : Number(e.target.value))}
+                                onChange={(e) => setWifeSalary(e.target.value === '' ? null : Number(e.target.value))}
                                 placeholder="e.g. 100000"
                                 className="w-full bg-slate-950 border border-slate-800 rounded-xl pl-7 pr-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500"
                               />
@@ -495,19 +493,17 @@ export const OnboardingWizard: React.FC<OnboardingWizardProps> = ({ onComplete }
 
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                       <div className="space-y-1.5">
-                        <label className="text-xs font-bold text-slate-400 flex justify-between">
-                          <span>SS Monthly PIA (at Age 67)</span>
-                          <span className="text-emerald-400 font-mono font-bold">${wifePIA.toLocaleString()}</span>
-                        </label>
-                        <input
-                          type="range"
-                          min="0"
-                          max="4500"
-                          step="50"
-                          value={wifePIA}
-                          onChange={(e) => setWifePIA(Number(e.target.value))}
-                          className="w-full h-1.5 bg-slate-950 rounded-lg appearance-none cursor-pointer accent-emerald-500"
-                        />
+                        <label className="text-xs font-bold text-slate-400">SS Monthly PIA (at Age 67)</label>
+                        <div className="relative">
+                          <span className="absolute left-3 top-2 text-slate-500 text-sm font-semibold">$</span>
+                          <input
+                            type="number"
+                            value={wifePIA === null ? '' : wifePIA}
+                            onChange={(e) => setWifePIA(e.target.value === '' ? null : Number(e.target.value))}
+                            placeholder="e.g. 2800"
+                            className="w-full bg-slate-950 border border-slate-800 rounded-xl pl-7 pr-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500"
+                          />
+                        </div>
                       </div>
                       <div className="space-y-1.5">
                         <label className="text-xs font-bold text-slate-400 flex justify-between">
@@ -547,7 +543,7 @@ export const OnboardingWizard: React.FC<OnboardingWizardProps> = ({ onComplete }
                       <input
                         type="number"
                         value={yourPreTax === null ? '' : yourPreTax}
-                        onChange={(e) => setYourPreTax(e.target.value === '' ? 0 : Number(e.target.value))}
+                        onChange={(e) => setYourPreTax(e.target.value === '' ? null : Number(e.target.value))}
                         className="w-full bg-slate-950 border border-slate-850 focus:border-emerald-500 rounded-xl px-3 py-1.5 text-xs text-slate-100 font-mono focus:outline-none"
                       />
                     </div>
@@ -556,7 +552,7 @@ export const OnboardingWizard: React.FC<OnboardingWizardProps> = ({ onComplete }
                       <input
                         type="number"
                         value={yourRoth === null ? '' : yourRoth}
-                        onChange={(e) => setYourRoth(e.target.value === '' ? 0 : Number(e.target.value))}
+                        onChange={(e) => setYourRoth(e.target.value === '' ? null : Number(e.target.value))}
                         className="w-full bg-slate-950 border border-slate-850 focus:border-emerald-500 rounded-xl px-3 py-1.5 text-xs text-slate-100 font-mono focus:outline-none"
                       />
                     </div>
@@ -568,7 +564,7 @@ export const OnboardingWizard: React.FC<OnboardingWizardProps> = ({ onComplete }
                       <input
                         type="number"
                         value={yourTaxable === null ? '' : yourTaxable}
-                        onChange={(e) => setYourTaxable(e.target.value === '' ? 0 : Number(e.target.value))}
+                        onChange={(e) => setYourTaxable(e.target.value === '' ? null : Number(e.target.value))}
                         className="w-full bg-slate-950 border border-slate-850 focus:border-emerald-500 rounded-xl px-3 py-1.5 text-xs text-slate-100 font-mono focus:outline-none"
                       />
                     </div>
@@ -577,7 +573,7 @@ export const OnboardingWizard: React.FC<OnboardingWizardProps> = ({ onComplete }
                       <input
                         type="number"
                         value={yourBasis === null ? '' : yourBasis}
-                        onChange={(e) => setYourBasis(e.target.value === '' ? 0 : Number(e.target.value))}
+                        onChange={(e) => setYourBasis(e.target.value === '' ? null : Number(e.target.value))}
                         className="w-full bg-slate-950 border border-slate-850 focus:border-emerald-500 rounded-xl px-3 py-1.5 text-xs text-slate-100 font-mono focus:outline-none"
                       />
                     </div>
@@ -598,7 +594,7 @@ export const OnboardingWizard: React.FC<OnboardingWizardProps> = ({ onComplete }
                         <input
                           type="number"
                           value={wifePreTax === null ? '' : wifePreTax}
-                          onChange={(e) => setWifePreTax(e.target.value === '' ? 0 : Number(e.target.value))}
+                          onChange={(e) => setWifePreTax(e.target.value === '' ? null : Number(e.target.value))}
                           className="w-full bg-slate-950 border border-slate-850 focus:border-emerald-500 rounded-xl px-3 py-1.5 text-xs text-slate-100 font-mono focus:outline-none"
                         />
                       </div>
@@ -607,7 +603,7 @@ export const OnboardingWizard: React.FC<OnboardingWizardProps> = ({ onComplete }
                         <input
                           type="number"
                           value={wifeRoth === null ? '' : wifeRoth}
-                          onChange={(e) => setWifeRoth(e.target.value === '' ? 0 : Number(e.target.value))}
+                          onChange={(e) => setWifeRoth(e.target.value === '' ? null : Number(e.target.value))}
                           className="w-full bg-slate-950 border border-slate-850 focus:border-emerald-500 rounded-xl px-3 py-1.5 text-xs text-slate-100 font-mono focus:outline-none"
                         />
                       </div>
@@ -619,7 +615,7 @@ export const OnboardingWizard: React.FC<OnboardingWizardProps> = ({ onComplete }
                         <input
                           type="number"
                           value={wifeTaxable === null ? '' : wifeTaxable}
-                          onChange={(e) => setWifeTaxable(e.target.value === '' ? 0 : Number(e.target.value))}
+                          onChange={(e) => setWifeTaxable(e.target.value === '' ? null : Number(e.target.value))}
                           className="w-full bg-slate-950 border border-slate-850 focus:border-emerald-500 rounded-xl px-3 py-1.5 text-xs text-slate-100 font-mono focus:outline-none"
                         />
                       </div>
@@ -628,7 +624,7 @@ export const OnboardingWizard: React.FC<OnboardingWizardProps> = ({ onComplete }
                         <input
                           type="number"
                           value={wifeBasis === null ? '' : wifeBasis}
-                          onChange={(e) => setWifeBasis(e.target.value === '' ? 0 : Number(e.target.value))}
+                          onChange={(e) => setWifeBasis(e.target.value === '' ? null : Number(e.target.value))}
                           className="w-full bg-slate-950 border border-slate-850 focus:border-emerald-500 rounded-xl px-3 py-1.5 text-xs text-slate-100 font-mono focus:outline-none"
                         />
                       </div>

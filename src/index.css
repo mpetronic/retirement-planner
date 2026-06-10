@@ -7,6 +7,19 @@
     @apply bg-slate-950 text-slate-100 antialiased;
     font-family: 'Inter', system-ui, sans-serif;
   }
+
+  /* Remove outer and inner spin buttons from number inputs globally */
+  input[type="number"]::-webkit-outer-spin-button,
+  input[type="number"]::-webkit-inner-spin-button {
+    -webkit-appearance: none;
+    margin: 0;
+  }
+
+  /* Remove Firefox default spin buttons */
+  input[type="number"] {
+    -moz-appearance: textfield;
+    appearance: textfield;
+  }
 }
 
 /* Glassmorphism utility */
