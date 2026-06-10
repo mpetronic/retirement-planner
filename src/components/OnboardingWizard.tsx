@@ -21,30 +21,31 @@ export const OnboardingWizard: React.FC<OnboardingWizardProps> = ({ onComplete }
 
   // Initial local state for the form inputs matching AppStateInputs structure
   const [youName, setYouName] = useState('You');
-  const [youBirthDate, setYouBirthDate] = useState('1960-06-27');
+  const [youBirthDate, setYouBirthDate] = useState('1960-01-01');
   const [youRetireAge, setYouRetireAge] = useState<number>(67);
-  const [youSalary, setYouSalary] = useState<number>(205000);
+  const [youSalary, setYouSalary] = useState<number>(0);
   const [youIsRetired, setYouIsRetired] = useState(false);
-  const [youPIA, setYouPIA] = useState<number>(3000);
+  const [youPIA, setYouPIA] = useState<number>(0);
   const [youClaimAge, setYouClaimAge] = useState<number>(67);
 
   const [wifeName, setWifeName] = useState('Spouse');
-  const [wifeBirthDate, setWifeBirthDate] = useState('1964-03-11');
+  const [wifeBirthDate, setWifeBirthDate] = useState('1960-01-01');
   const [wifeRetireAge, setWifeRetireAge] = useState<number>(65);
   const [wifeSalary, setWifeSalary] = useState<number>(0);
-  const [wifeIsRetired, setWifeIsRetired] = useState(true); // Default spouse retired in 2025
-  const [wifePIA, setWifePIA] = useState<number>(2800);
+  // Default spouse not retired
+  const [wifeIsRetired, setWifeIsRetired] = useState(false);
+  const [wifePIA, setWifePIA] = useState<number>(0);
   const [wifeClaimAge, setWifeClaimAge] = useState<number>(67);
 
-  const [yourPreTax, setYourPreTax] = useState<number>(3500000);
-  const [yourRoth, setYourRoth] = useState<number>(200000);
-  const [yourTaxable, setYourTaxable] = useState<number>(1300000);
-  const [yourBasis, setYourBasis] = useState<number>(1000000);
+  const [yourPreTax, setYourPreTax] = useState<number>(0);
+  const [yourRoth, setYourRoth] = useState<number>(0);
+  const [yourTaxable, setYourTaxable] = useState<number>(0);
+  const [yourBasis, setYourBasis] = useState<number>(0);
 
-  const [wifePreTax, setWifePreTax] = useState<number>(800000);
-  const [wifeRoth, setWifeRoth] = useState<number>(150000);
-  const [wifeTaxable, setWifeTaxable] = useState<number>(400000);
-  const [wifeBasis, setWifeBasis] = useState<number>(250000);
+  const [wifePreTax, setWifePreTax] = useState<number>(0);
+  const [wifeRoth, setWifeRoth] = useState<number>(0);
+  const [wifeTaxable, setWifeTaxable] = useState<number>(0);
+  const [wifeBasis, setWifeBasis] = useState<number>(0);
 
   const [livingExpenses, setLivingExpenses] = useState<number>(120000);
   const [currentState, setCurrentState] = useState<'MD' | 'FL'>('MD');
@@ -360,7 +361,7 @@ export const OnboardingWizard: React.FC<OnboardingWizardProps> = ({ onComplete }
                     </label>
                     <input
                       type="range"
-                      min="1000"
+                      min="0"
                       max="4500"
                       step="50"
                       value={youPIA}
@@ -500,7 +501,7 @@ export const OnboardingWizard: React.FC<OnboardingWizardProps> = ({ onComplete }
                         </label>
                         <input
                           type="range"
-                          min="1000"
+                          min="0"
                           max="4500"
                           step="50"
                           value={wifePIA}

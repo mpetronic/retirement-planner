@@ -173,7 +173,7 @@ export const InputControlSidebar: React.FC<InputControlSidebarProps> = ({
               </label>
               <input
                 type="range"
-                min="1000"
+                min="0"
                 max="4500"
                 step="50"
                 value={inputs.you.estimatedPIA ?? 3000}
@@ -300,7 +300,7 @@ export const InputControlSidebar: React.FC<InputControlSidebarProps> = ({
                 </label>
                 <input
                   type="range"
-                  min="1000"
+                  min="0"
                   max="4500"
                   step="50"
                   value={inputs.wife.estimatedPIA ?? 2800}
