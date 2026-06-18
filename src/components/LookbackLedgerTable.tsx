@@ -15,6 +15,12 @@ export const LookbackLedgerTable: React.FC<LookbackLedgerTableProps> = ({
   inputs,
   simulateSurvivor,
 }) => {
+  const deathYear = useMemo(() => {
+    if (!inputs.you.birthDate) return 2045;
+    const year = parseInt(inputs.you.birthDate.split('-')[0], 10);
+    return isNaN(year) ? 2045 : (year + 85);
+  }, [inputs.you.birthDate]);
+
   const formatCurrency = (val: number) => {
     return new Intl.NumberFormat('en-US', {
       style: 'currency',
@@ -39,7 +45,7 @@ export const LookbackLedgerTable: React.FC<LookbackLedgerTableProps> = ({
       const magi = r.magi;
       
       const cpiFactor = Math.pow(1 + inputs.growthAssumptions.cpiInflationRate, year - 2026);
-      const isSingle = simulateSurvivor && year >= 2045;
+      const isSingle = simulateSurvivor && year >= deathYear;
       const tiers = isSingle ? IRMAA_TIERS_SINGLE : IRMAA_TIERS_MFJ;
 
       // Check each tier's lower limit (which is the previous tier's upper limit)
@@ -85,7 +91,7 @@ export const LookbackLedgerTable: React.FC<LookbackLedgerTableProps> = ({
     });
 
     return activeWarnings;
-  }, [ledger, simulateSurvivor, inputs]);
+  }, [ledger, simulateSurvivor, inputs, deathYear]);
 
   return (
     <div className="glass-panel rounded-2xl p-6 space-y-6">
@@ -165,19 +171,19 @@ export const LookbackLedgerTable: React.FC<LookbackLedgerTableProps> = ({
               const conversionTax = (() => {
                 if (r.intentionalRothConversion <= 0) return 0;
                 const cpiFactor = Math.pow(1 + inputs.growthAssumptions.cpiInflationRate, r.year - 2026);
-                const isSingle = simulateSurvivor && r.year >= 2045;
+                const isSingle = simulateSurvivor && r.year >= deathYear;
                 const agiWithout = Math.max(0, r.fedAGI - r.intentionalRothConversion);
                 const taxableWithout = Math.max(0, agiWithout - r.standardDeduction);
                 const taxableWith = Math.max(0, r.fedAGI - r.standardDeduction);
                 return calculateFedTax(taxableWith, isSingle, cpiFactor) - calculateFedTax(taxableWithout, isSingle, cpiFactor);
               })();
-
+ 
               // Marginal state tax attributable to the Roth conversion.
               // Uses the same with/without AGI approach. Gated on stateIncomeTax > 0
               // so FL residents (who pay $0 state tax) always see $0 here.
               const conversionStateTax = (() => {
                 if (r.intentionalRothConversion <= 0 || r.stateIncomeTax <= 0) return 0;
-                const isSingle = simulateSurvivor && r.year >= 2045;
+                const isSingle = simulateSurvivor && r.year >= deathYear;
                 const agiWithout = Math.max(0, r.fedAGI - r.intentionalRothConversion);
                 const stateTaxWith = calculateMDStateTax(r.fedAGI, taxableSS, isSingle);
                 const stateTaxWithout = calculateMDStateTax(agiWithout, taxableSS, isSingle);
@@ -376,7 +382,7 @@ export const LookbackLedgerTable: React.FC<LookbackLedgerTableProps> = ({
 
                     {/* IRMAA Tier Reference Popup */}
                     {(() => {
-                      const isSingle = simulateSurvivor && r.year >= 2045;
+                      const isSingle = simulateSurvivor && r.year >= deathYear;
                       const tiers = isSingle ? IRMAA_TIERS_SINGLE : IRMAA_TIERS_MFJ;
                       const cpiFactor = Math.pow(1 + inputs.growthAssumptions.cpiInflationRate, r.year - 2026);
                       const healthcareFactor = Math.pow(1 + inputs.growthAssumptions.healthcareInflationRate, r.year - 2026);
@@ -450,7 +456,7 @@ export const LookbackLedgerTable: React.FC<LookbackLedgerTableProps> = ({
       <div className="flex gap-2 items-start text-xs text-slate-500 leading-relaxed">
         <Info className="w-4 h-4 text-slate-400 flex-shrink-0 mt-0.5" />
         <p>
-          MAGI is calculated as Federal Adjusted Gross Income (AGI) plus tax-exempt interest. Surcharges represent the combined Medicare Part B and Part D premium hikes applied directly to the spouses. In Survivor simulations, the surcharge calculation automatically switches to Single Filer thresholds starting in 2045 (after the projected passing of {inputs.you.name || 'You'}).
+          MAGI is calculated as Federal Adjusted Gross Income (AGI) plus tax-exempt interest. Surcharges represent the combined Medicare Part B and Part D premium hikes applied directly to the spouses. In Survivor simulations, the surcharge calculation automatically switches to Single Filer thresholds starting in {deathYear} (after the projected passing of {inputs.you.name || 'You'}).
         </p>
       </div>
     </div>

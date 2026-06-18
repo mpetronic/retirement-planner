@@ -32,6 +32,18 @@ export const InputControlSidebar: React.FC<InputControlSidebarProps> = ({
 }) => {
   const [isEditingYou, setIsEditingYou] = useState(false);
   const [isEditingWife, setIsEditingWife] = useState(false);
+
+  const yourBirthYear = React.useMemo(() => {
+    if (!inputs.you.birthDate) return 1960;
+    const year = parseInt(inputs.you.birthDate.split('-')[0], 10);
+    return isNaN(year) ? 1960 : year;
+  }, [inputs.you.birthDate]);
+
+  const wifeBirthYear = React.useMemo(() => {
+    if (!inputs.wife.birthDate) return 1964;
+    const year = parseInt(inputs.wife.birthDate.split('-')[0], 10);
+    return isNaN(year) ? 1964 : year;
+  }, [inputs.wife.birthDate]);
   // Remembers the last non-null relocation year so toggling off then back on restores it.
   const lastRelocationYear = useRef<number>(inputs.jurisdiction.relocationYear ?? 2032);
   const updateNestedState = (
@@ -162,7 +174,7 @@ export const InputControlSidebar: React.FC<InputControlSidebarProps> = ({
                   </span>
                   <Pencil className="w-3.5 h-3.5 text-slate-500 group-hover:text-emerald-400 opacity-0 group-hover:opacity-100 transition-all cursor-pointer" />
                 </div>
-                <span className="text-xs bg-slate-800 px-2 py-0.5 rounded text-emerald-400 font-mono">1960</span>
+                <span className="text-xs bg-slate-800 px-2 py-0.5 rounded text-emerald-400 font-mono">{yourBirthYear}</span>
               </div>
             )}
             
@@ -283,7 +295,7 @@ export const InputControlSidebar: React.FC<InputControlSidebarProps> = ({
                     </span>
                     <Pencil className="w-3.5 h-3.5 text-slate-500 group-hover:text-emerald-400 opacity-0 group-hover:opacity-100 transition-all cursor-pointer" />
                   </div>
-                  <span className="text-xs bg-slate-800 px-2 py-0.5 rounded text-emerald-400 font-mono">1964</span>
+                  <span className="text-xs bg-slate-800 px-2 py-0.5 rounded text-emerald-400 font-mono">{wifeBirthYear}</span>
                 </div>
               )}
               

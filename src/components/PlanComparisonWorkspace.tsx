@@ -42,6 +42,12 @@ export const PlanComparisonWorkspace: React.FC<PlanComparisonWorkspaceProps> = (
   const [newPlanName, setNewPlanName] = useState('');
   const [notification, setNotification] = useState<{ message: string; type: 'success' | 'info' | 'error' } | null>(null);
 
+  const endingAge = useMemo(() => {
+    if (!inputs.you.birthDate) return 90;
+    const birthYear = parseInt(inputs.you.birthDate.split('-')[0], 10);
+    return isNaN(birthYear) ? 90 : (2060 - birthYear);
+  }, [inputs.you.birthDate]);
+
   // Trigger alert messages that auto-dismiss
   const triggerNotification = (message: string, type: 'success' | 'info' | 'error' = 'success') => {
     setNotification({ message, type });
@@ -231,14 +237,14 @@ export const PlanComparisonWorkspace: React.FC<PlanComparisonWorkspaceProps> = (
       },
       {
         id: 'endingEstate',
-        name: 'Net Portfolio Estate (Age 90)',
+        name: `Net Portfolio Estate (Age ${endingAge})`,
         desc: 'Final terminal value of combined accounts after all years of growth, taxes, and drawdowns.',
         valA: statsA.endingEstate,
         valB: statsB.endingEstate,
         lowerIsBetter: false,
       },
     ];
-  }, [statsA, statsB]);
+  }, [statsA, statsB, endingAge]);
 
   // Visual summary analysis
   const summaryInsight = useMemo(() => {

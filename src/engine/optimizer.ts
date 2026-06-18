@@ -29,6 +29,21 @@ export function optimizeRetirementScenario(
   simulateSurvivor: boolean,
   overrideSequence?: LockedReturnSequence | null
 ): OptimizationResult {
+  const parseBirthYear = (dateStr: string | undefined, fallback: number): number => {
+    if (!dateStr) return fallback;
+    const match = dateStr.match(/^(\d{4})/);
+    if (match) {
+      const parsed = parseInt(match[1], 10);
+      if (!isNaN(parsed) && parsed > 1900 && parsed < 2100) {
+        return parsed;
+      }
+    }
+    return fallback;
+  };
+  
+  const yourBirthYear = parseBirthYear(inputs.you.birthDate, 1960);
+  const deathYear = yourBirthYear + 85;
+
   const isFillToTarget = inputs.rothConversionStrategy === 'fill-to-target';
 
   let bestAnnualRothConversion = inputs.annualRothConversion;
@@ -87,8 +102,8 @@ export function optimizeRetirementScenario(
           spousalAddOnAnnual = Math.max(0, spousalFloor - ownWifeSS);
         }
 
-        // Survivor benefit: wife's SS in the first survivor year (2045), already inflation-adjusted in the ledger.
-        const survivorRow = ledger.find((r) => r.year === 2045);
+        // Survivor benefit: wife's SS in the first survivor year, already inflation-adjusted in the ledger.
+        const survivorRow = ledger.find((r) => r.year === deathYear);
         const survivorBenefitAnnual = survivorRow ? survivorRow.wifeSS : 0;
 
         let score = 0;

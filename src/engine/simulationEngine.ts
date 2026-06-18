@@ -180,6 +180,18 @@ export function calculateMDStateTax(
   return stateTax + piggybackTax;
 }
 
+function parseBirthYear(birthDateStr: string | undefined, fallback: number): number {
+  if (!birthDateStr) return fallback;
+  const match = birthDateStr.match(/^(\d{4})/);
+  if (match) {
+    const parsed = parseInt(match[1], 10);
+    if (!isNaN(parsed) && parsed > 1900 && parsed < 2100) {
+      return parsed;
+    }
+  }
+  return fallback;
+}
+
 // Full multi-decade simulation runner
 export function runRetirementSimulation(
   inputs: AppStateInputs,
@@ -204,8 +216,10 @@ export function runRetirementSimulation(
   let wifeBasis = inputs.isSingleFiler ? 0 : (inputs.portfolio.wifeTaxableBasis || 0);
   
   // Actuarial death year definition for survivor mode:
-  // Primary user (born 1960) passes away in 2045 (turning age 85)
-  const DEATH_YEAR = 2045;
+  // Primary user passes away turning age 85
+  const yourBirthYear = parseBirthYear(inputs.you.birthDate, 1960);
+  const wifeBirthYear = parseBirthYear(inputs.wife.birthDate, 1964);
+  const DEATH_YEAR = yourBirthYear + 85;
   
   // Check if a stochastic sequence of returns is active
   const activeSeq = activeSequence;
@@ -233,8 +247,8 @@ export function runRetirementSimulation(
 
     
     // Spouse ages in this calendar year
-    const yourAge = year - 1960;
-    const wifeAge = year - 1964;
+    const yourAge = year - yourBirthYear;
+    const wifeAge = year - wifeBirthYear;
 
     // Active Salaries pre-retirement calculations
     let yourSalary = 0;

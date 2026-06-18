@@ -54,7 +54,8 @@ export const DashboardLayout: React.FC<DashboardLayoutProps> = ({
       const totalTaxes = l.reduce((sum, r) => sum + r.totalIncomeTax, 0);
       const totalSurcharges = l.reduce((sum, r) => sum + r.combinedSurchargeAnnual, 0);
       const totalBasePremiums = l.reduce((sum, r) => sum + r.medicareBasePremiums, 0);
-      return { endingEstate, totalTaxes, totalSurcharges, totalBasePremiums };
+      const endingAge = finalRow ? finalRow.yourAge : 90;
+      return { endingEstate, totalTaxes, totalSurcharges, totalBasePremiums, endingAge };
     };
 
     return {
@@ -160,7 +161,7 @@ export const DashboardLayout: React.FC<DashboardLayoutProps> = ({
           <div className="glass-panel rounded-2xl p-4 flex items-center justify-between border-l-4 border-l-emerald-500 hover:scale-102 transition-transform duration-300">
             <div className="space-y-1">
               <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider flex items-center gap-1.5">
-                Ending Net Estate (Age 90)
+                Ending Net Estate (Age {stats.active.endingAge})
               </span>
               <span className="text-xl font-black text-emerald-400 font-mono block">
                 {formatCurrency(stats.active.endingEstate)}

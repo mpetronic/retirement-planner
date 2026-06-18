@@ -58,6 +58,11 @@ export const BracketMapChart: React.FC<BracketMapChartProps> = ({
   const [showOptimizerModal, setShowOptimizerModal] = useState(false);
   const [isOptimizingScan, setIsOptimizingScan] = useState(false);
 
+  const endingAge = useMemo(() => {
+    const lastRow = ledger[ledger.length - 1];
+    return lastRow ? lastRow.yourAge : 90;
+  }, [ledger]);
+
   const years = useMemo(() => ledger.map((r) => r.year), [ledger]);
 
   // Extract stack components
@@ -124,8 +129,22 @@ export const BracketMapChart: React.FC<BracketMapChartProps> = ({
         break;
     }
 
+    const parseBirthYear = (dateStr: string | undefined, fallback: number): number => {
+      if (!dateStr) return fallback;
+      const match = dateStr.match(/^(\d{4})/);
+      if (match) {
+        const parsed = parseInt(match[1], 10);
+        if (!isNaN(parsed) && parsed > 1900 && parsed < 2100) {
+          return parsed;
+        }
+      }
+      return fallback;
+    };
+    const yourBirthYear = parseBirthYear(inputs.you.birthDate, 1960);
+    const deathYear = yourBirthYear + 85;
+
     const dataPoints = ledger.map((r) => {
-      const isSingle = simulateSurvivor && r.year >= 2045;
+      const isSingle = simulateSurvivor && r.year >= deathYear;
       const baseVal = isSingle ? singleBase : jointBase;
       const cpiFactor = Math.pow(1 + inputs.growthAssumptions.cpiInflationRate, r.year - 2026);
       return baseVal * cpiFactor;
@@ -554,7 +573,7 @@ export const BracketMapChart: React.FC<BracketMapChartProps> = ({
                     {/* Metric 1: Ending Net Estate */}
                     <div className="bg-slate-950/20 border border-slate-800/40 p-4 rounded-xl flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
                       <div className="space-y-0.5">
-                        <span className="text-xs font-bold text-slate-200">Ending Net Estate (Age 90)</span>
+                        <span className="text-xs font-bold text-slate-200">Ending Net Estate (Age {endingAge})</span>
                         <span className="text-[10px] text-slate-500 block">Total wealth remaining in portfolio at simulation end</span>
                       </div>
                       <div className="flex items-center gap-4 justify-between sm:justify-end">

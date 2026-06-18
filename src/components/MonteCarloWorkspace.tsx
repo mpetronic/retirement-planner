@@ -48,6 +48,28 @@ export const MonteCarloWorkspace: React.FC<MonteCarloWorkspaceProps> = ({
 }) => {
   const successRate = summary.successRate;
 
+  const endingAges = useMemo(() => {
+    const parseBirthYear = (dateStr: string | undefined, fallback: number): number => {
+      if (!dateStr) return fallback;
+      const match = dateStr.match(/^(\d{4})/);
+      if (match) {
+        const parsed = parseInt(match[1], 10);
+        if (!isNaN(parsed) && parsed > 1900 && parsed < 2100) {
+          return parsed;
+        }
+      }
+      return fallback;
+    };
+
+    const youBirthYear = parseBirthYear(inputs.you.birthDate, 1960);
+    const wifeBirthYear = parseBirthYear(inputs.wife.birthDate, 1964);
+
+    return {
+      you: 2060 - youBirthYear,
+      wife: 2060 - wifeBirthYear,
+    };
+  }, [inputs.you.birthDate, inputs.wife.birthDate]);
+
   // Formatting helpers
   const formatCurrency = (val: number) => {
     return new Intl.NumberFormat('en-US', {
@@ -333,7 +355,7 @@ export const MonteCarloWorkspace: React.FC<MonteCarloWorkspaceProps> = ({
           <div className="mt-6">
             <p className="text-[10px] text-slate-400 leading-normal flex items-start gap-1.5">
               <Info className="w-3.5 h-3.5 text-emerald-400 flex-shrink-0 mt-0.5" />
-              Success rate represents the percent of simulations where the joint retirement estate remained solvent (&gt; $0) through year 2060 (Age 90/86).
+              Success rate represents the percent of simulations where the joint retirement estate remained solvent (&gt; $0) through year 2060 (Age {endingAges.you}{inputs.isSingleFiler ? '' : '/' + endingAges.wife}).
             </p>
           </div>
         </div>
