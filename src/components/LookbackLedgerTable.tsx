@@ -128,9 +128,9 @@ export const LookbackLedgerTable: React.FC<LookbackLedgerTableProps> = ({
       )}
 
       {/* Ledger Table */}
-      <div className="overflow-x-auto rounded-xl border border-slate-800 bg-slate-950/20">
+      <div className="overflow-auto max-h-[600px] rounded-xl border border-slate-800 bg-slate-950/20 custom-scrollbar">
         <table className="w-full text-left border-collapse text-sm">
-          <thead>
+          <thead className="sticky top-0 z-10 bg-slate-900">
              <tr className="bg-slate-900/60 border-b border-slate-800 text-slate-400 text-xs font-semibold uppercase tracking-wider whitespace-nowrap">
               <th className="p-4">Year (t)</th>
               <th className="p-4">MAGI (Income)</th>

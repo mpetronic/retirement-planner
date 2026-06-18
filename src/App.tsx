@@ -141,7 +141,7 @@ function useLocalStorage<T>(key: string, initialValue: T): [T, (value: T | ((val
 function App() {
   const [inputs, setInputs] = useLocalStorage<AppStateInputs>('retirement_planner_inputs', DEFAULT_INPUTS);
   const [activeTab, setActiveTab] = useState<number>(0);
-  const [simulateSurvivor] = useLocalStorage<boolean>('retirement_planner_survivor', false);
+  const [simulateSurvivor, setSimulateSurvivor] = useLocalStorage<boolean>('retirement_planner_survivor', false);
   const [savedPlans, setSavedPlans] = useLocalStorage<SavedPlan[]>('retirement_planner_saved_plans', []);
   const [useTodayDollars, setUseTodayDollars] = useLocalStorage<boolean>('retirement_planner_use_today_dollars', false);
 
@@ -340,6 +340,8 @@ function App() {
         useTodayDollars={useTodayDollars}
         setUseTodayDollars={setUseTodayDollars}
         globalScenario={globalScenario}
+        simulateSurvivor={simulateSurvivor}
+        setSimulateSurvivor={setSimulateSurvivor}
       />
 
       {/* Main Orchestration Dashboard Layout */}
