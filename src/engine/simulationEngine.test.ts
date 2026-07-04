@@ -7,6 +7,7 @@ import {
   calculateMDStateTax,
   runRetirementSimulation,
 } from './simulationEngine';
+import { DEFAULT_DETAILED_EXPENSES, DEFAULT_EXPENSE_FREQUENCIES } from '../types';
 
 describe('calculateSSBenefit', () => {
   const PIA = 1000;
@@ -254,5 +255,57 @@ describe('runRetirementSimulation', () => {
 
     expect(row2032!.yourSS).toBeGreaterThan(0);
     expect(row2034!.wifeSS).toBeGreaterThan(0);
+  });
+
+  it('should calculate living expenses using detailed state-specific itemized entries and frequencies when useDetailedExpenses is true', () => {
+    const inputs = getMockInputs();
+    inputs.useDetailedExpenses = true;
+    inputs.detailedExpenses = {
+      MD: {
+        ...DEFAULT_DETAILED_EXPENSES,
+        amenityFee: 100, // Monthly
+        water: 50,       // Monthly
+        masterBedFurniture: 5000, // One-time
+      },
+      FL: {
+        ...DEFAULT_DETAILED_EXPENSES,
+        amenityFee: 150, // Monthly
+        water: 60,       // Monthly
+        masterBedFurniture: 8000, // One-time
+      },
+      frequencies: {
+        ...DEFAULT_EXPENSE_FREQUENCIES,
+        amenityFee: 12,
+        water: 12,
+      }
+    };
+    inputs.jurisdiction.currentState = 'MD';
+    inputs.jurisdiction.targetState = 'FL';
+    inputs.jurisdiction.relocationYear = 2030;
+
+    const results = runRetirementSimulation(inputs);
+
+    // In 2026 (first year, current state MD):
+    // Recurring annual = (100 * 12) + (50 * 12) = 1200 + 600 = 1800
+    // One-time MD = 5000
+    // Total in 2026 (cpiFactor = 1.0) = 1800 + 5000 = 6800
+    const row2026 = results.find(r => r.year === 2026);
+    expect(row2026).toBeDefined();
+    expect(row2026!.livingExpenses).toBeCloseTo(6800, 1);
+
+    // In 2029 (still MD, cpiFactor):
+    // Recurring annual = 1800 * cpiFactor
+    // One-time = 0
+    const row2029 = results.find(r => r.year === 2029);
+    const cpiFactor2029 = Math.pow(1 + inputs.growthAssumptions.cpiInflationRate, 2029 - 2026);
+    expect(row2029!.livingExpenses).toBeCloseTo(1800 * cpiFactor2029, 1);
+
+    // In 2030 (relocated to FL, cpiFactor):
+    // Recurring annual = (150 * 12) + (60 * 12) = 1800 + 720 = 2520
+    // One-time FL = 8000
+    // Total in 2030 = (2520 + 8000) * cpiFactor
+    const row2030 = results.find(r => r.year === 2030);
+    const cpiFactor2030 = Math.pow(1 + inputs.growthAssumptions.cpiInflationRate, 2030 - 2026);
+    expect(row2030!.livingExpenses).toBeCloseTo((2520 + 8000) * cpiFactor2030, 1);
   });
 });

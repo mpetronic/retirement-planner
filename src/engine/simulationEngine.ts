@@ -1,4 +1,4 @@
-import { AppStateInputs, SimulationResultRow, LockedReturnSequence } from '../types';
+import { AppStateInputs, SimulationResultRow, LockedReturnSequence, RECURRING_EXPENSE_ITEMS, ONE_TIME_EXPENSE_ITEMS } from '../types';
 import {
   BASE_MEDICARE_PART_B,
   BASE_MEDICARE_PART_D,
@@ -269,6 +269,50 @@ export function runRetirementSimulation(
     }
     
     const activeSalaryInflow = yourSalary + wifeSalary;
+
+    // State determination
+    const activeState = (inputs.jurisdiction.relocationYear !== null && year >= inputs.jurisdiction.relocationYear)
+      ? inputs.jurisdiction.targetState
+      : inputs.jurisdiction.currentState;
+
+    let baseLivingExpensesAnnual = inputs.annualLivingExpenses ?? 120000;
+    if (inputs.useDetailedExpenses && inputs.detailedExpenses) {
+      let detailedSum = 0;
+      const stateExpenses = inputs.detailedExpenses[activeState];
+      const freqs = inputs.detailedExpenses.frequencies;
+      if (stateExpenses && freqs) {
+        for (const item of RECURRING_EXPENSE_ITEMS) {
+          const cost = stateExpenses[item.key] ?? 0;
+          const freq = freqs[item.key] ?? item.defaultFrequency;
+          detailedSum += cost * freq;
+        }
+      }
+      baseLivingExpensesAnnual = detailedSum;
+    }
+
+    let oneTimeCosts = 0;
+    if (inputs.useDetailedExpenses && inputs.detailedExpenses) {
+      if (year === 2026) {
+        if (inputs.jurisdiction.relocationYear !== 2026) {
+          const curExpenses = inputs.detailedExpenses[inputs.jurisdiction.currentState];
+          if (curExpenses) {
+            for (const item of ONE_TIME_EXPENSE_ITEMS) {
+              oneTimeCosts += curExpenses[item.key] ?? 0;
+            }
+          }
+        }
+      }
+      if (inputs.jurisdiction.relocationYear !== null && year === inputs.jurisdiction.relocationYear) {
+        const tgtExpenses = inputs.detailedExpenses[inputs.jurisdiction.targetState];
+        if (tgtExpenses) {
+          for (const item of ONE_TIME_EXPENSE_ITEMS) {
+            oneTimeCosts += tgtExpenses[item.key] ?? 0;
+          }
+        }
+      }
+    }
+
+    const livingExpenses = baseLivingExpensesAnnual * cpiFactor + oneTimeCosts * cpiFactor;
     
     // Survivor state determination
     const isSurvivorActive = simulateSurvivor && (year >= DEATH_YEAR);
@@ -393,7 +437,7 @@ export function runRetirementSimulation(
       const totalTaxableBrokerage = yourTaxable + (inputs.isSingleFiler ? 0 : wifeTaxable);
       
       // Estimate this year's net outflows before conversions
-      const estLiving = (inputs.annualLivingExpenses ?? 120000) * cpiFactor;
+      const estLiving = livingExpenses;
       const estSS = combinedSS;
       const estSalary = activeSalaryInflow;
       
@@ -517,8 +561,7 @@ export function runRetirementSimulation(
       medicareBasePremiums += (BASE_MEDICARE_PART_B + BASE_MEDICARE_PART_D) * 12 * healthcareFactor;
     }
     
-    // Living expenses inflated
-    const livingExpenses = (inputs.annualLivingExpenses ?? 120000) * cpiFactor;
+    // Living expenses precalculated above
 
     // Pre-Medicare healthcare premium calculations
     const youRetireAge = inputs.you.plannedRetirementAge ?? 67;

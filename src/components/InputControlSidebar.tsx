@@ -1,5 +1,5 @@
-import React, { useState, useRef } from 'react';
-import { AppStateInputs } from '../types';
+import React, { useState, useRef, useMemo } from 'react';
+import { AppStateInputs, RECURRING_EXPENSE_ITEMS } from '../types';
 import {
   User,
   TrendingUp,
@@ -10,8 +10,10 @@ import {
   Pencil,
   Check,
   RefreshCw,
-  Info
+  Info,
+  Settings
 } from 'lucide-react';
+import { DetailedExpensesDialog } from './DetailedExpensesDialog';
 
 interface InputControlSidebarProps {
   inputs: AppStateInputs;
@@ -36,6 +38,29 @@ export const InputControlSidebar: React.FC<InputControlSidebarProps> = ({
 }) => {
   const [isEditingYou, setIsEditingYou] = useState(false);
   const [isEditingWife, setIsEditingWife] = useState(false);
+  const [showExpensesDialog, setShowExpensesDialog] = useState(false);
+
+  const mdMonthlySum = useMemo(() => {
+    if (!inputs.detailedExpenses) return 0;
+    let sum = 0;
+    for (const item of RECURRING_EXPENSE_ITEMS) {
+      const cost = inputs.detailedExpenses.MD[item.key] || 0;
+      const freq = inputs.detailedExpenses.frequencies[item.key] ?? item.defaultFrequency;
+      sum += cost * freq;
+    }
+    return sum / 12;
+  }, [inputs.detailedExpenses]);
+
+  const flMonthlySum = useMemo(() => {
+    if (!inputs.detailedExpenses) return 0;
+    let sum = 0;
+    for (const item of RECURRING_EXPENSE_ITEMS) {
+      const cost = inputs.detailedExpenses.FL[item.key] || 0;
+      const freq = inputs.detailedExpenses.frequencies[item.key] ?? item.defaultFrequency;
+      sum += cost * freq;
+    }
+    return sum / 12;
+  }, [inputs.detailedExpenses]);
 
   const yourBirthYear = React.useMemo(() => {
     if (!inputs.you.birthDate) return 1960;
@@ -704,30 +729,88 @@ export const InputControlSidebar: React.FC<InputControlSidebarProps> = ({
             <h2>Annual Living Expenses</h2>
           </div>
 
-          <div className="p-4 bg-slate-950/60 rounded-xl border border-slate-800 space-y-3">
-            <div className="space-y-1">
-              <label className="text-xs text-slate-400 flex justify-between">
-                <span>Expenses (Today's Dollars)</span>
-                <span className="text-emerald-400 font-bold font-mono">{formatCurrency(inputs.annualLivingExpenses)}</span>
-              </label>
-              <input
-                type="range"
-                min="40000"
-                max="300000"
-                step="5000"
-                value={inputs.annualLivingExpenses ?? 120000}
-                onChange={(e) => updateNestedState('annualLivingExpenses', '', Number(e.target.value))}
-                className="w-full h-1.5 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-emerald-500"
-              />
-              <div className="flex justify-between text-[10px] text-slate-500 font-mono px-1">
-                <span>$40k</span>
-                <span>$150k</span>
-                <span>$300k</span>
+          <div className="p-4 bg-slate-950/60 rounded-xl border border-slate-800 space-y-4">
+            {/* Toggle choice */}
+            <div className="space-y-1.5">
+              <label className="text-[10px] text-slate-400 font-bold uppercase tracking-wider block">Calculation Method</label>
+              <div className="flex bg-slate-900 p-0.5 rounded-xl border border-slate-800">
+                <button
+                  type="button"
+                  onClick={() => updateNestedState('useDetailedExpenses', '', false)}
+                  className={`flex-1 text-[10px] py-1.5 rounded-lg font-bold transition-all ${
+                     !inputs.useDetailedExpenses
+                      ? 'bg-emerald-500 text-slate-950 shadow'
+                      : 'text-slate-400 hover:text-slate-200'
+                  }`}
+                >
+                  Simple Slider
+                </button>
+                <button
+                  type="button"
+                  onClick={() => updateNestedState('useDetailedExpenses', '', true)}
+                  className={`flex-1 text-[10px] py-1.5 rounded-lg font-bold transition-all ${
+                    inputs.useDetailedExpenses
+                      ? 'bg-emerald-500 text-slate-950 shadow'
+                      : 'text-slate-400 hover:text-slate-200'
+                  }`}
+                >
+                  Detailed Expenses
+                </button>
               </div>
             </div>
-            <p className="text-[10px] text-slate-400 leading-normal">
-              This represents your base annual living budget, which will inflate by CPI annually. Portfolio drawdowns dynamically scale to fund this amount after taxing SS, RMD, and conversions.
-            </p>
+
+            {inputs.useDetailedExpenses ? (
+              <div className="space-y-3">
+                <button
+                  type="button"
+                  onClick={() => setShowExpensesDialog(true)}
+                  className="w-full flex items-center justify-center gap-2 px-3 py-2 bg-slate-900 hover:bg-slate-850 border border-slate-800 hover:border-slate-700 text-emerald-400 hover:text-emerald-300 rounded-xl text-xs font-bold transition-all"
+                >
+                  <Settings className="w-4 h-4 text-emerald-400" />
+                  <span>Configure Detailed Expenses</span>
+                </button>
+                
+                <div className="p-3 bg-slate-900/60 border border-slate-800/80 rounded-xl space-y-2 text-[10px] text-slate-400 leading-normal">
+                  <div className="flex justify-between border-b border-slate-800 pb-1">
+                    <span className="font-semibold">Maryland (MD) Cost:</span>
+                    <span className="text-slate-200 font-mono font-bold">{formatCurrency(mdMonthlySum * 12)}/yr</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="font-semibold">Florida (FL) Cost:</span>
+                    <span className="text-slate-200 font-mono font-bold">{formatCurrency(flMonthlySum * 12)}/yr</span>
+                  </div>
+                </div>
+                <p className="text-[10px] text-slate-400 leading-normal">
+                  Annual living expenses are calculated as the sum of all itemized recurring expenses for the active state in any simulated year, inflated using CPI.
+                </p>
+              </div>
+            ) : (
+              <div className="space-y-3">
+                <div className="space-y-1">
+                  <label className="text-xs text-slate-400 flex justify-between">
+                    <span>Expenses (Today's Dollars)</span>
+                    <span className="text-emerald-400 font-bold font-mono">{formatCurrency(inputs.annualLivingExpenses)}</span>
+                  </label>
+                  <input
+                    type="range"
+                    min="40000"
+                    max="300000"
+                    step="5000"
+                    value={inputs.annualLivingExpenses ?? 120000}
+                    onChange={(e) => updateNestedState('annualLivingExpenses', '', Number(e.target.value))}
+                    className="w-full h-1.5 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-emerald-500"
+                  />
+                  <div className="flex justify-between text-[10px] text-slate-500 font-mono px-1">
+                    <span>$40k</span>
+                    <span>$150k</span>
+                    <span>$300k</span>
+                  </div>
+                </div>
+                <p className="text-[10px] text-slate-400 leading-normal">
+                  This represents your base annual living budget, which will inflate by CPI annually. Portfolio drawdowns dynamically scale to fund this amount.
+                </p>
+              </div>
+            )}
           </div>
         </div>
 
@@ -893,6 +976,14 @@ export const InputControlSidebar: React.FC<InputControlSidebarProps> = ({
         </div>
 
       </div>
+      {showExpensesDialog && (
+        <DetailedExpensesDialog
+          isOpen={showExpensesDialog}
+          onClose={() => setShowExpensesDialog(false)}
+          detailedExpenses={inputs.detailedExpenses}
+          onSave={(expenses) => updateNestedState('detailedExpenses', '', expenses)}
+        />
+      )}
     </aside>
   );
 };

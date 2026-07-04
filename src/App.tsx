@@ -1,5 +1,12 @@
 import { useState, useEffect, useMemo } from 'react';
-import { AppStateInputs, LockedReturnSequence, SavedPlan, SimulationResultRow } from './types';
+import {
+  AppStateInputs,
+  LockedReturnSequence,
+  SavedPlan,
+  SimulationResultRow,
+  DEFAULT_DETAILED_EXPENSES,
+  DEFAULT_EXPENSE_FREQUENCIES
+} from './types';
 import { runRetirementSimulation } from './engine/simulationEngine';
 import {
   runMonteCarloSimulation,
@@ -72,6 +79,12 @@ const DEFAULT_INPUTS: AppStateInputs = {
   },
   isConfigured: false,
   isSingleFiler: false,
+  useDetailedExpenses: false,
+  detailedExpenses: {
+    MD: { ...DEFAULT_DETAILED_EXPENSES },
+    FL: { ...DEFAULT_DETAILED_EXPENSES },
+    frequencies: { ...DEFAULT_EXPENSE_FREQUENCIES }
+  }
 };
 
 // Custom hook for LocalStorage persistence with defensive deep merge schema protection
@@ -110,6 +123,16 @@ function useLocalStorage<T>(key: string, initialValue: T): [T, (value: T | ((val
             monteCarloSettings: {
               ...(initialValue as any).monteCarloSettings,
               ...parsed.monteCarloSettings,
+            },
+            useDetailedExpenses: parsed.useDetailedExpenses !== undefined ? parsed.useDetailedExpenses : false,
+            detailedExpenses: parsed.detailedExpenses ? {
+              MD: { ...DEFAULT_DETAILED_EXPENSES, ...parsed.detailedExpenses.MD },
+              FL: { ...DEFAULT_DETAILED_EXPENSES, ...parsed.detailedExpenses.FL },
+              frequencies: { ...DEFAULT_EXPENSE_FREQUENCIES, ...parsed.detailedExpenses.frequencies }
+            } : {
+              MD: { ...DEFAULT_DETAILED_EXPENSES },
+              FL: { ...DEFAULT_DETAILED_EXPENSES },
+              frequencies: { ...DEFAULT_EXPENSE_FREQUENCIES }
             },
           } as any;
         }

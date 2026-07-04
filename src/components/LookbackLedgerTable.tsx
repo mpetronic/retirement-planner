@@ -40,7 +40,7 @@ export const LookbackLedgerTable: React.FC<LookbackLedgerTableProps> = ({
       affectedYear: number;
     }[] = [];
 
-    ledger.forEach((r, idx) => {
+    ledger.forEach((r) => {
       const year = r.year;
       const magi = r.magi;
       

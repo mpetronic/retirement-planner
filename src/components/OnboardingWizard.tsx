@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { AppStateInputs } from '../types';
+import { AppStateInputs, DEFAULT_DETAILED_EXPENSES, DEFAULT_EXPENSE_FREQUENCIES } from '../types';
 import {
   User,
   Coins,
@@ -191,6 +191,12 @@ export const OnboardingWizard: React.FC<OnboardingWizardProps> = ({ onComplete }
       },
       isConfigured: true,
       isSingleFiler,
+      useDetailedExpenses: false,
+      detailedExpenses: {
+        MD: { ...DEFAULT_DETAILED_EXPENSES },
+        FL: { ...DEFAULT_DETAILED_EXPENSES },
+        frequencies: { ...DEFAULT_EXPENSE_FREQUENCIES }
+      }
     };
 
     onComplete(finalInputs);
