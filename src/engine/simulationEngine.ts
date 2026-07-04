@@ -777,6 +777,27 @@ export function runRetirementSimulation(
       totalTaxBill = fedIncomeTax + stateIncomeTax;
     }
     
+    // Reinvest surplus cash inflows if any
+    const totalOutflows = livingExpenses + medicareBasePremiums + combinedSurchargeAnnual + combinedPreMedicarePremium + totalTaxBill;
+    const baseInflows = combinedSS + combinedRMD + activeSalaryInflow;
+    const surplus = Math.max(0, baseInflows - totalOutflows);
+
+    if (surplus > 0) {
+      if (inputs.isSingleFiler) {
+        currentYourTaxable += surplus;
+        currentYourBasis += surplus;
+      } else if (youDeceased) {
+        currentWifeTaxable += surplus;
+        currentWifeBasis += surplus;
+      } else {
+        const halfSurplus = surplus / 2;
+        currentYourTaxable += halfSurplus;
+        currentYourBasis += halfSurplus;
+        currentWifeTaxable += halfSurplus;
+        currentWifeBasis += halfSurplus;
+      }
+    }
+    
     // Commit the ending balances and apply growth
     yourTaxable = Math.max(0, currentYourTaxable) * (1 + taxableGrowthRate);
     yourBasis = Math.max(0, currentYourBasis) * (1 + taxableGrowthRate * 0.20); // Basis scales up slightly slower as growth is capital appreciation

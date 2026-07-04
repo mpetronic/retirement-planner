@@ -308,4 +308,55 @@ describe('runRetirementSimulation', () => {
     const cpiFactor2030 = Math.pow(1 + inputs.growthAssumptions.cpiInflationRate, 2030 - 2026);
     expect(row2030!.livingExpenses).toBeCloseTo((2520 + 8000) * cpiFactor2030, 1);
   });
+
+  it('should reinvest annual surplus cash inflows (when SS + RMD > total outflows) back into taxable brokerage accounts and cost basis', () => {
+    const inputs = getMockInputs();
+    
+    // Tweak inputs to force a huge surplus:
+    // Low annual living expenses, large starting pre-tax balances, high claiming age to trigger high RMDs
+    inputs.annualLivingExpenses = 20000; // very low expenses
+    inputs.you.estimatedPIA = 3500;
+    inputs.you.targetSSClaimingAge = 70;
+    inputs.wife.estimatedPIA = 3000;
+    inputs.wife.targetSSClaimingAge = 70;
+    
+    // Large Traditional pre-tax IRAs to produce huge RMDs
+    inputs.portfolio.yourPreTaxIRA = 5000000;
+    inputs.portfolio.wifePreTaxIRA = 4000000;
+    
+    // Moderate taxable account to see the surplus addition clearly
+    inputs.portfolio.yourTaxableBrokerage = 100000;
+    inputs.portfolio.yourTaxableBasis = 80000;
+    inputs.portfolio.wifeTaxableBrokerage = 50000;
+    inputs.portfolio.wifeTaxableBasis = 40000;
+    
+    // Set retirement age so they are not earning salary at 75
+    inputs.you.plannedRetirementAge = 60;
+    inputs.wife.plannedRetirementAge = 60;
+
+    const results = runRetirementSimulation(inputs);
+    
+    // RMDs start at Age 75. Let's find a year where RMDs are active (e.g. John age 75, born 1965 => year 2040)
+    const row2040 = results.find(r => r.year === 2040);
+    expect(row2040).toBeDefined();
+    
+    const totalSS = row2040!.yourSS + row2040!.wifeSS;
+    const totalRMD = row2040!.yourRMD + row2040!.wifeRMD;
+    const totalInflow = totalSS + totalRMD;
+    const totalOutflow = row2040!.livingExpenses + row2040!.fedIncomeTax + row2040!.stateIncomeTax + row2040!.medicareBasePremiums + row2040!.combinedSurchargeAnnual + row2040!.preMedicareHealthcareCost;
+    
+    const surplus = totalInflow - totalOutflow;
+    expect(surplus).toBeGreaterThan(0); // Confirm we set up a surplus year
+    
+    // Let's check the previous year (2039) ending taxable balance
+    const row2039 = results.find(r => r.year === 2039);
+    const startTaxable = row2039!.endYourTaxableBrokerage + row2039!.endWifeTaxableBrokerage;
+    
+    // Expected ending taxable before growth: startTaxable + surplus
+    // Expected ending taxable after growth: (startTaxable + surplus) * 1.058
+    const expectedEndTaxable = (startTaxable + surplus) * 1.058;
+    const actualEndTaxable = row2040!.endYourTaxableBrokerage + row2040!.endWifeTaxableBrokerage;
+    
+    expect(actualEndTaxable).toBeCloseTo(expectedEndTaxable, 1); // Allow slight float variance
+  });
 });
