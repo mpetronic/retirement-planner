@@ -1,5 +1,5 @@
 import React, { useState, useMemo } from 'react';
-import { X, Check } from 'lucide-react';
+import { X, Check, Download, Upload } from 'lucide-react';
 import {
   DetailedStateExpenses,
   DetailedExpenseFrequencies,
@@ -113,12 +113,138 @@ export const DetailedExpensesDialog: React.FC<DetailedExpensesDialogProps> = ({
     onClose();
   };
 
+  // Export all expenses to CSV format
+  const handleExportCSV = () => {
+    const headers = ['Category', 'Expense Name', 'Key', 'Frequency/Yr', 'Maryland (MD) Cost', 'Florida (FL) Cost'];
+    const rows = [headers.join(',')];
+
+    // Recurring items
+    for (const item of RECURRING_EXPENSE_ITEMS) {
+      const freq = localFrequencies[item.key] ?? item.defaultFrequency;
+      const costMD = localMD[item.key] || 0;
+      const costFL = localFL[item.key] || 0;
+      const row = [
+        `"${item.category}"`,
+        `"${item.label}"`,
+        `"${item.key}"`,
+        freq,
+        costMD,
+        costFL
+      ];
+      rows.push(row.join(','));
+    }
+
+    // One-Time items
+    for (const item of ONE_TIME_EXPENSE_ITEMS) {
+      const costMD = localMD[item.key] || 0;
+      const costFL = localFL[item.key] || 0;
+      const row = [
+        `"One-Time Setup"`,
+        `"${item.label}"`,
+        `"${item.key}"`,
+        '',
+        costMD,
+        costFL
+      ];
+      rows.push(row.join(','));
+    }
+
+    // Add UTF-8 BOM for Microsoft Excel compatibility
+    const csvContent = '\ufeff' + rows.join('\n');
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.setAttribute('href', url);
+    link.setAttribute('download', 'detailed_retirement_expenses.csv');
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
+  // Import expenses from CSV format
+  const handleImportCSV = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      const text = event.target?.result as string;
+      if (!text) return;
+
+      try {
+        const lines = text.split(/\r?\n/);
+        const mdUpdate = { ...localMD };
+        const flUpdate = { ...localFL };
+        const freqUpdate = { ...localFrequencies };
+
+        // Parse each row (ignoring header)
+        for (let i = 1; i < lines.length; i++) {
+          const line = lines[i].trim();
+          if (!line) continue;
+
+          // Simple CSV parser that handles double quotes
+          const columns: string[] = [];
+          let current = '';
+          let inQuotes = false;
+          for (let c = 0; c < line.length; c++) {
+            const char = line[c];
+            if (char === '"') {
+              inQuotes = !inQuotes;
+            } else if (char === ',' && !inQuotes) {
+              columns.push(current.trim());
+              current = '';
+            } else {
+              current += char;
+            }
+          }
+          columns.push(current.trim());
+
+          // We expect at least 6 columns
+          if (columns.length < 6) continue;
+
+          const key = columns[2] as keyof DetailedStateExpenses;
+          const freqVal = columns[3];
+          const mdCostVal = columns[4];
+          const flCostVal = columns[5];
+
+          // Check if key is a valid recurring or one-time expense item
+          const isRecurring = RECURRING_EXPENSE_ITEMS.some(item => item.key === key);
+          const isOneTime = ONE_TIME_EXPENSE_ITEMS.some(item => item.key === key);
+
+          if (isRecurring || isOneTime) {
+            const mdCost = Number(mdCostVal);
+            const flCost = Number(flCostVal);
+            if (!isNaN(mdCost)) mdUpdate[key] = mdCost;
+            if (!isNaN(flCost)) flUpdate[key] = flCost;
+
+            if (isRecurring) {
+              const freq = Number(freqVal);
+              if (!isNaN(freq) && freq >= 1) {
+                freqUpdate[key as keyof DetailedExpenseFrequencies] = freq;
+              }
+            }
+          }
+        }
+
+        setLocalMD(mdUpdate);
+        setLocalFL(flUpdate);
+        setLocalFrequencies(freqUpdate);
+        alert('CSV successfully imported! Review values and click "Save Changes" to apply.');
+      } catch (err) {
+        console.error(err);
+        alert('Error parsing CSV. Please ensure the CSV matches the exported format.');
+      }
+    };
+    reader.readAsText(file);
+    e.target.value = ''; // Reset file input
+  };
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm transition-all duration-300">
       <div className="w-full max-w-4xl bg-slate-900/95 border border-slate-800 rounded-2xl shadow-2xl overflow-hidden glass-panel backdrop-blur-xl transition-all duration-300 transform scale-100 flex flex-col max-h-[90vh]">
         
         {/* Header */}
-        <div className="p-6 border-b border-slate-800 flex justify-between items-center bg-slate-900/50">
+        <div className="p-6 border-b border-slate-800 flex flex-col md:flex-row justify-between md:items-center gap-4 bg-slate-900/50">
           <div>
             <h3 className="text-lg font-black text-slate-100 tracking-tight">
               Detailed Living Expenses Configuration ⚙
@@ -127,12 +253,37 @@ export const DetailedExpensesDialog: React.FC<DetailedExpensesDialogProps> = ({
               Customize frequencies and side-by-side costs for Maryland and Florida. All values are in today's dollars (inflated using CPI).
             </p>
           </div>
-          <button 
-            onClick={onClose}
-            className="p-1.5 text-slate-400 hover:text-slate-100 bg-slate-800/40 hover:bg-slate-800 border border-slate-700/30 rounded-lg transition-all"
-          >
-            <X className="w-4 h-4" />
-          </button>
+          <div className="flex items-center gap-3">
+            <button
+              onClick={handleExportCSV}
+              title="Export expenses to detailed_retirement_expenses.csv"
+              className="px-3.5 py-2 bg-slate-800 hover:bg-slate-750 border border-slate-700/60 text-slate-300 hover:text-slate-100 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer"
+            >
+              <Download className="w-3.5 h-3.5" />
+              <span>Export CSV</span>
+            </button>
+            <label
+              htmlFor="csv-file-input"
+              title="Import edited CSV back into the table"
+              className="cursor-pointer px-3.5 py-2 bg-slate-800 hover:bg-slate-750 border border-slate-700/60 text-slate-300 hover:text-slate-100 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5"
+            >
+              <Upload className="w-3.5 h-3.5" />
+              <span>Import CSV</span>
+            </label>
+            <input
+              type="file"
+              accept=".csv"
+              onChange={handleImportCSV}
+              className="hidden"
+              id="csv-file-input"
+            />
+            <button 
+              onClick={onClose}
+              className="p-1.5 text-slate-400 hover:text-slate-100 bg-slate-800/40 hover:bg-slate-800 border border-slate-700/30 rounded-lg transition-all cursor-pointer"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          </div>
         </div>
 
         {/* Content Body */}
@@ -140,6 +291,18 @@ export const DetailedExpensesDialog: React.FC<DetailedExpensesDialogProps> = ({
           {categories.map((catName) => {
             const catItems = RECURRING_EXPENSE_ITEMS.filter((i) => i.category === catName);
             if (catItems.length === 0) return null;
+
+            const subtotalMD = catItems.reduce((sum, item) => {
+              const cost = localMD[item.key] || 0;
+              const freq = localFrequencies[item.key] ?? item.defaultFrequency;
+              return sum + cost * freq;
+            }, 0);
+
+            const subtotalFL = catItems.reduce((sum, item) => {
+              const cost = localFL[item.key] || 0;
+              const freq = localFrequencies[item.key] ?? item.defaultFrequency;
+              return sum + cost * freq;
+            }, 0);
 
             return (
               <div key={catName} className="space-y-3">
@@ -205,6 +368,18 @@ export const DetailedExpensesDialog: React.FC<DetailedExpensesDialogProps> = ({
                         );
                       })}
                     </tbody>
+                    <tfoot className="border-t border-slate-800 bg-slate-950/20 text-xs font-bold text-slate-200">
+                      <tr>
+                        <td className="py-2.5 pr-4 text-emerald-400 font-bold">Subtotal (Annualized)</td>
+                        <td className="py-2.5 px-2 text-center text-slate-500 font-mono font-normal">-</td>
+                        <td className="py-2.5 px-2 text-right text-emerald-400 font-mono font-bold">
+                          {formatCurrency(subtotalMD)}
+                        </td>
+                        <td className="py-2.5 pl-4 text-right text-emerald-400 font-mono font-bold">
+                          {formatCurrency(subtotalFL)}
+                        </td>
+                      </tr>
+                    </tfoot>
                   </table>
                 </div>
               </div>
@@ -265,6 +440,22 @@ export const DetailedExpensesDialog: React.FC<DetailedExpensesDialogProps> = ({
                     );
                   })}
                 </tbody>
+                <tfoot className="border-t border-slate-800 bg-slate-950/20 text-xs font-bold text-slate-200">
+                  <tr>
+                    <td className="py-2.5 pr-4 text-amber-400 font-bold">Subtotal</td>
+                    <td className="py-2.5 px-2 text-center text-slate-500 font-mono font-normal">-</td>
+                    <td className="py-2.5 px-2 text-right text-amber-400 font-mono font-bold">
+                      {formatCurrency(
+                        ONE_TIME_EXPENSE_ITEMS.reduce((sum, item) => sum + (localMD[item.key] || 0), 0)
+                      )}
+                    </td>
+                    <td className="py-2.5 pl-4 text-right text-amber-400 font-mono font-bold">
+                      {formatCurrency(
+                        ONE_TIME_EXPENSE_ITEMS.reduce((sum, item) => sum + (localFL[item.key] || 0), 0)
+                      )}
+                    </td>
+                  </tr>
+                </tfoot>
               </table>
             </div>
           </div>
@@ -308,13 +499,13 @@ export const DetailedExpensesDialog: React.FC<DetailedExpensesDialogProps> = ({
           <div className="flex gap-3">
             <button
               onClick={onClose}
-              className="px-5 py-2.5 text-xs font-bold text-slate-300 hover:text-slate-100 bg-slate-800/80 hover:bg-slate-800 border border-slate-700/60 rounded-xl transition-all"
+              className="px-5 py-2.5 text-xs font-bold text-slate-300 hover:text-slate-100 bg-slate-800/80 hover:bg-slate-800 border border-slate-700/60 rounded-xl transition-all cursor-pointer"
             >
               Cancel
             </button>
             <button
               onClick={handleSaveClick}
-              className="px-5 py-2.5 text-xs font-bold text-slate-950 bg-gradient-to-r from-emerald-400 to-teal-500 hover:from-emerald-300 hover:to-teal-400 rounded-xl shadow-lg shadow-emerald-500/10 hover:shadow-emerald-500/20 active:scale-98 transition-all flex items-center gap-1.5"
+              className="px-5 py-2.5 text-xs font-bold text-slate-950 bg-gradient-to-r from-emerald-400 to-teal-500 hover:from-emerald-300 hover:to-teal-400 rounded-xl shadow-lg shadow-emerald-500/10 hover:shadow-emerald-500/20 active:scale-98 transition-all flex items-center gap-1.5 cursor-pointer"
             >
               <Check className="w-4 h-4" />
               Save Changes

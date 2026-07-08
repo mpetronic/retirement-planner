@@ -726,7 +726,7 @@ export const InputControlSidebar: React.FC<InputControlSidebarProps> = ({
         <div className="space-y-4">
           <div className="flex items-center gap-2 text-emerald-400 font-semibold border-b border-slate-800 pb-2">
             <DollarSign className="w-5 h-5" />
-            <h2>Annual Living Expenses</h2>
+            <h2>Expenses Worksheet</h2>
           </div>
 
           <div className="p-4 bg-slate-950/60 rounded-xl border border-slate-800 space-y-4">
