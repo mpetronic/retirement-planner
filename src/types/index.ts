@@ -76,7 +76,6 @@ export interface DetailedStateExpenses {
   visionOutOfPocket: number;
   dentalInsurance: number;
   dentalOutOfPocket: number;
-  healthInsurance: number;
   healthOutOfPocket: number;
   medicarePartB: number;
   medicarePartD: number;
@@ -147,7 +146,6 @@ export interface DetailedExpenseFrequencies {
   visionOutOfPocket: number;
   dentalInsurance: number;
   dentalOutOfPocket: number;
-  healthInsurance: number;
   healthOutOfPocket: number;
   medicarePartB: number;
   medicarePartD: number;
@@ -224,7 +222,6 @@ export const RECURRING_EXPENSE_ITEMS: RecurringExpenseMetadata[] = [
   { key: 'visionOutOfPocket', label: 'Vision out-of-pocket', category: 'Health', defaultFrequency: 12 },
   { key: 'dentalInsurance', label: 'Dental insurance', category: 'Health', defaultFrequency: 12 },
   { key: 'dentalOutOfPocket', label: 'Dental out-of-pocket', category: 'Health', defaultFrequency: 12 },
-  { key: 'healthInsurance', label: 'Health Insurance', category: 'Health', defaultFrequency: 12 },
   { key: 'healthOutOfPocket', label: 'Health out-of-pocket', category: 'Health', defaultFrequency: 12 },
   { key: 'medicarePartB', label: 'Medicare Part B', category: 'Health', defaultFrequency: 12 },
   { key: 'medicarePartD', label: 'Medicare Part D', category: 'Health', defaultFrequency: 12 },
@@ -267,7 +264,7 @@ export const DEFAULT_DETAILED_EXPENSES: DetailedStateExpenses = {
   golfCartGas: 0, golfCartOilChanges: 0, golfCartTires: 0, golfCartMaintenance: 0, golfCartInsurance: 0,
   woundedWarrior: 0, tunnelsToTowers: 0, stJude: 0, tithe: 0,
   visionInsurance: 0, visionOutOfPocket: 0, dentalInsurance: 0, dentalOutOfPocket: 0,
-  healthInsurance: 0, healthOutOfPocket: 0, medicarePartB: 0, medicarePartD: 0, otcDrugs: 0,
+  healthOutOfPocket: 0, medicarePartB: 0, medicarePartD: 0, otcDrugs: 0,
   consumables: 0, clothing: 0,
   homeInsurance: 0, homeMaintenance: 0, umbrellaInsurance: 0,
   diningOut: 0, amazonPrime: 0, golf: 0, theVillagesNetwork: 0, travel: 0, woodshopMembership: 0,
@@ -283,7 +280,7 @@ export const DEFAULT_EXPENSE_FREQUENCIES: DetailedExpenseFrequencies = {
   golfCartGas: 12, golfCartOilChanges: 1, golfCartTires: 1, golfCartMaintenance: 1, golfCartInsurance: 12,
   woundedWarrior: 12, tunnelsToTowers: 12, stJude: 12, tithe: 12,
   visionInsurance: 12, visionOutOfPocket: 12, dentalInsurance: 12, dentalOutOfPocket: 12,
-  healthInsurance: 12, healthOutOfPocket: 12, medicarePartB: 12, medicarePartD: 12, otcDrugs: 12,
+  healthOutOfPocket: 12, medicarePartB: 12, medicarePartD: 12, otcDrugs: 12,
   consumables: 12, clothing: 12,
   homeInsurance: 12, homeMaintenance: 12, umbrellaInsurance: 12,
   diningOut: 12, amazonPrime: 1, golf: 12, theVillagesNetwork: 12, travel: 1, woodshopMembership: 1

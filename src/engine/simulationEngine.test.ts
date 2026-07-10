@@ -359,4 +359,87 @@ describe('runRetirementSimulation', () => {
     
     expect(actualEndTaxable).toBeCloseTo(expectedEndTaxable, 1); // Allow slight float variance
   });
+
+  it('should apply pre-Medicare premiums and detailed health expenses correctly based on age, work status, and retirement', () => {
+    const inputs = getMockInputs();
+    inputs.useDetailedExpenses = true;
+    inputs.detailedExpenses = {
+      MD: {
+        ...DEFAULT_DETAILED_EXPENSES,
+        visionOutOfPocket: 50, // Monthly recurring health expense => 50 * 12 = 600/yr per person
+      },
+      FL: {
+        ...DEFAULT_DETAILED_EXPENSES,
+        visionOutOfPocket: 50,
+      },
+      frequencies: {
+        ...DEFAULT_EXPENSE_FREQUENCIES,
+        visionOutOfPocket: 12,
+      }
+    };
+
+    // Birth dates:
+    // John: '1965-06-15' => turns 65 in 2030.
+    // Jane: '1968-09-20' => turns 65 in 2033.
+    inputs.you.birthDate = '1965-06-15';
+    inputs.wife.birthDate = '1968-09-20';
+
+    // Retirement ages:
+    // John: 62 => retired from 2027 onwards
+    // Jane: 60 => retired from 2028 onwards
+    inputs.you.plannedRetirementAge = 62;
+    inputs.wife.plannedRetirementAge = 60;
+
+    // Pre-Medicare premiums:
+    // John: 400/mo ($4800/yr)
+    // Jane: 300/mo ($3600/yr)
+    inputs.you.preMedicareMonthlyPremium = 400;
+    inputs.wife.preMedicareMonthlyPremium = 300;
+
+    const results = runRetirementSimulation(inputs);
+
+    // Years to test:
+    // 2026: John is 61 (working, age < 62), Jane is 58 (working, age < 60)
+    //       => both working, so healthcare costs (both pre-Medicare and detailed health) are ignored.
+    const row2026 = results.find(r => r.year === 2026);
+    expect(row2026!.preMedicareHealthcareCost).toBe(0);
+    // Since baseLivingExpensesAnnual is 0 (as amenityFee, water are 0, only visionOutOfPocket is 50/mo which is ignored),
+    // livingExpenses should be 0.
+    expect(row2026!.livingExpenses).toBe(0);
+
+    // 2027: John is 62 (retired, under 65), Jane is 59 (working, age < 60)
+    //       => John pays pre-Medicare (400 * 12 = 4800, inflated). Jane is working, so her health expenses are ignored.
+    const row2027 = results.find(r => r.year === 2027);
+    const hcFactor2027 = Math.pow(1 + inputs.growthAssumptions.healthcareInflationRate, 2027 - 2026);
+    expect(row2027!.preMedicareHealthcareCost).toBeCloseTo(4800 * hcFactor2027, 1);
+    expect(row2027!.livingExpenses).toBe(0);
+
+    // 2028: John is 63 (retired, under 65), Jane is 60 (retired, under 65)
+    //       => Both are retired & under 65.
+    //       => Pre-Medicare premium = (4800 + 3600) * hcFactor = 8400 * hcFactor
+    //       => Detailed health expenses are still ignored (livingExpenses = 0).
+    const row2028 = results.find(r => r.year === 2028);
+    const hcFactor2028 = Math.pow(1 + inputs.growthAssumptions.healthcareInflationRate, 2028 - 2026);
+    expect(row2028!.preMedicareHealthcareCost).toBeCloseTo(8400 * hcFactor2028, 1);
+    expect(row2028!.livingExpenses).toBe(0);
+
+    // 2030: John is 65 (on Medicare, retired), Jane is 62 (retired, under 65)
+    //       => John's pre-Medicare is ignored, and he pays detailed health (600/yr).
+    //       => Jane still pays pre-Medicare (3600 * hcFactor).
+    //       => Detailed health expenses should include 1x (John) = 600 * cpiFactor.
+    const row2030 = results.find(r => r.year === 2030);
+    const hcFactor2030 = Math.pow(1 + inputs.growthAssumptions.healthcareInflationRate, 2030 - 2026);
+    const cpiFactor2030 = Math.pow(1 + inputs.growthAssumptions.cpiInflationRate, 2030 - 2026);
+    expect(row2030!.preMedicareHealthcareCost).toBeCloseTo(3600 * hcFactor2030, 1);
+    expect(row2030!.livingExpenses).toBeCloseTo(600 * cpiFactor2030, 1);
+
+    // 2033: John is 68 (on Medicare, retired), Jane is 65 (on Medicare, retired)
+    //       => Both are on Medicare & retired.
+    //       => Pre-Medicare premium is 0 for both.
+    //       => Detailed health expenses should include 2x (both) = 1200 * cpiFactor.
+    const row2033 = results.find(r => r.year === 2033);
+    const cpiFactor2033 = Math.pow(1 + inputs.growthAssumptions.cpiInflationRate, 2033 - 2026);
+    expect(row2033!.preMedicareHealthcareCost).toBe(0);
+    expect(row2033!.livingExpenses).toBeCloseTo(1200 * cpiFactor2033, 1);
+  });
 });

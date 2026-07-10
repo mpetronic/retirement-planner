@@ -250,19 +250,20 @@ export function runRetirementSimulation(
     const yourAge = year - yourBirthYear;
     const wifeAge = year - wifeBirthYear;
 
+    const youRetireAge = inputs.you.plannedRetirementAge ?? 67;
+    const wifeRetireAge = inputs.isSingleFiler ? 0 : (inputs.wife.plannedRetirementAge ?? 65);
+
     // Active Salaries pre-retirement calculations
     let yourSalary = 0;
     let wifeSalary = 0;
     
     if (!(simulateSurvivor && (year >= DEATH_YEAR))) {
-      const youRetireAge = inputs.you.plannedRetirementAge ?? 67;
       if (yourAge < youRetireAge) {
         const baseSalary = inputs.you.activeSalary ?? 0;
         yourSalary = baseSalary * cpiFactor;
       }
     }
     
-    const wifeRetireAge = inputs.isSingleFiler ? 0 : (inputs.wife.plannedRetirementAge ?? 65);
     if (!inputs.isSingleFiler && wifeAge < wifeRetireAge) {
       const baseSalary = inputs.wife.activeSalary ?? 0;
       wifeSalary = baseSalary * cpiFactor;
@@ -275,19 +276,68 @@ export function runRetirementSimulation(
       ? inputs.jurisdiction.targetState
       : inputs.jurisdiction.currentState;
 
+    // Survivor state determination
+    const isSurvivorActive = simulateSurvivor && (year >= DEATH_YEAR);
+    const youDeceased = isSurvivorActive;
+
     let baseLivingExpensesAnnual = inputs.annualLivingExpenses ?? 120000;
+    let baseHealthExpensesPerPerson = 0;
     if (inputs.useDetailedExpenses && inputs.detailedExpenses) {
       let detailedSum = 0;
+      let healthSum = 0;
       const stateExpenses = inputs.detailedExpenses[activeState];
       const freqs = inputs.detailedExpenses.frequencies;
       if (stateExpenses && freqs) {
         for (const item of RECURRING_EXPENSE_ITEMS) {
           const cost = stateExpenses[item.key] ?? 0;
           const freq = freqs[item.key] ?? item.defaultFrequency;
-          detailedSum += cost * freq;
+          if (item.category === 'Health') {
+            healthSum += cost * freq;
+          } else {
+            detailedSum += cost * freq;
+          }
         }
       }
       baseLivingExpensesAnnual = detailedSum;
+      baseHealthExpensesPerPerson = healthSum;
+    }
+
+    // Determine healthcare costs and status for You
+    const isYouWorking = yourAge < youRetireAge && !youDeceased;
+    let yourPreMedicareAnnual = 0;
+    let yourDetailedHealthAnnual = 0;
+
+    if (!youDeceased) {
+      if (!isYouWorking) {
+        if (yourAge < 65) {
+          const yourPreMedicareMonthly = inputs.you.preMedicareMonthlyPremium ?? 0;
+          yourPreMedicareAnnual = yourPreMedicareMonthly * 12 * healthcareFactor;
+        } else {
+          yourDetailedHealthAnnual = baseHealthExpensesPerPerson;
+        }
+      }
+    }
+
+    // Determine healthcare costs and status for Wife
+    const isWifeWorking = !inputs.isSingleFiler && wifeAge < wifeRetireAge;
+    let wifePreMedicareAnnual = 0;
+    let wifeDetailedHealthAnnual = 0;
+
+    if (!inputs.isSingleFiler) {
+      if (!isWifeWorking) {
+        if (wifeAge < 65) {
+          const wifePreMedicareMonthly = inputs.wife.preMedicareMonthlyPremium ?? 0;
+          wifePreMedicareAnnual = wifePreMedicareMonthly * 12 * healthcareFactor;
+        } else {
+          wifeDetailedHealthAnnual = baseHealthExpensesPerPerson;
+        }
+      }
+    }
+
+    // Dynamic detailed health expenses (sum of both spouses' active detailed costs)
+    let activeDetailedHealthAnnual = 0;
+    if (inputs.useDetailedExpenses && inputs.detailedExpenses) {
+      activeDetailedHealthAnnual = yourDetailedHealthAnnual + wifeDetailedHealthAnnual;
     }
 
     let oneTimeCosts = 0;
@@ -312,11 +362,7 @@ export function runRetirementSimulation(
       }
     }
 
-    const livingExpenses = baseLivingExpensesAnnual * cpiFactor + oneTimeCosts * cpiFactor;
-    
-    // Survivor state determination
-    const isSurvivorActive = simulateSurvivor && (year >= DEATH_YEAR);
-    const youDeceased = isSurvivorActive;
+    const livingExpenses = baseLivingExpensesAnnual * cpiFactor + activeDetailedHealthAnnual * cpiFactor + oneTimeCosts * cpiFactor;
     
     // If You are deceased, Your traditional Pre-Tax IRA is inherited by Wife and merged into her Pre-Tax IRA.
     // Let's do this merge at the start of the death year 2045.
@@ -563,21 +609,7 @@ export function runRetirementSimulation(
     
     // Living expenses precalculated above
 
-    // Pre-Medicare healthcare premium calculations
-    const youRetireAge = inputs.you.plannedRetirementAge ?? 67;
-    const yourPreMedicareMonthly = inputs.you.preMedicareMonthlyPremium ?? 1000;
-    const wifePreMedicareMonthly = inputs.wife.preMedicareMonthlyPremium ?? 1000;
-
-    let yourPreMedicareAnnual = 0;
-    if (yourAge < 65 && yourAge >= youRetireAge && !youDeceased) {
-      yourPreMedicareAnnual = yourPreMedicareMonthly * 12 * healthcareFactor;
-    }
-
-    let wifePreMedicareAnnual = 0;
-    if (wifeAge < 65 && (yourAge >= youRetireAge || youDeceased)) {
-      wifePreMedicareAnnual = wifePreMedicareMonthly * 12 * healthcareFactor;
-    }
-
+    // Pre-Medicare healthcare premium calculations (calculated at start of year loop)
     const combinedPreMedicarePremium = yourPreMedicareAnnual + wifePreMedicareAnnual;
     
     // 5. Drawdown and Tax Convergence Loop

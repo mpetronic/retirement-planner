@@ -307,7 +307,9 @@ export const DetailedExpensesDialog: React.FC<DetailedExpensesDialogProps> = ({
             return (
               <div key={catName} className="space-y-3">
                 <h4 className="text-xs font-bold text-emerald-400 uppercase tracking-wider border-b border-slate-800 pb-1">
-                  {catName} Expenses
+                  {catName === 'Health'
+                    ? 'Health Expenses (Per-person cost; multiplied by 2x once both spouses turn 65)'
+                    : `${catName} Expenses`}
                 </h4>
                 <div className="min-w-full overflow-x-auto">
                   <table className="w-full text-left border-collapse">

@@ -11,7 +11,8 @@ import {
   Check,
   RefreshCw,
   Info,
-  Settings
+  Settings,
+  HelpCircle
 } from 'lucide-react';
 import { DetailedExpensesDialog } from './DetailedExpensesDialog';
 
@@ -276,14 +277,22 @@ export const InputControlSidebar: React.FC<InputControlSidebarProps> = ({
 
             {/* Pre-Medicare monthly premium edit field */}
             <div className="space-y-1 pt-2 border-t border-slate-800/30">
-              <label className="text-xs text-slate-400 block">Pre-Medicare Premium / Mo</label>
+              <div className="flex items-center gap-1.5">
+                <label className="text-xs text-slate-400 block">Pre-Medicare Premium / Mo</label>
+                <div className="relative group inline-block">
+                  <HelpCircle className="w-3.5 h-3.5 text-slate-500 hover:text-slate-300 transition-colors cursor-pointer" />
+                  <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 hidden group-hover:block w-64 bg-slate-950 text-slate-200 text-[10px] p-2.5 rounded-lg border border-slate-800 shadow-xl z-50 leading-normal pointer-events-none normal-case font-medium">
+                    Spending for medical, dental, and vision coverage per month including premiums and out of pocket costs (deductibles, copays, coinsurance) prior to age 65. Only applied when retired, under 65, and not covered by an active company health plan.
+                  </div>
+                </div>
+              </div>
               <div className="relative">
                 <span className="absolute left-3 top-1 text-slate-500 text-xs font-semibold">$</span>
                 <input
                   type="number"
                   value={inputs.you.preMedicareMonthlyPremium === null ? '' : inputs.you.preMedicareMonthlyPremium}
                   onChange={(e) => updateNestedState('you', 'preMedicareMonthlyPremium', e.target.value === '' ? null : Number(e.target.value))}
-                  placeholder="e.g. 1000"
+                  placeholder="0"
                   className="w-full bg-slate-900 border border-slate-800 rounded-lg pl-6 pr-2.5 py-1 text-xs text-slate-100 font-mono focus:outline-none focus:border-emerald-500"
                 />
               </div>
@@ -397,14 +406,22 @@ export const InputControlSidebar: React.FC<InputControlSidebarProps> = ({
 
               {/* Pre-Medicare monthly premium edit field */}
               <div className="space-y-1 pt-2 border-t border-slate-800/30">
-                <label className="text-xs text-slate-400 block">Pre-Medicare Premium / Mo</label>
+                <div className="flex items-center gap-1.5">
+                  <label className="text-xs text-slate-400 block">Pre-Medicare Premium / Mo</label>
+                  <div className="relative group inline-block">
+                    <HelpCircle className="w-3.5 h-3.5 text-slate-500 hover:text-slate-300 transition-colors cursor-pointer" />
+                    <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 hidden group-hover:block w-64 bg-slate-950 text-slate-200 text-[10px] p-2.5 rounded-lg border border-slate-800 shadow-xl z-50 leading-normal pointer-events-none normal-case font-medium">
+                      Spending for medical, dental, and vision coverage per month including premiums and out of pocket costs (deductibles, copays, coinsurance) prior to age 65. Only applied when retired, under 65, and not covered by an active company health plan.
+                    </div>
+                  </div>
+                </div>
                 <div className="relative">
                   <span className="absolute left-3 top-1 text-slate-500 text-xs font-semibold">$</span>
                   <input
                     type="number"
                     value={inputs.wife.preMedicareMonthlyPremium === null ? '' : inputs.wife.preMedicareMonthlyPremium}
                     onChange={(e) => updateNestedState('wife', 'preMedicareMonthlyPremium', e.target.value === '' ? null : Number(e.target.value))}
-                    placeholder="e.g. 1000"
+                    placeholder="0"
                     className="w-full bg-slate-900 border border-slate-800 rounded-lg pl-6 pr-2.5 py-1 text-xs text-slate-100 font-mono focus:outline-none focus:border-emerald-500"
                   />
                 </div>
