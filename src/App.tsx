@@ -51,6 +51,8 @@ const DEFAULT_INPUTS: AppStateInputs = {
     wifeRothIRA: null,
     wifeTaxableBrokerage: null,
     wifeTaxableBasis: null,
+    taxableDividendYield: 0.02,
+    taxableNonQualifiedPortion: 0.30,
   },
   jurisdiction: {
     currentState: 'MD',

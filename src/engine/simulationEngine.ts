@@ -12,6 +12,8 @@ import {
   MD_GRADUATED_TIERS_MFJ,
   MD_GRADUATED_TIERS_SINGLE,
   MD_PIGGYBACK_RATE,
+  FED_LTCG_BRACKETS_SINGLE,
+  FED_LTCG_BRACKETS_MFJ,
 } from './taxRates2026';
 
 // Helper to calculate Social Security benefit based on claiming age
@@ -139,25 +141,82 @@ export function calculateFedTax(
   return tax;
 }
 
+// Helper to compute Federal Income Tax separating ordinary income and capital gains
+export function calculateFedTaxWithLTCG(
+  taxableOrdinaryIncome: number,
+  taxableCapitalGains: number,
+  isSingle: boolean,
+  cpiFactor: number
+): { ordinaryTax: number; ltcgTax: number; totalTax: number } {
+  // 1. Calculate tax on ordinary income
+  const ordinaryTax = calculateFedTax(taxableOrdinaryIncome, isSingle, cpiFactor);
+
+  if (taxableCapitalGains <= 0) {
+    return {
+      ordinaryTax,
+      ltcgTax: 0,
+      totalTax: ordinaryTax,
+    };
+  }
+
+  // 2. Stack capital gains on top of ordinary income to determine capital gains tax
+  const ltcgBrackets = isSingle ? FED_LTCG_BRACKETS_SINGLE : FED_LTCG_BRACKETS_MFJ;
+  
+  // Inflate LTCG thresholds
+  const limit0 = ltcgBrackets[0].limit * cpiFactor;
+  const limit15 = ltcgBrackets[1].limit * cpiFactor;
+
+  const totalTaxable = taxableOrdinaryIncome + taxableCapitalGains;
+
+  // Amount in 0% bracket: range [taxableOrdinaryIncome, totalTaxable] intersected with [0, limit0]
+
+  // Amount in 15% bracket: range [taxableOrdinaryIncome, totalTaxable] intersected with [limit0, limit15]
+  const ltcg15Start = Math.max(taxableOrdinaryIncome, limit0);
+  const ltcg15End = Math.min(totalTaxable, limit15);
+  const ltcg15 = Math.max(0, ltcg15End - ltcg15Start);
+
+  // Amount in 20% bracket: range [taxableOrdinaryIncome, totalTaxable] intersected with [limit15, Infinity]
+  const ltcg20Start = Math.max(taxableOrdinaryIncome, limit15);
+  const ltcg20 = Math.max(0, totalTaxable - ltcg20Start);
+
+  const ltcgTax = (ltcg15 * 0.15) + (ltcg20 * 0.20);
+  
+  return {
+    ordinaryTax,
+    ltcgTax,
+    totalTax: ordinaryTax + ltcgTax,
+  };
+}
+
+export function getRMDStartAge(birthYear: number): number {
+  if (birthYear < 1951) return 72;
+  if (birthYear <= 1959) return 73;
+  return 75;
+}
+
+
 // Helper to compute Maryland State Tax
 export function calculateMDStateTax(
   fedAGI: number,
   taxableSS: number,
-  isSingle: boolean
+  isSingle: boolean,
+  cpiFactor: number = 1,
+  mdPensionExclusion: number = 0
 ): number {
   // MD Standard Deduction: 15% of AGI
   // For single: min $1,700, max $2,550
   // For MFJ: min $3,450, max $5,150
+  // Index min and max limits for inflation
   const stdDeductionRate = 0.15 * fedAGI;
   let stdDeduction = 0;
   if (isSingle) {
-    stdDeduction = Math.min(Math.max(stdDeductionRate, 1700), 2550);
+    stdDeduction = Math.min(Math.max(stdDeductionRate, 1700 * cpiFactor), 2550 * cpiFactor);
   } else {
-    stdDeduction = Math.min(Math.max(stdDeductionRate, 3450), 5150);
+    stdDeduction = Math.min(Math.max(stdDeductionRate, 3450 * cpiFactor), 5150 * cpiFactor);
   }
   
-  // MD taxable income starts from Fed AGI, subtracts MD standard deduction and 100% of taxable Social Security
-  let mdTaxableIncome = fedAGI - stdDeduction - taxableSS;
+  // MD taxable income starts from Fed AGI, subtracts MD standard deduction, 100% of taxable Social Security, and Pension Exclusion
+  let mdTaxableIncome = fedAGI - stdDeduction - taxableSS - mdPensionExclusion;
   if (mdTaxableIncome <= 0) return 0;
   
   const tiers = isSingle ? MD_GRADUATED_TIERS_SINGLE : MD_GRADUATED_TIERS_MFJ;
@@ -215,6 +274,9 @@ export function runRetirementSimulation(
   let wifeTaxable = inputs.isSingleFiler ? 0 : (inputs.portfolio.wifeTaxableBrokerage || 0);
   let wifeBasis = inputs.isSingleFiler ? 0 : (inputs.portfolio.wifeTaxableBasis || 0);
   
+  const taxableDividendYield = inputs.portfolio.taxableDividendYield !== undefined && inputs.portfolio.taxableDividendYield !== null ? inputs.portfolio.taxableDividendYield : 0.02;
+  const taxableNonQualifiedPortion = inputs.portfolio.taxableNonQualifiedPortion !== undefined && inputs.portfolio.taxableNonQualifiedPortion !== null ? inputs.portfolio.taxableNonQualifiedPortion : 0.30;
+  
   // Actuarial death year definition for survivor mode:
   // Primary user passes away turning age 85
   const yourBirthYear = parseBirthYear(inputs.you.birthDate, 1960);
@@ -257,7 +319,11 @@ export function runRetirementSimulation(
     let yourSalary = 0;
     let wifeSalary = 0;
     
-    if (!(simulateSurvivor && (year >= DEATH_YEAR))) {
+    // Survivor state determination
+    const isSurvivorActive = simulateSurvivor && (year >= DEATH_YEAR);
+    const youDeceased = isSurvivorActive;
+
+    if (!youDeceased) {
       if (yourAge < youRetireAge) {
         const baseSalary = inputs.you.activeSalary ?? 0;
         yourSalary = baseSalary * cpiFactor;
@@ -271,14 +337,22 @@ export function runRetirementSimulation(
     
     const activeSalaryInflow = yourSalary + wifeSalary;
 
+    // Taxable brokerage dividends and interest generated (paid as cash immediately)
+    const yourDividends = youDeceased ? 0 : yourTaxable * taxableDividendYield;
+    const wifeDividends = inputs.isSingleFiler ? 0 : wifeTaxable * taxableDividendYield;
+    const totalDividends = yourDividends + wifeDividends;
+
+    const qualifiedDividends = totalDividends * (1 - taxableNonQualifiedPortion);
+    const ordinaryDividends = totalDividends * taxableNonQualifiedPortion;
+
+    // Distribute dividends immediately (decreases starting taxable balance)
+    yourTaxable = Math.max(0, yourTaxable - yourDividends);
+    wifeTaxable = Math.max(0, wifeTaxable - wifeDividends);
+
     // State determination
     const activeState = (inputs.jurisdiction.relocationYear !== null && year >= inputs.jurisdiction.relocationYear)
       ? inputs.jurisdiction.targetState
       : inputs.jurisdiction.currentState;
-
-    // Survivor state determination
-    const isSurvivorActive = simulateSurvivor && (year >= DEATH_YEAR);
-    const youDeceased = isSurvivorActive;
 
     let baseLivingExpensesAnnual = inputs.annualLivingExpenses ?? 120000;
     let baseHealthExpensesPerPerson = 0;
@@ -373,8 +447,17 @@ export function runRetirementSimulation(
       wifeRoth += yourRoth;
       yourRoth = 0;
       
+      // Spousal step-up in basis:
+      // In common-law MD, the deceased's separate brokerage account basis is stepped up to FMV (50% joint step-up).
+      // In FL, the entire joint account (both halves) is stepped up to FMV using the Florida Community Property Trust planning option.
+      const isStateFL = activeState === 'FL';
+      if (isStateFL) {
+        wifeBasis = wifeTaxable + yourTaxable;
+      } else {
+        wifeBasis += yourTaxable; // Deceased's account gets stepped up to FMV (yourTaxable), survivor's account retains original basis (wifeBasis)
+      }
+      
       wifeTaxable += yourTaxable;
-      wifeBasis += yourBasis;
       yourTaxable = 0;
       yourBasis = 0;
     }
@@ -429,16 +512,19 @@ export function runRetirementSimulation(
     
     const combinedSS = yourSS + wifeSS;
     
-    // 2. RMD calculations (Strictly starting at age 75)
+    // 2. RMD calculations (Dynamic based on SECURE Act 2.0 rules)
     let yourRMD = 0;
     let wifeRMD = 0;
     
-    if (!youDeceased && yourAge >= 75) {
+    const yourRmdStartAge = getRMDStartAge(yourBirthYear);
+    const wifeRmdStartAge = getRMDStartAge(wifeBirthYear);
+
+    if (!youDeceased && yourAge >= yourRmdStartAge) {
       const factor = getIRSUniformLifetimeFactor(yourAge);
       if (factor > 0) yourRMD = yourPreTax / factor;
     }
     
-    if (wifeAge >= 75) {
+    if (wifeAge >= wifeRmdStartAge) {
       const factor = getIRSUniformLifetimeFactor(wifeAge);
       if (factor > 0) wifeRMD = wifePreTax / factor;
     }
@@ -464,7 +550,7 @@ export function runRetirementSimulation(
         const inflatedTarget = inputs.rothConversionTargetValue * cpiFactor;
         
         // Stack uncontrollable incomes first, then convert the remaining space up to the target fill limit.
-        const uncontrollable = activeSalaryInflow + combinedSS + combinedRMD;
+        const uncontrollable = activeSalaryInflow + combinedSS + combinedRMD + totalDividends;
         targetConversion = Math.max(0, inflatedTarget - uncontrollable);
       }
     } else {
@@ -486,9 +572,10 @@ export function runRetirementSimulation(
       const estLiving = livingExpenses;
       const estSS = combinedSS;
       const estSalary = activeSalaryInflow;
+      const estDividends = totalDividends;
       
       // Deficit in base living expenses that must be funded by taxable brokerage
-      const estBaseDeficit = Math.max(0, estLiving - (estSS + estSalary));
+      const estBaseDeficit = Math.max(0, estLiving - (estSS + estSalary + estDividends));
       
       // Taxable cash left specifically to pay for Roth conversion taxes
       const taxableCashForTaxes = Math.max(0, totalTaxableBrokerage - estBaseDeficit);
@@ -549,8 +636,8 @@ export function runRetirementSimulation(
       magiTwoYearsAgo = ledger[lookbackIndex].magi;
     } else {
       // Fallback: use first-year MAGI to establish immediate realistic surcharges
-      // We will estimate the first year's baseline MAGI
-      const estOtherAGI = combinedSS * 0.85 + combinedRMD + combinedRothConversion + activeSalaryInflow;
+      // We will estimate the first year's baseline MAGI including dividends
+      const estOtherAGI = combinedSS * 0.85 + combinedRMD + combinedRothConversion + activeSalaryInflow + totalDividends;
       magiTwoYearsAgo = estOtherAGI;
     }
     
@@ -568,7 +655,7 @@ export function runRetirementSimulation(
       const prevTier = irmaaTiers[i - 1];
       let prevLimit = 0;
       if (prevTier) {
-        prevLimit = prevTier.tierNumber < 4 ? prevTier.limit * cpiFactor : prevTier.limit;
+        prevLimit = prevTier.limit === Infinity ? Infinity : prevTier.limit * cpiFactor;
       }
       
       if (magiTwoYearsAgo > prevLimit) {
@@ -622,6 +709,7 @@ export function runRetirementSimulation(
     let stateIncomeTax = 0;
     let niitTax = 0;
     let stdDeduction = 0;
+    let mdPensionExclusion = 0;
     
     let currentYourTaxable = yourTaxable;
     let currentYourBasis = yourBasis;
@@ -646,6 +734,8 @@ export function runRetirementSimulation(
       drawdownPreTax = 0;
       drawdownRoth = 0;
       capitalGainsTriggered = 0;
+      let yourTradDraw = 0;
+      let wifeTradDraw = 0;
       
       currentYourTaxable = yourTaxable;
       currentYourBasis = yourBasis;
@@ -663,8 +753,8 @@ export function runRetirementSimulation(
       // Outflows: Living Expenses + Base Medicare + Medicare Surcharges + Pre-Medicare Premiums + Current estimated Tax Bill
       const totalOutflows = livingExpenses + medicareBasePremiums + combinedSurchargeAnnual + combinedPreMedicarePremium + totalTaxBill;
       
-      // Inflow: Social Security (forced inflows) + forced RMD (forced inflows) + Active Salary (forced pre-retirement inflows)
-      const baseInflows = combinedSS + combinedRMD + activeSalaryInflow;
+      // Inflow: Social Security + forced RMD + Active Salary + portfolio dividends
+      const baseInflows = combinedSS + combinedRMD + activeSalaryInflow + totalDividends;
       
       let deficit = totalOutflows - baseInflows;
       
@@ -704,6 +794,7 @@ export function runRetirementSimulation(
         // We draw from You first, then Wife
         if (!youDeceased && currentYourPreTax > 0) {
           const draw = Math.min(deficit, currentYourPreTax);
+          yourTradDraw += draw;
           drawdownPreTax += draw;
           deficit -= draw;
           currentYourPreTax -= draw;
@@ -711,6 +802,7 @@ export function runRetirementSimulation(
         
         if (deficit > 0 && currentWifePreTax > 0) {
           const draw = Math.min(deficit, currentWifePreTax);
+          wifeTradDraw += draw;
           drawdownPreTax += draw;
           deficit -= draw;
           currentWifePreTax -= draw;
@@ -739,9 +831,9 @@ export function runRetirementSimulation(
       const totalTaxablePreTaxDraw = combinedRMD + combinedRothConversion + drawdownPreTax;
       
       // SS Taxability based on AGI excluding SS + 50% of SS
-      // Other AGI includes traditional withdrawals, RMD, capital gains, conversions, active salaries
-      const isSingle = isSurvivorActive || inputs.isSingleFiler;
-      const otherAGI = totalTaxablePreTaxDraw + capitalGainsTriggered + activeSalaryInflow;
+      // Other AGI includes traditional withdrawals, RMD, capital gains, conversions, active salaries, and dividends
+      const isSingle = (simulateSurvivor && (year > DEATH_YEAR)) || inputs.isSingleFiler;
+      const otherAGI = totalTaxablePreTaxDraw + capitalGainsTriggered + activeSalaryInflow + totalDividends;
       const taxableSS = calculateTaxableSS(combinedSS, otherAGI, isSingle);
       
       const fedAGI = otherAGI + taxableSS;
@@ -763,33 +855,37 @@ export function runRetirementSimulation(
         if (wifeAge >= 65) ageAddition += 1650 * cpiFactor;
       }
 
-      // 3. Senior "Bonus" Deduction ($6,000 per person aged 65+)
-      let seniorBonusRaw = 0;
-      if (isSingle) {
-        if (yourAge >= 65) seniorBonusRaw += 6000 * cpiFactor;
+      stdDeduction = stdDeductionBase + ageAddition;
+        
+      const ordinaryIncomeAGI = totalTaxablePreTaxDraw + ordinaryDividends + activeSalaryInflow + taxableSS;
+      const capitalGainsTaxable = capitalGainsTriggered + qualifiedDividends;
+
+      let taxableOrdinaryIncome = 0;
+      let taxableCapitalGains = 0;
+
+      if (ordinaryIncomeAGI >= stdDeduction) {
+        taxableOrdinaryIncome = ordinaryIncomeAGI - stdDeduction;
+        taxableCapitalGains = capitalGainsTaxable;
       } else {
-        if (yourAge >= 65) seniorBonusRaw += 6000 * cpiFactor;
-        if (wifeAge >= 65) seniorBonusRaw += 6000 * cpiFactor;
+        taxableOrdinaryIncome = 0;
+        taxableCapitalGains = Math.max(0, capitalGainsTaxable - (stdDeduction - ordinaryIncomeAGI));
       }
 
-      // 4. Senior "Bonus" Phase-out (threshold: $150,000 MFJ / $75,000 Single)
-      const bonusThreshold = (isSingle ? 75000 : 150000) * cpiFactor;
-      const excessBonusMAGI = Math.max(0, fedAGI - bonusThreshold);
-      const bonusReduction = excessBonusMAGI * 0.06;
-      const seniorBonusFinal = Math.max(0, seniorBonusRaw - bonusReduction);
-
-      stdDeduction = stdDeductionBase + ageAddition + seniorBonusFinal;
-        
-      const fedTaxableIncome = Math.max(0, fedAGI - stdDeduction);
-      
-      // Federal Income Tax
-      fedIncomeTax = calculateFedTax(fedTaxableIncome, isSingle, cpiFactor);
+      // Calculate Federal Income Tax (with stacked LTCG preferential rates)
+      const { totalTax: fedBaseTax } = calculateFedTaxWithLTCG(
+        taxableOrdinaryIncome,
+        taxableCapitalGains,
+        isSingle,
+        cpiFactor
+      );
+      fedIncomeTax = fedBaseTax;
       
       // Calculate 3.8% Net Investment Income Tax (NIIT)
       // Thresholds: $200k for Single / $250k for MFJ (under tax code, these are NOT adjusted for inflation)
       const niitThreshold = isSingle ? 200000 : 250000;
       const excessMAGI = Math.max(0, fedAGI - niitThreshold);
-      const niitBase = Math.min(capitalGainsTriggered, excessMAGI);
+      const netInvestmentIncome = capitalGainsTriggered + totalDividends;
+      const niitBase = Math.min(netInvestmentIncome, excessMAGI);
       niitTax = niitBase * 0.038;
       
       fedIncomeTax += niitTax;
@@ -801,9 +897,20 @@ export function runRetirementSimulation(
         
       if (isStateFL) {
         stateIncomeTax = 0;
+        mdPensionExclusion = 0;
       } else {
-        // Maryland State Tax
-        stateIncomeTax = calculateMDStateTax(fedAGI, taxableSS, isSingle);
+        // Maryland Pension Exclusion:
+        // Exclude retirement distributions (RMD + Trad Draws) up to max cap ($34,300), reduced dollar-for-dollar by Social Security.
+        const cap = 34300 * cpiFactor;
+        const husbandExclusionCap = Math.max(0, cap - yourSS);
+        const wifeExclusionCap = Math.max(0, cap - wifeSS);
+
+        const husbandExclusion = (!youDeceased && yourAge >= 65) ? Math.min(yourRMD + yourTradDraw, husbandExclusionCap) : 0;
+        const wifeExclusion = (wifeAge >= 65) ? Math.min(wifeRMD + wifeTradDraw, wifeExclusionCap) : 0;
+        mdPensionExclusion = husbandExclusion + wifeExclusion;
+
+        // Maryland State Tax (incorporating indexed standard deduction and pension exclusion)
+        stateIncomeTax = calculateMDStateTax(fedAGI, taxableSS, isSingle, cpiFactor, mdPensionExclusion);
       }
       
       totalTaxBill = fedIncomeTax + stateIncomeTax;
@@ -811,7 +918,7 @@ export function runRetirementSimulation(
     
     // Reinvest surplus cash inflows if any
     const totalOutflows = livingExpenses + medicareBasePremiums + combinedSurchargeAnnual + combinedPreMedicarePremium + totalTaxBill;
-    const baseInflows = combinedSS + combinedRMD + activeSalaryInflow;
+    const baseInflows = combinedSS + combinedRMD + activeSalaryInflow + totalDividends;
     const surplus = Math.max(0, baseInflows - totalOutflows);
 
     if (surplus > 0) {
@@ -832,12 +939,12 @@ export function runRetirementSimulation(
     
     // Commit the ending balances and apply growth
     yourTaxable = Math.max(0, currentYourTaxable) * (1 + taxableGrowthRate);
-    yourBasis = Math.max(0, currentYourBasis) * (1 + taxableGrowthRate * 0.20); // Basis scales up slightly slower as growth is capital appreciation
+    yourBasis = Math.max(0, currentYourBasis); // Cost basis is static (no auto-growth)
     yourPreTax = Math.max(0, currentYourPreTax) * (1 + preTaxGrowthRate);
     yourRoth = Math.max(0, currentYourRoth) * (1 + rothGrowthRate);
     
     wifeTaxable = Math.max(0, currentWifeTaxable) * (1 + taxableGrowthRate);
-    wifeBasis = Math.max(0, currentWifeBasis) * (1 + taxableGrowthRate * 0.20);
+    wifeBasis = Math.max(0, currentWifeBasis); // Cost basis is static (no auto-growth)
     wifePreTax = Math.max(0, currentWifePreTax) * (1 + preTaxGrowthRate);
     wifeRoth = Math.max(0, currentWifeRoth) * (1 + rothGrowthRate);
     
@@ -852,8 +959,8 @@ export function runRetirementSimulation(
     const totalPortfolioValue = yourTaxable + yourPreTax + yourRoth + wifeTaxable + wifePreTax + wifeRoth;
     
     // Compute total actual inflows, MAGI, and other ledger parameters
-    const isSingle = isSurvivorActive || inputs.isSingleFiler;
-    const finalOtherAGI = combinedRMD + combinedRothConversion + drawdownPreTax + capitalGainsTriggered + activeSalaryInflow;
+    const isSingle = (simulateSurvivor && (year > DEATH_YEAR)) || inputs.isSingleFiler;
+    const finalOtherAGI = combinedRMD + combinedRothConversion + drawdownPreTax + capitalGainsTriggered + activeSalaryInflow + totalDividends;
     const finalTaxableSS = calculateTaxableSS(combinedSS, finalOtherAGI, isSingle);
     const finalFedAGI = finalOtherAGI + finalTaxableSS;
     
@@ -861,7 +968,7 @@ export function runRetirementSimulation(
     const magi = finalFedAGI;
     
     const totalExpenses = livingExpenses + fedIncomeTax + stateIncomeTax + medicareBasePremiums + combinedSurchargeAnnual + combinedPreMedicarePremium;
-    const incomeInflow = combinedSS + combinedRMD + activeSalaryInflow;
+    const incomeInflow = combinedSS + combinedRMD + activeSalaryInflow + totalDividends;
     const deficit = Math.max(0, totalExpenses - incomeInflow);
     
     ledger.push({

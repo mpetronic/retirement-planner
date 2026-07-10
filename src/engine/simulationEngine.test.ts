@@ -6,6 +6,8 @@ import {
   calculateFedTax,
   calculateMDStateTax,
   runRetirementSimulation,
+  calculateFedTaxWithLTCG,
+  getRMDStartAge,
 } from './simulationEngine';
 import { DEFAULT_DETAILED_EXPENSES, DEFAULT_EXPENSE_FREQUENCIES } from '../types';
 
@@ -441,5 +443,69 @@ describe('runRetirementSimulation', () => {
     const cpiFactor2033 = Math.pow(1 + inputs.growthAssumptions.cpiInflationRate, 2033 - 2026);
     expect(row2033!.preMedicareHealthcareCost).toBe(0);
     expect(row2033!.livingExpenses).toBeCloseTo(1200 * cpiFactor2033, 1);
+  });
+
+  it('should apply 50% step-up in basis in MD and 100% in FL on death, and generate annual dividends', () => {
+    const inputs = getMockInputs();
+    inputs.isConfigured = true;
+    inputs.isSingleFiler = false;
+    inputs.simulateSurvivor = true;
+    inputs.you.birthDate = '1960-01-01'; // Turns 85 in 2045 (Death Year)
+    inputs.wife.birthDate = '1964-01-01';
+
+    inputs.portfolio.yourTaxableBrokerage = 500000;
+    inputs.portfolio.yourTaxableBasis = 200000;
+    inputs.portfolio.wifeTaxableBrokerage = 500000;
+    inputs.portfolio.wifeTaxableBasis = 200000;
+
+    // Yield configuration
+    inputs.portfolio.taxableDividendYield = 0.02; // 2% yield
+    inputs.portfolio.taxableNonQualifiedPortion = 0.30;
+
+    // MD Relocation Year is null (remain in MD)
+    inputs.jurisdiction.currentState = 'MD';
+    inputs.jurisdiction.targetState = 'MD';
+    inputs.jurisdiction.relocationYear = null;
+
+    // Run simulation in MD
+    const resultsMD = runRetirementSimulation(inputs, true);
+    
+    // Let's verify dividends generated in 2026:
+    // Total taxable balance at start of 2026: 500k + 500k = 1,000,000.
+    // Expected dividends: 1,000,000 * 2% = 20,000.
+    const row2026 = resultsMD.find(r => r.year === 2026);
+    expect(row2026!.incomeInflow).toBeGreaterThanOrEqual(20000);
+
+    // Verify basis step-up in MD: 50% step-up (deceased's account stepped up to FMV at death).
+    const row2045MD = resultsMD.find(r => r.year === 2045);
+    expect(row2045MD!.endWifeTaxableBasis).toBeGreaterThan(200000);
+
+    // Now set current and target state to FL
+    inputs.jurisdiction.currentState = 'FL';
+    inputs.jurisdiction.targetState = 'FL';
+    const resultsFL = runRetirementSimulation(inputs, true);
+    const row2045FL = resultsFL.find(r => r.year === 2045);
+    // In FL, 100% step-up (both husband's and wife's accounts stepped up to FMV at death).
+    // The basis is static during the year, but the balance grows by 5.8% (taxableGrowthRate).
+    expect(row2045FL!.endWifeTaxableBasis * 1.058).toBeCloseTo(row2045FL!.endWifeTaxableBrokerage, 1);
+  });
+});
+
+describe('calculateFedTaxWithLTCG', () => {
+  it('should compute tax with LTCG stacked correctly', () => {
+    // Single filer, taxable ordinary = 40,000, taxable LTCG = 20,000.
+    // Expected ltcgTax: 9,800 * 0.15 = 1470.
+    const res = calculateFedTaxWithLTCG(40000, 20000, true, 1);
+    expect(res.ltcgTax).toBeCloseTo(1470, 1);
+    expect(res.ordinaryTax).toBe(calculateFedTax(40000, true, 1));
+    expect(res.totalTax).toBe(res.ordinaryTax + 1470);
+  });
+});
+
+describe('getRMDStartAge', () => {
+  it('should return correct RMD start age based on birth year', () => {
+    expect(getRMDStartAge(1950)).toBe(72);
+    expect(getRMDStartAge(1955)).toBe(73);
+    expect(getRMDStartAge(1960)).toBe(75);
   });
 });

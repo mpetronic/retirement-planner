@@ -163,6 +163,8 @@ export const OnboardingWizard: React.FC<OnboardingWizardProps> = ({ onComplete }
         wifeRothIRA: isSingleFiler ? 0 : wifeRoth,
         wifeTaxableBrokerage: isSingleFiler ? 0 : wifeTaxable,
         wifeTaxableBasis: isSingleFiler ? 0 : wifeBasis,
+        taxableDividendYield: 0.02,
+        taxableNonQualifiedPortion: 0.30,
       },
       jurisdiction: {
         currentState,

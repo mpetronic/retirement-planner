@@ -554,6 +554,48 @@ export const InputControlSidebar: React.FC<InputControlSidebarProps> = ({
                 </div>
               </div>
             )}
+
+            {/* Taxable Brokerage Yield & Interest settings */}
+            <div className="p-3 bg-slate-950/60 rounded-xl border border-slate-800 space-y-2">
+              <div className="flex items-center gap-1.5 border-b border-slate-800 pb-1">
+                <span className="text-xs font-bold text-slate-300 block">Taxable Assets Dividend Yield & Type</span>
+                <div className="relative group inline-block">
+                  <HelpCircle className="w-3.5 h-3.5 text-slate-500 hover:text-slate-300 transition-colors cursor-pointer" />
+                  <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 hidden group-hover:block w-64 bg-slate-950 text-slate-200 text-[10px] p-2.5 rounded-lg border border-slate-800 shadow-xl z-50 leading-normal pointer-events-none normal-case font-medium">
+                    <strong>Annual Yield (%)</strong>: The annual percentage of taxable brokerage assets paid out as dividends or interest. Taxed in the year received.<br /><br />
+                    <strong>Non-Qualified (%)</strong>: The portion of the yield taxed at ordinary income rates (e.g., bond interest/non-qualified dividends) vs. preferential capital gains rates.
+                  </div>
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-2">
+                <div className="space-y-1">
+                  <label className="text-[10px] text-slate-400 block truncate" title="Annual Dividend/Interest Yield">Annual Yield (%)</label>
+                  <input
+                    type="number"
+                    step="0.1"
+                    min="0"
+                    max="20"
+                    value={inputs.portfolio.taxableDividendYield !== null && inputs.portfolio.taxableDividendYield !== undefined ? inputs.portfolio.taxableDividendYield * 100 : ''}
+                    onChange={(e) => updateNestedState('portfolio', 'taxableDividendYield', e.target.value === '' ? null : Number(e.target.value) / 100)}
+                    placeholder="2.0"
+                    className="w-full bg-slate-900 border border-slate-800 rounded-lg px-2.5 py-1 text-xs text-slate-100 font-mono focus:outline-none focus:border-emerald-500"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <label className="text-[10px] text-slate-400 block truncate" title="Portion of yield taxed at ordinary income rate (e.g. interest, non-qualified dividends)">Non-Qualified (%)</label>
+                  <input
+                    type="number"
+                    step="1"
+                    min="0"
+                    max="100"
+                    value={inputs.portfolio.taxableNonQualifiedPortion !== null && inputs.portfolio.taxableNonQualifiedPortion !== undefined ? inputs.portfolio.taxableNonQualifiedPortion * 100 : ''}
+                    onChange={(e) => updateNestedState('portfolio', 'taxableNonQualifiedPortion', e.target.value === '' ? null : Number(e.target.value) / 100)}
+                    placeholder="30"
+                    className="w-full bg-slate-900 border border-slate-800 rounded-lg px-2.5 py-1 text-xs text-slate-100 font-mono focus:outline-none focus:border-emerald-500"
+                  />
+                </div>
+              </div>
+            </div>
           </div>
         </div>
 

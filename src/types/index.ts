@@ -17,7 +17,10 @@ export interface PortfolioBalances {
   wifeRothIRA: number | null;
   wifeTaxableBrokerage: number | null;
   wifeTaxableBasis: number | null;
+  taxableDividendYield?: number | null;
+  taxableNonQualifiedPortion?: number | null;
 }
+
 
 export interface LockedReturnSequence {
   id: string; // Unique timestamp or ID of the sequence
