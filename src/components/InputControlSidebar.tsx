@@ -989,8 +989,16 @@ export const InputControlSidebar: React.FC<InputControlSidebarProps> = ({
               </div>
             ) : (
               <div className="space-y-1">
-                <label className="text-xs text-slate-400 flex justify-between">
-                  <span>Target MAGI Ceiling</span>
+                <label className="text-xs text-slate-400 flex justify-between items-center">
+                  <div className="flex items-center gap-1.5">
+                    <span>Target MAGI Ceiling</span>
+                    <div className="relative group inline-block">
+                      <HelpCircle className="w-3.5 h-3.5 text-slate-500 hover:text-slate-300 transition-colors cursor-pointer" />
+                      <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 hidden group-hover:block w-64 bg-slate-950 text-slate-200 text-[10px] p-2.5 rounded-lg border border-slate-800 shadow-xl z-50 leading-normal pointer-events-none normal-case font-medium">
+                        Sets the total annual MAGI ceiling for Roth conversions. This is synchronized with the <strong>Quick Fills</strong> dropdown presets in the Bracket Map chart, and can be adjusted here to override presets with custom ceilings.
+                      </div>
+                    </div>
+                  </div>
                   <span className="text-emerald-400 font-bold font-mono">
                     {formatCurrency(inputs.rothConversionTargetValue || 0)}
                   </span>

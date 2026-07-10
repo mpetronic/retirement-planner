@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useMemo, useState, useRef } from 'react';
 import { Chart } from 'react-chartjs-2';
 import {
   Chart as ChartJS,
@@ -51,6 +51,8 @@ export const BracketMapChart: React.FC<BracketMapChartProps> = ({
   selectedQuickFill,
   setSelectedQuickFill,
 }) => {
+  const chartRef = useRef<any>(null);
+  const [hasHiddenDatasets, setHasHiddenDatasets] = useState(false);
   
   // Optimizer visual state hooks
   const [optimizingGoal, setOptimizingGoal] = useState<OptimizationGoal | null>(null);
@@ -199,7 +201,7 @@ export const BracketMapChart: React.FC<BracketMapChartProps> = ({
         label: 'Roth Draws (Tax-Free)',
         data: ledger.map((r) => r.drawdownRoth),
         backgroundColor: 'rgba(52, 211, 153, 0.75)', // emerald-400 representing tax-free Roth draws
-        stack: 'tax-free', // excluded from 'Total Stacked Income' footer sum — these are non-taxable cash flows
+        stack: 'income', // stacked with all other cash flows in a single bar
         order: 2,
         pointStyle: 'rect',
       },
@@ -274,6 +276,52 @@ export const BracketMapChart: React.FC<BracketMapChartProps> = ({
       plugins: {
         legend: {
           position: 'top' as const,
+          onClick: (e: any, legendItem: any, legend: any) => {
+            const index = legendItem.datasetIndex;
+            const ci = legend.chart;
+            const hasModifier = e.native.ctrlKey || e.native.altKey || e.native.shiftKey || e.native.metaKey;
+            
+            if (hasModifier) {
+              // Modifier + Click: Solo / Isolate (or reset if already soloed)
+              let visibleCount = 0;
+              let isClickedVisible = false;
+              ci.data.datasets.forEach((_: any, i: number) => {
+                if (ci.isDatasetVisible(i)) {
+                  visibleCount++;
+                  if (i === index) {
+                    isClickedVisible = true;
+                  }
+                }
+              });
+              
+              if (visibleCount === 1 && isClickedVisible) {
+                // Already soloed: Show all
+                ci.data.datasets.forEach((_: any, i: number) => {
+                  ci.setDatasetVisibility(i, true);
+                });
+              } else {
+                // Solo this dataset
+                ci.data.datasets.forEach((_: any, i: number) => {
+                  ci.setDatasetVisibility(i, i === index);
+                });
+              }
+            } else {
+              // Standard Click: Toggle individually
+              const isVisible = ci.isDatasetVisible(index);
+              ci.setDatasetVisibility(index, !isVisible);
+            }
+            
+            ci.update();
+            
+            // Update hasHiddenDatasets state to conditionally render Reset Legend UI
+            let anyHidden = false;
+            ci.data.datasets.forEach((_: any, i: number) => {
+              if (!ci.isDatasetVisible(i)) {
+                anyHidden = true;
+              }
+            });
+            setHasHiddenDatasets(anyHidden);
+          },
           labels: {
             color: '#cbd5e1', // slate-300
             font: {
@@ -359,7 +407,7 @@ export const BracketMapChart: React.FC<BracketMapChartProps> = ({
                 }
               });
               if (sum > 0) {
-                return '\nTotal Stacked Income: ' + new Intl.NumberFormat('en-US', {
+                return '\nTotal Inflows & Draws: ' + new Intl.NumberFormat('en-US', {
                   style: 'currency',
                   currency: 'USD',
                   maximumFractionDigits: 0,
@@ -742,13 +790,31 @@ export const BracketMapChart: React.FC<BracketMapChartProps> = ({
               <option value={749999}>Fill to $1 Below Tier 5 Cliff ($749,999)</option>
             </optgroup>
           </select>
+          {hasHiddenDatasets && (
+            <button
+              onClick={() => {
+                if (chartRef.current) {
+                  const chart = chartRef.current?.chart || chartRef.current;
+                  chart.data.datasets.forEach((_: any, i: number) => {
+                    chart.setDatasetVisibility(i, true);
+                  });
+                  chart.update();
+                  setHasHiddenDatasets(false);
+                }
+              }}
+              className="text-xs font-semibold px-3 py-2 bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 hover:bg-emerald-500/20 rounded-xl transition-all cursor-pointer flex items-center gap-1.5"
+            >
+              <Check className="w-3.5 h-3.5" />
+              <span>Show All Categories</span>
+            </button>
+          )}
         </div>
       </div>
     </div>
 
       {/* Chart Canvas */}
       <div className="h-[580px] relative bg-slate-950/40 rounded-xl border border-slate-800/40 p-4">
-        <Chart type="bar" data={chartData as any} options={chartOptions as any} />
+        <Chart ref={chartRef} type="bar" data={chartData as any} options={chartOptions as any} />
       </div>
       {renderOptimizerModal()}
     </div>
