@@ -7,65 +7,66 @@ export interface HistoricalYear {
   year: number;
   stock: number;
   bond: number;
+  inflation: number;
 }
 
 export const HISTORICAL_RETURNS: HistoricalYear[] = [
-  { year: 1970, stock: 0.0401, bond: 0.1675 },
-  { year: 1971, stock: 0.1431, bond: 0.0911 },
-  { year: 1972, stock: 0.1898, bond: 0.0210 },
-  { year: 1973, stock: -0.1466, bond: 0.0366 },
-  { year: 1974, stock: -0.2647, bond: 0.0435 },
-  { year: 1975, stock: 0.3720, bond: 0.0783 },
-  { year: 1976, stock: 0.2384, bond: 0.1287 },
-  { year: 1977, stock: -0.0718, bond: 0.0129 },
-  { year: 1978, stock: 0.0656, bond: -0.0118 },
-  { year: 1979, stock: 0.1844, bond: 0.0067 },
-  { year: 1980, stock: 0.3242, bond: -0.0299 },
-  { year: 1981, stock: -0.0491, bond: 0.0820 },
-  { year: 1982, stock: 0.2141, bond: 0.2909 },
-  { year: 1983, stock: 0.2251, bond: 0.0074 },
-  { year: 1984, stock: 0.0627, bond: 0.1548 },
-  { year: 1985, stock: 0.3216, bond: 0.3097 },
-  { year: 1986, stock: 0.1847, bond: 0.2453 },
-  { year: 1987, stock: 0.0525, bond: -0.0496 },
-  { year: 1988, stock: 0.1681, bond: 0.0822 },
-  { year: 1989, stock: 0.3149, bond: 0.1769 },
-  { year: 1990, stock: -0.0317, bond: 0.0688 },
-  { year: 1991, stock: 0.3055, bond: 0.1500 },
-  { year: 1992, stock: 0.0762, bond: 0.0936 },
-  { year: 1993, stock: 0.0999, bond: 0.1421 },
-  { year: 1994, stock: 0.0132, bond: -0.0804 },
-  { year: 1995, stock: 0.3743, bond: 0.2348 },
-  { year: 1996, stock: 0.2296, bond: 0.0143 },
-  { year: 1997, stock: 0.3336, bond: 0.0994 },
-  { year: 1998, stock: 0.2858, bond: 0.1492 },
-  { year: 1999, stock: 0.2104, bond: -0.0825 },
-  { year: 2000, stock: -0.0910, bond: 0.1666 },
-  { year: 2001, stock: -0.1189, bond: 0.0543 },
-  { year: 2002, stock: -0.2210, bond: 0.1512 },
-  { year: 2003, stock: 0.2868, bond: 0.0038 },
-  { year: 2004, stock: 0.1088, bond: 0.0449 },
-  { year: 2005, stock: 0.0491, bond: 0.0287 },
-  { year: 2006, stock: 0.1579, bond: 0.0194 },
-  { year: 2007, stock: 0.0549, bond: 0.1021 },
-  { year: 2008, stock: -0.3700, bond: 0.2010 },
-  { year: 2009, stock: 0.2646, bond: -0.1112 },
-  { year: 2010, stock: 0.1506, bond: 0.0846 },
-  { year: 2011, stock: 0.0211, bond: 0.1604 },
-  { year: 2012, stock: 0.1600, bond: 0.0297 },
-  { year: 2013, stock: 0.3239, bond: -0.0750 },
-  { year: 2014, stock: 0.1369, bond: 0.1075 },
-  { year: 2015, stock: 0.0138, bond: 0.0128 },
-  { year: 2016, stock: 0.1196, bond: 0.0104 },
-  { year: 2017, stock: 0.2183, bond: 0.0265 },
-  { year: 2018, stock: -0.0438, bond: -0.0002 },
-  { year: 2019, stock: 0.3149, bond: 0.0964 },
-  { year: 2020, stock: 0.1840, bond: 0.0800 },
-  { year: 2021, stock: 0.2871, bond: -0.0147 },
-  { year: 2022, stock: -0.1811, bond: -0.1783 }, // Unprecedented joint equities and bonds drop (inflation shock)
-  { year: 2023, stock: 0.2629, bond: 0.0388 },
-  { year: 2024, stock: 0.2400, bond: 0.0250 },
-  { year: 2025, stock: 0.1000, bond: 0.0300 },
+  { year: 1970, stock: 0.0401, bond: 0.1675, inflation: 0.0584 },
+  { year: 1971, stock: 0.1431, bond: 0.0911, inflation: 0.0429 },
+  { year: 1972, stock: 0.1898, bond: 0.0210, inflation: 0.0327 },
+  { year: 1973, stock: -0.1466, bond: 0.0366, inflation: 0.0618 },
+  { year: 1974, stock: -0.2647, bond: 0.0435, inflation: 0.1105 },
+  { year: 1975, stock: 0.3720, bond: 0.0783, inflation: 0.0914 },
+  { year: 1976, stock: 0.2384, bond: 0.1287, inflation: 0.0576 },
+  { year: 1977, stock: -0.0718, bond: 0.0129, inflation: 0.0650 },
+  { year: 1978, stock: 0.0656, bond: -0.0118, inflation: 0.0763 },
+  { year: 1979, stock: 0.1844, bond: 0.0067, inflation: 0.1125 },
+  { year: 1980, stock: 0.3242, bond: -0.0299, inflation: 0.1355 },
+  { year: 1981, stock: -0.0491, bond: 0.0820, inflation: 0.1035 },
+  { year: 1982, stock: 0.2141, bond: 0.2909, inflation: 0.0616 },
+  { year: 1983, stock: 0.2251, bond: 0.0074, inflation: 0.0321 },
+  { year: 1984, stock: 0.0627, bond: 0.1548, inflation: 0.0436 },
+  { year: 1985, stock: 0.3216, bond: 0.3097, inflation: 0.0355 },
+  { year: 1986, stock: 0.1847, bond: 0.2453, inflation: 0.0186 },
+  { year: 1987, stock: 0.0525, bond: -0.0496, inflation: 0.0366 },
+  { year: 1988, stock: 0.1681, bond: 0.0822, inflation: 0.0408 },
+  { year: 1989, stock: 0.3149, bond: 0.1769, inflation: 0.0483 },
+  { year: 1990, stock: -0.0317, bond: 0.0688, inflation: 0.0540 },
+  { year: 1991, stock: 0.3055, bond: 0.1500, inflation: 0.0423 },
+  { year: 1992, stock: 0.0762, bond: 0.0936, inflation: 0.0303 },
+  { year: 1993, stock: 0.0999, bond: 0.1421, inflation: 0.0295 },
+  { year: 1994, stock: 0.0132, bond: -0.0804, inflation: 0.0261 },
+  { year: 1995, stock: 0.3743, bond: 0.2348, inflation: 0.0281 },
+  { year: 1996, stock: 0.2296, bond: 0.0143, inflation: 0.0293 },
+  { year: 1997, stock: 0.3336, bond: 0.0994, inflation: 0.0234 },
+  { year: 1998, stock: 0.2858, bond: 0.1492, inflation: 0.0155 },
+  { year: 1999, stock: 0.2104, bond: -0.0825, inflation: 0.0219 },
+  { year: 2000, stock: -0.0910, bond: 0.1666, inflation: 0.0338 },
+  { year: 2001, stock: -0.1189, bond: 0.0543, inflation: 0.0283 },
+  { year: 2002, stock: -0.2210, bond: 0.1512, inflation: 0.0159 },
+  { year: 2003, stock: 0.2868, bond: 0.0038, inflation: 0.0227 },
+  { year: 2004, stock: 0.1088, bond: 0.0449, inflation: 0.0268 },
+  { year: 2005, stock: 0.0491, bond: 0.0287, inflation: 0.0339 },
+  { year: 2006, stock: 0.1579, bond: 0.0194, inflation: 0.0323 },
+  { year: 2007, stock: 0.0549, bond: 0.1021, inflation: 0.0285 },
+  { year: 2008, stock: -0.3700, bond: 0.2010, inflation: 0.0384 },
+  { year: 2009, stock: 0.2646, bond: -0.1112, inflation: -0.0036 },
+  { year: 2010, stock: 0.1506, bond: 0.0846, inflation: 0.0164 },
+  { year: 2011, stock: 0.0211, bond: 0.1604, inflation: 0.0316 },
+  { year: 2012, stock: 0.1600, bond: 0.0297, inflation: 0.0207 },
+  { year: 2013, stock: 0.3239, bond: -0.0750, inflation: 0.0146 },
+  { year: 2014, stock: 0.1369, bond: 0.1075, inflation: 0.0162 },
+  { year: 2015, stock: 0.0138, bond: 0.0128, inflation: 0.0012 },
+  { year: 2016, stock: 0.1196, bond: 0.0104, inflation: 0.0126 },
+  { year: 2017, stock: 0.2183, bond: 0.0265, inflation: 0.0213 },
+  { year: 2018, stock: -0.0438, bond: -0.0002, inflation: 0.0244 },
+  { year: 2019, stock: 0.3149, bond: 0.0964, inflation: 0.0181 },
+  { year: 2020, stock: 0.1840, bond: 0.0800, inflation: 0.0123 },
+  { year: 2021, stock: 0.2871, bond: -0.0147, inflation: 0.0470 },
+  { year: 2022, stock: -0.1811, bond: -0.1783, inflation: 0.0800 },
+  { year: 2023, stock: 0.2629, bond: 0.0388, inflation: 0.0412 },
+  { year: 2024, stock: 0.2400, bond: 0.0250, inflation: 0.0295 },
+  { year: 2025, stock: 0.1000, bond: 0.0300, inflation: 0.0271 },
 ];
 
 /**
@@ -103,26 +104,46 @@ export function generateSyntheticSequence(
 ): Omit<LockedReturnSequence, 'id'> {
   const equityReturns: number[] = [];
   const fixedIncomeReturns: number[] = [];
+  const inflationRates: number[] = [];
+  
+  const df = 5; // Degrees of freedom for Student-t distribution to capture fat tails
   
   for (let i = 0; i < 35; i++) {
     const z1 = nextGaussian(rand);
     const z2 = nextGaussian(rand);
     
-    // Bivariate correlated transform
+    // Bivariate correlated standard normal transform
     const x1 = z1;
     const x2 = correlation * z1 + Math.sqrt(1 - correlation * correlation) * z2;
     
-    const equityReturn = equityMean + equityVol * x1;
-    const bondReturn = bondMean + bondVol * x2;
+    // Generate Chi-squared scaling factor for Student-t
+    let v = 0;
+    for (let j = 0; j < df; j++) {
+      const zi = nextGaussian(rand);
+      v += zi * zi;
+    }
+    const tScale = Math.sqrt((df - 2) / v);
+    
+    // Convert normal shocks to Student-t (fat-tailed) shocks
+    const t1 = x1 * tScale;
+    const t2 = x2 * tScale;
+    
+    const equityReturn = equityMean + equityVol * t1;
+    const bondReturn = bondMean + bondVol * t2;
     
     equityReturns.push(equityReturn);
     fixedIncomeReturns.push(bondReturn);
+    
+    // Fall back to sampling historical inflation for the current year
+    const histIdx = Math.floor(rand() * HISTORICAL_RETURNS.length);
+    inflationRates.push(HISTORICAL_RETURNS[histIdx].inflation);
   }
   
   return {
     mode: 'monte-carlo',
     equityReturns,
     fixedIncomeReturns,
+    inflationRates,
   };
 }
 
@@ -137,19 +158,22 @@ export function generateHistoricalSequence(
 ): Omit<LockedReturnSequence, 'id'> {
   const equityReturns: number[] = [];
   const fixedIncomeReturns: number[] = [];
+  const inflationRates: number[] = [];
   
   if (blockSampling) {
     // Select a continuous 35-year historical segment.
-    // If it reaches the end (2025), wrap around to 1970.
+    // Restrict starting index to [0, count - 35] so every block is fully contiguous without wrapping.
     const count = HISTORICAL_RETURNS.length;
+    const maxStartIdx = Math.max(0, count - 35);
     let idx = startYearIndex !== undefined 
-      ? startYearIndex 
-      : Math.floor(rand() * count);
+      ? Math.min(startYearIndex, maxStartIdx) 
+      : Math.floor(rand() * (maxStartIdx + 1));
       
     for (let i = 0; i < 35; i++) {
-      const yearData = HISTORICAL_RETURNS[idx % count];
+      const yearData = HISTORICAL_RETURNS[idx];
       equityReturns.push(yearData.stock);
       fixedIncomeReturns.push(yearData.bond);
+      inflationRates.push(yearData.inflation);
       idx++;
     }
   } else {
@@ -159,6 +183,7 @@ export function generateHistoricalSequence(
       const yearData = HISTORICAL_RETURNS[idx];
       equityReturns.push(yearData.stock);
       fixedIncomeReturns.push(yearData.bond);
+      inflationRates.push(yearData.inflation);
     }
   }
   
@@ -166,6 +191,7 @@ export function generateHistoricalSequence(
     mode: 'historical',
     equityReturns,
     fixedIncomeReturns,
+    inflationRates,
   };
 }
 
@@ -175,6 +201,7 @@ export interface MonteCarloTrialResult {
   endingEstate: number;
   portfolioHistory: number[]; // Length 35, portfolio value each year
   sequence: LockedReturnSequence;
+  timeToRuin: number | null; // Year of first ruin, or null if survived
 }
 
 export interface MonteCarloSummary {
@@ -193,6 +220,7 @@ export interface MonteCarloSummary {
     median: LockedReturnSequence; // Trial near 50th percentile
     best: LockedReturnSequence;   // Trial near 90th percentile
   };
+  medianSurvivalYears: number | null; // Median years of survival for failed trials
 }
 
 /**
@@ -230,16 +258,21 @@ export function runMonteCarloSimulation(
       seqData = generateSyntheticSequence(equityMean, equityVol, bondMean, bondVol, correlation, rand);
     }
     
+    const randomPart = Math.floor(rand() * 100000).toString(36);
     const sequence: LockedReturnSequence = {
       ...seqData,
-      id: `trial_${t}_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`,
+      id: `trial_${t}_${seed !== null && seed !== undefined ? seed : 'unseeded'}_${randomPart}`,
     };
     
     // Run the retirement simulation with this specific trial return sequence
     const ledger = runRetirementSimulation(inputs, simulateSurvivor, sequence);
     const portfolioHistory = ledger.map(r => r.totalPortfolioValue);
     const endingEstate = portfolioHistory[portfolioHistory.length - 1] || 0;
-    const success = endingEstate > 0;
+    
+    // Path-wise ruin check: successful only if ending estate is positive and was never ruined (balance <= 0.01) at any year
+    const firstRuinIndex = portfolioHistory.findIndex(v => v <= 0.01);
+    const success = firstRuinIndex === -1 && endingEstate > 0.01;
+    const timeToRuin = firstRuinIndex !== -1 ? 2026 + firstRuinIndex : null;
     
     results.push({
       trialIndex: t,
@@ -247,12 +280,28 @@ export function runMonteCarloSimulation(
       endingEstate,
       portfolioHistory,
       sequence,
+      timeToRuin,
     });
   }
   
   // Calculate success rate
   const successCount = results.filter(r => r.success).length;
   const successRate = successCount / trials;
+  
+  // Calculate median years of survival for failed trials
+  const failedTrials = results.filter(r => !r.success);
+  let medianSurvivalYears: number | null = null;
+  if (failedTrials.length > 0) {
+    const survivalYears = failedTrials.map(r => {
+      const idx = r.portfolioHistory.findIndex(v => v <= 0.01);
+      return idx !== -1 ? idx : 35;
+    });
+    survivalYears.sort((a, b) => a - b);
+    const mid = Math.floor(survivalYears.length / 2);
+    medianSurvivalYears = survivalYears.length % 2 !== 0 
+      ? survivalYears[mid] 
+      : (survivalYears[mid - 1] + survivalYears[mid]) / 2;
+  }
   
   // Sort trials by ending estate value to calculate percentiles and extract representative sequences
   const sortedTrials = [...results].sort((a, b) => a.endingEstate - b.endingEstate);
@@ -293,5 +342,39 @@ export function runMonteCarloSimulation(
       median: medianTrial.sequence,
       best: bestTrial.sequence,
     },
+    medianSurvivalYears,
+  };
+}
+
+export interface HistoricalStats {
+  equityMean: number;
+  equityVol: number;
+  bondMean: number;
+  bondVol: number;
+  correlation: number;
+  inflationMean: number;
+  inflationVol: number;
+}
+
+export function computeHistoricalStats(data: HistoricalYear[] = HISTORICAL_RETURNS): HistoricalStats {
+  const n = data.length;
+  const stockMean = data.reduce((s, y) => s + y.stock, 0) / n;
+  const bondMean = data.reduce((s, y) => s + y.bond, 0) / n;
+  const inflationMean = data.reduce((s, y) => s + y.inflation, 0) / n;
+  
+  const stockVar = data.reduce((s, y) => s + (y.stock - stockMean) ** 2, 0) / (n - 1);
+  const bondVar = data.reduce((s, y) => s + (y.bond - bondMean) ** 2, 0) / (n - 1);
+  const inflationVar = data.reduce((s, y) => s + (y.inflation - inflationMean) ** 2, 0) / (n - 1);
+  
+  const covStockBond = data.reduce((s, y) => s + (y.stock - stockMean) * (y.bond - bondMean), 0) / (n - 1);
+  
+  return {
+    equityMean: stockMean,
+    equityVol: Math.sqrt(stockVar),
+    bondMean: bondMean,
+    bondVol: Math.sqrt(bondVar),
+    correlation: covStockBond / Math.sqrt(stockVar * bondVar),
+    inflationMean: inflationMean,
+    inflationVol: Math.sqrt(inflationVar),
   };
 }

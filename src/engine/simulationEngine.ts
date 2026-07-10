@@ -286,12 +286,24 @@ export function runRetirementSimulation(
   // Check if a stochastic sequence of returns is active
   const activeSeq = activeSequence;
 
+  let cpiFactor = 1.0;
+
   // Let's run year-by-year from 2026 to 2060
   for (let year = 2026; year <= 2060; year++) {
     const yearsElapsed = year - 2026;
     
-    // Inflation factors
-    const cpiFactor = Math.pow(1 + inputs.growthAssumptions.cpiInflationRate, yearsElapsed);
+    // Accumulate inflation index (CPI) dynamically based on co-sampled rates if available
+    if (yearsElapsed > 0) {
+      let annualInflation = inputs.growthAssumptions.cpiInflationRate;
+      if (activeSeq && activeSeq.inflationRates) {
+        const prevYearElapsed = yearsElapsed - 1;
+        if (activeSeq.inflationRates[prevYearElapsed] !== undefined) {
+          annualInflation = activeSeq.inflationRates[prevYearElapsed];
+        }
+      }
+      cpiFactor *= (1 + annualInflation);
+    }
+    
     const healthcareFactor = Math.pow(1 + inputs.growthAssumptions.healthcareInflationRate, yearsElapsed);
     
     // Growth rates by account type (Equities vs Fixed Income allocation)

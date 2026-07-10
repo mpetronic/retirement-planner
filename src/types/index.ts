@@ -27,6 +27,7 @@ export interface LockedReturnSequence {
   mode: 'monte-carlo' | 'historical';
   equityReturns: number[]; // Array of 35 rates (2026 to 2060)
   fixedIncomeReturns: number[]; // Array of 35 rates (2026 to 2060)
+  inflationRates?: number[]; // Array of 35 inflation rates (2026 to 2060)
 }
 
 export interface MonteCarloSettings {
