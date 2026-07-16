@@ -1,3 +1,32 @@
+export interface StateHealthcareConfig {
+  pre65MedicalPremium: number | null;
+  pre65MedicalOOP: number | null;
+
+  pre65DentalPremium: number | null;
+  pre65DentalOOP: number | null;
+
+  pre65VisionPremium: number | null;
+  pre65VisionOOP: number | null;
+
+  medicarePartDPremium: number | null;
+  medicarePartDDeductibleCopays: number | null;
+  supplementPremium: number | null;
+  supplementOOP: number | null;
+  post65HearingCare: number | null;
+
+  post65DentalPremium: number | null;
+  post65DentalOOP: number | null;
+
+  post65VisionPremium: number | null;
+  post65VisionOOP: number | null;
+}
+
+export interface HealthcareConfig {
+  medicarePartBPremium: number | null;
+  MD: StateHealthcareConfig;
+  FL: StateHealthcareConfig;
+}
+
 export interface SpouseProfile {
   name?: string; // Customizable display name
   birthDate: string; // YYYY-MM-DD
@@ -6,6 +35,7 @@ export interface SpouseProfile {
   plannedRetirementAge?: number | null; // Planned retirement age (55 to 75)
   activeSalary?: number | null; // Pre-retirement annual active salary
   preMedicareMonthlyPremium?: number | null; // Pre-Medicare monthly premium (e.g. $800)
+  healthcare?: HealthcareConfig;
 }
 
 export interface PortfolioBalances {
@@ -13,10 +43,12 @@ export interface PortfolioBalances {
   yourRothIRA: number | null;
   yourTaxableBrokerage: number | null;
   yourTaxableBasis: number | null;
+  yourCash?: number | null;
   wifePreTaxIRA: number | null;
   wifeRothIRA: number | null;
   wifeTaxableBrokerage: number | null;
   wifeTaxableBasis: number | null;
+  wifeCash?: number | null;
   taxableDividendYield?: number | null;
   taxableNonQualifiedPortion?: number | null;
 }
@@ -75,15 +107,6 @@ export interface DetailedStateExpenses {
   tunnelsToTowers: number;
   stJude: number;
   tithe: number;
-
-  visionInsurance: number;
-  visionOutOfPocket: number;
-  dentalInsurance: number;
-  dentalOutOfPocket: number;
-  healthOutOfPocket: number;
-  medicarePartB: number;
-  medicarePartD: number;
-  otcDrugs: number;
 
   consumables: number;
   clothing: number;
@@ -146,15 +169,6 @@ export interface DetailedExpenseFrequencies {
   stJude: number;
   tithe: number;
 
-  visionInsurance: number;
-  visionOutOfPocket: number;
-  dentalInsurance: number;
-  dentalOutOfPocket: number;
-  healthOutOfPocket: number;
-  medicarePartB: number;
-  medicarePartD: number;
-  otcDrugs: number;
-
   consumables: number;
   clothing: number;
 
@@ -173,7 +187,7 @@ export interface DetailedExpenseFrequencies {
 export interface RecurringExpenseMetadata {
   key: keyof DetailedExpenseFrequencies;
   label: string;
-  category: 'Housing' | 'Transportation' | 'Charities' | 'Health' | 'Living' | 'Insurance' | 'Leisure';
+  category: 'Housing' | 'Transportation' | 'Charities' | 'Living' | 'Insurance' | 'Leisure';
   defaultFrequency: number;
 }
 
@@ -221,16 +235,6 @@ export const RECURRING_EXPENSE_ITEMS: RecurringExpenseMetadata[] = [
   { key: 'stJude', label: 'St. Jude', category: 'Charities', defaultFrequency: 12 },
   { key: 'tithe', label: 'Tithe', category: 'Charities', defaultFrequency: 12 },
 
-  // Health
-  { key: 'visionInsurance', label: 'Vision insurance', category: 'Health', defaultFrequency: 12 },
-  { key: 'visionOutOfPocket', label: 'Vision out-of-pocket', category: 'Health', defaultFrequency: 12 },
-  { key: 'dentalInsurance', label: 'Dental insurance', category: 'Health', defaultFrequency: 12 },
-  { key: 'dentalOutOfPocket', label: 'Dental out-of-pocket', category: 'Health', defaultFrequency: 12 },
-  { key: 'healthOutOfPocket', label: 'Health out-of-pocket', category: 'Health', defaultFrequency: 12 },
-  { key: 'medicarePartB', label: 'Medicare Part B', category: 'Health', defaultFrequency: 12 },
-  { key: 'medicarePartD', label: 'Medicare Part D', category: 'Health', defaultFrequency: 12 },
-  { key: 'otcDrugs', label: 'OTC Drugs', category: 'Health', defaultFrequency: 12 },
-
   // Living
   { key: 'consumables', label: 'Consumables', category: 'Living', defaultFrequency: 12 },
   { key: 'clothing', label: 'Clothing', category: 'Living', defaultFrequency: 12 },
@@ -267,8 +271,6 @@ export const DEFAULT_DETAILED_EXPENSES: DetailedStateExpenses = {
   autoGas: 0, autoOilChanges: 0, autoTires: 0, autoMaintenance: 0, autoInsurance: 0,
   golfCartGas: 0, golfCartOilChanges: 0, golfCartTires: 0, golfCartMaintenance: 0, golfCartInsurance: 0,
   woundedWarrior: 0, tunnelsToTowers: 0, stJude: 0, tithe: 0,
-  visionInsurance: 0, visionOutOfPocket: 0, dentalInsurance: 0, dentalOutOfPocket: 0,
-  healthOutOfPocket: 0, medicarePartB: 0, medicarePartD: 0, otcDrugs: 0,
   consumables: 0, clothing: 0,
   homeInsurance: 0, homeMaintenance: 0, umbrellaInsurance: 0,
   diningOut: 0, amazonPrime: 0, golf: 0, theVillagesNetwork: 0, travel: 0, woodshopMembership: 0,
@@ -283,8 +285,6 @@ export const DEFAULT_EXPENSE_FREQUENCIES: DetailedExpenseFrequencies = {
   autoGas: 12, autoOilChanges: 1, autoTires: 1, autoMaintenance: 1, autoInsurance: 12,
   golfCartGas: 12, golfCartOilChanges: 1, golfCartTires: 1, golfCartMaintenance: 1, golfCartInsurance: 12,
   woundedWarrior: 12, tunnelsToTowers: 12, stJude: 12, tithe: 12,
-  visionInsurance: 12, visionOutOfPocket: 12, dentalInsurance: 12, dentalOutOfPocket: 12,
-  healthOutOfPocket: 12, medicarePartB: 12, medicarePartD: 12, otcDrugs: 12,
   consumables: 12, clothing: 12,
   homeInsurance: 12, homeMaintenance: 12, umbrellaInsurance: 12,
   diningOut: 12, amazonPrime: 1, golf: 12, theVillagesNetwork: 12, travel: 1, woodshopMembership: 1
@@ -373,17 +373,20 @@ export interface SimulationResultRow {
   drawdownTaxable: number;
   drawdownPreTax: number;
   drawdownRoth: number;
+  drawdownCash: number;
   
   // Ending Balances (after growth and drawdowns)
   endYourPreTaxIRA: number;
   endYourRothIRA: number;
   endYourTaxableBrokerage: number;
   endYourTaxableBasis: number;
+  endYourCash: number;
   
   endWifePreTaxIRA: number;
   endWifeRothIRA: number;
   endWifeTaxableBrokerage: number;
   endWifeTaxableBasis: number;
+  endWifeCash: number;
   
   totalPortfolioValue: number;
 }

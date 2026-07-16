@@ -137,8 +137,9 @@ export const LookbackLedgerTable: React.FC<LookbackLedgerTableProps> = ({
               <th className="p-4">Roth Conv. Amt</th>
               <th className="p-4">Roth Conv. Tax</th>
               <th className="p-4">Total Expenses</th>
-              <th className="p-4">Brokerage (Taxable)</th>
-              <th className="p-4">Tax-Deferred (Pre-Tax)</th>
+              <th className="p-4">Brokerage Assets</th>
+              <th className="p-4">Cash Assets</th>
+              <th className="p-4">Traditional IRA</th>
               <th className="p-4">Roth (Tax-Free)</th>
               <th className="p-4">Total Net Worth</th>
               <th className="p-4">IRMAA Tier (T+2)</th>
@@ -365,6 +366,7 @@ export const LookbackLedgerTable: React.FC<LookbackLedgerTableProps> = ({
                     </div>
                   </td>
                   <td className="p-4 font-mono text-slate-300">{formatCurrency(r.endYourTaxableBrokerage + r.endWifeTaxableBrokerage)}</td>
+                  <td className="p-4 font-mono text-slate-300">{formatCurrency(r.endYourCash + r.endWifeCash)}</td>
                   <td className="p-4 font-mono text-slate-300">{formatCurrency(r.endYourPreTaxIRA + r.endWifePreTaxIRA)}</td>
                   <td className="p-4 font-mono text-emerald-400/90">{formatCurrency(r.endYourRothIRA + r.endWifeRothIRA)}</td>
                   <td className="p-4 font-mono font-bold text-slate-100">{formatCurrency(r.totalPortfolioValue)}</td>

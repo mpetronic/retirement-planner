@@ -178,10 +178,12 @@ describe('runRetirementSimulation', () => {
       yourRothIRA: 100000,
       yourTaxableBrokerage: 200000,
       yourTaxableBasis: 150000,
+      yourCash: 0,
       wifePreTaxIRA: 300000,
       wifeRothIRA: 50000,
       wifeTaxableBrokerage: 100000,
       wifeTaxableBasis: 80000,
+      wifeCash: 0,
     },
     jurisdiction: {
       currentState: 'MD',
@@ -366,18 +368,9 @@ describe('runRetirementSimulation', () => {
     const inputs = getMockInputs();
     inputs.useDetailedExpenses = true;
     inputs.detailedExpenses = {
-      MD: {
-        ...DEFAULT_DETAILED_EXPENSES,
-        visionOutOfPocket: 50, // Monthly recurring health expense => 50 * 12 = 600/yr per person
-      },
-      FL: {
-        ...DEFAULT_DETAILED_EXPENSES,
-        visionOutOfPocket: 50,
-      },
-      frequencies: {
-        ...DEFAULT_EXPENSE_FREQUENCIES,
-        visionOutOfPocket: 12,
-      }
+      MD: { ...DEFAULT_DETAILED_EXPENSES },
+      FL: { ...DEFAULT_DETAILED_EXPENSES },
+      frequencies: { ...DEFAULT_EXPENSE_FREQUENCIES }
     };
 
     // Birth dates:
@@ -392,11 +385,86 @@ describe('runRetirementSimulation', () => {
     inputs.you.plannedRetirementAge = 62;
     inputs.wife.plannedRetirementAge = 60;
 
-    // Pre-Medicare premiums:
-    // John: 400/mo ($4800/yr)
-    // Jane: 300/mo ($3600/yr)
-    inputs.you.preMedicareMonthlyPremium = 400;
-    inputs.wife.preMedicareMonthlyPremium = 300;
+    // Healthcare Config:
+    inputs.you.healthcare = {
+      medicarePartBPremium: 200,
+      MD: {
+        pre65MedicalPremium: 400,
+        pre65MedicalOOP: 1200,
+        pre65DentalPremium: 30,
+        pre65DentalOOP: 90,
+        pre65VisionPremium: 20,
+        pre65VisionOOP: 60,
+
+        medicarePartDPremium: 40,
+        medicarePartDDeductibleCopays: 300,
+        supplementPremium: 150,
+        supplementOOP: 300,
+        post65HearingCare: 500,
+        post65DentalPremium: 20,
+        post65DentalOOP: 60,
+        post65VisionPremium: 10,
+        post65VisionOOP: 40,
+      },
+      FL: {
+        pre65MedicalPremium: 350,
+        pre65MedicalOOP: 1000,
+        pre65DentalPremium: 25,
+        pre65DentalOOP: 75,
+        pre65VisionPremium: 15,
+        pre65VisionOOP: 45,
+
+        medicarePartDPremium: 35,
+        medicarePartDDeductibleCopays: 250,
+        supplementPremium: 130,
+        supplementOOP: 230,
+        post65HearingCare: 400,
+        post65DentalPremium: 15,
+        post65DentalOOP: 50,
+        post65VisionPremium: 10,
+        post65VisionOOP: 30,
+      }
+    };
+
+    inputs.wife.healthcare = {
+      medicarePartBPremium: 200,
+      MD: {
+        pre65MedicalPremium: 300,
+        pre65MedicalOOP: 1000,
+        pre65DentalPremium: 15,
+        pre65DentalOOP: 60,
+        pre65VisionPremium: 15,
+        pre65VisionOOP: 40,
+
+        medicarePartDPremium: 30,
+        medicarePartDDeductibleCopays: 250,
+        supplementPremium: 120,
+        supplementOOP: 230,
+        post65HearingCare: 400,
+        post65DentalPremium: 10,
+        post65DentalOOP: 40,
+        post65VisionPremium: 10,
+        post65VisionOOP: 40,
+      },
+      FL: {
+        pre65MedicalPremium: 280,
+        pre65MedicalOOP: 900,
+        pre65DentalPremium: 15,
+        pre65DentalOOP: 50,
+        pre65VisionPremium: 10,
+        pre65VisionOOP: 30,
+
+        medicarePartDPremium: 28,
+        medicarePartDDeductibleCopays: 200,
+        supplementPremium: 110,
+        supplementOOP: 190,
+        post65HearingCare: 350,
+        post65DentalPremium: 10,
+        post65DentalOOP: 40,
+        post65VisionPremium: 8,
+        post65VisionOOP: 30,
+      }
+    };
 
     const results = runRetirementSimulation(inputs);
 
@@ -405,44 +473,139 @@ describe('runRetirementSimulation', () => {
     //       => both working, so healthcare costs (both pre-Medicare and detailed health) are ignored.
     const row2026 = results.find(r => r.year === 2026);
     expect(row2026!.preMedicareHealthcareCost).toBe(0);
-    // Since baseLivingExpensesAnnual is 0 (as amenityFee, water are 0, only visionOutOfPocket is 50/mo which is ignored),
-    // livingExpenses should be 0.
     expect(row2026!.livingExpenses).toBe(0);
 
     // 2027: John is 62 (retired, under 65), Jane is 59 (working, age < 60)
-    //       => John pays pre-Medicare (400 * 12 = 4800, inflated). Jane is working, so her health expenses are ignored.
+    //       => John pays pre-Medicare premiums: (400 + 50) * 12 = 5400 * hcFactor. Jane is working, so 0.
+    //       => John pays pre-Medicare OOP: (min(1000+500, 1200) + 100 + 50) * hcFactor = 1350 * hcFactor.
     const row2027 = results.find(r => r.year === 2027);
     const hcFactor2027 = Math.pow(1 + inputs.growthAssumptions.healthcareInflationRate, 2027 - 2026);
-    expect(row2027!.preMedicareHealthcareCost).toBeCloseTo(4800 * hcFactor2027, 1);
-    expect(row2027!.livingExpenses).toBe(0);
+    expect(row2027!.preMedicareHealthcareCost).toBeCloseTo(5400 * hcFactor2027, 1);
+    expect(row2027!.livingExpenses).toBeCloseTo(1350 * hcFactor2027, 1);
 
     // 2028: John is 63 (retired, under 65), Jane is 60 (retired, under 65)
     //       => Both are retired & under 65.
-    //       => Pre-Medicare premium = (4800 + 3600) * hcFactor = 8400 * hcFactor
-    //       => Detailed health expenses are still ignored (livingExpenses = 0).
+    //       => John pre-Medicare Premium = 5400 * hcFactor, OOP = 1350 * hcFactor
+    //       => Jane pre-Medicare Premium = (300 + 30) * 12 * hcFactor = 3960 * hcFactor
+    //       => Jane pre-Medicare OOP = (min(800+300, 1000) + 50 + 50) * hcFactor = 1100 * hcFactor
+    //       => Total pre-Medicare Premium = 9360 * hcFactor
+    //       => Total pre-Medicare OOP = 2450 * hcFactor
     const row2028 = results.find(r => r.year === 2028);
     const hcFactor2028 = Math.pow(1 + inputs.growthAssumptions.healthcareInflationRate, 2028 - 2026);
-    expect(row2028!.preMedicareHealthcareCost).toBeCloseTo(8400 * hcFactor2028, 1);
-    expect(row2028!.livingExpenses).toBe(0);
+    expect(row2028!.preMedicareHealthcareCost).toBeCloseTo(9360 * hcFactor2028, 1);
+    expect(row2028!.livingExpenses).toBeCloseTo(2450 * hcFactor2028, 1);
 
     // 2030: John is 65 (on Medicare, retired), Jane is 62 (retired, under 65)
-    //       => John's pre-Medicare is ignored, and he pays detailed health (600/yr).
-    //       => Jane still pays pre-Medicare (3600 * hcFactor).
-    //       => Detailed health expenses should include 1x (John) = 600 * cpiFactor.
+    //       => John's pre-Medicare is ignored, and he pays Medicare premiums and Medicare OOP.
+    //          John Medicare premiums: Part B (200, customized, yearsSinceBase=2030-2030=0) + Part D (40, yearsSinceBase=0)
+    //                                  + Supplement (150 * hcFactor) + Dental/Vision (30 * hcFactor) all * 12
+    //                                  = (200 + 40) * 12 + (150 + 30) * 12 * hcFactor = 2880 + 2160 * hcFactor
+    //          John Medicare OOP: Part D OOP (300) + Supp Deductible (200) + Supp Copays (100) + Hearing (500) + DV Deductible (50) + DV Copays (50) all * hcFactor
+    //                             = 1200 * hcFactor
+    //       => Jane still pays pre-Medicare premium: 3960 * hcFactor, and pre-Medicare OOP: 1100 * hcFactor.
+    //       => Combined pre-Medicare premium: 3960 * hcFactor
+    //       => Combined medicare base premiums: 2880 + 2160 * hcFactor
+    //       => Combined OOP: (1200 + 1100) * hcFactor = 2300 * hcFactor
     const row2030 = results.find(r => r.year === 2030);
     const hcFactor2030 = Math.pow(1 + inputs.growthAssumptions.healthcareInflationRate, 2030 - 2026);
-    const cpiFactor2030 = Math.pow(1 + inputs.growthAssumptions.cpiInflationRate, 2030 - 2026);
-    expect(row2030!.preMedicareHealthcareCost).toBeCloseTo(3600 * hcFactor2030, 1);
-    expect(row2030!.livingExpenses).toBeCloseTo(600 * cpiFactor2030, 1);
+    expect(row2030!.preMedicareHealthcareCost).toBeCloseTo(3960 * hcFactor2030, 1);
+    expect(row2030!.medicareBasePremiums).toBeCloseTo(2880 + 2160 * hcFactor2030, 1);
+    expect(row2030!.livingExpenses).toBeCloseTo(2300 * hcFactor2030, 1);
 
     // 2033: John is 68 (on Medicare, retired), Jane is 65 (on Medicare, retired)
     //       => Both are on Medicare & retired.
     //       => Pre-Medicare premium is 0 for both.
-    //       => Detailed health expenses should include 2x (both) = 1200 * cpiFactor.
+    //       => John Medicare premiums: Part B & D custom base year is 2030 (yearsSinceBase = 2033 - 2030 = 3)
+    //                                  Part B current = 200 * (1.05)^3. Part D current = 40 * (1.05)^3.
+    //                                  John premiums = (200 * 1.05^3 + 40 * 1.05^3) * 12 + 2160 * hcFactor2033
+    //       => Jane Medicare premiums: Part B & D custom base year is 2033 (yearsSinceBase = 2033 - 2033 = 0)
+    //                                  Part B current = 200. Part D current = 30.
+    //                                  Jane premiums = (200 + 30) * 12 + (120 + 20) * 12 * hcFactor2033 = 2760 + 1680 * hcFactor2033
+    //       => Combined base premiums = John premiums + Jane premiums
+    //       => Combined OOP = (John OOP (1200) + Jane OOP (960)) * hcFactor2033 = 2160 * hcFactor2033
     const row2033 = results.find(r => r.year === 2033);
-    const cpiFactor2033 = Math.pow(1 + inputs.growthAssumptions.cpiInflationRate, 2033 - 2026);
+    const hcFactor2033 = Math.pow(1 + inputs.growthAssumptions.healthcareInflationRate, 2033 - 2026);
+    
+    const johnPartBCurrent = 200 * Math.pow(1.05, 3);
+    const johnPartDCurrent = 40 * Math.pow(1.05, 3);
+    const johnPremiums = (johnPartBCurrent + johnPartDCurrent) * 12 + 180 * 12 * hcFactor2033;
+    
+    const janePremiums = (200 + 30) * 12 + 140 * 12 * hcFactor2033;
+    
     expect(row2033!.preMedicareHealthcareCost).toBe(0);
-    expect(row2033!.livingExpenses).toBeCloseTo(1200 * cpiFactor2033, 1);
+    expect(row2033!.medicareBasePremiums).toBeCloseTo(johnPremiums + janePremiums, 1);
+    expect(row2033!.livingExpenses).toBeCloseTo(2160 * hcFactor2033, 1);
+  });
+
+  it('should transition to target state healthcare costs upon relocation', () => {
+    const inputs = getMockInputs();
+    inputs.isSingleFiler = true;
+    inputs.useDetailedExpenses = true;
+    inputs.detailedExpenses = {
+      MD: { ...DEFAULT_DETAILED_EXPENSES },
+      FL: { ...DEFAULT_DETAILED_EXPENSES },
+      frequencies: { ...DEFAULT_EXPENSE_FREQUENCIES }
+    };
+
+    inputs.you.birthDate = '1970-01-01'; // turns 65 in 2035.
+    inputs.you.plannedRetirementAge = 60; // retired from 2030 onwards.
+
+    inputs.you.healthcare = {
+      medicarePartBPremium: null,
+      MD: {
+        pre65MedicalPremium: 500,
+        pre65MedicalOOP: 0,
+        pre65DentalPremium: 0,
+        pre65DentalOOP: 0,
+        pre65VisionPremium: 0,
+        pre65VisionOOP: 0,
+        
+        medicarePartDPremium: null,
+        medicarePartDDeductibleCopays: 0,
+        supplementPremium: 0,
+        supplementOOP: 0,
+        post65HearingCare: 0,
+        post65DentalPremium: 0,
+        post65DentalOOP: 0,
+        post65VisionPremium: 0,
+        post65VisionOOP: 0,
+      },
+      FL: {
+        pre65MedicalPremium: 200,
+        pre65MedicalOOP: 0,
+        pre65DentalPremium: 0,
+        pre65DentalOOP: 0,
+        pre65VisionPremium: 0,
+        pre65VisionOOP: 0,
+        
+        medicarePartDPremium: null,
+        medicarePartDDeductibleCopays: 0,
+        supplementPremium: 0,
+        supplementOOP: 0,
+        post65HearingCare: 0,
+        post65DentalPremium: 0,
+        post65DentalOOP: 0,
+        post65VisionPremium: 0,
+        post65VisionOOP: 0,
+      }
+    };
+
+    // Relocate in 2032 from MD to FL
+    inputs.jurisdiction.currentState = 'MD';
+    inputs.jurisdiction.targetState = 'FL';
+    inputs.jurisdiction.relocationYear = 2032;
+
+    const results = runRetirementSimulation(inputs);
+
+    // In 2031: pre-Medicare premium should be MD rate ($500 * 12 = 6000 * hcFactor)
+    const row2031 = results.find(r => r.year === 2031);
+    const hcFactor2031 = Math.pow(1 + inputs.growthAssumptions.healthcareInflationRate, 2031 - 2026);
+    expect(row2031!.preMedicareHealthcareCost).toBeCloseTo(6000 * hcFactor2031, 1);
+
+    // In 2032 (relocation year): pre-Medicare premium should switch to FL rate ($200 * 12 = 2400 * hcFactor)
+    const row2032 = results.find(r => r.year === 2032);
+    const hcFactor2032 = Math.pow(1 + inputs.growthAssumptions.healthcareInflationRate, 2032 - 2026);
+    expect(row2032!.preMedicareHealthcareCost).toBeCloseTo(2400 * hcFactor2032, 1);
   });
 
   it('should apply 50% step-up in basis in MD and 100% in FL on death, and generate annual dividends', () => {
@@ -488,6 +651,32 @@ describe('runRetirementSimulation', () => {
     // In FL, 100% step-up (both husband's and wife's accounts stepped up to FMV at death).
     // The basis is static during the year, but the balance grows by 5.8% (taxableGrowthRate).
     expect(row2045FL!.endWifeTaxableBasis * 1.058).toBeCloseTo(row2045FL!.endWifeTaxableBrokerage, 1);
+  });
+
+  it('should draw from Cash Assets first and grow remaining cash at the fixed income rate', () => {
+    const inputs = getMockInputs();
+    inputs.isSingleFiler = true;
+    inputs.you.birthDate = '1960-01-01';
+    inputs.you.plannedRetirementAge = 60; // retired
+    inputs.annualLivingExpenses = 100000;
+    
+    // Set starting balances
+    inputs.portfolio.yourCash = 50000;
+    inputs.portfolio.yourTaxableBrokerage = 100000;
+    inputs.portfolio.yourTaxableBasis = 80000;
+    inputs.portfolio.yourPreTaxIRA = 0;
+    inputs.portfolio.yourRothIRA = 0;
+
+    const results = runRetirementSimulation(inputs);
+    const row2026 = results.find(r => r.year === 2026);
+    expect(row2026).toBeDefined();
+
+    // Deficit will exhaust all 50k cash first.
+    expect(row2026!.drawdownCash).toBe(50000);
+    expect(row2026!.endYourCash).toBe(0);
+
+    // Remaining deficit is drawn from Taxable Brokerage.
+    expect(row2026!.drawdownTaxable).toBeGreaterThan(0);
   });
 });
 

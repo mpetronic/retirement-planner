@@ -41,11 +41,13 @@ export const OnboardingWizard: React.FC<OnboardingWizardProps> = ({ onComplete }
   const [yourRoth, setYourRoth] = useState<number | null>(0);
   const [yourTaxable, setYourTaxable] = useState<number | null>(0);
   const [yourBasis, setYourBasis] = useState<number | null>(0);
+  const [yourCash, setYourCash] = useState<number | null>(0);
 
   const [wifePreTax, setWifePreTax] = useState<number | null>(0);
   const [wifeRoth, setWifeRoth] = useState<number | null>(0);
   const [wifeTaxable, setWifeTaxable] = useState<number | null>(0);
   const [wifeBasis, setWifeBasis] = useState<number | null>(0);
+  const [wifeCash, setWifeCash] = useState<number | null>(0);
 
   const [livingExpenses, setLivingExpenses] = useState<number>(120000);
   const [currentState, setCurrentState] = useState<'MD' | 'FL'>('MD');
@@ -101,7 +103,8 @@ export const OnboardingWizard: React.FC<OnboardingWizardProps> = ({ onComplete }
         (yourPreTax !== null && yourPreTax < 0) ||
         (yourRoth !== null && yourRoth < 0) ||
         (yourTaxable !== null && yourTaxable < 0) ||
-        (yourBasis !== null && yourBasis < 0)
+        (yourBasis !== null && yourBasis < 0) ||
+        (yourCash !== null && yourCash < 0)
       ) {
         setError('Please enter valid, non-negative amounts for your starting balances.');
         return;
@@ -111,7 +114,8 @@ export const OnboardingWizard: React.FC<OnboardingWizardProps> = ({ onComplete }
           (wifePreTax !== null && wifePreTax < 0) ||
           (wifeRoth !== null && wifeRoth < 0) ||
           (wifeTaxable !== null && wifeTaxable < 0) ||
-          (wifeBasis !== null && wifeBasis < 0)
+          (wifeBasis !== null && wifeBasis < 0) ||
+          (wifeCash !== null && wifeCash < 0)
         ) {
           setError("Please enter valid, non-negative amounts for your spouse's starting balances.");
           return;
@@ -159,10 +163,12 @@ export const OnboardingWizard: React.FC<OnboardingWizardProps> = ({ onComplete }
         yourRothIRA: yourRoth,
         yourTaxableBrokerage: yourTaxable,
         yourTaxableBasis: yourBasis,
+        yourCash: yourCash,
         wifePreTaxIRA: isSingleFiler ? 0 : wifePreTax,
         wifeRothIRA: isSingleFiler ? 0 : wifeRoth,
         wifeTaxableBrokerage: isSingleFiler ? 0 : wifeTaxable,
         wifeTaxableBasis: isSingleFiler ? 0 : wifeBasis,
+        wifeCash: isSingleFiler ? 0 : wifeCash,
         taxableDividendYield: 0.02,
         taxableNonQualifiedPortion: 0.30,
       },
@@ -547,7 +553,7 @@ export const OnboardingWizard: React.FC<OnboardingWizardProps> = ({ onComplete }
                   
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                     <div className="space-y-1">
-                      <label className="text-[10px] font-bold text-slate-400 block uppercase">Traditional Pre-Tax IRA</label>
+                      <label className="text-[10px] font-bold text-slate-400 block uppercase">Traditional IRA</label>
                       <input
                         type="number"
                         value={yourPreTax === null ? '' : yourPreTax}
@@ -568,7 +574,7 @@ export const OnboardingWizard: React.FC<OnboardingWizardProps> = ({ onComplete }
 
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                     <div className="space-y-1">
-                      <label className="text-[10px] font-bold text-slate-400 block uppercase">Taxable Brokerage Balance</label>
+                      <label className="text-[10px] font-bold text-slate-400 block uppercase">Brokerage Assets</label>
                       <input
                         type="number"
                         value={yourTaxable === null ? '' : yourTaxable}
@@ -577,11 +583,23 @@ export const OnboardingWizard: React.FC<OnboardingWizardProps> = ({ onComplete }
                       />
                     </div>
                     <div className="space-y-1">
-                      <label className="text-[10px] font-bold text-slate-400 block uppercase">Taxable Brokerage Cost Basis</label>
+                      <label className="text-[10px] font-bold text-slate-400 block uppercase">Brokerage Cost Basis</label>
                       <input
                         type="number"
                         value={yourBasis === null ? '' : yourBasis}
                         onChange={(e) => setYourBasis(e.target.value === '' ? null : Number(e.target.value))}
+                        className="w-full bg-slate-950 border border-slate-850 focus:border-emerald-500 rounded-xl px-3 py-1.5 text-xs text-slate-100 font-mono focus:outline-none"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div className="space-y-1">
+                      <label className="text-[10px] font-bold text-slate-400 block uppercase">Cash Assets</label>
+                      <input
+                        type="number"
+                        value={yourCash === null ? '' : yourCash}
+                        onChange={(e) => setYourCash(e.target.value === '' ? null : Number(e.target.value))}
                         className="w-full bg-slate-950 border border-slate-850 focus:border-emerald-500 rounded-xl px-3 py-1.5 text-xs text-slate-100 font-mono focus:outline-none"
                       />
                     </div>
@@ -598,7 +616,7 @@ export const OnboardingWizard: React.FC<OnboardingWizardProps> = ({ onComplete }
                     
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                       <div className="space-y-1">
-                        <label className="text-[10px] font-bold text-slate-400 block uppercase">Traditional Pre-Tax IRA</label>
+                        <label className="text-[10px] font-bold text-slate-400 block uppercase">Traditional IRA</label>
                         <input
                           type="number"
                           value={wifePreTax === null ? '' : wifePreTax}
@@ -619,7 +637,7 @@ export const OnboardingWizard: React.FC<OnboardingWizardProps> = ({ onComplete }
 
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                       <div className="space-y-1">
-                        <label className="text-[10px] font-bold text-slate-400 block uppercase">Taxable Brokerage Balance</label>
+                        <label className="text-[10px] font-bold text-slate-400 block uppercase">Brokerage Assets</label>
                         <input
                           type="number"
                           value={wifeTaxable === null ? '' : wifeTaxable}
@@ -628,11 +646,23 @@ export const OnboardingWizard: React.FC<OnboardingWizardProps> = ({ onComplete }
                         />
                       </div>
                       <div className="space-y-1">
-                        <label className="text-[10px] font-bold text-slate-400 block uppercase">Taxable Brokerage Cost Basis</label>
+                        <label className="text-[10px] font-bold text-slate-400 block uppercase">Brokerage Cost Basis</label>
                         <input
                           type="number"
                           value={wifeBasis === null ? '' : wifeBasis}
                           onChange={(e) => setWifeBasis(e.target.value === '' ? null : Number(e.target.value))}
+                          className="w-full bg-slate-950 border border-slate-850 focus:border-emerald-500 rounded-xl px-3 py-1.5 text-xs text-slate-100 font-mono focus:outline-none"
+                        />
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      <div className="space-y-1">
+                        <label className="text-[10px] font-bold text-slate-400 block uppercase">Cash Assets</label>
+                        <input
+                          type="number"
+                          value={wifeCash === null ? '' : wifeCash}
+                          onChange={(e) => setWifeCash(e.target.value === '' ? null : Number(e.target.value))}
                           className="w-full bg-slate-950 border border-slate-850 focus:border-emerald-500 rounded-xl px-3 py-1.5 text-xs text-slate-100 font-mono focus:outline-none"
                         />
                       </div>

@@ -268,11 +268,13 @@ export function runRetirementSimulation(
   let yourRoth = inputs.portfolio.yourRothIRA || 0;
   let yourTaxable = inputs.portfolio.yourTaxableBrokerage || 0;
   let yourBasis = inputs.portfolio.yourTaxableBasis || 0;
+  let yourCash = inputs.portfolio.yourCash || 0;
   
   let wifePreTax = inputs.isSingleFiler ? 0 : (inputs.portfolio.wifePreTaxIRA || 0);
   let wifeRoth = inputs.isSingleFiler ? 0 : (inputs.portfolio.wifeRothIRA || 0);
   let wifeTaxable = inputs.isSingleFiler ? 0 : (inputs.portfolio.wifeTaxableBrokerage || 0);
   let wifeBasis = inputs.isSingleFiler ? 0 : (inputs.portfolio.wifeTaxableBasis || 0);
+  let wifeCash = inputs.isSingleFiler ? 0 : (inputs.portfolio.wifeCash || 0);
   
   const taxableDividendYield = inputs.portfolio.taxableDividendYield !== undefined && inputs.portfolio.taxableDividendYield !== null ? inputs.portfolio.taxableDividendYield : 0.02;
   const taxableNonQualifiedPortion = inputs.portfolio.taxableNonQualifiedPortion !== undefined && inputs.portfolio.taxableNonQualifiedPortion !== null ? inputs.portfolio.taxableNonQualifiedPortion : 0.30;
@@ -367,64 +369,161 @@ export function runRetirementSimulation(
       : inputs.jurisdiction.currentState;
 
     let baseLivingExpensesAnnual = inputs.annualLivingExpenses ?? 120000;
-    let baseHealthExpensesPerPerson = 0;
     if (inputs.useDetailedExpenses && inputs.detailedExpenses) {
       let detailedSum = 0;
-      let healthSum = 0;
       const stateExpenses = inputs.detailedExpenses[activeState];
       const freqs = inputs.detailedExpenses.frequencies;
       if (stateExpenses && freqs) {
         for (const item of RECURRING_EXPENSE_ITEMS) {
           const cost = stateExpenses[item.key] ?? 0;
           const freq = freqs[item.key] ?? item.defaultFrequency;
-          if (item.category === 'Health') {
-            healthSum += cost * freq;
-          } else {
-            detailedSum += cost * freq;
-          }
+          detailedSum += cost * freq;
         }
       }
       baseLivingExpensesAnnual = detailedSum;
-      baseHealthExpensesPerPerson = healthSum;
     }
 
-    // Determine healthcare costs and status for You
     const isYouWorking = yourAge < youRetireAge && !youDeceased;
-    let yourPreMedicareAnnual = 0;
-    let yourDetailedHealthAnnual = 0;
-
-    if (!youDeceased) {
-      if (!isYouWorking) {
-        if (yourAge < 65) {
-          const yourPreMedicareMonthly = inputs.you.preMedicareMonthlyPremium ?? 0;
-          yourPreMedicareAnnual = yourPreMedicareMonthly * 12 * healthcareFactor;
-        } else {
-          yourDetailedHealthAnnual = baseHealthExpensesPerPerson;
-        }
-      }
-    }
-
-    // Determine healthcare costs and status for Wife
     const isWifeWorking = !inputs.isSingleFiler && wifeAge < wifeRetireAge;
-    let wifePreMedicareAnnual = 0;
-    let wifeDetailedHealthAnnual = 0;
 
-    if (!inputs.isSingleFiler) {
-      if (!isWifeWorking) {
-        if (wifeAge < 65) {
-          const wifePreMedicareMonthly = inputs.wife.preMedicareMonthlyPremium ?? 0;
-          wifePreMedicareAnnual = wifePreMedicareMonthly * 12 * healthcareFactor;
-        } else {
-          wifeDetailedHealthAnnual = baseHealthExpensesPerPerson;
+    // Define healthcare cost variables
+    let yourPreMedicareAnnual = 0;
+    let yourPreMedicareOOP = 0;
+    let yourMedicarePremiums = 0;
+    let yourMedicareOOP = 0;
+
+    let wifePreMedicareAnnual = 0;
+    let wifePreMedicareOOP = 0;
+    let wifeMedicarePremiums = 0;
+    let wifeMedicareOOP = 0;
+
+    const healthcareInflationRate = inputs.growthAssumptions.healthcareInflationRate;
+
+    // You Healthcare calculations
+    if (!youDeceased) {
+      if (yourAge < 65) {
+        if (!isYouWorking) {
+          if (inputs.you.healthcare) {
+            const stateHc = inputs.you.healthcare[activeState];
+            const medicalPrem = (stateHc?.pre65MedicalPremium ?? 0) * 12 * healthcareFactor;
+            const medicalOOP = (stateHc?.pre65MedicalOOP ?? 0) * healthcareFactor;
+            
+            const dentalPrem = (stateHc?.pre65DentalPremium ?? 0) * 12 * healthcareFactor;
+            const dentalOOP = (stateHc?.pre65DentalOOP ?? 0) * healthcareFactor;
+            
+            const visionPrem = (stateHc?.pre65VisionPremium ?? 0) * 12 * healthcareFactor;
+            const visionOOP = (stateHc?.pre65VisionOOP ?? 0) * healthcareFactor;
+
+            yourPreMedicareAnnual = medicalPrem + dentalPrem + visionPrem;
+            yourPreMedicareOOP = medicalOOP + dentalOOP + visionOOP;
+          } else {
+            yourPreMedicareAnnual = (inputs.you.preMedicareMonthlyPremium ?? 0) * 12 * healthcareFactor;
+            yourPreMedicareOOP = 0;
+          }
+        }
+      } else {
+        // Age 65+ (Medicare)
+        if (!isYouWorking) {
+          if (inputs.you.healthcare) {
+            const stateHc = inputs.you.healthcare[activeState];
+            const age65Year = yourBirthYear + 65;
+            const yearsSinceBase = Math.max(0, year - Math.max(2026, age65Year));
+            
+            const customB = inputs.you.healthcare.medicarePartBPremium;
+            const partB_current = (customB !== null && customB !== undefined)
+              ? customB * Math.pow(1 + healthcareInflationRate, yearsSinceBase)
+              : BASE_MEDICARE_PART_B * healthcareFactor;
+
+            const customD = stateHc?.medicarePartDPremium;
+            const partD_current = (customD !== null && customD !== undefined)
+              ? customD * Math.pow(1 + healthcareInflationRate, yearsSinceBase)
+              : BASE_MEDICARE_PART_D * healthcareFactor;
+
+            const suppPrem = (stateHc?.supplementPremium ?? 0) * 12 * healthcareFactor;
+            const dentalPrem = (stateHc?.post65DentalPremium ?? 0) * 12 * healthcareFactor;
+            const visionPrem = (stateHc?.post65VisionPremium ?? 0) * 12 * healthcareFactor;
+
+            yourMedicarePremiums = (partB_current + partD_current) * 12 + suppPrem + dentalPrem + visionPrem;
+
+            yourMedicareOOP = (
+              (stateHc?.medicarePartDDeductibleCopays ?? 0) +
+              (stateHc?.supplementOOP ?? 0) +
+              (stateHc?.post65HearingCare ?? 0) +
+              (stateHc?.post65DentalOOP ?? 0) +
+              (stateHc?.post65VisionOOP ?? 0)
+            ) * healthcareFactor;
+          } else {
+            // Default Part B and Part D premiums
+            yourMedicarePremiums = (BASE_MEDICARE_PART_B + BASE_MEDICARE_PART_D) * 12 * healthcareFactor;
+            yourMedicareOOP = 0;
+          }
         }
       }
     }
 
-    // Dynamic detailed health expenses (sum of both spouses' active detailed costs)
-    let activeDetailedHealthAnnual = 0;
-    if (inputs.useDetailedExpenses && inputs.detailedExpenses) {
-      activeDetailedHealthAnnual = yourDetailedHealthAnnual + wifeDetailedHealthAnnual;
+    // Wife Healthcare calculations
+    if (!inputs.isSingleFiler) {
+      if (wifeAge < 65) {
+        if (!isWifeWorking) {
+          if (inputs.wife.healthcare) {
+            const stateHc = inputs.wife.healthcare[activeState];
+            const medicalPrem = (stateHc?.pre65MedicalPremium ?? 0) * 12 * healthcareFactor;
+            const medicalOOP = (stateHc?.pre65MedicalOOP ?? 0) * healthcareFactor;
+            
+            const dentalPrem = (stateHc?.pre65DentalPremium ?? 0) * 12 * healthcareFactor;
+            const dentalOOP = (stateHc?.pre65DentalOOP ?? 0) * healthcareFactor;
+            
+            const visionPrem = (stateHc?.pre65VisionPremium ?? 0) * 12 * healthcareFactor;
+            const visionOOP = (stateHc?.pre65VisionOOP ?? 0) * healthcareFactor;
+
+            wifePreMedicareAnnual = medicalPrem + dentalPrem + visionPrem;
+            wifePreMedicareOOP = medicalOOP + dentalOOP + visionOOP;
+          } else {
+            wifePreMedicareAnnual = (inputs.wife.preMedicareMonthlyPremium ?? 0) * 12 * healthcareFactor;
+            wifePreMedicareOOP = 0;
+          }
+        }
+      } else {
+        // Age 65+ (Medicare)
+        if (!isWifeWorking) {
+          if (inputs.wife.healthcare) {
+            const stateHc = inputs.wife.healthcare[activeState];
+            const age65Year = wifeBirthYear + 65;
+            const yearsSinceBase = Math.max(0, year - Math.max(2026, age65Year));
+
+            const customB = inputs.wife.healthcare.medicarePartBPremium;
+            const partB_current = (customB !== null && customB !== undefined)
+              ? customB * Math.pow(1 + healthcareInflationRate, yearsSinceBase)
+              : BASE_MEDICARE_PART_B * healthcareFactor;
+
+            const customD = stateHc?.medicarePartDPremium;
+            const partD_current = (customD !== null && customD !== undefined)
+              ? customD * Math.pow(1 + healthcareInflationRate, yearsSinceBase)
+              : BASE_MEDICARE_PART_D * healthcareFactor;
+
+            const suppPrem = (stateHc?.supplementPremium ?? 0) * 12 * healthcareFactor;
+            const dentalPrem = (stateHc?.post65DentalPremium ?? 0) * 12 * healthcareFactor;
+            const visionPrem = (stateHc?.post65VisionPremium ?? 0) * 12 * healthcareFactor;
+
+            wifeMedicarePremiums = (partB_current + partD_current) * 12 + suppPrem + dentalPrem + visionPrem;
+
+            wifeMedicareOOP = (
+              (stateHc?.medicarePartDDeductibleCopays ?? 0) +
+              (stateHc?.supplementOOP ?? 0) +
+              (stateHc?.post65HearingCare ?? 0) +
+              (stateHc?.post65DentalOOP ?? 0) +
+              (stateHc?.post65VisionOOP ?? 0)
+            ) * healthcareFactor;
+          } else {
+            // Default Part B and Part D premiums
+            wifeMedicarePremiums = (BASE_MEDICARE_PART_B + BASE_MEDICARE_PART_D) * 12 * healthcareFactor;
+            wifeMedicareOOP = 0;
+          }
+        }
+      }
     }
+
+    const totalHealthcareOOP = yourPreMedicareOOP + yourMedicareOOP + wifePreMedicareOOP + wifeMedicareOOP;
 
     let oneTimeCosts = 0;
     if (inputs.useDetailedExpenses && inputs.detailedExpenses) {
@@ -448,7 +547,7 @@ export function runRetirementSimulation(
       }
     }
 
-    const livingExpenses = baseLivingExpensesAnnual * cpiFactor + activeDetailedHealthAnnual * cpiFactor + oneTimeCosts * cpiFactor;
+    const livingExpenses = baseLivingExpensesAnnual * cpiFactor + totalHealthcareOOP + oneTimeCosts * cpiFactor;
     
     // If You are deceased, Your traditional Pre-Tax IRA is inherited by Wife and merged into her Pre-Tax IRA.
     // Let's do this merge at the start of the death year 2045.
@@ -472,6 +571,9 @@ export function runRetirementSimulation(
       wifeTaxable += yourTaxable;
       yourTaxable = 0;
       yourBasis = 0;
+
+      wifeCash += yourCash;
+      yourCash = 0;
     }
     
     // 1. Social Security calculations
@@ -673,38 +775,26 @@ export function runRetirementSimulation(
       if (magiTwoYearsAgo > prevLimit) {
         surchargeTier = irmaaTiers[i].tierNumber;
         // Inflate surcharges by healthcare inflation
-        yourPartBSurcharge = irmaaTiers[i].partBSurcharge * healthcareFactor;
-        yourPartDSurcharge = irmaaTiers[i].partDSurcharge * healthcareFactor;
+        const basePartBSurcharge = irmaaTiers[i].partBSurcharge * healthcareFactor;
+        const basePartDSurcharge = irmaaTiers[i].partDSurcharge * healthcareFactor;
+        
+        if (!youDeceased && yourAge >= 65 && !isYouWorking) {
+          yourPartBSurcharge = basePartBSurcharge;
+          yourPartDSurcharge = basePartDSurcharge;
+        }
+        if (!inputs.isSingleFiler && wifeAge >= 65 && !isWifeWorking) {
+          wifePartBSurcharge = basePartBSurcharge;
+          wifePartDSurcharge = basePartDSurcharge;
+        }
         break;
       }
-    }
-    
-    // Wife's Medicare transition: age 65 (attained in 2029)
-    const isWifeOnMedicare = wifeAge >= 65;
-    if (isWifeOnMedicare) {
-      wifePartBSurcharge = yourPartBSurcharge;
-      wifePartDSurcharge = yourPartDSurcharge;
-    }
-    
-    if (youDeceased) {
-      // You are deceased, no surcharge for You
-      yourPartBSurcharge = 0;
-      yourPartDSurcharge = 0;
     }
     
     const combinedSurchargeMonthly = yourPartBSurcharge + yourPartDSurcharge + wifePartBSurcharge + wifePartDSurcharge;
     const combinedSurchargeAnnual = combinedSurchargeMonthly * 12;
     
-    // Medicare base premiums (Base Part B + Part D)
-    let medicareBasePremiums = 0;
-    // Primary user is always on Medicare in our 2026-2060 timeline (unless deceased)
-    if (!youDeceased) {
-      medicareBasePremiums += (BASE_MEDICARE_PART_B + BASE_MEDICARE_PART_D) * 12 * healthcareFactor;
-    }
-    // Wife is on Medicare from 2029 onwards
-    if (isWifeOnMedicare) {
-      medicareBasePremiums += (BASE_MEDICARE_PART_B + BASE_MEDICARE_PART_D) * 12 * healthcareFactor;
-    }
+    // Medicare base premiums (Base Part B + Part D + Custom Overrides/Supplement Plan)
+    const medicareBasePremiums = yourMedicarePremiums + wifeMedicarePremiums;
     
     // Living expenses precalculated above
 
@@ -716,6 +806,7 @@ export function runRetirementSimulation(
     let drawdownTaxable = 0;
     let drawdownPreTax = 0;
     let drawdownRoth = 0;
+    let drawdownCash = 0;
     let capitalGainsTriggered = 0;
     let fedIncomeTax = 0;
     let stateIncomeTax = 0;
@@ -725,8 +816,10 @@ export function runRetirementSimulation(
     
     let currentYourTaxable = yourTaxable;
     let currentYourBasis = yourBasis;
+    let currentYourCash = yourCash;
     let currentWifeTaxable = wifeTaxable;
     let currentWifeBasis = wifeBasis;
+    let currentWifeCash = wifeCash;
     let currentYourPreTax = yourPreTaxPostRMD;
     let currentWifePreTax = wifePreTaxPostRMD;
     let currentYourRoth = yourRoth;
@@ -745,14 +838,17 @@ export function runRetirementSimulation(
       drawdownTaxable = 0;
       drawdownPreTax = 0;
       drawdownRoth = 0;
+      drawdownCash = 0;
       capitalGainsTriggered = 0;
       let yourTradDraw = 0;
       let wifeTradDraw = 0;
       
       currentYourTaxable = yourTaxable;
       currentYourBasis = yourBasis;
+      currentYourCash = yourCash;
       currentWifeTaxable = wifeTaxable;
       currentWifeBasis = wifeBasis;
+      currentWifeCash = wifeCash;
       currentYourPreTax = yourPreTaxPostRMD;
       currentWifePreTax = wifePreTaxPostRMD;
       currentYourRoth = yourRoth;
@@ -769,6 +865,24 @@ export function runRetirementSimulation(
       const baseInflows = combinedSS + combinedRMD + activeSalaryInflow + totalDividends;
       
       let deficit = totalOutflows - baseInflows;
+      
+      if (deficit > 0) {
+        // Draw from Cash Assets first
+        // Draw from You first, then Wife
+        if (!youDeceased && currentYourCash > 0) {
+          const draw = Math.min(deficit, currentYourCash);
+          drawdownCash += draw;
+          deficit -= draw;
+          currentYourCash -= draw;
+        }
+        
+        if (deficit > 0 && currentWifeCash > 0) {
+          const draw = Math.min(deficit, currentWifeCash);
+          drawdownCash += draw;
+          deficit -= draw;
+          currentWifeCash -= draw;
+        }
+      }
       
       if (deficit > 0) {
         // Draw from Taxable Brokerages first
@@ -954,21 +1068,25 @@ export function runRetirementSimulation(
     yourBasis = Math.max(0, currentYourBasis); // Cost basis is static (no auto-growth)
     yourPreTax = Math.max(0, currentYourPreTax) * (1 + preTaxGrowthRate);
     yourRoth = Math.max(0, currentYourRoth) * (1 + rothGrowthRate);
+    yourCash = Math.max(0, currentYourCash) * (1 + bondRate);
     
     wifeTaxable = Math.max(0, currentWifeTaxable) * (1 + taxableGrowthRate);
     wifeBasis = Math.max(0, currentWifeBasis); // Cost basis is static (no auto-growth)
     wifePreTax = Math.max(0, currentWifePreTax) * (1 + preTaxGrowthRate);
     wifeRoth = Math.max(0, currentWifeRoth) * (1 + rothGrowthRate);
+    wifeCash = Math.max(0, currentWifeCash) * (1 + bondRate);
     
     // Safety checks for negative balances
     if (yourTaxable < 0.01) { yourTaxable = 0; yourBasis = 0; }
     if (yourPreTax < 0.01) yourPreTax = 0;
     if (yourRoth < 0.01) yourRoth = 0;
+    if (yourCash < 0.01) yourCash = 0;
     if (wifeTaxable < 0.01) { wifeTaxable = 0; wifeBasis = 0; }
     if (wifePreTax < 0.01) wifePreTax = 0;
     if (wifeRoth < 0.01) wifeRoth = 0;
+    if (wifeCash < 0.01) wifeCash = 0;
     
-    const totalPortfolioValue = yourTaxable + yourPreTax + yourRoth + wifeTaxable + wifePreTax + wifeRoth;
+    const totalPortfolioValue = yourTaxable + yourPreTax + yourRoth + yourCash + wifeTaxable + wifePreTax + wifeRoth + wifeCash;
     
     // Compute total actual inflows, MAGI, and other ledger parameters
     const isSingle = (simulateSurvivor && (year > DEATH_YEAR)) || inputs.isSingleFiler;
@@ -1021,14 +1139,17 @@ export function runRetirementSimulation(
       drawdownTaxable,
       drawdownPreTax,
       drawdownRoth,
+      drawdownCash,
       endYourPreTaxIRA: yourPreTax,
       endYourRothIRA: yourRoth,
       endYourTaxableBrokerage: yourTaxable,
       endYourTaxableBasis: yourBasis,
+      endYourCash: yourCash,
       endWifePreTaxIRA: wifePreTax,
       endWifeRothIRA: wifeRoth,
       endWifeTaxableBrokerage: wifeTaxable,
       endWifeTaxableBasis: wifeBasis,
+      endWifeCash: wifeCash,
       totalPortfolioValue,
     });
   }

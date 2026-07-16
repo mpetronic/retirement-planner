@@ -12,9 +12,11 @@ import {
   RefreshCw,
   Info,
   Settings,
-  HelpCircle
+  HelpCircle,
+  Heart
 } from 'lucide-react';
 import { DetailedExpensesDialog } from './DetailedExpensesDialog';
+import { HealthcareConfigDialog } from './HealthcareConfigDialog';
 
 interface InputControlSidebarProps {
   inputs: AppStateInputs;
@@ -40,6 +42,7 @@ export const InputControlSidebar: React.FC<InputControlSidebarProps> = ({
   const [isEditingYou, setIsEditingYou] = useState(false);
   const [isEditingWife, setIsEditingWife] = useState(false);
   const [showExpensesDialog, setShowExpensesDialog] = useState(false);
+  const [editingHealthcarePerson, setEditingHealthcarePerson] = useState<'you' | 'wife' | null>(null);
 
   const mdMonthlySum = useMemo(() => {
     if (!inputs.detailedExpenses) return 0;
@@ -275,27 +278,16 @@ export const InputControlSidebar: React.FC<InputControlSidebarProps> = ({
               </div>
             </div>
 
-            {/* Pre-Medicare monthly premium edit field */}
-            <div className="space-y-1 pt-2 border-t border-slate-800/30">
-              <div className="flex items-center gap-1.5">
-                <label className="text-xs text-slate-400 block">Pre-Medicare Premium / Mo</label>
-                <div className="relative group inline-block">
-                  <HelpCircle className="w-3.5 h-3.5 text-slate-500 hover:text-slate-300 transition-colors cursor-pointer" />
-                  <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 hidden group-hover:block w-64 bg-slate-950 text-slate-200 text-[10px] p-2.5 rounded-lg border border-slate-800 shadow-xl z-50 leading-normal pointer-events-none normal-case font-medium">
-                    Spending for medical, dental, and vision coverage per month including premiums and out of pocket costs (deductibles, copays, coinsurance) prior to age 65. Only applied when retired, under 65, and not covered by an active company health plan.
-                  </div>
-                </div>
-              </div>
-              <div className="relative">
-                <span className="absolute left-3 top-1 text-slate-500 text-xs font-semibold">$</span>
-                <input
-                  type="number"
-                  value={inputs.you.preMedicareMonthlyPremium === null ? '' : inputs.you.preMedicareMonthlyPremium}
-                  onChange={(e) => updateNestedState('you', 'preMedicareMonthlyPremium', e.target.value === '' ? null : Number(e.target.value))}
-                  placeholder="0"
-                  className="w-full bg-slate-900 border border-slate-800 rounded-lg pl-6 pr-2.5 py-1 text-xs text-slate-100 font-mono focus:outline-none focus:border-emerald-500"
-                />
-              </div>
+            {/* Healthcare Planning Dialog Trigger */}
+            <div className="pt-2 border-t border-slate-800/30">
+            <button
+              type="button"
+              onClick={() => setEditingHealthcarePerson('you')}
+              className="w-full flex items-center justify-center gap-2 px-3 py-1.5 bg-slate-900 hover:bg-slate-850 border border-slate-800 hover:border-slate-700 text-slate-300 hover:text-slate-100 rounded-lg text-xs font-bold transition-all cursor-pointer"
+            >
+              <Heart className="w-3.5 h-3.5 text-emerald-500" />
+              <span>Configure Health Expenses</span>
+            </button>
             </div>
           </div>
 
@@ -404,27 +396,16 @@ export const InputControlSidebar: React.FC<InputControlSidebarProps> = ({
                 </div>
               </div>
 
-              {/* Pre-Medicare monthly premium edit field */}
-              <div className="space-y-1 pt-2 border-t border-slate-800/30">
-                <div className="flex items-center gap-1.5">
-                  <label className="text-xs text-slate-400 block">Pre-Medicare Premium / Mo</label>
-                  <div className="relative group inline-block">
-                    <HelpCircle className="w-3.5 h-3.5 text-slate-500 hover:text-slate-300 transition-colors cursor-pointer" />
-                    <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 hidden group-hover:block w-64 bg-slate-950 text-slate-200 text-[10px] p-2.5 rounded-lg border border-slate-800 shadow-xl z-50 leading-normal pointer-events-none normal-case font-medium">
-                      Spending for medical, dental, and vision coverage per month including premiums and out of pocket costs (deductibles, copays, coinsurance) prior to age 65. Only applied when retired, under 65, and not covered by an active company health plan.
-                    </div>
-                  </div>
-                </div>
-                <div className="relative">
-                  <span className="absolute left-3 top-1 text-slate-500 text-xs font-semibold">$</span>
-                  <input
-                    type="number"
-                    value={inputs.wife.preMedicareMonthlyPremium === null ? '' : inputs.wife.preMedicareMonthlyPremium}
-                    onChange={(e) => updateNestedState('wife', 'preMedicareMonthlyPremium', e.target.value === '' ? null : Number(e.target.value))}
-                    placeholder="0"
-                    className="w-full bg-slate-900 border border-slate-800 rounded-lg pl-6 pr-2.5 py-1 text-xs text-slate-100 font-mono focus:outline-none focus:border-emerald-500"
-                  />
-                </div>
+              {/* Healthcare Planning Dialog Trigger */}
+              <div className="pt-2 border-t border-slate-800/30">
+                <button
+                  type="button"
+                  onClick={() => setEditingHealthcarePerson('wife')}
+                  className="w-full flex items-center justify-center gap-2 px-3 py-1.5 bg-slate-900 hover:bg-slate-850 border border-slate-800 hover:border-slate-700 text-slate-300 hover:text-slate-100 rounded-lg text-xs font-bold transition-all cursor-pointer"
+                >
+                  <Heart className="w-3.5 h-3.5 text-emerald-500" />
+                  <span>Configure Health Expenses</span>
+                </button>
               </div>
             </div>
           )}
@@ -465,7 +446,7 @@ export const InputControlSidebar: React.FC<InputControlSidebarProps> = ({
               
               <div className="grid grid-cols-2 gap-2">
                 <div className="space-y-1">
-                  <label className="text-[10px] text-slate-400 block truncate" title="Traditional Pre-Tax IRA">Pre-Tax IRA</label>
+                  <label className="text-[10px] text-slate-400 block truncate" title="Traditional IRA">Traditional IRA</label>
                   <input
                     type="number"
                     value={inputs.portfolio.yourPreTaxIRA ?? ''}
@@ -486,7 +467,7 @@ export const InputControlSidebar: React.FC<InputControlSidebarProps> = ({
 
               <div className="grid grid-cols-2 gap-2">
                 <div className="space-y-1">
-                  <label className="text-[10px] text-slate-400 block truncate" title="Taxable Brokerage">Taxable Assets</label>
+                  <label className="text-[10px] text-slate-400 block truncate" title="Brokerage Assets (Taxable)">Brokerage Assets</label>
                   <input
                     type="number"
                     value={inputs.portfolio.yourTaxableBrokerage ?? ''}
@@ -495,11 +476,23 @@ export const InputControlSidebar: React.FC<InputControlSidebarProps> = ({
                   />
                 </div>
                 <div className="space-y-1">
-                  <label className="text-[10px] text-slate-400 block truncate" title="Taxable Cost Basis">Cost Basis</label>
+                  <label className="text-[10px] text-slate-400 block truncate" title="Brokerage Cost Basis">Cost Basis</label>
                   <input
                     type="number"
                     value={inputs.portfolio.yourTaxableBasis ?? ''}
                     onChange={(e) => updateNestedState('portfolio', 'yourTaxableBasis', e.target.value === '' ? null : Number(e.target.value))}
+                    className="w-full bg-slate-900 border border-slate-800 rounded-lg px-2.5 py-1 text-xs text-slate-100 font-mono focus:outline-none focus:border-emerald-500"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-2">
+                <div className="space-y-1">
+                  <label className="text-[10px] text-slate-400 block truncate" title="Cash Assets Balance">Cash Assets</label>
+                  <input
+                    type="number"
+                    value={inputs.portfolio.yourCash ?? ''}
+                    onChange={(e) => updateNestedState('portfolio', 'yourCash', e.target.value === '' ? null : Number(e.target.value))}
                     className="w-full bg-slate-900 border border-slate-800 rounded-lg px-2.5 py-1 text-xs text-slate-100 font-mono focus:outline-none focus:border-emerald-500"
                   />
                 </div>
@@ -513,7 +506,7 @@ export const InputControlSidebar: React.FC<InputControlSidebarProps> = ({
                 
                 <div className="grid grid-cols-2 gap-2">
                   <div className="space-y-1">
-                    <label className="text-[10px] text-slate-400 block truncate" title="Traditional Pre-Tax IRA">Pre-Tax IRA</label>
+                    <label className="text-[10px] text-slate-400 block truncate" title="Traditional IRA">Traditional IRA</label>
                     <input
                       type="number"
                       value={inputs.portfolio.wifePreTaxIRA ?? ''}
@@ -534,7 +527,7 @@ export const InputControlSidebar: React.FC<InputControlSidebarProps> = ({
 
                 <div className="grid grid-cols-2 gap-2">
                   <div className="space-y-1">
-                    <label className="text-[10px] text-slate-400 block truncate" title="Taxable Brokerage">Taxable Assets</label>
+                    <label className="text-[10px] text-slate-400 block truncate" title="Brokerage Assets (Taxable)">Brokerage Assets</label>
                     <input
                       type="number"
                       value={inputs.portfolio.wifeTaxableBrokerage ?? ''}
@@ -543,11 +536,23 @@ export const InputControlSidebar: React.FC<InputControlSidebarProps> = ({
                     />
                   </div>
                   <div className="space-y-1">
-                    <label className="text-[10px] text-slate-400 block truncate" title="Taxable Cost Basis">Cost Basis</label>
+                    <label className="text-[10px] text-slate-400 block truncate" title="Brokerage Cost Basis">Cost Basis</label>
                     <input
                       type="number"
                       value={inputs.portfolio.wifeTaxableBasis ?? ''}
                       onChange={(e) => updateNestedState('portfolio', 'wifeTaxableBasis', e.target.value === '' ? null : Number(e.target.value))}
+                      className="w-full bg-slate-900 border border-slate-800 rounded-lg px-2.5 py-1 text-xs text-slate-100 font-mono focus:outline-none focus:border-emerald-500"
+                    />
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-2">
+                  <div className="space-y-1">
+                    <label className="text-[10px] text-slate-400 block truncate" title="Cash Assets Balance">Cash Assets</label>
+                    <input
+                      type="number"
+                      value={inputs.portfolio.wifeCash ?? ''}
+                      onChange={(e) => updateNestedState('portfolio', 'wifeCash', e.target.value === '' ? null : Number(e.target.value))}
                       className="w-full bg-slate-900 border border-slate-800 rounded-lg px-2.5 py-1 text-xs text-slate-100 font-mono focus:outline-none focus:border-emerald-500"
                     />
                   </div>
@@ -1049,6 +1054,17 @@ export const InputControlSidebar: React.FC<InputControlSidebarProps> = ({
           onClose={() => setShowExpensesDialog(false)}
           detailedExpenses={inputs.detailedExpenses}
           onSave={(expenses) => updateNestedState('detailedExpenses', '', expenses)}
+        />
+      )}
+      {editingHealthcarePerson && (
+        <HealthcareConfigDialog
+          isOpen={editingHealthcarePerson !== null}
+          onClose={() => setEditingHealthcarePerson(null)}
+          personName={editingHealthcarePerson === 'you' ? (inputs.you.name || 'Primary') : (inputs.wife.name || 'Spouse')}
+          birthDate={editingHealthcarePerson === 'you' ? inputs.you.birthDate : inputs.wife.birthDate}
+          healthcareConfig={editingHealthcarePerson === 'you' ? inputs.you.healthcare : inputs.wife.healthcare}
+          healthcareInflationRate={inputs.growthAssumptions.healthcareInflationRate}
+          onSave={(config) => updateNestedState(editingHealthcarePerson, 'healthcare', config)}
         />
       )}
     </aside>
