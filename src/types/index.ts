@@ -33,6 +33,7 @@ export interface SpouseProfile {
   estimatedPIA: number | null; // Primary Insurance Amount at Full Retirement Age (FRA)
   targetSSClaimingAge: number | null; // Claiming age (62 to 70)
   plannedRetirementAge?: number | null; // Planned retirement age (55 to 75)
+  plannedRetirementMonth?: number | null; // 1-12: month within retirement year (null = use birth month)
   activeSalary?: number | null; // Pre-retirement annual active salary
   preMedicareMonthlyPremium?: number | null; // Pre-Medicare monthly premium (e.g. $800)
   healthcare?: HealthcareConfig;

@@ -335,8 +335,17 @@ export function runRetirementSimulation(
     const wifeRetireAge = inputs.isSingleFiler ? 0 : (inputs.wife.plannedRetirementAge ?? 65);
 
     // Event month indexes relative to 2026 start
-    const yourRetireMonthIdx = (yourBirthYear + youRetireAge - 2026) * 12 + yourBirthMonth;
-    const wifeRetireMonthIdx = (wifeBirthYear + wifeRetireAge - 2026) * 12 + wifeBirthMonth;
+    // If plannedRetirementMonth is set (1-12), use it as the within-year month offset (0-indexed).
+    // Otherwise fall back to birth month, which preserves the existing behavior.
+    const youRetireMonth = (inputs.you.plannedRetirementMonth != null)
+      ? inputs.you.plannedRetirementMonth - 1
+      : yourBirthMonth;
+    const wifeRetireMonth = (!inputs.isSingleFiler && inputs.wife.plannedRetirementMonth != null)
+      ? inputs.wife.plannedRetirementMonth - 1
+      : wifeBirthMonth;
+
+    const yourRetireMonthIdx = (yourBirthYear + youRetireAge - 2026) * 12 + youRetireMonth;
+    const wifeRetireMonthIdx = (wifeBirthYear + wifeRetireAge - 2026) * 12 + wifeRetireMonth;
     const yourSSClaimMonthIdx = inputs.you.targetSSClaimingAge
       ? (yourBirthYear + inputs.you.targetSSClaimingAge - 2026) * 12 + yourBirthMonth
       : Infinity;

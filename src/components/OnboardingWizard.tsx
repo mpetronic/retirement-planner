@@ -15,6 +15,14 @@ interface OnboardingWizardProps {
   onComplete: (configuredInputs: AppStateInputs) => void;
 }
 
+const getBirthMonth = (dateStr: string | undefined): number => {
+  if (!dateStr) return 1;
+  const parts = dateStr.split('-');
+  if (parts.length < 2) return 1;
+  const m = parseInt(parts[1], 10);
+  return isNaN(m) ? 1 : m;
+};
+
 export const OnboardingWizard: React.FC<OnboardingWizardProps> = ({ onComplete }) => {
   const [step, setStep] = useState(1);
   const [isSingleFiler, setIsSingleFiler] = useState(false);
@@ -23,6 +31,7 @@ export const OnboardingWizard: React.FC<OnboardingWizardProps> = ({ onComplete }
   const [youName, setYouName] = useState('You');
   const [youBirthDate, setYouBirthDate] = useState('1960-01-01');
   const [youRetireAge, setYouRetireAge] = useState<number>(67);
+  const [youRetireMonth, setYouRetireMonth] = useState<number | null>(null);
   const [youSalary, setYouSalary] = useState<number | null>(0);
   const [youIsRetired, setYouIsRetired] = useState(false);
   const [youPIA, setYouPIA] = useState<number | null>(0);
@@ -31,6 +40,7 @@ export const OnboardingWizard: React.FC<OnboardingWizardProps> = ({ onComplete }
   const [wifeName, setWifeName] = useState('Spouse');
   const [wifeBirthDate, setWifeBirthDate] = useState('1960-01-01');
   const [wifeRetireAge, setWifeRetireAge] = useState<number>(65);
+  const [wifeRetireMonth, setWifeRetireMonth] = useState<number | null>(null);
   const [wifeSalary, setWifeSalary] = useState<number | null>(0);
   // Default spouse not retired
   const [wifeIsRetired, setWifeIsRetired] = useState(false);
@@ -146,6 +156,7 @@ export const OnboardingWizard: React.FC<OnboardingWizardProps> = ({ onComplete }
         estimatedPIA: youPIA,
         targetSSClaimingAge: youClaimAge,
         plannedRetirementAge: youIsRetired ? 65 : youRetireAge,
+        plannedRetirementMonth: youIsRetired ? null : youRetireMonth,
         activeSalary: youIsRetired ? 0 : youSalary,
         preMedicareMonthlyPremium: 1000,
       },
@@ -155,6 +166,7 @@ export const OnboardingWizard: React.FC<OnboardingWizardProps> = ({ onComplete }
         estimatedPIA: isSingleFiler ? 0 : wifePIA,
         targetSSClaimingAge: isSingleFiler ? 67 : wifeClaimAge,
         plannedRetirementAge: isSingleFiler ? 65 : (wifeIsRetired ? 61 : wifeRetireAge),
+        plannedRetirementMonth: isSingleFiler ? null : (wifeIsRetired ? null : wifeRetireMonth),
         activeSalary: isSingleFiler ? 0 : (wifeIsRetired ? 0 : wifeSalary),
         preMedicareMonthlyPremium: 1000,
       },
@@ -345,23 +357,41 @@ export const OnboardingWizard: React.FC<OnboardingWizardProps> = ({ onComplete }
                         </div>
                       </div>
                       <div className="space-y-1.5">
-                        <label className="text-xs font-bold text-slate-400 flex justify-between">
-                          <span>Planned Retirement Age</span>
-                          <span className="text-emerald-400 font-bold font-mono">Age {youRetireAge}</span>
-                        </label>
-                        <input
-                          type="range"
-                          min="55"
-                          max="75"
-                          step="1"
-                          value={youRetireAge}
-                          onChange={(e) => setYouRetireAge(Number(e.target.value))}
-                          className="w-full h-1.5 bg-slate-850 rounded-lg appearance-none cursor-pointer accent-emerald-500"
-                        />
-                        <div className="flex justify-between text-[10px] text-slate-500 font-mono">
-                          <span>Age 55</span>
-                          <span>Age 75</span>
-                        </div>
+                        {(() => {
+                          const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+                          const age = youRetireAge;
+                          const mon = youRetireMonth ?? getBirthMonth(youBirthDate);
+                          const sliderVal = (age - 55) * 12 + (mon - 1);
+                          return (
+                            <>
+                              <label className="text-xs font-bold text-slate-400 flex justify-between">
+                                <span>Planned Retirement Age</span>
+                                <span className="text-emerald-400 font-bold font-mono">
+                                  Age {age} · {MONTHS[mon - 1]}
+                                </span>
+                              </label>
+                              <input
+                                type="range"
+                                min="0"
+                                max="239"
+                                step="1"
+                                value={sliderVal}
+                                onChange={(e) => {
+                                  const v = Number(e.target.value);
+                                  const newAge = 55 + Math.floor(v / 12);
+                                  const newMon = (v % 12) + 1;
+                                  setYouRetireAge(newAge);
+                                  setYouRetireMonth(newMon);
+                                }}
+                                className="w-full h-1.5 bg-slate-850 rounded-lg appearance-none cursor-pointer accent-emerald-500"
+                              />
+                              <div className="flex justify-between text-[10px] text-slate-500 font-mono">
+                                <span>Age 55</span>
+                                <span>Age 75</span>
+                              </div>
+                            </>
+                          );
+                        })()}
                       </div>
                     </div>
                   )}
@@ -487,19 +517,41 @@ export const OnboardingWizard: React.FC<OnboardingWizardProps> = ({ onComplete }
                             </div>
                           </div>
                           <div className="space-y-1.5">
-                            <label className="text-xs font-bold text-slate-400 flex justify-between">
-                              <span>Planned Retirement Age</span>
-                              <span className="text-emerald-400 font-bold font-mono">Age {wifeRetireAge}</span>
-                            </label>
-                            <input
-                              type="range"
-                              min="55"
-                              max="75"
-                              step="1"
-                              value={wifeRetireAge}
-                              onChange={(e) => setWifeRetireAge(Number(e.target.value))}
-                              className="w-full h-1.5 bg-slate-850 rounded-lg appearance-none cursor-pointer accent-emerald-500"
-                            />
+                            {(() => {
+                              const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+                              const age = wifeRetireAge;
+                              const mon = wifeRetireMonth ?? getBirthMonth(wifeBirthDate);
+                              const sliderVal = (age - 55) * 12 + (mon - 1);
+                              return (
+                                <>
+                                  <label className="text-xs font-bold text-slate-400 flex justify-between">
+                                    <span>Planned Retirement Age</span>
+                                    <span className="text-emerald-400 font-bold font-mono">
+                                      Age {age} · {MONTHS[mon - 1]}
+                                    </span>
+                                  </label>
+                                  <input
+                                    type="range"
+                                    min="0"
+                                    max="239"
+                                    step="1"
+                                    value={sliderVal}
+                                    onChange={(e) => {
+                                      const v = Number(e.target.value);
+                                      const newAge = 55 + Math.floor(v / 12);
+                                      const newMon = (v % 12) + 1;
+                                      setWifeRetireAge(newAge);
+                                      setWifeRetireMonth(newMon);
+                                    }}
+                                    className="w-full h-1.5 bg-slate-850 rounded-lg appearance-none cursor-pointer accent-emerald-500"
+                                  />
+                                  <div className="flex justify-between text-[10px] text-slate-500 font-mono">
+                                    <span>Age 55</span>
+                                    <span>Age 75</span>
+                                  </div>
+                                </>
+                              );
+                            })()}
                           </div>
                         </div>
                       )}

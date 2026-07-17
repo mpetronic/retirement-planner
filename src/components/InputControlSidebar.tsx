@@ -18,6 +18,14 @@ import {
 import { DetailedExpensesDialog } from './DetailedExpensesDialog';
 import { HealthcareConfigDialog } from './HealthcareConfigDialog';
 
+const getBirthMonth = (dateStr: string | undefined): number => {
+  if (!dateStr) return 1;
+  const parts = dateStr.split('-');
+  if (parts.length < 2) return 1;
+  const m = parseInt(parts[1], 10);
+  return isNaN(m) ? 1 : m;
+};
+
 interface InputControlSidebarProps {
   inputs: AppStateInputs;
   onChange: (newInputs: AppStateInputs) => void;
@@ -246,22 +254,47 @@ export const InputControlSidebar: React.FC<InputControlSidebarProps> = ({
               </div>
             </div>
 
-            {/* Planned Retirement & Active Salary side-by-side */}
-            <div className="grid grid-cols-2 gap-3 pt-1 border-t border-slate-800/30">
+            {/* Planned Retirement — single slider stepping by month */}
+            <div className="space-y-2 pt-1 border-t border-slate-800/30">
               <div className="space-y-1">
-                <label className="text-[10px] text-slate-400 font-bold uppercase tracking-wider flex justify-between block truncate">
-                  <span>Retire Age</span>
-                  <span className="text-emerald-400 font-mono font-semibold">Age {inputs.you.plannedRetirementAge ?? 67}</span>
-                </label>
-                <input
-                  type="range"
-                  min="55"
-                  max="75"
-                  step="1"
-                  value={inputs.you.plannedRetirementAge ?? 67}
-                  onChange={(e) => updateNestedState('you', 'plannedRetirementAge', Number(e.target.value))}
-                  className="w-full h-1 bg-slate-800 rounded appearance-none cursor-pointer accent-emerald-500"
-                />
+                {(() => {
+                  const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+                  const age = inputs.you.plannedRetirementAge ?? 67;
+                  const mon = inputs.you.plannedRetirementMonth ?? getBirthMonth(inputs.you.birthDate);
+                  const sliderVal = (age - 55) * 12 + (mon - 1);
+                  return (
+                    <>
+                      <label className="text-[10px] text-slate-400 font-bold uppercase tracking-wider flex justify-between">
+                        <span>Retire Age</span>
+                        <span className="text-emerald-400 font-mono font-semibold">
+                          Age {age} · {MONTHS[mon - 1]}
+                        </span>
+                      </label>
+                      <input
+                        type="range"
+                        min="0"
+                        max="239"
+                        step="1"
+                        value={sliderVal}
+                        onChange={(e) => {
+                          const v = Number(e.target.value);
+                          const newAge = 55 + Math.floor(v / 12);
+                          const newMon = (v % 12) + 1;
+                          const next = { ...inputs, you: { ...inputs.you, plannedRetirementAge: newAge, plannedRetirementMonth: newMon } };
+                          onChange(next);
+                        }}
+                        className="w-full h-1 bg-slate-800 rounded appearance-none cursor-pointer accent-emerald-500"
+                      />
+                      <div className="flex justify-between text-[10px] text-slate-500 font-mono px-0.5">
+                        <span>55</span>
+                        <span>60</span>
+                        <span>65</span>
+                        <span>70</span>
+                        <span>75</span>
+                      </div>
+                    </>
+                  );
+                })()}
               </div>
               <div className="space-y-1">
                 <label className="text-[10px] text-slate-400 font-bold uppercase tracking-wider block">Salary</label>
@@ -364,22 +397,47 @@ export const InputControlSidebar: React.FC<InputControlSidebarProps> = ({
                 </div>
               </div>
 
-              {/* Planned Retirement & Active Salary side-by-side */}
-              <div className="grid grid-cols-2 gap-3 pt-1 border-t border-slate-800/30">
+              {/* Planned Retirement — single slider stepping by month */}
+              <div className="space-y-2 pt-1 border-t border-slate-800/30">
                 <div className="space-y-1">
-                  <label className="text-[10px] text-slate-400 font-bold uppercase tracking-wider flex justify-between block truncate">
-                    <span>Retire Age</span>
-                    <span className="text-emerald-400 font-mono font-semibold">Age {inputs.wife.plannedRetirementAge ?? 65}</span>
-                  </label>
-                  <input
-                    type="range"
-                    min="55"
-                    max="75"
-                    step="1"
-                    value={inputs.wife.plannedRetirementAge ?? 65}
-                    onChange={(e) => updateNestedState('wife', 'plannedRetirementAge', Number(e.target.value))}
-                    className="w-full h-1 bg-slate-800 rounded appearance-none cursor-pointer accent-emerald-500"
-                  />
+                  {(() => {
+                    const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+                    const age = inputs.wife.plannedRetirementAge ?? 65;
+                    const mon = inputs.wife.plannedRetirementMonth ?? getBirthMonth(inputs.wife.birthDate);
+                    const sliderVal = (age - 55) * 12 + (mon - 1);
+                    return (
+                      <>
+                        <label className="text-[10px] text-slate-400 font-bold uppercase tracking-wider flex justify-between">
+                          <span>Retire Age</span>
+                          <span className="text-emerald-400 font-mono font-semibold">
+                            Age {age} · {MONTHS[mon - 1]}
+                          </span>
+                        </label>
+                        <input
+                          type="range"
+                          min="0"
+                          max="239"
+                          step="1"
+                          value={sliderVal}
+                          onChange={(e) => {
+                            const v = Number(e.target.value);
+                            const newAge = 55 + Math.floor(v / 12);
+                            const newMon = (v % 12) + 1;
+                            const next = { ...inputs, wife: { ...inputs.wife, plannedRetirementAge: newAge, plannedRetirementMonth: newMon } };
+                            onChange(next);
+                          }}
+                          className="w-full h-1 bg-slate-800 rounded appearance-none cursor-pointer accent-emerald-500"
+                        />
+                        <div className="flex justify-between text-[10px] text-slate-500 font-mono px-0.5">
+                          <span>55</span>
+                          <span>60</span>
+                          <span>65</span>
+                          <span>70</span>
+                          <span>75</span>
+                        </div>
+                      </>
+                    );
+                  })()}
                 </div>
                 <div className="space-y-1">
                   <label className="text-[10px] text-slate-400 font-bold uppercase tracking-wider block">Salary</label>

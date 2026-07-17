@@ -12,8 +12,10 @@ interface HealthcareConfigDialogProps {
   onSave: (config: HealthcareConfig) => void;
 }
 
-const BASE_MEDICARE_PART_B = 202.90;
-const BASE_MEDICARE_PART_D = 34.50;
+const BASE_YEAR = 2026;
+const MEDICARE_PART_B_2026 = 202.90;
+const MEDICARE_PART_D_2026 = 34.50;
+const MEDICARE_PART_B_DEDUCTIBLE_2026 = 283;
 
 export const HealthcareConfigDialog: React.FC<HealthcareConfigDialogProps> = ({
   isOpen,
@@ -34,14 +36,18 @@ export const HealthcareConfigDialog: React.FC<HealthcareConfigDialogProps> = ({
   }, [birthDate]);
 
   const age65Year = birthYear + 65;
-  const yearsTo65 = Math.max(0, age65Year - 2026);
+  const yearsTo65 = Math.max(0, age65Year - BASE_YEAR);
 
   const projectedPartB = useMemo(() => {
-    return BASE_MEDICARE_PART_B * Math.pow(1 + healthcareInflationRate, yearsTo65);
+    return MEDICARE_PART_B_2026 * Math.pow(1 + healthcareInflationRate, yearsTo65);
   }, [healthcareInflationRate, yearsTo65]);
 
   const projectedPartD = useMemo(() => {
-    return BASE_MEDICARE_PART_D * Math.pow(1 + healthcareInflationRate, yearsTo65);
+    return MEDICARE_PART_D_2026 * Math.pow(1 + healthcareInflationRate, yearsTo65);
+  }, [healthcareInflationRate, yearsTo65]);
+
+  const projectedPartBDeductible = useMemo(() => {
+    return MEDICARE_PART_B_DEDUCTIBLE_2026 * Math.pow(1 + healthcareInflationRate, yearsTo65);
   }, [healthcareInflationRate, yearsTo65]);
 
   // Initial State Helpers
@@ -290,12 +296,12 @@ export const HealthcareConfigDialog: React.FC<HealthcareConfigDialogProps> = ({
                   value={config.supplementOOP === null ? '' : config.supplementOOP}
                   onChange={(e) => updateField('supplementOOP', e.target.value)}
                   onWheel={(e) => e.currentTarget.blur()}
-                  placeholder="e.g. $257 for Plan G Part B deductible"
+                  placeholder={`e.g. ${formatCurrency(projectedPartBDeductible)} for Plan G Part B deductible`}
                   className="w-full bg-slate-900 border border-slate-800 rounded-lg pl-7 pr-2.5 py-1.5 text-xs text-slate-100 font-mono focus:outline-none focus:border-emerald-500"
                 />
               </div>
               <p className="text-[10px] text-slate-500 leading-tight">
-                For Medigap Plan G, this is typically just the annual Part B deductible (~$257). For Plan N, add estimated visit copays (up to $20/visit).
+                For Medigap Plan G, this is typically just the annual Part B deductible (~{formatCurrency(projectedPartBDeductible)}). For Plan N, add estimated visit copays (up to $20/visit).
               </p>
             </div>
 
@@ -437,7 +443,7 @@ export const HealthcareConfigDialog: React.FC<HealthcareConfigDialogProps> = ({
                   <div className="relative group inline-block">
                     <HelpCircle className="w-3.5 h-3.5 text-slate-500 hover:text-slate-300 transition-colors cursor-pointer" />
                     <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 hidden group-hover:block w-64 bg-slate-950 text-slate-200 text-[10px] p-2.5 rounded-lg border border-slate-800 shadow-xl z-50 leading-normal pointer-events-none normal-case font-medium">
-                      Enter the base Part B monthly premium at age 65. If left blank, it will automatically default to the projected premium based on baseline {formatCurrency(BASE_MEDICARE_PART_B)}/mo and your healthcare inflation rate.
+                      Enter the base Part B monthly premium at age 65. If left blank, it will automatically default to the projected premium based on baseline {formatCurrency(MEDICARE_PART_B_2026)}/mo and your healthcare inflation rate.
                     </div>
                   </div>
                 </div>
