@@ -148,7 +148,7 @@ export const BracketMapChart: React.FC<BracketMapChartProps> = ({
     const dataPoints = ledger.map((r) => {
       const isSingle = simulateSurvivor && r.year >= deathYear;
       const baseVal = isSingle ? singleBase : jointBase;
-      const cpiFactor = Math.pow(1 + inputs.growthAssumptions.cpiInflationRate, r.year - 2026);
+      const cpiFactor = r.cpiFactor;
       return baseVal * cpiFactor;
     });
 

@@ -351,6 +351,10 @@ export interface SimulationResultRow {
   stateIncomeTax: number;
   totalIncomeTax: number;
   niitTax: number;
+  taxableSS: number;
+  taxableDividends: number;
+  taxableInterest: number;
+  cpiFactor: number;
   
   // Medicare Surcharges (applied in Year t based on Year t-2 MAGI)
   magiTwoYearsAgo: number;

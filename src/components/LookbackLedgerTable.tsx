@@ -44,35 +44,37 @@ export const LookbackLedgerTable: React.FC<LookbackLedgerTableProps> = ({
       const year = r.year;
       const magi = r.magi;
       
-      const cpiFactor = Math.pow(1 + inputs.growthAssumptions.cpiInflationRate, year - 2026);
+      const cpiFactor = r.cpiFactor;
       const isSingle = simulateSurvivor && year >= deathYear;
       const tiers = isSingle ? IRMAA_TIERS_SINGLE : IRMAA_TIERS_MFJ;
 
-      // Check each tier's lower limit (which is the previous tier's upper limit)
-      // If we are in Tier T (T >= 1), the cliff we crossed is Cliff[T-1]
-      if (r.surchargeTier > 0) {
-        const tierIdx = r.surchargeTier;
-        const crossedTier = tiers[tierIdx - 1];
-        
-        // Inflate the cliff limit if it is < Tier 4
+      // Find which tier the current MAGI falls into
+      let currentTierIdx = 0;
+      for (let i = tiers.length - 1; i >= 0; i--) {
+        const prevTier = tiers[i - 1];
+        let prevLimit = prevTier ? (prevTier.limit === Infinity ? Infinity : prevTier.limit * cpiFactor) : 0;
+        if (magi > prevLimit) {
+          currentTierIdx = i;
+          break;
+        }
+      }
+
+      if (currentTierIdx > 0) {
+        const crossedTier = tiers[currentTierIdx - 1];
         let cliffLimit = crossedTier.limit;
         if (crossedTier.tierNumber < 4) {
           cliffLimit = crossedTier.limit * cpiFactor;
         }
 
         const excess = magi - cliffLimit;
-        
-        // If we are within $5,000 over the cliff limit
         if (excess > 0 && excess <= 5000) {
-          // Penalty is the premium surcharge difference
-          const currentTier = tiers[tierIdx];
-          const prevTier = tiers[tierIdx - 1];
+          const currentTier = tiers[currentTierIdx];
+          const prevTier = tiers[currentTierIdx - 1];
           
           const numOnMedicare = (r.yourAge >= 65 ? 1 : 0) + (r.wifeAge >= 65 ? 1 : 0);
           const monthlyDiff = (currentTier.partBSurcharge + currentTier.partDSurcharge) - 
                               (prevTier.partBSurcharge + prevTier.partDSurcharge);
           
-          // Surcharges are inflated by healthcare factor (use year offset, not array index, to match engine convention)
           const healthcareFactor = Math.pow(1 + inputs.growthAssumptions.healthcareInflationRate, year - 2026);
           const penalty = monthlyDiff * 12 * numOnMedicare * healthcareFactor;
 
@@ -159,8 +161,7 @@ export const LookbackLedgerTable: React.FC<LookbackLedgerTableProps> = ({
               const capitalGains = r.capitalGainsTriggered;
               const pretaxDrawdown = r.otherTaxableIncome;
 
-              const otherAGI = salary + rmd + rothConv + capitalGains + pretaxDrawdown;
-              const taxableSS = Math.max(0, r.magi - otherAGI);
+              const taxableSS = r.taxableSS;
               const totalSS = r.yourSS + r.wifeSS;
               const ssTaxedPercent = totalSS > 0 && taxableSS > 0
                 ? Math.round((taxableSS / totalSS) * 100)
@@ -171,7 +172,7 @@ export const LookbackLedgerTable: React.FC<LookbackLedgerTableProps> = ({
               // on top of all other income and are taxed at the marginal bracket rate.
               const conversionTax = (() => {
                 if (r.intentionalRothConversion <= 0) return 0;
-                const cpiFactor = Math.pow(1 + inputs.growthAssumptions.cpiInflationRate, r.year - 2026);
+                const cpiFactor = r.cpiFactor;
                 const isSingle = simulateSurvivor && r.year >= deathYear;
                 const agiWithout = Math.max(0, r.fedAGI - r.intentionalRothConversion);
                 const taxableWithout = Math.max(0, agiWithout - r.standardDeduction);
@@ -232,6 +233,18 @@ export const LookbackLedgerTable: React.FC<LookbackLedgerTableProps> = ({
                         <span className="text-slate-400">Realized Capital Gains:</span>
                         <span className="font-mono text-slate-200 font-medium">{formatCurrency(capitalGains)}</span>
                       </div>
+                      {r.taxableDividends > 0 && (
+                        <div className="flex justify-between items-center text-[11px]">
+                          <span className="text-slate-400">Dividends:</span>
+                          <span className="font-mono text-slate-200 font-medium">{formatCurrency(r.taxableDividends)}</span>
+                        </div>
+                      )}
+                      {r.taxableInterest > 0 && (
+                        <div className="flex justify-between items-center text-[11px]">
+                          <span className="text-slate-400">Cash Interest:</span>
+                          <span className="font-mono text-slate-200 font-medium">{formatCurrency(r.taxableInterest)}</span>
+                        </div>
+                      )}
                       <div className="flex justify-between items-center text-[11px]">
                         <span className="text-slate-400">Taxable Social Security:</span>
                         <span className="font-mono text-slate-200 font-medium">
@@ -386,7 +399,7 @@ export const LookbackLedgerTable: React.FC<LookbackLedgerTableProps> = ({
                     {(() => {
                       const isSingle = simulateSurvivor && r.year >= deathYear;
                       const tiers = isSingle ? IRMAA_TIERS_SINGLE : IRMAA_TIERS_MFJ;
-                      const cpiFactor = Math.pow(1 + inputs.growthAssumptions.cpiInflationRate, r.year - 2026);
+                      const cpiFactor = r.cpiFactor;
                       const healthcareFactor = Math.pow(1 + inputs.growthAssumptions.healthcareInflationRate, r.year - 2026);
                       return (
                         <div className={`absolute right-0 w-80 bg-slate-950/95 backdrop-blur-md border border-slate-800 rounded-2xl p-4 shadow-2xl opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 z-50 text-xs text-slate-300 pointer-events-none font-sans normal-case ${

@@ -271,7 +271,9 @@ export function runRetirementSimulation(
       if (activeSeq && activeSeq.inflationRates) {
         const prevYearElapsed = yearsElapsed - 1;
         if (activeSeq.inflationRates[prevYearElapsed] !== undefined) {
-          annualInflation = activeSeq.inflationRates[prevYearElapsed];
+          const historicalRate = activeSeq.inflationRates[prevYearElapsed];
+          const historicalMean = 0.039942857142857155;
+          annualInflation = Math.max(-0.02, historicalRate + (inputs.growthAssumptions.cpiInflationRate - historicalMean));
         }
       }
       cpiFactor *= (1 + annualInflation);
@@ -527,9 +529,10 @@ export function runRetirementSimulation(
     let wifePartDSurcharge = 0;
     let surchargeTier = 0;
     const irmaaTiers = (isSurvivorActive || inputs.isSingleFiler) ? IRMAA_TIERS_SINGLE : IRMAA_TIERS_MFJ;
+    const lookbackCpi = (lookbackIndex >= 0) ? ledger[lookbackIndex].cpiFactor : cpiFactor;
     for (let i = irmaaTiers.length - 1; i >= 0; i--) {
       const prevTier = irmaaTiers[i - 1];
-      let prevLimit = prevTier ? (prevTier.limit === Infinity ? Infinity : prevTier.limit * cpiFactor) : 0;
+      let prevLimit = prevTier ? (prevTier.limit === Infinity ? Infinity : prevTier.limit * lookbackCpi) : 0;
       if (magiTwoYearsAgo > prevLimit) {
         surchargeTier = irmaaTiers[i].tierNumber;
         const basePartB = irmaaTiers[i].partBSurcharge * healthcareFactor;
@@ -565,6 +568,8 @@ export function runRetirementSimulation(
     let annualWifeSS = 0;
     let annualYourDividends = 0;
     let annualWifeDividends = 0;
+    let annualYourInterest = 0;
+    let annualWifeInterest = 0;
     let annualPreMedicarePremium = 0;
     let annualMedicareBasePremiums = 0;
     let annualMedicareSurcharges = 0;
@@ -786,13 +791,19 @@ export function runRetirementSimulation(
       yourBasis = Math.max(0, yourBasis);
       yourPreTax = yourPreTax * (1 + monthlyPreTaxRate);
       yourRoth = yourRoth * (1 + monthlyRothRate);
-      yourCash = yourCash * (1 + monthlyCashRate);
+
+      const yourInterest = youDeceased ? 0 : yourCash * monthlyCashRate;
+      annualYourInterest += yourInterest;
+      yourCash = yourCash + yourInterest;
 
       wifeTaxable = wifeTaxable * (1 + monthlyTaxableRate);
       wifeBasis = Math.max(0, wifeBasis);
       wifePreTax = wifePreTax * (1 + monthlyPreTaxRate);
       wifeRoth = wifeRoth * (1 + monthlyRothRate);
-      wifeCash = wifeCash * (1 + monthlyCashRate);
+
+      const wifeInterest = inputs.isSingleFiler ? 0 : wifeCash * monthlyCashRate;
+      annualWifeInterest += wifeInterest;
+      wifeCash = wifeCash + wifeInterest;
     }
 
     // December (month 11) is now processed
@@ -915,7 +926,11 @@ export function runRetirementSimulation(
       const qualifiedDividends = totalDividends * (1 - taxableNonQualifiedPortion);
       const ordinaryDividends = totalDividends * taxableNonQualifiedPortion;
 
-      const nonSSOrdinary = salary + rmd + rothConv + ordinaryDividends + janToNovTradDraw + decYourTradDraw + decWifeTradDraw;
+      const yourDecInterest = youDeceased ? 0 : decYourCash * monthlyCashRate;
+      const wifeDecInterest = inputs.isSingleFiler ? 0 : decWifeCash * monthlyCashRate;
+      const totalCashInterest = (annualYourInterest + annualWifeInterest) + (yourDecInterest + wifeDecInterest);
+
+      const nonSSOrdinary = salary + rmd + rothConv + ordinaryDividends + totalCashInterest + janToNovTradDraw + decYourTradDraw + decWifeTradDraw;
       const capitalGains = annualCapitalGainsTriggered + capitalGainsTriggeredDec + qualifiedDividends;
 
       const otherAGI = nonSSOrdinary + capitalGains;
@@ -1106,13 +1121,19 @@ export function runRetirementSimulation(
     yourBasis = Math.max(0, yourBasis);
     yourPreTax = yourPreTax * (1 + monthlyPreTaxRate);
     yourRoth = yourRoth * (1 + monthlyRothRate);
-    yourCash = yourCash * (1 + monthlyCashRate);
+
+    const yourDecInterest = youDeceased ? 0 : yourCash * monthlyCashRate;
+    annualYourInterest += yourDecInterest;
+    yourCash = yourCash + yourDecInterest;
 
     wifeTaxable = wifeTaxable * (1 + monthlyTaxableRate);
     wifeBasis = Math.max(0, wifeBasis);
     wifePreTax = wifePreTax * (1 + monthlyPreTaxRate);
     wifeRoth = wifeRoth * (1 + monthlyRothRate);
-    wifeCash = wifeCash * (1 + monthlyCashRate);
+
+    const wifeDecInterest = inputs.isSingleFiler ? 0 : wifeCash * monthlyCashRate;
+    annualWifeInterest += wifeDecInterest;
+    wifeCash = wifeCash + wifeDecInterest;
 
     // Negative checking safety
     if (yourTaxable < 0.01) { yourTaxable = 0; yourBasis = 0; }
@@ -1233,6 +1254,10 @@ export function runRetirementSimulation(
       stateIncomeTax,
       totalIncomeTax: fedIncomeTax + stateIncomeTax,
       niitTax,
+      taxableSS,
+      taxableDividends: totalDividends,
+      taxableInterest: annualYourInterest + annualWifeInterest,
+      cpiFactor,
       magiTwoYearsAgo,
       surchargeTier,
       yourPartBSurcharge: yourAge >= 65 && !isYouWorkingDec ? yourPartBSurcharge : 0,

@@ -51,6 +51,8 @@ export const InputControlSidebar: React.FC<InputControlSidebarProps> = ({
   const [isEditingWife, setIsEditingWife] = useState(false);
   const [showExpensesDialog, setShowExpensesDialog] = useState(false);
   const [editingHealthcarePerson, setEditingHealthcarePerson] = useState<'you' | 'wife' | null>(null);
+  const [showResetConfirm, setShowResetConfirm] = useState(false);
+
 
   const mdMonthlySum = useMemo(() => {
     if (!inputs.detailedExpenses) return 0;
@@ -1091,18 +1093,41 @@ export const InputControlSidebar: React.FC<InputControlSidebarProps> = ({
             <RefreshCw className="w-4 h-4 text-rose-500 animate-spin" style={{ animationDuration: '6s' }} />
             <h2 className="text-xs uppercase font-bold tracking-wider">Danger Zone</h2>
           </div>
-          <button
-            type="button"
-            onClick={() => {
-              if (window.confirm("Are you sure you want to clear your current retirement plan configuration? This will delete all customized inputs and restart the onboarding setup.")) {
-                onReset();
-              }
-            }}
-            className="w-full flex items-center justify-center gap-2 px-4 py-2.5 bg-red-950/20 hover:bg-red-950/40 border border-red-900/30 hover:border-red-900/50 text-red-400 rounded-xl text-xs font-bold transition-all hover:scale-102 cursor-pointer"
-          >
-            <RefreshCw className="w-4 h-4" />
-            <span>Reset Plan & Configuration</span>
-          </button>
+          {!showResetConfirm ? (
+            <button
+              type="button"
+              onClick={() => setShowResetConfirm(true)}
+              className="w-full flex items-center justify-center gap-2 px-4 py-2.5 bg-red-950/20 hover:bg-red-950/40 border border-red-900/30 hover:border-red-900/50 text-red-400 rounded-xl text-xs font-bold transition-all hover:scale-102 cursor-pointer"
+            >
+              <RefreshCw className="w-4 h-4" />
+              <span>Reset Plan & Configuration</span>
+            </button>
+          ) : (
+            <div className="space-y-2 p-3 bg-red-950/10 border border-red-900/20 rounded-xl">
+              <span className="text-[11px] text-slate-300 block text-center leading-normal">
+                Are you sure? This will delete all customized inputs and restart the onboarding setup.
+              </span>
+              <div className="grid grid-cols-2 gap-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowResetConfirm(false);
+                    onReset();
+                  }}
+                  className="px-3 py-1.5 bg-rose-600 hover:bg-rose-700 text-white rounded-lg text-xs font-bold transition-colors cursor-pointer"
+                >
+                  Yes, Reset
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setShowResetConfirm(false)}
+                  className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-lg text-xs font-bold transition-colors cursor-pointer"
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
+          )}
         </div>
 
       </div>

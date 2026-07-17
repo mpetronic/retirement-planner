@@ -41,6 +41,8 @@ export const PlanComparisonWorkspace: React.FC<PlanComparisonWorkspaceProps> = (
 }) => {
   const [newPlanName, setNewPlanName] = useState('');
   const [notification, setNotification] = useState<{ message: string; type: 'success' | 'info' | 'error' } | null>(null);
+  const [showClearConfirm, setShowClearConfirm] = useState(false);
+
 
   const endingAge = useMemo(() => {
     if (!inputs.you.birthDate) return 90;
@@ -392,19 +394,39 @@ export const PlanComparisonWorkspace: React.FC<PlanComparisonWorkspaceProps> = (
                 Saved Scenarios ({savedPlans.length})
               </h4>
               {savedPlans.length > 0 && (
-                <button
-                  onClick={() => {
-                    if (window.confirm('Delete all saved plans?')) {
-                      onSavePlans([]);
-                      setSelectedPlanAId('');
-                      setSelectedPlanBId('');
-                      triggerNotification('All saved plans cleared.', 'info');
-                    }
-                  }}
-                  className="text-[10px] text-slate-500 hover:text-rose-400 flex items-center gap-1 font-bold font-sans transition-colors"
-                >
-                  Clear All
-                </button>
+                <div className="flex items-center gap-2">
+                  {!showClearConfirm ? (
+                    <button
+                      onClick={() => setShowClearConfirm(true)}
+                      className="text-[10px] text-slate-500 hover:text-rose-400 flex items-center gap-1 font-bold font-sans transition-colors cursor-pointer"
+                    >
+                      Clear All
+                    </button>
+                  ) : (
+                    <div className="flex items-center gap-1.5 text-[10px]">
+                      <span className="text-slate-400 font-sans">Delete all?</span>
+                      <button
+                        onClick={() => {
+                          onSavePlans([]);
+                          setSelectedPlanAId('');
+                          setSelectedPlanBId('');
+                          triggerNotification('All saved plans cleared.', 'info');
+                          setShowClearConfirm(false);
+                        }}
+                        className="text-rose-400 hover:text-rose-300 font-bold cursor-pointer"
+                      >
+                        Yes
+                      </button>
+                      <span className="text-slate-500">/</span>
+                      <button
+                        onClick={() => setShowClearConfirm(false)}
+                        className="text-slate-400 hover:text-slate-300 font-bold cursor-pointer"
+                      >
+                        No
+                      </button>
+                    </div>
+                  )}
+                </div>
               )}
             </div>
 
