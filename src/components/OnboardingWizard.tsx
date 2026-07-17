@@ -8,7 +8,8 @@ import {
   ChevronRight,
   ChevronLeft,
   Heart,
-  Smile
+  Smile,
+  Upload
 } from 'lucide-react';
 
 interface OnboardingWizardProps {
@@ -25,6 +26,43 @@ const getBirthMonth = (dateStr: string | undefined): number => {
 
 export const OnboardingWizard: React.FC<OnboardingWizardProps> = ({ onComplete }) => {
   const [step, setStep] = useState(1);
+
+  const handleImportJSON = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      try {
+        const text = event.target?.result as string;
+        if (!text) return;
+        const parsed = JSON.parse(text) as AppStateInputs;
+
+        // Validation check
+        if (
+          parsed &&
+          typeof parsed === 'object' &&
+          parsed.you &&
+          parsed.portfolio &&
+          parsed.growthAssumptions
+        ) {
+          const cleaned = {
+            ...parsed,
+            isConfigured: true
+          };
+          onComplete(cleaned);
+        } else {
+          alert('Invalid plan configuration file. Please ensure the file is a valid JSON exported from this app.');
+        }
+      } catch (err) {
+        console.error("Import plan failed:", err);
+        alert('Failed to parse the file. Please ensure it is a valid JSON file.');
+      }
+    };
+    reader.readAsText(file);
+    e.target.value = ''; // Reset file input
+  };
+
   const [isSingleFiler, setIsSingleFiler] = useState(false);
 
   // Initial local state for the form inputs matching AppStateInputs structure
@@ -234,14 +272,32 @@ export const OnboardingWizard: React.FC<OnboardingWizardProps> = ({ onComplete }
       <div className="w-full max-w-2xl bg-slate-900 border border-slate-800 rounded-3xl shadow-2xl overflow-hidden flex flex-col my-8">
         
         {/* Header Block */}
-        <div className="p-6 border-b border-slate-800 bg-slate-900/60 flex items-center gap-3 relative overflow-hidden">
+        <div className="p-6 border-b border-slate-800 bg-slate-900/60 flex items-center justify-between relative overflow-hidden">
           <div className="absolute top-0 right-0 w-32 h-32 bg-emerald-500/10 rounded-full blur-3xl pointer-events-none"></div>
-          <Sparkles className="w-8 h-8 text-emerald-500 animate-pulse" />
-          <div>
-            <h2 className="text-xl font-bold bg-gradient-to-r from-slate-100 to-slate-400 bg-clip-text text-transparent">
-              Configure Retirement Plan
-            </h2>
-            <p className="text-xs text-slate-400">Initialize your baseline scenario constraints</p>
+          <div className="flex items-center gap-3">
+            <Sparkles className="w-8 h-8 text-emerald-500 animate-pulse" />
+            <div>
+              <h2 className="text-xl font-bold bg-gradient-to-r from-slate-100 to-slate-400 bg-clip-text text-transparent">
+                Configure Retirement Plan
+              </h2>
+              <p className="text-xs text-slate-400">Initialize your baseline scenario constraints</p>
+            </div>
+          </div>
+          <div className="z-10">
+            <label
+              htmlFor="wizard-plan-input"
+              className="cursor-pointer px-3.5 py-2 bg-slate-800 hover:bg-slate-750 border border-slate-700/60 text-slate-300 hover:text-slate-100 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5"
+            >
+              <Upload className="w-3.5 h-3.5" />
+              <span>Import Plan</span>
+            </label>
+            <input
+              type="file"
+              id="wizard-plan-input"
+              accept=".json"
+              onChange={handleImportJSON}
+              className="hidden"
+            />
           </div>
         </div>
 

@@ -13,7 +13,9 @@ import {
   Info,
   Settings,
   HelpCircle,
-  Heart
+  Heart,
+  Download,
+  Upload
 } from 'lucide-react';
 import { DetailedExpensesDialog } from './DetailedExpensesDialog';
 import { HealthcareConfigDialog } from './HealthcareConfigDialog';
@@ -52,6 +54,60 @@ export const InputControlSidebar: React.FC<InputControlSidebarProps> = ({
   const [showExpensesDialog, setShowExpensesDialog] = useState(false);
   const [editingHealthcarePerson, setEditingHealthcarePerson] = useState<'you' | 'wife' | null>(null);
   const [showResetConfirm, setShowResetConfirm] = useState(false);
+
+  const handleExportJSON = () => {
+    try {
+      const dataStr = JSON.stringify(inputs, null, 2);
+      const blob = new Blob([dataStr], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      const timeStamp = new Date().toISOString().split('T')[0];
+      link.setAttribute('href', url);
+      link.setAttribute('download', `retirement_plan_${timeStamp}.json`);
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+    } catch (error) {
+      console.error("Export plan failed:", error);
+    }
+  };
+
+  const handleImportJSON = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      try {
+        const text = event.target?.result as string;
+        if (!text) return;
+        const parsed = JSON.parse(text) as AppStateInputs;
+
+        // Validation check
+        if (
+          parsed &&
+          typeof parsed === 'object' &&
+          parsed.you &&
+          parsed.portfolio &&
+          parsed.growthAssumptions
+        ) {
+          const cleaned = {
+            ...parsed,
+            isConfigured: true
+          };
+          onChange(cleaned);
+        } else {
+          alert('Invalid plan configuration file. Please ensure the file is a valid JSON exported from this app.');
+        }
+      } catch (err) {
+        console.error("Import plan failed:", err);
+        alert('Failed to parse the file. Please ensure it is a valid JSON file.');
+      }
+    };
+    reader.readAsText(file);
+    e.target.value = ''; // Reset file input
+  };
+
 
 
   const mdMonthlySum = useMemo(() => {
@@ -1084,6 +1140,41 @@ export const InputControlSidebar: React.FC<InputControlSidebarProps> = ({
                 </div>
               </div>
             )}
+          </div>
+        </div>
+
+        {/* Section 6.5: Backup & Portability */}
+        <div className="space-y-3 pt-4 border-t border-slate-800">
+          <div className="flex items-center gap-2 text-emerald-500 font-semibold pb-1">
+            <Upload className="w-4 h-4 text-emerald-500" />
+            <h2 className="text-xs uppercase font-bold tracking-wider">Backup & Portability</h2>
+          </div>
+          <p className="text-[10px] text-slate-400 leading-normal">
+            Export your complete configuration as a JSON file or import a previously saved plan.
+          </p>
+          <div className="grid grid-cols-2 gap-2">
+            <button
+              type="button"
+              onClick={handleExportJSON}
+              className="flex items-center justify-center gap-1.5 px-3 py-2 bg-slate-800 hover:bg-slate-750 border border-slate-750 hover:border-slate-700 text-slate-200 hover:text-slate-100 rounded-xl text-xs font-bold transition-all cursor-pointer"
+            >
+              <Download className="w-3.5 h-3.5" />
+              <span>Export Plan</span>
+            </button>
+            <label
+              htmlFor="global-plan-input"
+              className="flex items-center justify-center gap-1.5 px-3 py-2 bg-slate-800 hover:bg-slate-750 border border-slate-750 hover:border-slate-700 text-slate-200 hover:text-slate-100 rounded-xl text-xs font-bold transition-all cursor-pointer"
+            >
+              <Upload className="w-3.5 h-3.5" />
+              <span>Import Plan</span>
+            </label>
+            <input
+              type="file"
+              id="global-plan-input"
+              accept=".json"
+              onChange={handleImportJSON}
+              className="hidden"
+            />
           </div>
         </div>
 

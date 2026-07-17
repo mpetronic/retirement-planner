@@ -1,5 +1,5 @@
 import React, { useState, useMemo } from 'react';
-import { X, Check, Download, Upload } from 'lucide-react';
+import { X, Check } from 'lucide-react';
 import {
   DetailedStateExpenses,
   DetailedExpenseFrequencies,
@@ -113,131 +113,6 @@ export const DetailedExpensesDialog: React.FC<DetailedExpensesDialogProps> = ({
     onClose();
   };
 
-  // Export all expenses to CSV format
-  const handleExportCSV = () => {
-    const headers = ['Category', 'Expense Name', 'Key', 'Frequency/Yr', 'Maryland (MD) Cost', 'Florida (FL) Cost'];
-    const rows = [headers.join(',')];
-
-    // Recurring items
-    for (const item of RECURRING_EXPENSE_ITEMS) {
-      const freq = localFrequencies[item.key] ?? item.defaultFrequency;
-      const costMD = localMD[item.key] || 0;
-      const costFL = localFL[item.key] || 0;
-      const row = [
-        `"${item.category}"`,
-        `"${item.label}"`,
-        `"${item.key}"`,
-        freq,
-        costMD,
-        costFL
-      ];
-      rows.push(row.join(','));
-    }
-
-    // One-Time items
-    for (const item of ONE_TIME_EXPENSE_ITEMS) {
-      const costMD = localMD[item.key] || 0;
-      const costFL = localFL[item.key] || 0;
-      const row = [
-        `"One-Time Setup"`,
-        `"${item.label}"`,
-        `"${item.key}"`,
-        '',
-        costMD,
-        costFL
-      ];
-      rows.push(row.join(','));
-    }
-
-    // Add UTF-8 BOM for Microsoft Excel compatibility
-    const csvContent = '\ufeff' + rows.join('\n');
-    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.setAttribute('href', url);
-    link.setAttribute('download', 'detailed_retirement_expenses.csv');
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-  };
-
-  // Import expenses from CSV format
-  const handleImportCSV = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-
-    const reader = new FileReader();
-    reader.onload = (event) => {
-      const text = event.target?.result as string;
-      if (!text) return;
-
-      try {
-        const lines = text.split(/\r?\n/);
-        const mdUpdate = { ...localMD };
-        const flUpdate = { ...localFL };
-        const freqUpdate = { ...localFrequencies };
-
-        // Parse each row (ignoring header)
-        for (let i = 1; i < lines.length; i++) {
-          const line = lines[i].trim();
-          if (!line) continue;
-
-          // Simple CSV parser that handles double quotes
-          const columns: string[] = [];
-          let current = '';
-          let inQuotes = false;
-          for (let c = 0; c < line.length; c++) {
-            const char = line[c];
-            if (char === '"') {
-              inQuotes = !inQuotes;
-            } else if (char === ',' && !inQuotes) {
-              columns.push(current.trim());
-              current = '';
-            } else {
-              current += char;
-            }
-          }
-          columns.push(current.trim());
-
-          // We expect at least 6 columns
-          if (columns.length < 6) continue;
-
-          const key = columns[2] as keyof DetailedStateExpenses;
-          const freqVal = columns[3];
-          const mdCostVal = columns[4];
-          const flCostVal = columns[5];
-
-          // Check if key is a valid recurring or one-time expense item
-          const isRecurring = RECURRING_EXPENSE_ITEMS.some(item => item.key === key);
-          const isOneTime = ONE_TIME_EXPENSE_ITEMS.some(item => item.key === key);
-
-          if (isRecurring || isOneTime) {
-            const mdCost = Number(mdCostVal);
-            const flCost = Number(flCostVal);
-            if (!isNaN(mdCost)) mdUpdate[key] = mdCost;
-            if (!isNaN(flCost)) flUpdate[key] = flCost;
-
-            if (isRecurring) {
-              const freq = Number(freqVal);
-              if (!isNaN(freq) && freq >= 1) {
-                freqUpdate[key as keyof DetailedExpenseFrequencies] = freq;
-              }
-            }
-          }
-        }
-
-        setLocalMD(mdUpdate);
-        setLocalFL(flUpdate);
-        setLocalFrequencies(freqUpdate);
-        alert('CSV successfully imported! Review values and click "Save Changes" to apply.');
-      } catch (err) {
-        console.error(err);
-        alert('Error parsing CSV. Please ensure the CSV matches the exported format.');
-      }
-    };
-    reader.readAsText(file);
-    e.target.value = ''; // Reset file input
-  };
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm transition-all duration-300">
@@ -254,29 +129,6 @@ export const DetailedExpensesDialog: React.FC<DetailedExpensesDialogProps> = ({
             </p>
           </div>
           <div className="flex items-center gap-3">
-            <button
-              onClick={handleExportCSV}
-              title="Export expenses to detailed_retirement_expenses.csv"
-              className="px-3.5 py-2 bg-slate-800 hover:bg-slate-750 border border-slate-700/60 text-slate-300 hover:text-slate-100 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer"
-            >
-              <Download className="w-3.5 h-3.5" />
-              <span>Export CSV</span>
-            </button>
-            <label
-              htmlFor="csv-file-input"
-              title="Import edited CSV back into the table"
-              className="cursor-pointer px-3.5 py-2 bg-slate-800 hover:bg-slate-750 border border-slate-700/60 text-slate-300 hover:text-slate-100 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5"
-            >
-              <Upload className="w-3.5 h-3.5" />
-              <span>Import CSV</span>
-            </label>
-            <input
-              type="file"
-              accept=".csv"
-              onChange={handleImportCSV}
-              className="hidden"
-              id="csv-file-input"
-            />
             <button 
               onClick={onClose}
               className="p-1.5 text-slate-400 hover:text-slate-100 bg-slate-800/40 hover:bg-slate-800 border border-slate-700/30 rounded-lg transition-all cursor-pointer"
