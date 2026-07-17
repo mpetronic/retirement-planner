@@ -354,7 +354,9 @@ describe('runRetirementSimulation', () => {
     
     
     const actualEndTaxable = row2040!.endYourTaxableBrokerage + row2040!.endWifeTaxableBrokerage;
-    expect(actualEndTaxable).toBeCloseTo(892209.3, 1);
+    // Expected value calibrated for the monthly-compounding engine (monthly loop produces slightly
+    // different compound growth paths vs. the prior annual engine).
+    expect(actualEndTaxable).toBeCloseTo(892293.9, 1);
   });
 
   it('should apply pre-Medicare premiums and detailed health expenses correctly based on age, work status, and retirement', () => {
@@ -658,8 +660,9 @@ describe('runRetirementSimulation', () => {
     expect(row2026!.incomeInflow).toBeGreaterThanOrEqual(19500);
 
     // Verify basis step-up in MD: 50% step-up (deceased's account stepped up to FMV at death).
+    // Expected value calibrated for the monthly-compounding engine.
     const row2045MD = resultsMD.find(r => r.year === 2045);
-    expect(row2045MD!.endWifeTaxableBasis).toBeCloseTo(455506.6, 1);
+    expect(row2045MD!.endWifeTaxableBasis).toBeCloseTo(455476.2, 1);
 
     // Now set current and target state to FL
     inputs.jurisdiction.currentState = 'FL';
@@ -667,8 +670,9 @@ describe('runRetirementSimulation', () => {
     const resultsFL = runRetirementSimulation(inputs, true);
     const row2045FL = resultsFL.find(r => r.year === 2045);
     
-    expect(row2045FL!.endWifeTaxableBasis).toBeCloseTo(1332911.3, 1);
-    expect(row2045FL!.endWifeTaxableBrokerage).toBeCloseTo(1382362.9, 1);
+    // Expected values calibrated for the monthly-compounding engine.
+    expect(row2045FL!.endWifeTaxableBasis).toBeCloseTo(1332846.1, 1);
+    expect(row2045FL!.endWifeTaxableBrokerage).toBeCloseTo(1382295.4, 1);
   });
 
   it('should draw from Cash Assets first and grow remaining cash at the fixed income rate', () => {
