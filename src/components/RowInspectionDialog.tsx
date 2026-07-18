@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { X, TrendingUp, TrendingDown, Wallet, Activity, ShieldAlert, Award } from 'lucide-react';
 import { SimulationResultRow, AppStateInputs } from '../types';
 import { IRMAA_TIERS_SINGLE, IRMAA_TIERS_MFJ } from '../engine/taxRates2026';
+import { SankeyFlowDiagram } from './SankeyFlowDiagram';
 
 interface RowInspectionDialogProps {
   isOpen: boolean;
@@ -22,7 +23,7 @@ export const RowInspectionDialog: React.FC<RowInspectionDialogProps> = ({
   simulateSurvivor,
   deathYear
 }) => {
-  const [activeTab, setActiveTab] = useState<'income' | 'expenses' | 'assets' | 'irmaa'>('income');
+  const [activeTab, setActiveTab] = useState<'income' | 'expenses' | 'assets' | 'irmaa' | 'flow'>('flow'); // Default to 'flow' for beautiful high-level starting visual!
 
   if (!isOpen || !row) return null;
 
@@ -134,6 +135,17 @@ export const RowInspectionDialog: React.FC<RowInspectionDialogProps> = ({
         {/* Tabs */}
         <div className="flex flex-wrap border-b border-slate-800/50 bg-slate-900/20 px-6 py-2 gap-2 text-xs font-bold">
           <button
+            onClick={() => setActiveTab('flow')}
+            className={`px-4 py-2 rounded-lg flex items-center gap-1.5 transition-all cursor-pointer ${
+              activeTab === 'flow' 
+                ? 'bg-purple-500/10 text-purple-400 border border-purple-500/20' 
+                : 'text-slate-400 hover:text-slate-200'
+            }`}
+          >
+            <Activity className="w-4 h-4" />
+            Sankey Cash Flow
+          </button>
+          <button
             onClick={() => setActiveTab('income')}
             className={`px-4 py-2 rounded-lg flex items-center gap-1.5 transition-all cursor-pointer ${
               activeTab === 'income' 
@@ -182,6 +194,10 @@ export const RowInspectionDialog: React.FC<RowInspectionDialogProps> = ({
         {/* Modal Body content (scrollable) */}
         <div className="flex-1 overflow-y-auto p-6 space-y-6">
           
+          {activeTab === 'flow' && (
+            <SankeyFlowDiagram row={row} />
+          )}
+
           {activeTab === 'income' && (
             <div className="space-y-4">
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
