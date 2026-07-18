@@ -133,6 +133,8 @@ export interface DetailedStateExpenses {
   lanaiFurnishings: number;
   shippingExpenses: number;
   storageExpenses: number;
+  washer: number;
+  dryer: number;
 }
 
 export interface DetailedExpenseFrequencies {
@@ -194,7 +196,7 @@ export interface RecurringExpenseMetadata {
 }
 
 export interface OneTimeExpenseMetadata {
-  key: 'masterBedFurniture' | 'masterBedCloset' | 'livingRoomFurniture' | 'windowTreatments' | 'areaRugs' | 'lanaiFurnishings' | 'shippingExpenses' | 'storageExpenses';
+  key: 'masterBedFurniture' | 'masterBedCloset' | 'livingRoomFurniture' | 'windowTreatments' | 'areaRugs' | 'lanaiFurnishings' | 'shippingExpenses' | 'storageExpenses' | 'washer' | 'dryer';
   label: string;
 }
 
@@ -263,7 +265,9 @@ export const ONE_TIME_EXPENSE_ITEMS: OneTimeExpenseMetadata[] = [
   { key: 'areaRugs', label: 'Area rugs' },
   { key: 'lanaiFurnishings', label: 'Lanai furnishings' },
   { key: 'shippingExpenses', label: 'Shipping Expenses' },
-  { key: 'storageExpenses', label: 'Storage Expenses' }
+  { key: 'storageExpenses', label: 'Storage Expenses' },
+  { key: 'washer', label: 'Washer' },
+  { key: 'dryer', label: 'Dryer' }
 ];
 
 export const DEFAULT_DETAILED_EXPENSES: DetailedStateExpenses = {
@@ -277,7 +281,7 @@ export const DEFAULT_DETAILED_EXPENSES: DetailedStateExpenses = {
   homeInsurance: 0, homeMaintenance: 0, umbrellaInsurance: 0,
   diningOut: 0, amazonPrime: 0, golf: 0, theVillagesNetwork: 0, travel: 0, woodshopMembership: 0,
   masterBedFurniture: 0, masterBedCloset: 0, livingRoomFurniture: 0, windowTreatments: 0, areaRugs: 0,
-  lanaiFurnishings: 0, shippingExpenses: 0, storageExpenses: 0
+  lanaiFurnishings: 0, shippingExpenses: 0, storageExpenses: 0, washer: 0, dryer: 0
 };
 
 export const DEFAULT_EXPENSE_FREQUENCIES: DetailedExpenseFrequencies = {
