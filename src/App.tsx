@@ -200,7 +200,7 @@ function App() {
     const correlation = inputs.monteCarloSettings?.correlation ?? 0.15;
     const seed = inputs.monteCarloSettings?.seed;
     
-    const rand = seed !== null && seed !== undefined ? mulberry32(seed) : Math.random;
+    const rand = seed !== null && seed !== undefined ? mulberry32(seed) : mulberry32(12345);
     
     const list: Omit<LockedReturnSequence, 'id'>[] = [];
     for (let t = 0; t < trials; t++) {
