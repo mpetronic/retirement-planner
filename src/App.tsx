@@ -370,6 +370,7 @@ function App() {
         globalScenario={globalScenario}
         simulateSurvivor={simulateSurvivor}
         setSimulateSurvivor={setSimulateSurvivor}
+        ledger={displayActiveLedger}
       />
 
       {/* Main Orchestration Dashboard Layout */}

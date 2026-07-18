@@ -196,7 +196,7 @@ export const OnboardingWizard: React.FC<OnboardingWizardProps> = ({ onComplete }
         plannedRetirementAge: youIsRetired ? 65 : youRetireAge,
         plannedRetirementMonth: youIsRetired ? null : youRetireMonth,
         activeSalary: youIsRetired ? 0 : youSalary,
-        preMedicareMonthlyPremium: 1000,
+        preMedicareMonthlyPremium: null,
       },
       wife: {
         name: isSingleFiler ? 'Spouse' : wifeName,
@@ -206,7 +206,7 @@ export const OnboardingWizard: React.FC<OnboardingWizardProps> = ({ onComplete }
         plannedRetirementAge: isSingleFiler ? 65 : (wifeIsRetired ? 61 : wifeRetireAge),
         plannedRetirementMonth: isSingleFiler ? null : (wifeIsRetired ? null : wifeRetireMonth),
         activeSalary: isSingleFiler ? 0 : (wifeIsRetired ? 0 : wifeSalary),
-        preMedicareMonthlyPremium: 1000,
+        preMedicareMonthlyPremium: null,
       },
       portfolio: {
         yourPreTaxIRA: yourPreTax,

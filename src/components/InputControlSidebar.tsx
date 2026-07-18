@@ -1,5 +1,5 @@
 import React, { useState, useRef, useMemo } from 'react';
-import { AppStateInputs, RECURRING_EXPENSE_ITEMS } from '../types';
+import { AppStateInputs, RECURRING_EXPENSE_ITEMS, SimulationResultRow } from '../types';
 import {
   User,
   TrendingUp,
@@ -15,10 +15,15 @@ import {
   HelpCircle,
   Heart,
   Download,
-  Upload
+  Upload,
+  FileText,
+  FileSpreadsheet
 } from 'lucide-react';
 import { DetailedExpensesDialog } from './DetailedExpensesDialog';
 import { HealthcareConfigDialog } from './HealthcareConfigDialog';
+import { PDFDownloadLink } from '@react-pdf/renderer';
+import { ConfigurationPDF } from './ConfigurationPDF';
+import { exportToExcel } from '../utils/excelExport';
 
 const getBirthMonth = (dateStr: string | undefined): number => {
   if (!dateStr) return 1;
@@ -37,6 +42,7 @@ interface InputControlSidebarProps {
   globalScenario: 'flat' | 'p10' | 'p50' | 'p90';
   simulateSurvivor: boolean;
   setSimulateSurvivor: (val: boolean) => void;
+  ledger: SimulationResultRow[];
 }
 
 export const InputControlSidebar: React.FC<InputControlSidebarProps> = ({
@@ -48,6 +54,7 @@ export const InputControlSidebar: React.FC<InputControlSidebarProps> = ({
   globalScenario,
   simulateSurvivor,
   setSimulateSurvivor,
+  ledger,
 }) => {
   const [isEditingYou, setIsEditingYou] = useState(false);
   const [isEditingWife, setIsEditingWife] = useState(false);
@@ -1192,31 +1199,61 @@ export const InputControlSidebar: React.FC<InputControlSidebarProps> = ({
             <h2 className="text-xs uppercase font-bold tracking-wider">Backup & Portability</h2>
           </div>
           <p className="text-[10px] text-slate-400 leading-normal">
-            Export your complete configuration as a JSON file or import a previously saved plan.
+            Export/import plan configurations or download structured data and summary reports.
           </p>
-          <div className="grid grid-cols-2 gap-2">
-            <button
-              type="button"
-              onClick={handleExportJSON}
-              className="flex items-center justify-center gap-1.5 px-3 py-2 bg-slate-800 hover:bg-slate-750 border border-slate-750 hover:border-slate-700 text-slate-200 hover:text-slate-100 rounded-xl text-xs font-bold transition-all cursor-pointer"
-            >
-              <Download className="w-3.5 h-3.5" />
-              <span>Export Plan</span>
-            </button>
-            <label
-              htmlFor="global-plan-input"
-              className="flex items-center justify-center gap-1.5 px-3 py-2 bg-slate-800 hover:bg-slate-750 border border-slate-750 hover:border-slate-700 text-slate-200 hover:text-slate-100 rounded-xl text-xs font-bold transition-all cursor-pointer"
-            >
-              <Upload className="w-3.5 h-3.5" />
-              <span>Import Plan</span>
-            </label>
-            <input
-              type="file"
-              id="global-plan-input"
-              accept=".json"
-              onChange={handleImportJSON}
-              className="hidden"
-            />
+          <div className="space-y-2">
+            <div className="grid grid-cols-2 gap-2">
+              <button
+                type="button"
+                onClick={handleExportJSON}
+                className="flex items-center justify-center gap-1.5 px-3 py-2 bg-slate-800 hover:bg-slate-750 border border-slate-750 hover:border-slate-700 text-slate-200 hover:text-slate-100 rounded-xl text-xs font-bold transition-all cursor-pointer"
+              >
+                <Download className="w-3.5 h-3.5" />
+                <span>Export Plan</span>
+              </button>
+              <label
+                htmlFor="global-plan-input"
+                className="flex items-center justify-center gap-1.5 px-3 py-2 bg-slate-800 hover:bg-slate-750 border border-slate-750 hover:border-slate-700 text-slate-200 hover:text-slate-100 rounded-xl text-xs font-bold transition-all cursor-pointer"
+              >
+                <Upload className="w-3.5 h-3.5" />
+                <span>Import Plan</span>
+              </label>
+              <input
+                type="file"
+                id="global-plan-input"
+                accept=".json"
+                onChange={handleImportJSON}
+                className="hidden"
+              />
+            </div>
+
+            <div className="grid grid-cols-2 gap-2">
+              <PDFDownloadLink
+                document={<ConfigurationPDF inputs={inputs} />}
+                fileName={`Retirement_Plan_Config_${new Date().toISOString().split('T')[0]}.pdf`}
+                style={{ textDecoration: 'none', display: 'block' }}
+              >
+                {({ loading }) => (
+                  <button
+                    type="button"
+                    disabled={loading}
+                    className="w-full flex items-center justify-center gap-1.5 px-3 py-2 bg-slate-800 hover:bg-slate-750 border border-slate-750 hover:border-slate-700 text-slate-200 hover:text-slate-100 rounded-xl text-xs font-bold transition-all cursor-pointer disabled:opacity-50"
+                  >
+                    <FileText className="w-3.5 h-3.5" />
+                    <span>{loading ? 'Building PDF...' : 'PDF Report'}</span>
+                  </button>
+                )}
+              </PDFDownloadLink>
+
+              <button
+                type="button"
+                onClick={() => exportToExcel(ledger, inputs)}
+                className="flex items-center justify-center gap-1.5 px-3 py-2 bg-slate-800 hover:bg-slate-750 border border-slate-750 hover:border-slate-700 text-slate-200 hover:text-slate-100 rounded-xl text-xs font-bold transition-all cursor-pointer"
+              >
+                <FileSpreadsheet className="w-3.5 h-3.5" />
+                <span>Excel Ledger</span>
+              </button>
+            </div>
           </div>
         </div>
 
