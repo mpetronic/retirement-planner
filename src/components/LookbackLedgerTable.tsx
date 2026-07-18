@@ -414,7 +414,7 @@ export const LookbackLedgerTable: React.FC<LookbackLedgerTableProps> = ({
                       const cpiFactor = r.cpiFactor;
                       const healthcareFactor = Math.pow(1 + inputs.growthAssumptions.healthcareInflationRate, r.year - 2026);
                       return (
-                        <div className={`absolute right-0 w-80 bg-slate-950/95 backdrop-blur-md border border-slate-800 rounded-2xl p-4 shadow-2xl opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 z-50 text-xs text-slate-300 pointer-events-none font-sans normal-case ${
+                        <div className={`absolute right-0 w-96 bg-slate-950/95 backdrop-blur-md border border-slate-800 rounded-2xl p-4 shadow-2xl opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 z-50 text-xs text-slate-300 pointer-events-none font-sans normal-case ${
                           isTopRow ? 'top-full mt-2' : 'bottom-full mb-2'
                         }`}>
                           <div className="flex items-center justify-between border-b border-slate-800/80 pb-1.5 mb-2">
