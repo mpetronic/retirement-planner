@@ -495,6 +495,8 @@ export const LookbackLedgerTable: React.FC<LookbackLedgerTableProps> = ({
         inputs={inputs}
         simulateSurvivor={simulateSurvivor}
         deathYear={deathYear}
+        ledger={ledger}
+        onSelectRow={setSelectedRow}
       />
     </div>
   );

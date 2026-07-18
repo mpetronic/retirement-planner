@@ -12,6 +12,8 @@ interface RowInspectionDialogProps {
   inputs: AppStateInputs;
   simulateSurvivor: boolean;
   deathYear: number;
+  ledger: SimulationResultRow[];
+  onSelectRow: (row: SimulationResultRow) => void;
 }
 
 export const RowInspectionDialog: React.FC<RowInspectionDialogProps> = ({
@@ -21,7 +23,9 @@ export const RowInspectionDialog: React.FC<RowInspectionDialogProps> = ({
   prevRow,
   inputs,
   simulateSurvivor,
-  deathYear
+  deathYear,
+  ledger,
+  onSelectRow
 }) => {
   const [activeTab, setActiveTab] = useState<'income' | 'expenses' | 'assets' | 'irmaa' | 'flow'>('flow'); // Default to 'flow' for beautiful high-level starting visual!
 
@@ -38,6 +42,18 @@ export const RowInspectionDialog: React.FC<RowInspectionDialogProps> = ({
   // Ages and Filer Status
   const isSingle = simulateSurvivor && row.year >= deathYear;
   const isSurvivorYear = simulateSurvivor && row.year >= deathYear;
+
+  const currentIndex = ledger.findIndex(r => r.year === row.year);
+  const handlePrev = () => {
+    if (currentIndex > 0) {
+      onSelectRow(ledger[currentIndex - 1]);
+    }
+  };
+  const handleNext = () => {
+    if (currentIndex >= 0 && currentIndex < ledger.length - 1) {
+      onSelectRow(ledger[currentIndex + 1]);
+    }
+  };
 
   // 1. Income & MAGI Calculations
   const salary = (row.yourSalary || 0) + (row.wifeSalary || 0);
@@ -124,12 +140,29 @@ export const RowInspectionDialog: React.FC<RowInspectionDialogProps> = ({
               <span>CPI Factor: <span className="font-mono">{row.cpiFactor.toFixed(3)}</span></span>
             </p>
           </div>
-          <button 
-            onClick={onClose}
-            className="p-1.5 text-slate-400 hover:text-slate-100 bg-slate-800/40 hover:bg-slate-800 border border-slate-700/30 rounded-lg transition-all cursor-pointer"
-          >
-            <X className="w-5 h-5" />
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={handlePrev}
+              disabled={currentIndex <= 0}
+              className="px-3 py-1.5 text-slate-400 hover:text-slate-100 disabled:text-slate-600 disabled:opacity-40 bg-slate-800/40 hover:bg-slate-800/80 border border-slate-700/30 rounded-lg transition-all cursor-pointer flex items-center gap-1 text-xs font-bold disabled:cursor-not-allowed"
+            >
+              <span>← Prev Year</span>
+            </button>
+            <button
+              onClick={handleNext}
+              disabled={currentIndex === -1 || currentIndex >= ledger.length - 1}
+              className="px-3 py-1.5 text-slate-400 hover:text-slate-100 disabled:text-slate-600 disabled:opacity-40 bg-slate-800/40 hover:bg-slate-800/80 border border-slate-700/30 rounded-lg transition-all cursor-pointer flex items-center gap-1 text-xs font-bold disabled:cursor-not-allowed"
+            >
+              <span>Next Year →</span>
+            </button>
+            <div className="w-[1px] h-5 bg-slate-800 mx-1" />
+            <button 
+              onClick={onClose}
+              className="p-1.5 text-slate-400 hover:text-slate-100 bg-slate-800/40 hover:bg-slate-800 border border-slate-700/30 rounded-lg transition-all cursor-pointer"
+            >
+              <X className="w-5 h-5" />
+            </button>
+          </div>
         </div>
 
         {/* Tabs */}
