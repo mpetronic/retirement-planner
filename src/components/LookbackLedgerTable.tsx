@@ -422,7 +422,7 @@ export const LookbackLedgerTable: React.FC<LookbackLedgerTableProps> = ({
                             <span className="font-bold text-amber-400 uppercase tracking-wider text-[9px]">{isSingle ? 'Single' : 'MFJ'}</span>
                           </div>
                           {/* Column headers */}
-                          <div className="grid grid-cols-3 gap-1 text-[9px] font-bold text-slate-500 uppercase tracking-wider px-1 mb-1">
+                          <div className="grid grid-cols-[60px_1fr_1.2fr] gap-1 text-[9px] font-bold text-slate-500 uppercase tracking-wider px-1 mb-1">
                             <span>Tier</span>
                             <span className="text-right">MAGI Limit</span>
                             <span className="text-right">Mo. Surcharge/person</span>
@@ -437,7 +437,7 @@ export const LookbackLedgerTable: React.FC<LookbackLedgerTableProps> = ({
                               return (
                                 <div
                                   key={tier.tierNumber}
-                                  className={`grid grid-cols-3 gap-1 px-2 py-1 rounded-lg text-[10px] ${
+                                  className={`grid grid-cols-[60px_1fr_1.2fr] gap-1 px-2 py-1 rounded-lg text-[10px] ${
                                     isActive
                                       ? 'bg-amber-500/15 border border-amber-500/30 text-amber-200'
                                       : 'text-slate-400'
