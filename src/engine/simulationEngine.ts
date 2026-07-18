@@ -298,7 +298,8 @@ export function runRetirementSimulation(
     const monthlyTaxableRate = Math.pow(1 + taxableGrowthRate, 1 / 12) - 1;
     const monthlyPreTaxRate = Math.pow(1 + preTaxGrowthRate, 1 / 12) - 1;
     const monthlyRothRate = Math.pow(1 + rothGrowthRate, 1 / 12) - 1;
-    const monthlyCashRate = Math.pow(1 + bondRate, 1 / 12) - 1;
+    const cashRate = inputs.growthAssumptions.fixedIncomeReturnRate;
+    const monthlyCashRate = Math.pow(1 + cashRate, 1 / 12) - 1;
 
     // State determination
     const activeState = (inputs.jurisdiction.relocationYear !== null && year >= inputs.jurisdiction.relocationYear)
@@ -474,7 +475,8 @@ export function runRetirementSimulation(
         if (!youDeceased && yourAge < youRetireAge) estSalary += (inputs.you.activeSalary ?? 0) * cpiFactor;
         if (!inputs.isSingleFiler && wifeAge < wifeRetireAge) estSalary += (inputs.wife.activeSalary ?? 0) * cpiFactor;
         const estDividends = (yourTaxable + wifeTaxable) * taxableDividendYield;
-        const estInterest = (yourCash + (inputs.isSingleFiler ? 0 : wifeCash)) * bondRate;
+        const cashRate = inputs.growthAssumptions.fixedIncomeReturnRate;
+        const estInterest = (yourCash + (inputs.isSingleFiler ? 0 : wifeCash)) * cashRate;
         const uncontrollable = estSalary + estSS + combinedRMD + estDividends + estInterest;
         targetConversion = Math.max(0, inflatedTarget - uncontrollable);
       }
@@ -519,7 +521,8 @@ export function runRetirementSimulation(
       let estSalary = 0;
       if (!youDeceased && yourAge < youRetireAge) estSalary += (inputs.you.activeSalary ?? 0) * cpiFactor;
       if (!inputs.isSingleFiler && wifeAge < wifeRetireAge) estSalary += (inputs.wife.activeSalary ?? 0) * cpiFactor;
-      const estInterest = (yourCash + (inputs.isSingleFiler ? 0 : wifeCash)) * bondRate;
+      const cashRate = inputs.growthAssumptions.fixedIncomeReturnRate;
+      const estInterest = (yourCash + (inputs.isSingleFiler ? 0 : wifeCash)) * cashRate;
       magiTwoYearsAgo = estSalary + estSS * 0.85 + combinedRMD + targetConversion + (yourTaxable + wifeTaxable) * taxableDividendYield + estInterest;
     }
 
