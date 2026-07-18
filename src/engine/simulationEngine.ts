@@ -1207,8 +1207,8 @@ export function runRetirementSimulation(
     // Pro-rate IRMAA surcharges: annual tier amounts × (months on Medicare / 12).
     // This handles mid-year Medicare enrollment correctly (e.g., turning 65 in July → 6/12).
     annualMedicareSurcharges =
-      (yourMedicareMonthCount / 12) * (yourPartBSurcharge + yourPartDSurcharge) +
-      (wifeMedicareMonthCount / 12) * (wifePartBSurcharge + wifePartDSurcharge);
+      yourMedicareMonthCount * (yourPartBSurcharge + yourPartDSurcharge) +
+      wifeMedicareMonthCount * (wifePartBSurcharge + wifePartDSurcharge);
 
     annualYourDividends += monthlyYourDividendsDec;
     annualWifeDividends += monthlyWifeDividendsDec;
