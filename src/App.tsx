@@ -250,13 +250,12 @@ function App() {
   }, [parallelLedgers, globalScenario]);
 
   // Helper to discount a row's nominal values back to today's purchasing power (real value)
-  const discountRow = (row: SimulationResultRow, cpiRate: number): SimulationResultRow => {
-    const yearsElapsed = row.year - 2026;
-    const factor = Math.pow(1 + cpiRate, yearsElapsed);
+  const discountRow = (row: SimulationResultRow): SimulationResultRow => {
+    const factor = row.cpiFactor;
     if (factor <= 1) return row;
 
     const discounted = { ...row };
-    const nonCurrencyKeys = new Set(['year', 'yourAge', 'wifeAge', 'surchargeTier']);
+    const nonCurrencyKeys = new Set(['year', 'yourAge', 'wifeAge', 'surchargeTier', 'cpiFactor']);
     
     for (const key of Object.keys(discounted) as Array<keyof SimulationResultRow>) {
       if (!nonCurrencyKeys.has(key as string) && typeof discounted[key] === 'number') {
@@ -269,20 +268,18 @@ function App() {
   // Conditionally apply inflation discounting for real-dollar displays
   const displayParallelLedgers = useMemo(() => {
     if (!useTodayDollars) return parallelLedgers;
-    const cpi = inputs.growthAssumptions.cpiInflationRate;
     return {
-      flat: parallelLedgers.flat.map((r) => discountRow(r, cpi)),
-      p10: parallelLedgers.p10.map((r) => discountRow(r, cpi)),
-      p50: parallelLedgers.p50.map((r) => discountRow(r, cpi)),
-      p90: parallelLedgers.p90.map((r) => discountRow(r, cpi)),
+      flat: parallelLedgers.flat.map((r) => discountRow(r)),
+      p10: parallelLedgers.p10.map((r) => discountRow(r)),
+      p50: parallelLedgers.p50.map((r) => discountRow(r)),
+      p90: parallelLedgers.p90.map((r) => discountRow(r)),
     };
-  }, [parallelLedgers, useTodayDollars, inputs.growthAssumptions.cpiInflationRate]);
+  }, [parallelLedgers, useTodayDollars]);
 
   const displayActiveLedger = useMemo(() => {
     if (!useTodayDollars) return activeLedger;
-    const cpi = inputs.growthAssumptions.cpiInflationRate;
-    return activeLedger.map((r) => discountRow(r, cpi));
-  }, [activeLedger, useTodayDollars, inputs.growthAssumptions.cpiInflationRate]);
+    return activeLedger.map((r) => discountRow(r));
+  }, [activeLedger, useTodayDollars]);
 
   const displayMonteCarloSummary = useMemo(() => {
     if (!useTodayDollars) return monteCarloSummary;

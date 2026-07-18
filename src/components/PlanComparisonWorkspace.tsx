@@ -155,13 +155,12 @@ export const PlanComparisonWorkspace: React.FC<PlanComparisonWorkspaceProps> = (
   const planB = useMemo(() => savedPlans.find((p) => p.id === selectedPlanBId), [savedPlans, selectedPlanBId]);
 
   // Helper to discount a row's nominal values back to today's purchasing power (real value)
-  const discountRow = (row: SimulationResultRow, cpiRate: number): SimulationResultRow => {
-    const yearsElapsed = row.year - 2026;
-    const factor = Math.pow(1 + cpiRate, yearsElapsed);
+  const discountRow = (row: SimulationResultRow): SimulationResultRow => {
+    const factor = row.cpiFactor;
     if (factor <= 1) return row;
 
     const discounted = { ...row };
-    const nonCurrencyKeys = new Set(['year', 'yourAge', 'wifeAge', 'surchargeTier']);
+    const nonCurrencyKeys = new Set(['year', 'yourAge', 'wifeAge', 'surchargeTier', 'cpiFactor']);
     
     for (const key of Object.keys(discounted) as Array<keyof SimulationResultRow>) {
       if (!nonCurrencyKeys.has(key) && typeof discounted[key] === 'number') {
@@ -176,16 +175,14 @@ export const PlanComparisonWorkspace: React.FC<PlanComparisonWorkspaceProps> = (
     if (!planA) return null;
     const rawResult = runRetirementSimulation(planA.inputs, simulateSurvivor, null);
     if (!useTodayDollars) return rawResult;
-    const cpi = planA.inputs.growthAssumptions.cpiInflationRate;
-    return rawResult.map((r) => discountRow(r, cpi));
+    return rawResult.map((r) => discountRow(r));
   }, [planA, simulateSurvivor, useTodayDollars]);
 
   const simResultB = useMemo(() => {
     if (!planB) return null;
     const rawResult = runRetirementSimulation(planB.inputs, simulateSurvivor, null);
     if (!useTodayDollars) return rawResult;
-    const cpi = planB.inputs.growthAssumptions.cpiInflationRate;
-    return rawResult.map((r) => discountRow(r, cpi));
+    return rawResult.map((r) => discountRow(r));
   }, [planB, simulateSurvivor, useTodayDollars]);
 
   // Sum lifetime stats

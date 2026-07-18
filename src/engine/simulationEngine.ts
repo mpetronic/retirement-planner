@@ -395,11 +395,10 @@ export function runRetirementSimulation(
       yourPreMedicareAnnual = ((stateHc?.pre65MedicalPremium ?? 0) + (stateHc?.pre65DentalPremium ?? 0) + (stateHc?.pre65VisionPremium ?? 0)) * 12 * healthcareFactor;
       yourPreMedicareOOP = ((stateHc?.pre65MedicalOOP ?? 0) + (stateHc?.pre65DentalOOP ?? 0) + (stateHc?.pre65VisionOOP ?? 0)) * healthcareFactor;
       
-      const yearsSinceBaseJohn = Math.max(0, year - Math.max(2026, yourBirthYear + 65));
       const customB = inputs.you.healthcare.medicarePartBPremium;
-      const partB_current = (customB !== null && customB !== undefined) ? customB * Math.pow(1 + inputs.growthAssumptions.healthcareInflationRate, yearsSinceBaseJohn) : BASE_MEDICARE_PART_B * healthcareFactor;
+      const partB_current = (customB !== null && customB !== undefined) ? customB * healthcareFactor : BASE_MEDICARE_PART_B * healthcareFactor;
       const customD = stateHc?.medicarePartDPremium;
-      const partD_current = (customD !== null && customD !== undefined) ? customD * Math.pow(1 + inputs.growthAssumptions.healthcareInflationRate, yearsSinceBaseJohn) : BASE_MEDICARE_PART_D * healthcareFactor;
+      const partD_current = (customD !== null && customD !== undefined) ? customD * healthcareFactor : BASE_MEDICARE_PART_D * healthcareFactor;
       const suppPrem = (stateHc?.supplementPremium ?? 0) * 12 * healthcareFactor;
       const dentalPrem = (stateHc?.post65DentalPremium ?? 0) * 12 * healthcareFactor;
       const visionPrem = (stateHc?.post65VisionPremium ?? 0) * 12 * healthcareFactor;
@@ -420,11 +419,10 @@ export function runRetirementSimulation(
         wifePreMedicareAnnual = ((stateHc?.pre65MedicalPremium ?? 0) + (stateHc?.pre65DentalPremium ?? 0) + (stateHc?.pre65VisionPremium ?? 0)) * 12 * healthcareFactor;
         wifePreMedicareOOP = ((stateHc?.pre65MedicalOOP ?? 0) + (stateHc?.pre65DentalOOP ?? 0) + (stateHc?.pre65VisionOOP ?? 0)) * healthcareFactor;
         
-        const yearsSinceBaseWife = Math.max(0, year - Math.max(2026, wifeBirthYear + 65));
         const customB = inputs.wife.healthcare.medicarePartBPremium;
-        const partB_current = (customB !== null && customB !== undefined) ? customB * Math.pow(1 + inputs.growthAssumptions.healthcareInflationRate, yearsSinceBaseWife) : BASE_MEDICARE_PART_B * healthcareFactor;
+        const partB_current = (customB !== null && customB !== undefined) ? customB * healthcareFactor : BASE_MEDICARE_PART_B * healthcareFactor;
         const customD = stateHc?.medicarePartDPremium;
-        const partD_current = (customD !== null && customD !== undefined) ? customD * Math.pow(1 + inputs.growthAssumptions.healthcareInflationRate, yearsSinceBaseWife) : BASE_MEDICARE_PART_D * healthcareFactor;
+        const partD_current = (customD !== null && customD !== undefined) ? customD * healthcareFactor : BASE_MEDICARE_PART_D * healthcareFactor;
         const suppPrem = (stateHc?.supplementPremium ?? 0) * 12 * healthcareFactor;
         const dentalPrem = (stateHc?.post65DentalPremium ?? 0) * 12 * healthcareFactor;
         const visionPrem = (stateHc?.post65VisionPremium ?? 0) * 12 * healthcareFactor;
@@ -476,7 +474,8 @@ export function runRetirementSimulation(
         if (!youDeceased && yourAge < youRetireAge) estSalary += (inputs.you.activeSalary ?? 0) * cpiFactor;
         if (!inputs.isSingleFiler && wifeAge < wifeRetireAge) estSalary += (inputs.wife.activeSalary ?? 0) * cpiFactor;
         const estDividends = (yourTaxable + wifeTaxable) * taxableDividendYield;
-        const uncontrollable = estSalary + estSS + combinedRMD + estDividends;
+        const estInterest = (yourCash + (inputs.isSingleFiler ? 0 : wifeCash)) * bondRate;
+        const uncontrollable = estSalary + estSS + combinedRMD + estDividends + estInterest;
         targetConversion = Math.max(0, inflatedTarget - uncontrollable);
       }
     } else {
@@ -520,7 +519,8 @@ export function runRetirementSimulation(
       let estSalary = 0;
       if (!youDeceased && yourAge < youRetireAge) estSalary += (inputs.you.activeSalary ?? 0) * cpiFactor;
       if (!inputs.isSingleFiler && wifeAge < wifeRetireAge) estSalary += (inputs.wife.activeSalary ?? 0) * cpiFactor;
-      magiTwoYearsAgo = estSalary + estSS * 0.85 + combinedRMD + targetConversion + (yourTaxable + wifeTaxable) * taxableDividendYield;
+      const estInterest = (yourCash + (inputs.isSingleFiler ? 0 : wifeCash)) * bondRate;
+      magiTwoYearsAgo = estSalary + estSS * 0.85 + combinedRMD + targetConversion + (yourTaxable + wifeTaxable) * taxableDividendYield + estInterest;
     }
 
     let yourPartBSurcharge = 0;
@@ -892,6 +892,9 @@ export function runRetirementSimulation(
     const isYouWorkingDec = !youDeceased && (decMonthIdx < yourRetireMonthIdx);
     const isWifeWorkingDec = !inputs.isSingleFiler && (decMonthIdx < wifeRetireMonthIdx);
 
+    let yourDecInterest = youDeceased ? 0 : yourCash * monthlyCashRate;
+    let wifeDecInterest = inputs.isSingleFiler ? 0 : wifeCash * monthlyCashRate;
+
     while (Math.abs(totalTaxBill - lastTaxBill) > 1 && iterations < 15) {
       lastTaxBill = totalTaxBill;
       iterations++;
@@ -926,8 +929,8 @@ export function runRetirementSimulation(
       const qualifiedDividends = totalDividends * (1 - taxableNonQualifiedPortion);
       const ordinaryDividends = totalDividends * taxableNonQualifiedPortion;
 
-      const yourDecInterest = youDeceased ? 0 : decYourCash * monthlyCashRate;
-      const wifeDecInterest = inputs.isSingleFiler ? 0 : decWifeCash * monthlyCashRate;
+      yourDecInterest = youDeceased ? 0 : decYourCash * monthlyCashRate;
+      wifeDecInterest = inputs.isSingleFiler ? 0 : decWifeCash * monthlyCashRate;
       const totalCashInterest = (annualYourInterest + annualWifeInterest) + (yourDecInterest + wifeDecInterest);
 
       const nonSSOrdinary = salary + rmd + rothConv + ordinaryDividends + totalCashInterest + janToNovTradDraw + decYourTradDraw + decWifeTradDraw;
@@ -940,7 +943,8 @@ export function runRetirementSimulation(
       const stdDeductionBase = isSingle ? FED_STANDARD_DEDUCTION_SINGLE * cpiFactor : FED_STANDARD_DEDUCTION_MFJ * cpiFactor;
       let ageAddition = 0;
       if (isSingle) {
-        if (yourAge >= 65) ageAddition += 1950 * cpiFactor;
+        const activeSurvivorAge = inputs.isSingleFiler ? yourAge : wifeAge;
+        if (activeSurvivorAge >= 65) ageAddition += 1950 * cpiFactor;
       } else {
         if (yourAge >= 65) ageAddition += 1650 * cpiFactor;
         if (wifeAge >= 65) ageAddition += 1650 * cpiFactor;
@@ -1101,6 +1105,8 @@ export function runRetirementSimulation(
           }
         }
       }
+      yourDecInterest = youDeceased ? 0 : decYourCash * monthlyCashRate;
+      wifeDecInterest = inputs.isSingleFiler ? 0 : decWifeCash * monthlyCashRate;
     }
 
     // Commit December values
@@ -1122,7 +1128,7 @@ export function runRetirementSimulation(
     yourPreTax = yourPreTax * (1 + monthlyPreTaxRate);
     yourRoth = yourRoth * (1 + monthlyRothRate);
 
-    const yourDecInterest = youDeceased ? 0 : yourCash * monthlyCashRate;
+    yourDecInterest = youDeceased ? 0 : yourCash * monthlyCashRate;
     annualYourInterest += yourDecInterest;
     yourCash = yourCash + yourDecInterest;
 
@@ -1131,7 +1137,7 @@ export function runRetirementSimulation(
     wifePreTax = wifePreTax * (1 + monthlyPreTaxRate);
     wifeRoth = wifeRoth * (1 + monthlyRothRate);
 
-    const wifeDecInterest = inputs.isSingleFiler ? 0 : wifeCash * monthlyCashRate;
+    wifeDecInterest = inputs.isSingleFiler ? 0 : wifeCash * monthlyCashRate;
     annualWifeInterest += wifeDecInterest;
     wifeCash = wifeCash + wifeDecInterest;
 
@@ -1214,7 +1220,8 @@ export function runRetirementSimulation(
     const ordinaryDividends = totalDividends * taxableNonQualifiedPortion;
     const qualifiedDividends = totalDividends * (1 - taxableNonQualifiedPortion);
 
-    const nonSSOrdinary = salary + rmd + rothConv + ordinaryDividends + janToNovTradDraw + decYourTradDraw + decWifeTradDraw;
+    const totalCashInterest = annualYourInterest + annualWifeInterest;
+    const nonSSOrdinary = salary + rmd + rothConv + ordinaryDividends + totalCashInterest + janToNovTradDraw + decYourTradDraw + decWifeTradDraw;
     const capitalGains = annualCapitalGainsTriggered + capitalGainsTriggeredDec + qualifiedDividends;
 
     const otherAGI = nonSSOrdinary + capitalGains;
@@ -1260,11 +1267,11 @@ export function runRetirementSimulation(
       cpiFactor,
       magiTwoYearsAgo,
       surchargeTier,
-      yourPartBSurcharge: yourAge >= 65 && !isYouWorkingDec ? yourPartBSurcharge : 0,
-      yourPartDSurcharge: yourAge >= 65 && !isYouWorkingDec ? yourPartDSurcharge : 0,
-      wifePartBSurcharge: wifeAge >= 65 && !isWifeWorkingDec ? wifePartBSurcharge : 0,
-      wifePartDSurcharge: wifeAge >= 65 && !isWifeWorkingDec ? wifePartDSurcharge : 0,
-      combinedSurchargeMonthly: (yourAge >= 65 && !isYouWorkingDec ? yourPartBSurcharge + yourPartDSurcharge : 0) + (wifeAge >= 65 && !isWifeWorkingDec ? wifePartBSurcharge + wifePartDSurcharge : 0),
+      yourPartBSurcharge: yourMedicareMonthCount > 0 && !isYouWorkingDec ? yourPartBSurcharge : 0,
+      yourPartDSurcharge: yourMedicareMonthCount > 0 && !isYouWorkingDec ? yourPartDSurcharge : 0,
+      wifePartBSurcharge: wifeMedicareMonthCount > 0 && !isWifeWorkingDec ? wifePartBSurcharge : 0,
+      wifePartDSurcharge: wifeMedicareMonthCount > 0 && !isWifeWorkingDec ? wifePartDSurcharge : 0,
+      combinedSurchargeMonthly: (yourMedicareMonthCount > 0 && !isYouWorkingDec ? yourPartBSurcharge + yourPartDSurcharge : 0) + (wifeMedicareMonthCount > 0 && !isWifeWorkingDec ? wifePartBSurcharge + wifePartDSurcharge : 0),
       combinedSurchargeAnnual: annualMedicareSurcharges,
       livingExpenses: annualLivingExpenses,
       medicareBasePremiums: annualMedicareBasePremiums,

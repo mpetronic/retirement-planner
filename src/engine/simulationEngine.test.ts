@@ -533,25 +533,22 @@ describe('runRetirementSimulation', () => {
     const row2030 = results.find(r => r.year === 2030);
     const hcFactor2030 = Math.pow(1 + inputs.growthAssumptions.healthcareInflationRate, 2030 - 2026);
     expect(row2030!.preMedicareHealthcareCost).toBeCloseTo(6210 * hcFactor2030, 1);
-    expect(row2030!.medicareBasePremiums).toBeCloseTo(1680 + 1260 * hcFactor2030, 1);
+    expect(row2030!.medicareBasePremiums).toBeCloseTo(2940 * hcFactor2030, 1);
     expect(row2030!.livingExpenses).toBeCloseTo(2362.5 * hcFactor2030, 1);
 
     // 2033: John is 68 (on Medicare, retired), Jane is 65 (on Medicare, retired)
     //       => John is on Medicare 12 months. Jane turns 65 in Sept (8 months pre-Medicare, 4 months Medicare).
     //       => Jane pre-Medicare Premium: 8 months = 330 * 8 = 2640 * hcFactor
     //       => Jane pre-Medicare OOP: 8 months = 900 / 12 * 8 = 600 * hcFactor
-    //       => John Medicare premiums: (200 * 1.05^3 + 40 * 1.05^3) * 12 + 180 * 12 * hcFactor = 3333.96 + 2160 * hcFactor
-    //       => Jane Medicare premiums: (200 + 30) * 4 + 140 * 4 * hcFactor = 920 + 560 * hcFactor
-    //       => Combined Medicare base premium = 4253.96 + 2720 * hcFactor
+    //       => John Medicare premiums: (200 + 40 + 180) * 12 * hcFactor = 5040 * hcFactor
+    //       => Jane Medicare premiums: (200 + 30 + 140) * 4 * hcFactor = 1480 * hcFactor
+    //       => Combined Medicare base premium = 6520 * hcFactor
     //       => Combined OOP = (John Medicare OOP (1200) + Jane pre-Medicare OOP (600) + Jane Medicare OOP (320)) * hcFactor = 2120 * hcFactor
     const row2033 = results.find(r => r.year === 2033);
     const hcFactor2033 = Math.pow(1 + inputs.growthAssumptions.healthcareInflationRate, 2033 - 2026);
     
-    const johnPartBCurrent = 200 * Math.pow(1.05, 3);
-    const johnPartDCurrent = 40 * Math.pow(1.05, 3);
-    const johnPremiums = (johnPartBCurrent + johnPartDCurrent) * 12 + 180 * 12 * hcFactor2033;
-    
-    const janePremiums = (200 + 30) * 4 + 140 * 4 * hcFactor2033;
+    const johnPremiums = 5040 * hcFactor2033;
+    const janePremiums = 1480 * hcFactor2033;
     
     expect(row2033!.preMedicareHealthcareCost).toBeCloseTo(2640 * hcFactor2033, 1);
     expect(row2033!.medicareBasePremiums).toBeCloseTo(johnPremiums + janePremiums, 1);
@@ -718,5 +715,83 @@ describe('getRMDStartAge', () => {
     expect(getRMDStartAge(1950)).toBe(72);
     expect(getRMDStartAge(1955)).toBe(73);
     expect(getRMDStartAge(1960)).toBe(75);
+  });
+});
+
+describe('runRetirementSimulation fixes', () => {
+  const getMockInputs = (): any => ({
+    you: {
+      name: 'John',
+      birthDate: '1965-06-15',
+      estimatedPIA: 0,
+      targetSSClaimingAge: null,
+      plannedRetirementAge: 65,
+      activeSalary: 0,
+    },
+    wife: {
+      name: 'Jane',
+      birthDate: '1968-09-20',
+      estimatedPIA: 0,
+      targetSSClaimingAge: null,
+      plannedRetirementAge: 65,
+      activeSalary: 0,
+    },
+    portfolio: {
+      yourPreTaxIRA: 0,
+      yourRothIRA: 0,
+      yourTaxableBrokerage: 0,
+      yourTaxableBasis: 0,
+      yourCash: 100000,
+      wifePreTaxIRA: 0,
+      wifeRothIRA: 0,
+      wifeTaxableBrokerage: 0,
+      wifeTaxableBasis: 0,
+      wifeCash: 0,
+    },
+    jurisdiction: {
+      currentState: 'FL',
+      targetState: 'FL',
+      relocationYear: null,
+    },
+    growthAssumptions: {
+      equityReturnRate: 0.0,
+      fixedIncomeReturnRate: 0.04,
+      cpiInflationRate: 0.0,
+      healthcareInflationRate: 0.0,
+    },
+    annualLivingExpenses: 1000,
+    annualRothConversion: 0,
+    rothConversionStrategy: 'flat',
+    rothConversionTargetValue: null,
+    monteCarloSettings: {
+      mode: 'monte-carlo',
+      equityVolatility: 0.0,
+      fixedIncomeVolatility: 0.0,
+      correlation: 0.0,
+      trials: 1,
+      seed: 42,
+    },
+    isConfigured: true,
+    isSingleFiler: true,
+  });
+
+  it('should include cash interest in year-end AGI/MAGI', () => {
+    const inputs = getMockInputs();
+    const results = runRetirementSimulation(inputs);
+    const row2026 = results[0];
+
+    expect(row2026.taxableInterest).toBeGreaterThan(0);
+    expect(row2026.fedAGI).toBeCloseTo(row2026.taxableInterest, 1);
+    expect(row2026.magi).toBeCloseTo(row2026.taxableInterest, 1);
+  });
+
+  it('should check surviving spouse age for standard deduction age addition when single', () => {
+    const inputs = getMockInputs();
+    inputs.isSingleFiler = false;
+    inputs.simulateSurvivor = true;
+    const results = runRetirementSimulation(inputs, true);
+    const row2051 = results.find(r => r.year === 2051);
+    expect(row2051).toBeDefined();
+    expect(row2051!.standardDeduction).toBeCloseTo(18050, 1);
   });
 });
