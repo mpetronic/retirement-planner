@@ -37,6 +37,7 @@ export interface SpouseProfile {
   activeSalary?: number | null; // Pre-retirement annual active salary
   preMedicareMonthlyPremium?: number | null; // Pre-Medicare monthly premium (e.g. $800)
   healthcare?: HealthcareConfig;
+  longevityAge?: number | null; // Configurable projected death age
 }
 
 export interface PortfolioBalances {

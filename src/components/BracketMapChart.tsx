@@ -143,7 +143,7 @@ export const BracketMapChart: React.FC<BracketMapChartProps> = ({
       return fallback;
     };
     const yourBirthYear = parseBirthYear(inputs.you.birthDate, 1960);
-    const deathYear = yourBirthYear + 85;
+    const deathYear = yourBirthYear + (inputs.you.longevityAge ?? 85);
 
     const dataPoints = ledger.map((r) => {
       const isSingle = simulateSurvivor && r.year >= deathYear;

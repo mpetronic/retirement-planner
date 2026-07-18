@@ -1,8 +1,9 @@
-import React, { useMemo } from 'react';
+import React, { useMemo, useState } from 'react';
 import { SimulationResultRow, AppStateInputs } from '../types';
 import { ShieldAlert, Info, AlertTriangle } from 'lucide-react';
 import { IRMAA_TIERS_MFJ, IRMAA_TIERS_SINGLE } from '../engine/taxRates2026';
 import { calculateFedTax, calculateMDStateTax } from '../engine/simulationEngine';
+import { RowInspectionDialog } from './RowInspectionDialog';
 
 interface LookbackLedgerTableProps {
   ledger: SimulationResultRow[];
@@ -15,11 +16,12 @@ export const LookbackLedgerTable: React.FC<LookbackLedgerTableProps> = ({
   inputs,
   simulateSurvivor,
 }) => {
+  const [selectedRow, setSelectedRow] = useState<SimulationResultRow | null>(null);
   const deathYear = useMemo(() => {
     if (!inputs.you.birthDate) return 2045;
     const year = parseInt(inputs.you.birthDate.split('-')[0], 10);
-    return isNaN(year) ? 2045 : (year + 85);
-  }, [inputs.you.birthDate]);
+    return isNaN(year) ? 2045 : (year + (inputs.you.longevityAge ?? 85));
+  }, [inputs.you.birthDate, inputs.you.longevityAge]);
 
   const formatCurrency = (val: number) => {
     return new Intl.NumberFormat('en-US', {
@@ -195,15 +197,25 @@ export const LookbackLedgerTable: React.FC<LookbackLedgerTableProps> = ({
               const isTopRow = idx < 4;
 
               return (
-                <tr
-                  key={r.year}
-                  className={`transition-colors hover:bg-slate-900/40 ${
-                    isWarningRow 
-                      ? 'bg-amber-950/20 text-amber-200 border-l-4 border-l-amber-500 font-medium' 
-                      : 'text-slate-300'
-                  }`}
-                >
-                  <td className="p-4 font-mono font-semibold">{r.year}</td>
+                 <tr
+                   key={r.year}
+                   onClick={() => setSelectedRow(r)}
+                   className={`transition-colors hover:bg-slate-900/60 cursor-pointer ${
+                     isWarningRow 
+                       ? 'bg-amber-950/20 text-amber-200 border-l-4 border-l-amber-500 font-medium' 
+                       : 'text-slate-300 hover:text-slate-100'
+                   }`}
+                 >
+                  <td className="p-4 font-mono font-semibold whitespace-nowrap">
+                    {r.year}
+                    <span className="text-[10px] font-normal text-slate-400 ml-1.5">
+                      {inputs.isSingleFiler 
+                        ? `(${r.yourAge})` 
+                        : (simulateSurvivor && r.year >= deathYear) 
+                          ? `(--/${r.wifeAge})` 
+                          : `(${r.yourAge}/${r.wifeAge})`}
+                    </span>
+                  </td>
                   <td className="p-4 font-mono relative group cursor-help text-slate-300">
                     <span>{formatCurrency(r.magi)}</span>
                     <div className={`absolute left-1/2 -translate-x-1/2 w-72 bg-slate-950/95 backdrop-blur-md border border-slate-800 rounded-2xl p-4 shadow-2xl opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 z-50 text-xs text-slate-300 pointer-events-none space-y-2 font-sans normal-case ${
@@ -474,6 +486,16 @@ export const LookbackLedgerTable: React.FC<LookbackLedgerTableProps> = ({
           MAGI is calculated as Federal Adjusted Gross Income (AGI) plus tax-exempt interest. Surcharges represent the combined Medicare Part B and Part D premium hikes applied directly to the spouses. In Survivor simulations, the surcharge calculation automatically switches to Single Filer thresholds starting in {deathYear} (after the projected passing of {inputs.you.name || 'You'}).
         </p>
       </div>
+
+      <RowInspectionDialog
+        isOpen={selectedRow !== null}
+        onClose={() => setSelectedRow(null)}
+        row={selectedRow}
+        prevRow={selectedRow ? (ledger.indexOf(selectedRow) > 0 ? ledger[ledger.indexOf(selectedRow) - 1] : null) : null}
+        inputs={inputs}
+        simulateSurvivor={simulateSurvivor}
+        deathYear={deathYear}
+      />
     </div>
   );
 };

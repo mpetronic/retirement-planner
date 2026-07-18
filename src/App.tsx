@@ -33,6 +33,7 @@ const DEFAULT_INPUTS: AppStateInputs = {
     plannedRetirementMonth: null,
     activeSalary: null,
     preMedicareMonthlyPremium: null,
+    longevityAge: 85,
   },
   wife: {
     name: '',
@@ -43,6 +44,7 @@ const DEFAULT_INPUTS: AppStateInputs = {
     plannedRetirementMonth: null,
     activeSalary: null,
     preMedicareMonthlyPremium: null,
+    longevityAge: 95,
   },
   portfolio: {
     yourPreTaxIRA: null,

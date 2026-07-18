@@ -367,6 +367,27 @@ export const InputControlSidebar: React.FC<InputControlSidebarProps> = ({
                   />
                 </div>
               </div>
+              <div className="space-y-1 pt-1.5 border-t border-slate-800/30">
+                <label className="text-[10px] text-slate-400 font-bold uppercase tracking-wider flex justify-between">
+                  <span>Longevity Age</span>
+                  <span className="text-emerald-400 font-mono font-semibold">Age {inputs.you.longevityAge ?? 85}</span>
+                </label>
+                <input
+                  type="range"
+                  min="50"
+                  max="110"
+                  step="1"
+                  value={inputs.you.longevityAge ?? 85}
+                  onChange={(e) => updateNestedState('you', 'longevityAge', Number(e.target.value))}
+                  className="w-full h-1.5 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-emerald-500"
+                />
+                <div className="flex justify-between text-[10px] text-slate-500 font-mono px-0.5">
+                  <span>50</span>
+                  <span>80</span>
+                  <span>95</span>
+                  <span>110</span>
+                </div>
+              </div>
             </div>
 
             {/* Healthcare Planning Dialog Trigger */}
@@ -508,6 +529,27 @@ export const InputControlSidebar: React.FC<InputControlSidebarProps> = ({
                       placeholder="e.g. 100000"
                       className="w-full bg-slate-900 border border-slate-800 rounded-lg pl-6 pr-2.5 py-1 text-xs text-slate-100 font-mono focus:outline-none focus:border-emerald-500"
                     />
+                  </div>
+                </div>
+                <div className="space-y-1 pt-1.5 border-t border-slate-800/30">
+                  <label className="text-[10px] text-slate-400 font-bold uppercase tracking-wider flex justify-between">
+                    <span>Longevity Age</span>
+                    <span className="text-emerald-400 font-mono font-semibold">Age {inputs.wife.longevityAge ?? 95}</span>
+                  </label>
+                  <input
+                    type="range"
+                    min="50"
+                    max="110"
+                    step="1"
+                    value={inputs.wife.longevityAge ?? 95}
+                    onChange={(e) => updateNestedState('wife', 'longevityAge', Number(e.target.value))}
+                    className="w-full h-1.5 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-emerald-500"
+                  />
+                  <div className="flex justify-between text-[10px] text-slate-500 font-mono px-0.5">
+                    <span>50</span>
+                    <span>80</span>
+                    <span>95</span>
+                    <span>110</span>
                   </div>
                 </div>
               </div>
