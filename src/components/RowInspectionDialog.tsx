@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { createPortal } from 'react-dom';
 import { X, TrendingUp, TrendingDown, Wallet, Activity, ShieldAlert, Award } from 'lucide-react';
 import { SimulationResultRow, AppStateInputs } from '../types';
 import { IRMAA_TIERS_SINGLE, IRMAA_TIERS_MFJ } from '../engine/taxRates2026';
@@ -123,9 +124,9 @@ export const RowInspectionDialog: React.FC<RowInspectionDialogProps> = ({
   })();
   const tierMaxLimit = currentTier.limit === Infinity ? Infinity : currentTier.limit * lookbackCpi;
 
-  return (
+  return createPortal(
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm transition-all duration-300">
-      <div className="w-full max-w-7xl bg-slate-900/95 border border-slate-800 rounded-2xl shadow-2xl overflow-hidden glass-panel backdrop-blur-xl transition-all duration-300 transform scale-100 flex flex-col h-[650px] max-h-[90vh]">
+      <div className="w-full max-w-7xl bg-slate-900/95 border border-slate-800 rounded-2xl shadow-2xl overflow-hidden glass-panel backdrop-blur-xl transition-all duration-300 transform scale-100 flex flex-col h-[85vh] max-h-[900px]">
         
         {/* Header */}
         <div className="p-6 border-b border-slate-800 flex flex-col md:flex-row justify-between md:items-center gap-4 bg-slate-900/50">
@@ -586,6 +587,7 @@ export const RowInspectionDialog: React.FC<RowInspectionDialogProps> = ({
         </div>
 
       </div>
-    </div>
+    </div>,
+    document.body
   );
 };

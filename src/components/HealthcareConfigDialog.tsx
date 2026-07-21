@@ -1,4 +1,5 @@
 import React, { useState, useMemo } from 'react';
+import { createPortal } from 'react-dom';
 import { X, Check, HelpCircle, Shield, Heart } from 'lucide-react';
 import { HealthcareConfig, StateHealthcareConfig } from '../types';
 
@@ -394,7 +395,7 @@ export const HealthcareConfigDialog: React.FC<HealthcareConfigDialogProps> = ({
     );
   };
 
-  return (
+  return createPortal(
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm transition-all duration-300">
       <div className="w-full max-w-3xl bg-slate-900 border border-slate-800 rounded-2xl shadow-2xl overflow-hidden glass-panel backdrop-blur-xl transition-all duration-300 transform scale-100 flex flex-col max-h-[90vh]">
         
@@ -518,6 +519,7 @@ export const HealthcareConfigDialog: React.FC<HealthcareConfigDialogProps> = ({
         </div>
 
       </div>
-    </div>
+    </div>,
+    document.body
   );
 };
