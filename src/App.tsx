@@ -378,6 +378,8 @@ function App() {
         simulateSurvivor={simulateSurvivor}
         setSimulateSurvivor={setSimulateSurvivor}
         ledger={displayActiveLedger}
+        globalFontSize={globalFontSize}
+        setGlobalFontSize={setGlobalFontSize}
       />
 
       {/* Main Orchestration Dashboard Layout */}
@@ -390,8 +392,6 @@ function App() {
         setActiveTab={setActiveTab}
         globalScenario={globalScenario}
         setGlobalScenario={setGlobalScenario}
-        globalFontSize={globalFontSize}
-        setGlobalFontSize={setGlobalFontSize}
       >
         {activeTab === 0 && (
           <BracketMapChart

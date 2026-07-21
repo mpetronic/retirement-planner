@@ -17,7 +17,8 @@ import {
   Download,
   Upload,
   FileText,
-  FileSpreadsheet
+  FileSpreadsheet,
+  X
 } from 'lucide-react';
 import { DetailedExpensesDialog } from './DetailedExpensesDialog';
 import { HealthcareConfigDialog } from './HealthcareConfigDialog';
@@ -43,6 +44,8 @@ interface InputControlSidebarProps {
   simulateSurvivor: boolean;
   setSimulateSurvivor: (val: boolean) => void;
   ledger: SimulationResultRow[];
+  globalFontSize: number;
+  setGlobalFontSize: (val: number) => void;
 }
 
 export const InputControlSidebar: React.FC<InputControlSidebarProps> = ({
@@ -55,12 +58,15 @@ export const InputControlSidebar: React.FC<InputControlSidebarProps> = ({
   simulateSurvivor,
   setSimulateSurvivor,
   ledger,
+  globalFontSize,
+  setGlobalFontSize,
 }) => {
   const [isEditingYou, setIsEditingYou] = useState(false);
   const [isEditingWife, setIsEditingWife] = useState(false);
   const [showExpensesDialog, setShowExpensesDialog] = useState(false);
   const [editingHealthcarePerson, setEditingHealthcarePerson] = useState<'you' | 'wife' | null>(null);
   const [showResetConfirm, setShowResetConfirm] = useState(false);
+  const [showDisplaySettings, setShowDisplaySettings] = useState(false);
 
   const handleExportJSON = () => {
     try {
@@ -187,14 +193,26 @@ export const InputControlSidebar: React.FC<InputControlSidebarProps> = ({
   return (
     <aside className="w-full lg:w-96 bg-slate-900 border-r border-slate-800 flex flex-col h-full overflow-y-auto custom-scrollbar">
       {/* Sidebar Header */}
-      <div className="p-6 border-b border-slate-800 bg-slate-900/60 sticky top-0 backdrop-blur-md z-10 flex items-center gap-3">
-        <Flame className="w-7 h-7 text-emerald-500 animate-pulse" />
-        <div>
-          <h1 className="text-xl font-bold bg-gradient-to-r from-slate-100 to-slate-400 bg-clip-text text-transparent">
-            Scenario Planner
-          </h1>
-          <p className="text-xs text-slate-400">Configure parameters in real-time</p>
+      <div className="p-6 border-b border-slate-800 bg-slate-900/60 sticky top-0 backdrop-blur-md z-10 flex items-center justify-between">
+        <div className="flex items-center gap-3">
+          <Flame className="w-7 h-7 text-emerald-500 animate-pulse" />
+          <div>
+            <h1 className="text-xl font-bold bg-gradient-to-r from-slate-100 to-slate-400 bg-clip-text text-transparent">
+              Scenario Planner
+            </h1>
+            <p className="text-xs text-slate-400">Configure parameters in real-time</p>
+          </div>
         </div>
+
+        {/* Display Settings Gear Button */}
+        <button
+          type="button"
+          onClick={() => setShowDisplaySettings(true)}
+          className="p-2 bg-slate-950/60 hover:bg-slate-800/80 text-slate-400 hover:text-slate-100 border border-slate-800 hover:border-slate-700/60 rounded-xl transition-all cursor-pointer flex items-center justify-center"
+          title="Display & Font Size Settings"
+        >
+          <Settings className="w-4 h-4" />
+        </button>
       </div>
 
       <div className="p-4 space-y-6 flex-1">
@@ -1319,6 +1337,90 @@ export const InputControlSidebar: React.FC<InputControlSidebarProps> = ({
           healthcareInflationRate={inputs.growthAssumptions.healthcareInflationRate}
           onSave={(config) => updateNestedState(editingHealthcarePerson, 'healthcare', config)}
         />
+      )}
+
+      {/* Global Display & Typography Settings Modal */}
+      {showDisplaySettings && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm transition-all duration-200">
+          <div className="w-full max-w-md bg-slate-900/95 border border-slate-800 rounded-2xl shadow-2xl p-6 space-y-6 glass-panel backdrop-blur-xl animate-in fade-in zoom-in-95 duration-150">
+            <div className="flex justify-between items-center border-b border-slate-800/60 pb-3">
+              <h3 className="text-base font-bold text-slate-100 flex items-center gap-2">
+                <Settings className="w-5 h-5 text-indigo-400" />
+                Display & Typography Settings
+              </h3>
+              <button
+                type="button"
+                onClick={() => setShowDisplaySettings(false)}
+                className="p-1.5 text-slate-400 hover:text-slate-100 bg-slate-800/40 hover:bg-slate-800 border border-slate-700/30 rounded-lg transition-all cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="space-y-4">
+              <div className="space-y-2">
+                <div className="flex justify-between text-xs font-semibold">
+                  <span className="text-slate-400">Global Font Size Scale</span>
+                  <span className="text-slate-200 font-mono font-bold bg-slate-800 px-2 py-0.5 rounded border border-slate-700/50">
+                    {globalFontSize}px ({Math.round((globalFontSize / 16) * 100)}%)
+                  </span>
+                </div>
+                <input
+                  type="range"
+                  min="12"
+                  max="24"
+                  value={globalFontSize}
+                  onChange={(e) => setGlobalFontSize(parseInt(e.target.value, 10))}
+                  className="w-full h-1.5 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-indigo-500"
+                />
+                <div className="flex justify-between text-[10px] text-slate-500 font-mono">
+                  <span>12px (Small)</span>
+                  <span>16px (Default)</span>
+                  <span>24px (Extra Large)</span>
+                </div>
+              </div>
+
+              {/* Quick Preset Buttons */}
+              <div className="space-y-2 pt-2 border-t border-slate-800/60">
+                <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block">Size Presets</span>
+                <div className="grid grid-cols-5 gap-1.5">
+                  {[12, 14, 16, 18, 20].map((size) => {
+                    const label = size === 12 ? 'XS' : size === 14 ? 'SM' : size === 16 ? 'DF' : size === 18 ? 'LG' : 'XL';
+                    const isSelected = globalFontSize === size;
+                    return (
+                      <button
+                        key={size}
+                        type="button"
+                        onClick={() => setGlobalFontSize(size)}
+                        className={`py-2 px-1 text-[10px] font-bold rounded-lg border transition-all cursor-pointer ${
+                          isSelected
+                            ? 'bg-indigo-500/15 text-indigo-400 border-indigo-500/30'
+                            : 'bg-slate-800/35 text-slate-400 border-slate-800 hover:text-slate-200'
+                        }`}
+                      >
+                        {label} ({size}px)
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              <div className="bg-slate-950/40 border border-slate-800/60 rounded-xl p-3 text-[10px] text-slate-400 leading-relaxed">
+                💡 <strong>Accessibility Note:</strong> Changing the root scale dynamically updates all relative text units (<code>rem</code>). This affects all parameters, sidebars, charts, menus, and details cards across the entire application interface.
+              </div>
+            </div>
+
+            <div className="flex justify-end pt-2 border-t border-slate-800/60">
+              <button
+                type="button"
+                onClick={() => setGlobalFontSize(16)}
+                className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 font-semibold rounded-xl text-xs transition-all cursor-pointer"
+              >
+                Reset to Default
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </aside>
   );
