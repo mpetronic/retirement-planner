@@ -186,6 +186,13 @@ function App() {
   // Persisted Quick Fill selection for Workspace 1 Bracket Map
   const [selectedQuickFill, setSelectedQuickFill] = useLocalStorage<number | null>('retirement_planner_selected_quick_fill', null);
 
+  // Global root font size setting (affects all panels via root rem unit scaling)
+  const [globalFontSize, setGlobalFontSize] = useLocalStorage<number>('retirement_planner_font_size', 16);
+
+  useEffect(() => {
+    document.documentElement.style.fontSize = `${globalFontSize}px`;
+  }, [globalFontSize]);
+
 
   // 1. Generate 1,000 return sequences once, keyed ONLY on volatility/correlation/seed.
   // This preserves stable market return percentages while strategy slider variables are tweaked.
@@ -383,6 +390,8 @@ function App() {
         setActiveTab={setActiveTab}
         globalScenario={globalScenario}
         setGlobalScenario={setGlobalScenario}
+        globalFontSize={globalFontSize}
+        setGlobalFontSize={setGlobalFontSize}
       >
         {activeTab === 0 && (
           <BracketMapChart
