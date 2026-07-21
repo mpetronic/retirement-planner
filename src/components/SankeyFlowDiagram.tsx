@@ -44,11 +44,12 @@ export const SankeyFlowDiagram: React.FC<SankeyFlowDiagramProps> = ({ row }) => 
   const preMedicare = row.preMedicareHealthcareCost ?? 0;
   const medBase = row.medicareBasePremiums ?? 0;
   const medSurcharge = row.combinedSurchargeAnnual ?? 0;
-  const taxes = row.fedIncomeTax + row.stateIncomeTax + row.niitTax;
+  const taxes = row.fedIncomeTax + row.stateIncomeTax; // fedIncomeTax already includes niitTax
 
   const totalExpenses = living + preMedicare + medBase + medSurcharge + taxes;
-  const regularInflows = salary + ss + rmd + divInterest;
-  const surplus = Math.max(0, regularInflows - totalExpenses);
+  const totalSourcesCash = salary + ss + rmd + divInterest + drawBrokerage + drawPreTax + drawRoth + drawCash;
+  const surplus = Math.max(0, totalSourcesCash - totalExpenses);
+  const unfundedDeficit = Math.max(0, totalExpenses - totalSourcesCash);
 
   // 3. Define logical sources
   const sources: NodeItem[] = [
@@ -60,6 +61,7 @@ export const SankeyFlowDiagram: React.FC<SankeyFlowDiagramProps> = ({ row }) => 
     { id: "drawPreTax", label: "Extra IRA Drawdown", value: drawPreTax, color: "#f43f5e" }, // rose-500
     { id: "drawRoth", label: "Roth IRA Drawdown", value: drawRoth, color: "#ec4899" }, // pink-500
     { id: "drawCash", label: "Cash Savings Draw", value: drawCash, color: "#fda4af" }, // rose-300
+    { id: "unfundedDeficit", label: "Unfunded Deficit", value: unfundedDeficit, color: "#ef4444" }, // red-500
     { id: "rothConvSrc", label: "IRA (Conversion Src)", value: rothConv, color: "#fbbf24" } // amber-400
   ].filter(s => s.value > 0);
 

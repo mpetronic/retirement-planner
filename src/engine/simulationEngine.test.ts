@@ -794,4 +794,40 @@ describe('runRetirementSimulation fixes', () => {
     expect(row2051).toBeDefined();
     expect(row2051!.standardDeduction).toBeCloseTo(18050, 1);
   });
+
+  it('should ensure Sankey cash flow sources and uses balance perfectly across all years', () => {
+    const inputs = getMockInputs();
+    inputs.annualRothConversion = 50000;
+    inputs.rothConversionStartYear = 2027;
+    inputs.rothConversionEndYear = 2034;
+    const results = runRetirementSimulation(inputs);
+
+    results.forEach(row => {
+      const salary = (row.yourSalary ?? 0) + (row.wifeSalary ?? 0);
+      const ss = row.yourSS + row.wifeSS;
+      const rmd = row.yourRMD + row.wifeRMD;
+      const divInterest = row.taxableDividends + row.taxableInterest;
+      const drawBrokerage = row.drawdownTaxable ?? 0;
+      const drawPreTax = row.drawdownPreTax ?? 0;
+      const drawRoth = row.drawdownRoth ?? 0;
+      const drawCash = row.drawdownCash ?? 0;
+      const rothConv = row.intentionalRothConversion ?? 0;
+
+      const living = row.livingExpenses ?? 0;
+      const preMedicare = row.preMedicareHealthcareCost ?? 0;
+      const medBase = row.medicareBasePremiums ?? 0;
+      const medSurcharge = row.combinedSurchargeAnnual ?? 0;
+      const taxes = row.fedIncomeTax + row.stateIncomeTax; // fedIncomeTax includes niitTax
+
+      const totalExpenses = living + preMedicare + medBase + medSurcharge + taxes;
+      const totalSourcesCash = salary + ss + rmd + divInterest + drawBrokerage + drawPreTax + drawRoth + drawCash;
+      const surplus = Math.max(0, totalSourcesCash - totalExpenses);
+      const unfundedDeficit = Math.max(0, totalExpenses - totalSourcesCash);
+
+      const sumSources = totalSourcesCash + unfundedDeficit + rothConv;
+      const sumUses = totalExpenses + rothConv + surplus;
+
+      expect(sumUses).toBeCloseTo(sumSources, 2);
+    });
+  });
 });

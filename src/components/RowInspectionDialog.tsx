@@ -310,8 +310,8 @@ export const RowInspectionDialog: React.FC<RowInspectionDialogProps> = ({
                   <div className="bg-slate-905/20 border border-slate-800 rounded-lg p-3.5 space-y-1.5 text-sm mt-4">
                     <span className="text-slate-400 font-bold uppercase tracking-wide text-xs block">Annual Tax Liabilities</span>
                     <div className="flex justify-between items-center">
-                      <span className="text-slate-400">Federal Income Tax:</span>
-                      <span className="font-mono text-slate-300">{formatCurrency(row.fedIncomeTax)}</span>
+                      <span className="text-slate-400">Federal Income Tax (Base):</span>
+                      <span className="font-mono text-slate-300">{formatCurrency(row.fedIncomeTax - row.niitTax)}</span>
                     </div>
                     <div className="flex justify-between items-center">
                       <span className="text-slate-400">State Income Tax:</span>
@@ -325,7 +325,7 @@ export const RowInspectionDialog: React.FC<RowInspectionDialogProps> = ({
                     )}
                     <div className="flex justify-between items-center border-t border-slate-800/80 pt-1.5 mt-1 font-bold text-xs">
                       <span className="text-slate-200">Total Tax:</span>
-                      <span className="font-mono text-slate-100">{formatCurrency(row.totalIncomeTax + row.niitTax)}</span>
+                      <span className="font-mono text-slate-100">{formatCurrency(row.totalIncomeTax)}</span>
                     </div>
                   </div>
                 </div>
@@ -357,8 +357,8 @@ export const RowInspectionDialog: React.FC<RowInspectionDialogProps> = ({
                   <span className="font-mono text-slate-200">{formatCurrency(medicareSurchargeAnnual)}</span>
                 </div>
                 <div className="flex justify-between items-center py-1 border-b border-slate-800/30">
-                  <span className="text-slate-400">Federal Income Tax:</span>
-                  <span className="font-mono text-slate-200">{formatCurrency(row.fedIncomeTax)}</span>
+                  <span className="text-slate-400">Federal Income Tax (Base):</span>
+                  <span className="font-mono text-slate-200">{formatCurrency(row.fedIncomeTax - row.niitTax)}</span>
                 </div>
                 <div className="flex justify-between items-center py-1 border-b border-slate-800/30">
                   <span className="text-slate-400">State Income Tax:</span>
@@ -373,7 +373,7 @@ export const RowInspectionDialog: React.FC<RowInspectionDialogProps> = ({
               </div>
               <div className="flex justify-between items-center border-t border-slate-800 pt-4 mt-2 font-bold text-sm bg-slate-900/30 p-3 rounded-lg">
                 <span className="text-slate-200">Total Annual Outflow:</span>
-                <span className="font-mono text-rose-400">{formatCurrency(row.totalExpenses + row.niitTax)}</span>
+                <span className="font-mono text-rose-400">{formatCurrency(row.totalExpenses)}</span>
               </div>
             </div>
           )}
