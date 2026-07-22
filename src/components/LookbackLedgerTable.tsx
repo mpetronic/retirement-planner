@@ -1,8 +1,9 @@
 import React, { useMemo, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { SimulationResultRow, AppStateInputs } from '../types';
-import { ShieldAlert, Info, AlertTriangle } from 'lucide-react';
+import { ShieldAlert, Info, AlertTriangle, X } from 'lucide-react';
 import { IRMAA_TIERS_MFJ, IRMAA_TIERS_SINGLE } from '../engine/taxRates2026';
-import { calculateFedTax, calculateMDStateTax } from '../engine/simulationEngine';
+import { calculateFedTaxWithLTCG, calculateTaxableSS, calculateMDStateTax } from '../engine/simulationEngine';
 import { RowInspectionDialog } from './RowInspectionDialog';
 
 interface LookbackLedgerTableProps {
@@ -17,6 +18,7 @@ export const LookbackLedgerTable: React.FC<LookbackLedgerTableProps> = ({
   simulateSurvivor,
 }) => {
   const [selectedRow, setSelectedRow] = useState<SimulationResultRow | null>(null);
+  const [showWarningsModal, setShowWarningsModal] = useState(false);
   const deathYear = useMemo(() => {
     if (!inputs.you.birthDate) return 2045;
     const year = parseInt(inputs.you.birthDate.split('-')[0], 10);
@@ -110,26 +112,16 @@ export const LookbackLedgerTable: React.FC<LookbackLedgerTableProps> = ({
             Under Medicare guidelines, your Modified Adjusted Gross Income (MAGI) in a tax year dictates your premium surcharges exactly 2 years later.
           </p>
         </div>
-
-
+        {warnings.length > 0 && (
+          <button
+            onClick={() => setShowWarningsModal(true)}
+            className="flex items-center gap-2 px-4 py-2 rounded-xl bg-amber-500/10 hover:bg-amber-500/20 border border-amber-500/30 text-amber-400 text-xs font-semibold shadow-md transition-all duration-200 animate-pulse hover:animate-none cursor-pointer flex-shrink-0"
+          >
+            <AlertTriangle className="w-4 h-4 text-amber-500" />
+            <span>{warnings.length} Surcharge Warning{warnings.length > 1 ? 's' : ''} Active</span>
+          </button>
+        )}
       </div>
-
-      {/* Safety Alerts Box */}
-      {warnings.length > 0 && (
-        <div className="bg-amber-950/40 border border-amber-500/30 rounded-2xl p-4 space-y-3">
-          <div className="flex items-center gap-2 text-amber-400 font-bold text-sm">
-            <AlertTriangle className="w-5 h-5" />
-            <h4>IRMAA Surcharge Safety Warnings</h4>
-          </div>
-          <div className="space-y-2 text-xs text-amber-200">
-            {warnings.map((w, idx) => (
-              <p key={idx} className="leading-relaxed bg-amber-900/10 p-2 rounded border border-amber-500/10">
-                🚨 <strong>Year {w.year} Alert:</strong> Your computed MAGI of <strong className="font-mono">{formatCurrency(w.magi)}</strong> is only <strong className="font-mono">{formatCurrency(w.excess)}</strong> above the <strong className="font-mono">{formatCurrency(w.cliff)}</strong> IRMAA Cliff. This triggers an extra <strong className="font-mono text-red-400">{formatCurrency(w.penalty)}</strong> in premium surcharges for the couple in calendar year <strong>{w.affectedYear}</strong>! Consider reducing conversions or liquidations by <strong className="font-mono">{formatCurrency(w.excess + 1)}</strong> to stay under the cliff.
-              </p>
-            ))}
-          </div>
-        </div>
-      )}
 
       {/* Ledger Table */}
       <div className="overflow-auto max-h-[600px] rounded-xl border border-slate-800 bg-slate-950/20 custom-scrollbar">
@@ -174,12 +166,40 @@ export const LookbackLedgerTable: React.FC<LookbackLedgerTableProps> = ({
               // on top of all other income and are taxed at the marginal bracket rate.
               const conversionTax = (() => {
                 if (r.intentionalRothConversion <= 0) return 0;
+                
                 const cpiFactor = r.cpiFactor;
                 const isSingle = simulateSurvivor && r.year >= deathYear;
+                
+                // Dividends and capital gains are unchanged by the conversion
+                const taxableNonQualifiedPortion = inputs.portfolio.taxableNonQualifiedPortion !== undefined && inputs.portfolio.taxableNonQualifiedPortion !== null 
+                  ? inputs.portfolio.taxableNonQualifiedPortion 
+                  : 0.30;
+                const qualifiedDividends = r.taxableDividends * (1 - taxableNonQualifiedPortion);
+                const capitalGains = r.capitalGainsTriggered + qualifiedDividends;
+                
+                // 1. Calculate fedTaxWith (which matches r.fedIncomeTax)
+                const fedTaxWith = r.fedIncomeTax;
+                
+                // 2. Calculate fedTaxWithout:
                 const agiWithout = Math.max(0, r.fedAGI - r.intentionalRothConversion);
-                const taxableWithout = Math.max(0, agiWithout - r.standardDeduction);
-                const taxableWith = Math.max(0, r.fedAGI - r.standardDeduction);
-                return calculateFedTax(taxableWith, isSingle, cpiFactor) - calculateFedTax(taxableWithout, isSingle, cpiFactor);
+                const taxableOrdinaryWithout = Math.max(0, agiWithout - capitalGains - r.standardDeduction);
+                
+                const { totalTax: fedBaseTaxWithout } = calculateFedTaxWithLTCG(
+                  taxableOrdinaryWithout, 
+                  capitalGains, 
+                  isSingle, 
+                  cpiFactor
+                );
+                
+                const niitThreshold = isSingle ? 200000 : 250000;
+                const excessMAGIWithout = Math.max(0, agiWithout - niitThreshold);
+                const netInvestmentIncome = r.capitalGainsTriggered + r.taxableDividends;
+                const niitBaseWithout = Math.min(netInvestmentIncome, excessMAGIWithout);
+                const niitTaxWithout = niitBaseWithout * 0.038;
+                
+                const fedTaxWithout = fedBaseTaxWithout + niitTaxWithout;
+                
+                return Math.max(0, fedTaxWith - fedTaxWithout);
               })();
  
               // Marginal state tax attributable to the Roth conversion.
@@ -188,9 +208,30 @@ export const LookbackLedgerTable: React.FC<LookbackLedgerTableProps> = ({
               const conversionStateTax = (() => {
                 if (r.intentionalRothConversion <= 0 || r.stateIncomeTax <= 0) return 0;
                 const isSingle = simulateSurvivor && r.year >= deathYear;
-                const agiWithout = Math.max(0, r.fedAGI - r.intentionalRothConversion);
-                const stateTaxWith = calculateMDStateTax(r.fedAGI, taxableSS, isSingle);
-                const stateTaxWithout = calculateMDStateTax(agiWithout, taxableSS, isSingle);
+                const cpiFactor = r.cpiFactor;
+                
+                // MD pension exclusion (doesn't change without conversion)
+                const capExcl = 34300 * cpiFactor;
+                const mdPensionExclusion = (() => {
+                  if (isSingle) {
+                    const age = inputs.isSingleFiler ? r.yourAge : r.wifeAge;
+                    const ss = inputs.isSingleFiler ? r.yourSS : r.wifeSS;
+                    const rmdAndDraw = (inputs.isSingleFiler ? r.yourRMD : r.wifeRMD) + r.drawdownPreTax;
+                    return (age >= 65) ? Math.min(rmdAndDraw, Math.max(0, capExcl - ss)) : 0;
+                  } else {
+                    const exclJohn = (r.yourAge >= 65) ? Math.min(r.yourRMD + r.drawdownPreTax, Math.max(0, capExcl - r.yourSS)) : 0;
+                    const exclWife = (r.wifeAge >= 65) ? Math.min(r.wifeRMD + r.drawdownPreTax, Math.max(0, capExcl - r.wifeSS)) : 0;
+                    return Math.min(exclJohn + exclWife, Math.max(0, capExcl - r.yourSS) + Math.max(0, capExcl - r.wifeSS));
+                  }
+                })();
+
+                const otherAGIWithout = Math.max(0, r.fedAGI - r.taxableSS - r.intentionalRothConversion);
+                const totalSS = r.yourSS + r.wifeSS;
+                const taxableSSWithout = calculateTaxableSS(totalSS, otherAGIWithout, isSingle);
+                const agiWithout = otherAGIWithout + taxableSSWithout;
+
+                const stateTaxWith = r.stateIncomeTax;
+                const stateTaxWithout = calculateMDStateTax(agiWithout, taxableSSWithout, isSingle, cpiFactor, mdPensionExclusion);
                 return Math.max(0, stateTaxWith - stateTaxWithout);
               })();
 
@@ -498,6 +539,90 @@ export const LookbackLedgerTable: React.FC<LookbackLedgerTableProps> = ({
         ledger={ledger}
         onSelectRow={setSelectedRow}
       />
+
+      {showWarningsModal && createPortal(
+        <div 
+          className="fixed inset-0 bg-slate-950/80 backdrop-blur-md flex items-center justify-center p-4 z-[100]"
+          onClick={() => setShowWarningsModal(false)}
+        >
+          <div 
+            className="bg-slate-900 border border-slate-800 w-full max-w-2xl rounded-3xl shadow-2xl flex flex-col overflow-hidden max-h-[85vh]"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Header */}
+            <div className="p-6 border-b border-slate-800/80 flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <AlertTriangle className="w-5 h-5 text-amber-500 animate-bounce" />
+                <h3 className="text-base font-bold text-slate-100">
+                  IRMAA Surcharge Safety Warnings
+                </h3>
+              </div>
+              <button
+                onClick={() => setShowWarningsModal(false)}
+                className="p-2 hover:bg-slate-800 rounded-lg text-slate-400 hover:text-slate-200 transition-colors cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            {/* Content */}
+            <div className="p-6 overflow-y-auto space-y-4 max-h-[60vh] custom-scrollbar">
+              <p className="text-xs text-slate-400 leading-relaxed">
+                The following years have projected MAGI amounts that are within $5,000 above an IRMAA surcharge threshold. Pushing your income below these thresholds can save significant premium surcharges.
+              </p>
+              <div className="space-y-3">
+                {warnings.map((w, idx) => (
+                  <div 
+                    key={idx} 
+                    className="bg-amber-950/20 border border-amber-500/20 p-4 rounded-2xl space-y-2 text-slate-300"
+                  >
+                    <div className="flex items-center justify-between text-xs border-b border-amber-500/10 pb-1.5 mb-1.5">
+                      <span className="font-bold text-amber-400 uppercase tracking-wide">
+                        🚨 Year {w.year} Warning
+                      </span>
+                      <span className="font-mono text-slate-400">
+                        Affected Surcharge Year: {w.affectedYear}
+                      </span>
+                    </div>
+                    <div className="grid grid-cols-2 gap-3 text-xs">
+                      <div>
+                        <span className="text-slate-400 block">Computed MAGI:</span>
+                        <strong className="font-mono text-slate-200">{formatCurrency(w.magi)}</strong>
+                      </div>
+                      <div>
+                        <span className="text-slate-400 block">IRMAA Cliff Limit:</span>
+                        <strong className="font-mono text-slate-200">{formatCurrency(w.cliff)}</strong>
+                      </div>
+                      <div>
+                        <span className="text-slate-400 block">Excess Over Cliff:</span>
+                        <strong className="font-mono text-amber-400 font-semibold">{formatCurrency(w.excess)}</strong>
+                      </div>
+                      <div>
+                        <span className="text-slate-400 block">Projected Surcharge Cost:</span>
+                        <strong className="font-mono text-red-400 font-semibold">{formatCurrency(w.penalty)}</strong>
+                      </div>
+                    </div>
+                    <div className="text-xs text-amber-200/90 pt-2 border-t border-amber-500/10 leading-relaxed">
+                      💡 <strong>Actionable Tip:</strong> Consider reducing conversions, liquidations, or other taxable distributions by <strong className="font-mono text-emerald-400">{formatCurrency(w.excess + 1)}</strong> to stay under the cliff and save this surcharge.
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* Footer */}
+            <div className="p-6 border-t border-slate-800 flex justify-end bg-slate-900/50">
+              <button
+                onClick={() => setShowWarningsModal(false)}
+                className="px-5 py-2.5 text-xs font-bold text-slate-300 hover:text-slate-100 bg-slate-800/80 hover:bg-slate-800 border border-slate-700/60 rounded-xl transition-all cursor-pointer"
+              >
+                Close Warnings
+              </button>
+            </div>
+          </div>
+        </div>,
+        document.body
+      )}
     </div>
   );
 };

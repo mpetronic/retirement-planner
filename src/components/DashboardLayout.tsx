@@ -89,18 +89,19 @@ export const DashboardLayout: React.FC<DashboardLayoutProps> = ({
             <p className="text-xs text-slate-400">
               Interactive 35-year tax, Medicare IRMAA, and Social Security modeling
             </p>
+            <div className="flex flex-wrap items-center gap-2.5 mt-2.5 text-[10px] font-semibold text-slate-400 font-mono">
+              <span className="flex items-center gap-1.5 bg-slate-900/60 px-2 py-1 rounded-lg border border-slate-800/80">
+                <Coins className="w-3 h-3 text-emerald-500/95" />
+                Claim Combo ({inputs.you.name || 'You'} / {inputs.wife.name || 'Spouse'}): {inputs.you.targetSSClaimingAge} / {inputs.wife.targetSSClaimingAge}
+              </span>
+              <span className="flex items-center gap-1.5 bg-slate-900/60 px-2 py-1 rounded-lg border border-slate-800/80">
+                <MapPin className="w-3 h-3 text-blue-500/95" />
+                {stateTaxContext}
+              </span>
+            </div>
           </div>
           
-          <div className="flex flex-wrap items-center gap-3 text-xs font-semibold text-slate-300">
-            <span className="flex items-center gap-1 bg-slate-800/80 px-3 py-1.5 rounded-xl border border-slate-700/60 font-mono">
-              <Coins className="w-3.5 h-3.5 text-emerald-400" />
-              Claim Combo ({inputs.you.name || 'You'} / {inputs.wife.name || 'Spouse'}): {inputs.you.targetSSClaimingAge} / {inputs.wife.targetSSClaimingAge}
-            </span>
-            <span className="flex items-center gap-1 bg-slate-800/80 px-3 py-1.5 rounded-xl border border-slate-700/60 font-mono">
-              <MapPin className="w-3.5 h-3.5 text-blue-400" />
-              {stateTaxContext}
-            </span>
-
+          <div className="flex items-center gap-3 text-xs font-semibold text-slate-300">
             {/* Global Scenario Switcher */}
             <div className="flex items-center gap-1 bg-slate-950/60 p-1 border border-slate-800 rounded-xl">
               <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider px-2">Global Outlook:</span>
