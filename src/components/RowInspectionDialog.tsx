@@ -98,11 +98,11 @@ export const RowInspectionDialog: React.FC<RowInspectionDialogProps> = ({
   // Flows & Growth
   const totalRMD = row.yourRMD + row.wifeRMD;
   const extraDrawdownPreTax = row.drawdownPreTax;
-  const preTaxGrowth = Math.max(0, endPreTax - startPreTax + totalRMD + extraDrawdownPreTax);
+  const preTaxGrowth = endPreTax - startPreTax + totalRMD + extraDrawdownPreTax;
 
   const rothConversion = row.intentionalRothConversion;
   const rothDrawdown = row.drawdownRoth;
-  const rothGrowth = Math.max(0, endRoth - startRoth - rothConversion + rothDrawdown);
+  const rothGrowth = endRoth - startRoth - rothConversion + rothDrawdown;
 
   const surplus = Math.max(0, row.incomeInflow - row.totalExpenses);
   const netTaxableFlow = surplus - row.drawdownTaxable;
@@ -210,7 +210,7 @@ export const RowInspectionDialog: React.FC<RowInspectionDialogProps> = ({
             }`}
           >
             <Wallet className="w-4 h-4" />
-            Asset flows
+            Asset Flows
           </button>
           <button
             onClick={() => setActiveTab('irmaa')}
@@ -405,9 +405,11 @@ export const RowInspectionDialog: React.FC<RowInspectionDialogProps> = ({
                         <span className="font-mono">-{formatCurrency(Math.abs(netTaxableFlow))}</span>
                       </div>
                     )}
-                    <div className="flex justify-between text-emerald-500">
+                    <div className={`flex justify-between ${taxableGrowth < 0 ? 'text-rose-400' : 'text-emerald-500'}`}>
                       <span>Investment Return / Growth:</span>
-                      <span className="font-mono">+{formatCurrency(taxableGrowth)}</span>
+                      <span className="font-mono">
+                        {taxableGrowth < 0 ? `-${formatCurrency(Math.abs(taxableGrowth))}` : `+${formatCurrency(taxableGrowth)}`}
+                      </span>
                     </div>
                     <div className="flex justify-between font-bold border-t border-slate-800 pt-1.5 mt-1 text-slate-200">
                       <span>Ending Balance:</span>
@@ -430,9 +432,11 @@ export const RowInspectionDialog: React.FC<RowInspectionDialogProps> = ({
                         <span className="font-mono">-{formatCurrency(cashDrawdown)}</span>
                       </div>
                     )}
-                    <div className="flex justify-between text-emerald-500">
+                    <div className={`flex justify-between ${cashInterest < 0 ? 'text-rose-400' : 'text-emerald-500'}`}>
                       <span>Cash Interest Earned:</span>
-                      <span className="font-mono">+{formatCurrency(cashInterest)}</span>
+                      <span className="font-mono">
+                        {cashInterest < 0 ? `-${formatCurrency(Math.abs(cashInterest))}` : `+${formatCurrency(cashInterest)}`}
+                      </span>
                     </div>
                     <div className="flex justify-between font-bold border-t border-slate-800 pt-1.5 mt-1 text-slate-200">
                       <span>Ending Balance:</span>
@@ -461,9 +465,11 @@ export const RowInspectionDialog: React.FC<RowInspectionDialogProps> = ({
                         <span className="font-mono">-{formatCurrency(extraDrawdownPreTax)}</span>
                       </div>
                     )}
-                    <div className="flex justify-between text-emerald-500">
+                    <div className={`flex justify-between ${preTaxGrowth < 0 ? 'text-rose-400' : 'text-emerald-500'}`}>
                       <span>Investment Return / Growth:</span>
-                      <span className="font-mono">+{formatCurrency(preTaxGrowth)}</span>
+                      <span className="font-mono">
+                        {preTaxGrowth < 0 ? `-${formatCurrency(Math.abs(preTaxGrowth))}` : `+${formatCurrency(preTaxGrowth)}`}
+                      </span>
                     </div>
                     <div className="flex justify-between font-bold border-t border-slate-800 pt-1.5 mt-1 text-slate-200">
                       <span>Ending Balance:</span>
@@ -494,9 +500,11 @@ export const RowInspectionDialog: React.FC<RowInspectionDialogProps> = ({
                         <span className="font-mono">-{formatCurrency(rothDrawdown)}</span>
                       </div>
                     )}
-                    <div className="flex justify-between text-emerald-500">
+                    <div className={`flex justify-between ${rothGrowth < 0 ? 'text-rose-400' : 'text-emerald-500'}`}>
                       <span>Investment Return / Growth:</span>
-                      <span className="font-mono">+{formatCurrency(rothGrowth)}</span>
+                      <span className="font-mono">
+                        {rothGrowth < 0 ? `-${formatCurrency(Math.abs(rothGrowth))}` : `+${formatCurrency(rothGrowth)}`}
+                      </span>
                     </div>
                     <div className="flex justify-between font-bold border-t border-slate-800 pt-1.5 mt-1 text-slate-200">
                       <span>Ending Balance:</span>
