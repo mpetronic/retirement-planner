@@ -5,6 +5,7 @@ import {
   generateHistoricalSequence,
   runMonteCarloSimulation,
   computeHistoricalStats,
+  applyStressTestToSequence,
 } from './monteCarloEngine';
 import { AppStateInputs } from '../types';
 
@@ -237,4 +238,124 @@ describe('Monte Carlo sequence regeneration', () => {
     expect(seq1.equityReturns).not.toEqual(seq2.equityReturns);
   });
 });
+
+describe('applyStressTestToSequence & stress testing', () => {
+  const getMockInputsLocal = (): AppStateInputs => ({
+    you: {
+      name: 'John',
+      birthDate: '1965-06-15',
+      estimatedPIA: 2000,
+      targetSSClaimingAge: 67,
+      plannedRetirementAge: 65,
+      activeSalary: 120000,
+      preMedicareMonthlyPremium: 500,
+    },
+    wife: {
+      name: 'Jane',
+      birthDate: '1968-09-20',
+      estimatedPIA: 1200,
+      targetSSClaimingAge: 67,
+      plannedRetirementAge: 62,
+      activeSalary: 80000,
+      preMedicareMonthlyPremium: 500,
+    },
+    portfolio: {
+      yourPreTaxIRA: 500000,
+      yourRothIRA: 100000,
+      yourTaxableBrokerage: 200000,
+      yourTaxableBasis: 150000,
+      wifePreTaxIRA: 300000,
+      wifeRothIRA: 50000,
+      wifeTaxableBrokerage: 100000,
+      wifeTaxableBasis: 80000,
+      yourCash: 50000,
+      wifeCash: 30000,
+    },
+    jurisdiction: {
+      relocationYear: 2026,
+      currentState: 'MD',
+      targetState: 'FL',
+    },
+    growthAssumptions: {
+      equityReturnRate: 0.08,
+      fixedIncomeReturnRate: 0.04,
+      cpiInflationRate: 0.025,
+      healthcareInflationRate: 0.05,
+    },
+    annualLivingExpenses: 100000,
+    annualRothConversion: 50000,
+    rothConversionStrategy: 'flat',
+    rothConversionTargetValue: null,
+    monteCarloSettings: {
+      mode: 'monte-carlo',
+      equityVolatility: 0.15,
+      fixedIncomeVolatility: 0.05,
+      correlation: 0.15,
+      trials: 1000,
+      seed: 42,
+    },
+    isConfigured: true,
+    isSingleFiler: false,
+  });
+
+  it('should non-destructively overlay stress test overrides when enabled', () => {
+    const rand = mulberry32(42);
+    const baseSeq = generateSyntheticSequence(0.08, 0.15, 0.04, 0.05, 0.15, rand);
+
+    // When disabled, returns original sequence unchanged
+    const disabledResult = applyStressTestToSequence(baseSeq, {
+      enabled: false,
+      mode: 'absolute',
+      overrides: [{ year: 2028, equityReturn: -0.35, fixedIncomeReturn: -0.05 }],
+    });
+    expect(disabledResult.equityReturns[2]).toBe(baseSeq.equityReturns[2]);
+
+    // When enabled in absolute mode
+    const enabledAbsolute = applyStressTestToSequence(baseSeq, {
+      enabled: true,
+      mode: 'absolute',
+      overrides: [{ year: 2028, equityReturn: -0.35, fixedIncomeReturn: -0.05 }],
+    });
+    expect(enabledAbsolute.equityReturns[2]).toBe(-0.35); // Year 2028 is index 2 (2028 - 2026)
+    expect(enabledAbsolute.fixedIncomeReturns[2]).toBe(-0.05);
+
+    // Other years remain unchanged
+    expect(enabledAbsolute.equityReturns[0]).toBe(baseSeq.equityReturns[0]);
+
+    // When enabled in relative mode
+    const enabledRelative = applyStressTestToSequence(baseSeq, {
+      enabled: true,
+      mode: 'relative',
+      overrides: [{ year: 2028, equityReturn: -0.20, fixedIncomeReturn: -0.10 }],
+    });
+    expect(enabledRelative.equityReturns[2]).toBeCloseTo(baseSeq.equityReturns[2] - 0.20, 6);
+  });
+
+  it('should restore original baseline Monte Carlo results when stress test is toggled off', () => {
+    const inputs = getMockInputsLocal();
+    inputs.monteCarloSettings.seed = 999;
+
+    const baselineSummary = runMonteCarloSimulation(inputs);
+
+    // Enable severe stress test
+    inputs.monteCarloSettings.stressTest = {
+      enabled: true,
+      mode: 'absolute',
+      overrides: [
+        { year: 2027, equityReturn: -0.40, fixedIncomeReturn: -0.10 },
+        { year: 2028, equityReturn: -0.30, fixedIncomeReturn: -0.05 },
+      ],
+    };
+    const stressedSummary = runMonteCarloSimulation(inputs);
+    expect(stressedSummary.percentiles[2].p10).toBeLessThan(baselineSummary.percentiles[2].p10);
+
+    // Toggle off
+    inputs.monteCarloSettings.stressTest.enabled = false;
+    const restoredSummary = runMonteCarloSimulation(inputs);
+
+    expect(restoredSummary.successRate).toBe(baselineSummary.successRate);
+    expect(restoredSummary.percentiles[2].p50).toBe(baselineSummary.percentiles[2].p50);
+  });
+});
+
 

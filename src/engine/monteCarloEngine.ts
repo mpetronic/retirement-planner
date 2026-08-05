@@ -1,4 +1,4 @@
-import { AppStateInputs, LockedReturnSequence } from '../types';
+import { AppStateInputs, LockedReturnSequence, StressTestConfig, StressTestYearOverride } from '../types';
 import { runRetirementSimulation } from './simulationEngine';
 
 // Modern historical stock (S&P 500 total return) and bond (US 10-Yr Treasury total return) annual returns from 1970 to 2025.
@@ -224,6 +224,47 @@ export interface MonteCarloSummary {
 }
 
 /**
+ * Non-destructively overlays multi-year sequence of returns stress test overrides
+ * onto a trial sequence when stress testing is enabled.
+ */
+export function applyStressTestToSequence<T extends Omit<LockedReturnSequence, 'id'>>(
+  seq: T,
+  stressTest?: StressTestConfig
+): T {
+  if (!stressTest || !stressTest.enabled || !stressTest.overrides || stressTest.overrides.length === 0) {
+    return seq;
+  }
+
+  const overrideMap = new Map<number, StressTestYearOverride>();
+  for (const ov of stressTest.overrides) {
+    overrideMap.set(ov.year, ov);
+  }
+
+  const equityReturns = [...seq.equityReturns];
+  const fixedIncomeReturns = [...seq.fixedIncomeReturns];
+
+  for (let yearIdx = 0; yearIdx < 35; yearIdx++) {
+    const year = 2026 + yearIdx;
+    const ov = overrideMap.get(year);
+    if (ov) {
+      if (stressTest.mode === 'relative') {
+        equityReturns[yearIdx] = seq.equityReturns[yearIdx] + ov.equityReturn;
+        fixedIncomeReturns[yearIdx] = seq.fixedIncomeReturns[yearIdx] + ov.fixedIncomeReturn;
+      } else {
+        equityReturns[yearIdx] = ov.equityReturn;
+        fixedIncomeReturns[yearIdx] = ov.fixedIncomeReturn;
+      }
+    }
+  }
+
+  return {
+    ...seq,
+    equityReturns,
+    fixedIncomeReturns,
+  };
+}
+
+/**
  * Runs a batch Monte Carlo simulation of N trials and compiles statistics.
  */
 export function runMonteCarloSimulation(
@@ -257,10 +298,12 @@ export function runMonteCarloSimulation(
     } else {
       seqData = generateSyntheticSequence(equityMean, equityVol, bondMean, bondVol, correlation, rand);
     }
+
+    const stressedSeqData = applyStressTestToSequence(seqData, inputs.monteCarloSettings?.stressTest);
     
     const randomPart = Math.floor(rand() * 100000).toString(36);
     const sequence: LockedReturnSequence = {
-      ...seqData,
+      ...stressedSeqData,
       id: `trial_${t}_${seed !== null && seed !== undefined ? seed : 'unseeded'}_${randomPart}`,
     };
     

@@ -84,6 +84,11 @@ const DEFAULT_INPUTS: AppStateInputs = {
     correlation: 0.15,
     trials: 1000,
     seed: null, // Default is standard random
+    stressTest: {
+      enabled: false,
+      mode: 'absolute',
+      overrides: [],
+    },
   },
   isConfigured: false,
   isSingleFiler: false,

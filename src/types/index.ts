@@ -64,6 +64,18 @@ export interface LockedReturnSequence {
   inflationRates?: number[]; // Array of 35 inflation rates (2026 to 2060)
 }
 
+export interface StressTestYearOverride {
+  year: number;            // e.g. 2028 (2026 to 2060)
+  equityReturn: number;    // e.g. -0.25 (-25%)
+  fixedIncomeReturn: number; // e.g. -0.05 (-5%)
+}
+
+export interface StressTestConfig {
+  enabled: boolean;
+  mode: 'absolute' | 'relative'; // 'absolute' fixed rate vs 'relative' shock delta offset
+  overrides: StressTestYearOverride[];
+}
+
 export interface MonteCarloSettings {
   mode: 'monte-carlo' | 'historical';
   equityVolatility: number;      // e.g. 0.15 (15%)
@@ -72,6 +84,7 @@ export interface MonteCarloSettings {
   trials: number;                // e.g. 1000
   seed: number | null;           // Null for standard random, integer for deterministic reproducibility
   nonce?: number;                // Incremental counter to regenerate standard random sequences
+  stressTest?: StressTestConfig; // Optional multi-year sequence of returns stress test config
 }
 
 export interface DetailedStateExpenses {

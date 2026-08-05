@@ -14,6 +14,7 @@ import {
 } from 'chart.js';
 import { AppStateInputs } from '../types';
 import { MonteCarloSummary } from '../engine/monteCarloEngine';
+import { StressTestControlPanel } from './StressTestControlPanel';
 import { 
   Sliders, 
   Info,
@@ -215,22 +216,28 @@ export const MonteCarloWorkspace: React.FC<MonteCarloWorkspaceProps> = ({
     return seq ? seq.fixedIncomeReturns : Array(35).fill(inputs.growthAssumptions.fixedIncomeReturnRate);
   }, [globalScenario, inputs.growthAssumptions.fixedIncomeReturnRate, summary.representativeSequences]);
 
+  const stressedYearSet = useMemo(() => {
+    const st = inputs.monteCarloSettings.stressTest;
+    if (!st || !st.enabled || !st.overrides) return new Set<number>();
+    return new Set(st.overrides.map(o => o.year));
+  }, [inputs.monteCarloSettings.stressTest]);
+
   const barChartData = {
     labels: years.map(String),
     datasets: [
       {
         label: 'Equity (Stock) Return Rate',
         data: activeEquityReturns.map(r => Number((r * 100).toFixed(2))),
-        backgroundColor: 'rgba(6, 182, 212, 0.75)', // cyan-500 matching workspace 1 draws
-        borderColor: '#06b6d2',
+        backgroundColor: years.map(yr => stressedYearSet.has(yr) ? 'rgba(244, 63, 94, 0.85)' : 'rgba(6, 182, 212, 0.75)'),
+        borderColor: years.map(yr => stressedYearSet.has(yr) ? '#f43f5e' : '#06b6d2'),
         borderWidth: 1,
         borderRadius: 4,
       },
       {
         label: 'Fixed Income (Bond) Return Rate',
         data: activeFixedIncomeReturns.map(r => Number((r * 100).toFixed(2))),
-        backgroundColor: 'rgba(245, 158, 11, 0.75)', // amber-500 matching workspace 1 traditional draws
-        borderColor: '#f59e0b',
+        backgroundColor: years.map(yr => stressedYearSet.has(yr) ? 'rgba(225, 29, 72, 0.85)' : 'rgba(245, 158, 11, 0.75)'),
+        borderColor: years.map(yr => stressedYearSet.has(yr) ? '#e11d48' : '#f59e0b'),
         borderWidth: 1,
         borderRadius: 4,
       }
@@ -564,6 +571,9 @@ export const MonteCarloWorkspace: React.FC<MonteCarloWorkspaceProps> = ({
         </div>
 
       </div>
+
+      {/* Sequence of Returns Risk & Stress Testing Panel */}
+      <StressTestControlPanel inputs={inputs} onChangeInputs={onChangeInputs} />
 
       {/* Percentile Trajectory Line Chart */}
       <div className="glass-panel rounded-2xl p-6 border border-slate-800 bg-slate-900/20 space-y-4">
