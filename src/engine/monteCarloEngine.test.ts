@@ -222,3 +222,19 @@ describe('generateHistoricalSequence constraint & co-sampling', () => {
     expect(blockSeq.equityReturns[0]).toBeCloseTo(0.3055, 4);
   });
 });
+
+describe('Monte Carlo sequence regeneration', () => {
+  it('should generate different return sequences when seed or nonce changes', () => {
+    const seed1 = 12345;
+    const seed2 = 67890;
+
+    const rng1 = mulberry32(seed1);
+    const rng2 = mulberry32(seed2);
+
+    const seq1 = generateSyntheticSequence(0.08, 0.15, 0.04, 0.05, 0.15, rng1);
+    const seq2 = generateSyntheticSequence(0.08, 0.15, 0.04, 0.05, 0.15, rng2);
+
+    expect(seq1.equityReturns).not.toEqual(seq2.equityReturns);
+  });
+});
+

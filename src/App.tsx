@@ -206,8 +206,10 @@ function App() {
     const bondVol = inputs.monteCarloSettings?.fixedIncomeVolatility ?? 0.05;
     const correlation = inputs.monteCarloSettings?.correlation ?? 0.15;
     const seed = inputs.monteCarloSettings?.seed;
+    const nonce = inputs.monteCarloSettings?.nonce ?? 0;
     
-    const rand = seed !== null && seed !== undefined ? mulberry32(seed) : mulberry32(12345);
+    const baseSeed = seed !== null && seed !== undefined ? seed : 12345;
+    const rand = mulberry32(baseSeed + nonce);
     
     const list: Omit<LockedReturnSequence, 'id'>[] = [];
     for (let t = 0; t < trials; t++) {
@@ -228,6 +230,7 @@ function App() {
     inputs.monteCarloSettings.fixedIncomeVolatility,
     inputs.monteCarloSettings.correlation,
     inputs.monteCarloSettings.seed,
+    inputs.monteCarloSettings.nonce,
   ]);
 
   // 2. Reactively compute the Monte Carlo simulation. Takes ~25ms since returns are pre-generated.

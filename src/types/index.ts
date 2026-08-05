@@ -71,6 +71,7 @@ export interface MonteCarloSettings {
   correlation: number;           // e.g. 0.15
   trials: number;                // e.g. 1000
   seed: number | null;           // Null for standard random, integer for deterministic reproducibility
+  nonce?: number;                // Incremental counter to regenerate standard random sequences
 }
 
 export interface DetailedStateExpenses {

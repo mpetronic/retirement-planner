@@ -17,7 +17,8 @@ import { MonteCarloSummary } from '../engine/monteCarloEngine';
 import { 
   Sliders, 
   Info,
-  Calendar
+  Calendar,
+  RefreshCw
 } from 'lucide-react';
 
 ChartJS.register(
@@ -92,6 +93,16 @@ export const MonteCarloWorkspace: React.FC<MonteCarloWorkspaceProps> = ({
         [field]: value,
       },
     });
+  };
+
+  const handleRegenerate = () => {
+    if (inputs.monteCarloSettings.seed !== null) {
+      const newSeed = Math.floor(Math.random() * 1000000);
+      updateSettings('seed', newSeed);
+    } else {
+      const currentNonce = inputs.monteCarloSettings.nonce || 0;
+      updateSettings('nonce', currentNonce + 1);
+    }
   };
 
   // SVG parameters for circular success rate gauge
@@ -278,7 +289,7 @@ export const MonteCarloWorkspace: React.FC<MonteCarloWorkspaceProps> = ({
   return (
     <div className="space-y-6">
       {/* Top Title Section */}
-      <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 bg-slate-900/30 p-5 rounded-2xl border border-slate-800/60">
+      <div className="bg-slate-900/30 p-5 rounded-2xl border border-slate-800/60">
         <div>
           <h3 className="text-lg font-bold text-slate-100 flex items-center gap-2">
             <Sliders className="w-5 h-5 text-emerald-400" />
@@ -362,9 +373,21 @@ export const MonteCarloWorkspace: React.FC<MonteCarloWorkspaceProps> = ({
 
         {/* Right Column: Dedicated Model Estimation Configuration Panel */}
         <div className="lg:col-span-2 glass-panel rounded-2xl p-6 border border-slate-800 bg-slate-900/20 space-y-6">
-          <div className="flex items-center gap-2 border-b border-slate-800 pb-3">
-            <Sliders className="w-4 h-4 text-emerald-400" />
-            <h4 className="text-xs font-bold text-slate-200 uppercase tracking-wider">Model Estimation Config Panel</h4>
+          <div className="flex items-center justify-between border-b border-slate-800 pb-3">
+            <div className="flex items-center gap-2">
+              <Sliders className="w-4 h-4 text-emerald-400" />
+              <h4 className="text-xs font-bold text-slate-200 uppercase tracking-wider">Model Estimation Config Panel</h4>
+            </div>
+
+            <button
+              id="regenerate-mc-panel-btn"
+              onClick={handleRegenerate}
+              className="flex items-center gap-1.5 px-3 py-1.5 bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 hover:border-emerald-500/50 rounded-lg text-xs font-semibold transition-all duration-200 active:scale-95 group cursor-pointer"
+              title="Regenerate stochastic market predictions with new random trials"
+            >
+              <RefreshCw className="w-3.5 h-3.5 text-emerald-400 group-hover:rotate-180 transition-transform duration-500" />
+              <span>Regenerate Predictions</span>
+            </button>
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -409,7 +432,7 @@ export const MonteCarloWorkspace: React.FC<MonteCarloWorkspaceProps> = ({
                 <input
                   type="range"
                   min="200"
-                  max="5000"
+                  max="10000"
                   step="100"
                   value={inputs.monteCarloSettings.trials}
                   onChange={(e) => updateSettings('trials', Number(e.target.value))}
@@ -418,7 +441,7 @@ export const MonteCarloWorkspace: React.FC<MonteCarloWorkspaceProps> = ({
                 <div className="flex justify-between text-[9px] text-slate-500 font-mono">
                   <span>200 (Draft)</span>
                   <span>1000 (Recommended)</span>
-                  <span>5000 (Detailed)</span>
+                  <span>10000 (High Precision)</span>
                 </div>
               </div>
 
@@ -444,16 +467,26 @@ export const MonteCarloWorkspace: React.FC<MonteCarloWorkspaceProps> = ({
                   </label>
                   
                   {inputs.monteCarloSettings.seed !== null && (
-                    <input
-                      type="number"
-                      value={inputs.monteCarloSettings.seed}
-                      onChange={(e) => {
-                        const val = e.target.value === '' ? 42 : Number(e.target.value);
-                        updateSettings('seed', val);
-                      }}
-                      className="flex-1 text-xs font-mono font-bold px-2.5 py-1 bg-slate-950 text-slate-100 border border-slate-800 rounded-lg focus:outline-none focus:border-emerald-500"
-                      placeholder="e.g. 42"
-                    />
+                    <div className="flex items-center gap-1.5 flex-1">
+                      <input
+                        type="number"
+                        value={inputs.monteCarloSettings.seed}
+                        onChange={(e) => {
+                          const val = e.target.value === '' ? 42 : Number(e.target.value);
+                          updateSettings('seed', val);
+                        }}
+                        className="w-full text-xs font-mono font-bold px-2.5 py-1 bg-slate-950 text-slate-100 border border-slate-800 rounded-lg focus:outline-none focus:border-emerald-500"
+                        placeholder="e.g. 42"
+                      />
+                      <button
+                        type="button"
+                        onClick={handleRegenerate}
+                        className="p-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-emerald-400 border border-slate-700 rounded-lg transition-colors cursor-pointer group"
+                        title="Randomize seed value and regenerate"
+                      >
+                        <RefreshCw className="w-3 h-3 group-hover:rotate-180 transition-transform duration-500" />
+                      </button>
+                    </div>
                   )}
                 </div>
                 <p className="text-[9px] text-slate-500 leading-normal">
