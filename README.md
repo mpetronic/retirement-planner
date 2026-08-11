@@ -45,10 +45,15 @@ node --version # Should output v20.x.x
 npm --version  # Should output v10.x.x
 ```
 
-#### 2. Project Installation
+#### 2. Clone Repository & Install Dependencies
+Create your local `~/repos` directory and clone the project:
 ```bash
-# Clone the repository (if not already local)
-git clone <repository-url>
+# Create and navigate to your repos directory
+mkdir -p ~/repos
+cd ~/repos
+
+# Clone the repository
+git clone git@github.com:mpetronic/retirement-planner.git
 cd retirement-planner
 
 # Clean install packages
@@ -64,35 +69,214 @@ The application will launch locally at `http://localhost:5173`.
 
 ---
 
-### 🪟 Windows Setup (Native PowerShell/CMD)
+### 🍎 macOS Setup
 
-For Windows developers not using WSL, you can install the toolchain using the official installer or **nvm-windows**.
+macOS developers can configure Node.js using **Homebrew** (recommended), **Node Version Manager (NVM)**, or the official installer.
 
 #### 1. Install Node.js
-* **Recommended (Via Installer)**: Download the official **Node.js LTS Installer (.msi)** from the [Node.js Downloads Page](https://nodejs.org/en/download/) and run it. Ensure that the **"Add to PATH"** checkbox is selected during setup.
-* **Alternative (Via NVM-Windows)**: Download and run the latest installer from [nvm-windows releases](https://github.com/coreybutler/nvm-windows/releases), then open a fresh PowerShell and run:
-  ```powershell
-  nvm install 20.11.0
-  nvm use 20.11.0
+Choose one of the following methods in your macOS Terminal:
+
+* **Via Homebrew [Recommended & Fastest]**:
+  If you have [Homebrew](https://brew.sh/) installed:
+  ```zsh
+  # Install Node.js LTS v20
+  brew install node@20
+
+  # Link node@20 so it is globally accessible in your PATH
+  brew link --overwrite --force node@20
   ```
 
-#### 2. Verify Path & Tools
-Open a **new** PowerShell or Command Prompt terminal and verify paths are bound:
-```powershell
-node -v
-npm -v
+* **Via NVM (Node Version Manager)**:
+  Ideal if you work with multiple Node versions:
+  ```zsh
+  # 1. Download and install NVM
+  curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.39.7/install.sh | bash
+
+  # 2. Reload your zsh profile
+  source ~/.zshrc
+
+  # 3. Install and activate Node.js LTS v20
+  nvm install 20
+  nvm use 20
+  ```
+
+* **Via Official Installer (.pkg)**:
+  Download and run the official **macOS Installer (.pkg)** from the [Node.js Downloads Page](https://nodejs.org/en/download/).
+
+#### 2. Verify Toolchain
+In your Terminal, verify that `node` and `npm` are available:
+```zsh
+node -v   # Should output v20.x.x
+npm -v    # Should output v10.x.x
 ```
 
-#### 3. Project Installation & Dev Server
-Run these commands within your project folder:
+#### 3. Clone Repository, Install & Run Dev Server
+Create your local `~/repos` directory, clone the project, and launch the application:
+```zsh
+# Create and navigate to your repos directory
+mkdir -p ~/repos
+cd ~/repos
+
+# Clone the repository
+git clone git@github.com:mpetronic/retirement-planner.git
+cd retirement-planner
+
+# Install dependencies
+npm install
+
+# Start Vite dev server
+npm run dev
+```
+Navigate your browser to `http://localhost:5173`.
+
+---
+
+### 🪟 Windows Setup (Native PowerShell/CMD)
+
+Choose the setup procedure that matches your Windows user permissions:
+* **[Option A: With Administrator Access](#option-a-with-administrator-access)**: For personal PCs or developer workstations with local admin rights.
+* **[Option B: Without Administrator Access (Non-Admin)](#option-b-without-administrator-access-non-admin)**: For enterprise laptops or restricted corporate environments without admin privileges.
+
+---
+
+#### Option A: With Administrator Access
+
+##### 1. Install Node.js LTS & Git
+Open PowerShell and choose one of the following installation methods:
+* **Via Windows Package Manager (`winget`) [Fastest]**:
+  ```powershell
+  # Install Node.js LTS
+  winget install OpenJS.NodeJS.LTS
+
+  # Install Git (if not already installed)
+  winget install Git.Git
+  ```
+* **Via Official Installers**:
+  - Download and run the **Node.js LTS Installer (.msi)** from the [Node.js Downloads Page](https://nodejs.org/en/download/). Ensure the **"Add to PATH"** checkbox is selected during setup.
+  - Download and run the **Git for Windows Installer** from [git-scm.com/download/win](https://git-scm.com/download/win).
+* **Alternative (Via NVM-Windows)**:
+  ```powershell
+  winget install CoreyButler.NVMforWindows
+  ```
+  *(Or download and run `nvm-setup.exe` from [nvm-windows releases](https://github.com/coreybutler/nvm-windows/releases)).*
+
+##### 2. Configure PowerShell Execution Policy
+By default, PowerShell restricts running scripts. Enable script execution for your user account:
 ```powershell
+Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser -Force
+```
+
+##### 3. Restart Terminal & Verify Toolchain
+**Close all existing PowerShell windows and open a new PowerShell window** so the updated `PATH` environment variables take effect:
+```powershell
+node -v   # Should output v20.x.x
+npm -v    # Should output v10.x.x
+git --version
+```
+*(If using NVM-Windows, run `nvm install 20.11.0` followed by `nvm use 20.11.0` before verifying).*
+
+##### 4. Clone Repository, Install & Run Dev Server
+Create your local `$HOME\repos` directory, clone the project, and start the server:
+```powershell
+# Create and navigate to your repos directory
+mkdir "$HOME\repos" -Force
+cd "$HOME\repos"
+
+# Clone the repository
+git clone git@github.com:mpetronic/retirement-planner.git
+cd retirement-planner
+
 # Install node packages
 npm install
 
 # Launch Vite dev server
 npm run dev
 ```
-Navigate your browser to `http://localhost:5173` to explore.
+Navigate your browser to `http://localhost:5173`.
+
+---
+
+#### Option B: Without Administrator Access (Non-Admin)
+
+Follow these step-by-step instructions to install and run the app entirely in your user folder without needing administrator privileges.
+
+##### Step 1: Open PowerShell
+1. Press the **Windows Key** on your keyboard (or click the Start Menu).
+2. Type `PowerShell` and click **Windows PowerShell** to open a new terminal window.
+
+##### Step 2: Create a Tools Folder and Move into It
+Create a dedicated `tools` folder in your user account directory and change into it:
+```powershell
+# Create a "tools" folder inside your personal user profile
+mkdir "$HOME\tools" -Force
+
+# Navigate (change directory) into the newly created folder
+cd "$HOME\tools"
+```
+
+##### Step 3: Download & Extract Portable Node.js
+Run the following commands in PowerShell to download the official portable Node.js LTS archive and extract it:
+```powershell
+# 1. Download the portable Node.js v20 zip archive
+Invoke-WebRequest -Uri "https://nodejs.org/dist/v20.18.0/node-v20.18.0-win-x64.zip" -OutFile "node.zip"
+
+# 2. Extract the archive into your tools folder
+Expand-Archive -Path "node.zip" -DestinationPath "$HOME\tools" -Force
+
+# 3. Rename the extracted folder to "nodejs" for easy access
+Rename-Item -Path "$HOME\tools\node-v20.18.0-win-x64" -NewName "nodejs"
+```
+*(Alternative via Browser: If you prefer using your web browser, download the 64-bit `.zip` from the [Node.js Distributions Page](https://nodejs.org/dist/latest-v20.x/), right-click the downloaded file, select **Extract All...**, and choose `C:\Users\<YourUsername>\tools\nodejs` as the destination).*
+
+##### Step 4: Configure User PATH & Enable Script Execution
+Tell Windows where to find `node` and allow PowerShell to run local scripts in your current session (no admin rights needed):
+```powershell
+# 1. Permanently add Node to your User PATH (only needed once)
+[Environment]::SetEnvironmentVariable("Path", "$HOME\tools\nodejs;" + [Environment]::GetEnvironmentVariable("Path", "User"), "User")
+
+# 2. Load Node into your current PowerShell window immediately
+$env:Path = "$HOME\tools\nodejs;$env:Path"
+
+# 3. Allow PowerShell to run scripts in this session without admin permissions
+Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope Process
+```
+
+##### Step 5: Verify Toolchain Installation
+Confirm that `node` and `npm` are recognized:
+```powershell
+node -v   # Should print v20.x.x
+npm -v    # Should print 10.x.x
+```
+
+##### Step 6: Download & Extract Project Code (No Git Required)
+You do not need Git installed. Download and extract the repository source code directly:
+```powershell
+# 1. Create your repos directory and move into it
+mkdir "$HOME\repos" -Force
+cd "$HOME\repos"
+
+# 2. Download the repository source code ZIP archive
+Invoke-WebRequest -Uri "https://github.com/mpetronic/retirement-planner/archive/refs/heads/main.zip" -OutFile "repo.zip"
+
+# 3. Extract the ZIP archive
+Expand-Archive -Path "repo.zip" -DestinationPath "$HOME\repos" -Force
+
+# 4. Rename the extracted folder to retirement-planner and move into it
+Rename-Item -Path "$HOME\repos\retirement-planner-main" -NewName "retirement-planner"
+cd "$HOME\repos\retirement-planner"
+```
+*(Alternative via Browser: Visit [github.com/mpetronic/retirement-planner](https://github.com/mpetronic/retirement-planner), click **Code** -> **Download ZIP**, and extract the contents to `C:\Users\<YourUsername>\repos\retirement-planner`).*
+
+##### Step 7: Install Dependencies & Launch the App
+Run these commands within that same PowerShell window:
+```powershell
+# 1. Install all project dependencies
+npm install
+
+# 2. Start the local development web server
+npm run dev
+```
+Once started, open your web browser and go to `http://localhost:5173` to interact with the planner.
 
 ---
 
