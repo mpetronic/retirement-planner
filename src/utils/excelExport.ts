@@ -1,7 +1,7 @@
 import * as XLSX from 'xlsx';
 import { AppStateInputs, SimulationResultRow, RECURRING_EXPENSE_ITEMS, ONE_TIME_EXPENSE_ITEMS, DetailedStateExpenses } from '../types';
 
-export const exportToExcel = (ledger: SimulationResultRow[], inputs: AppStateInputs) => {
+export const generateExcelWorkbook = (ledger: SimulationResultRow[], inputs: AppStateInputs): XLSX.WorkBook => {
   const wb = XLSX.utils.book_new();
 
   // Helper to safely format healthcare values
@@ -207,6 +207,16 @@ export const exportToExcel = (ledger: SimulationResultRow[], inputs: AppStateInp
     }
   }
 
-  // Trigger browser download
-  XLSX.writeFile(wb, "Retirement_Simulation_Ledger_Export.xlsx");
+  return wb;
+};
+
+export const generateExcelBlob = (ledger: SimulationResultRow[], inputs: AppStateInputs): Blob => {
+  const wb = generateExcelWorkbook(ledger, inputs);
+  const wbout = XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
+  return new Blob([wbout], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+};
+
+export const exportToExcel = (ledger: SimulationResultRow[], inputs: AppStateInputs, filename: string = "Retirement_Simulation_Ledger_Export.xlsx") => {
+  const wb = generateExcelWorkbook(ledger, inputs);
+  XLSX.writeFile(wb, filename);
 };

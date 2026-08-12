@@ -22,9 +22,8 @@ import {
 } from 'lucide-react';
 import { DetailedExpensesDialog } from './DetailedExpensesDialog';
 import { HealthcareConfigDialog } from './HealthcareConfigDialog';
-import { PDFDownloadLink } from '@react-pdf/renderer';
-import { ConfigurationPDF } from './ConfigurationPDF';
-import { exportToExcel } from '../utils/excelExport';
+import { ExportPlanDialog } from './ExportPlanDialog';
+import { ExportFormatType } from '../utils/exportHelpers';
 
 const getBirthMonth = (dateStr: string | undefined): number => {
   if (!dateStr) return 1;
@@ -67,23 +66,7 @@ export const InputControlSidebar: React.FC<InputControlSidebarProps> = ({
   const [editingHealthcarePerson, setEditingHealthcarePerson] = useState<'you' | 'wife' | null>(null);
   const [showResetConfirm, setShowResetConfirm] = useState(false);
   const [showDisplaySettings, setShowDisplaySettings] = useState(false);
-
-  const handleExportJSON = () => {
-    try {
-      const dataStr = JSON.stringify(inputs, null, 2);
-      const blob = new Blob([dataStr], { type: 'application/json' });
-      const url = URL.createObjectURL(blob);
-      const link = document.createElement('a');
-      const timeStamp = new Date().toISOString().split('T')[0];
-      link.setAttribute('href', url);
-      link.setAttribute('download', `retirement_plan_${timeStamp}.json`);
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-    } catch (error) {
-      console.error("Export plan failed:", error);
-    }
-  };
+  const [exportDialogFormat, setExportDialogFormat] = useState<ExportFormatType | null>(null);
 
   const handleImportJSON = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -1223,8 +1206,9 @@ export const InputControlSidebar: React.FC<InputControlSidebarProps> = ({
             <div className="grid grid-cols-2 gap-2">
               <button
                 type="button"
-                onClick={handleExportJSON}
+                onClick={() => setExportDialogFormat('json')}
                 className="flex items-center justify-center gap-1.5 px-3 py-2 bg-slate-800 hover:bg-slate-750 border border-slate-750 hover:border-slate-700 text-slate-200 hover:text-slate-100 rounded-xl text-xs font-bold transition-all cursor-pointer"
+                title="Export plan configuration with custom file name and folder destination"
               >
                 <Download className="w-3.5 h-3.5" />
                 <span>Export Plan</span>
@@ -1246,27 +1230,21 @@ export const InputControlSidebar: React.FC<InputControlSidebarProps> = ({
             </div>
 
             <div className="grid grid-cols-2 gap-2">
-              <PDFDownloadLink
-                document={<ConfigurationPDF inputs={inputs} />}
-                fileName={`Retirement_Plan_Config_${new Date().toISOString().split('T')[0]}.pdf`}
-                style={{ textDecoration: 'none', display: 'block' }}
+              <button
+                type="button"
+                onClick={() => setExportDialogFormat('pdf')}
+                className="w-full flex items-center justify-center gap-1.5 px-3 py-2 bg-slate-800 hover:bg-slate-750 border border-slate-750 hover:border-slate-700 text-slate-200 hover:text-slate-100 rounded-xl text-xs font-bold transition-all cursor-pointer"
+                title="Export executive PDF report with custom file name and folder destination"
               >
-                {({ loading }) => (
-                  <button
-                    type="button"
-                    disabled={loading}
-                    className="w-full flex items-center justify-center gap-1.5 px-3 py-2 bg-slate-800 hover:bg-slate-750 border border-slate-750 hover:border-slate-700 text-slate-200 hover:text-slate-100 rounded-xl text-xs font-bold transition-all cursor-pointer disabled:opacity-50"
-                  >
-                    <FileText className="w-3.5 h-3.5" />
-                    <span>{loading ? 'Building PDF...' : 'PDF Report'}</span>
-                  </button>
-                )}
-              </PDFDownloadLink>
+                <FileText className="w-3.5 h-3.5" />
+                <span>PDF Report</span>
+              </button>
 
               <button
                 type="button"
-                onClick={() => exportToExcel(ledger, inputs)}
+                onClick={() => setExportDialogFormat('excel')}
                 className="flex items-center justify-center gap-1.5 px-3 py-2 bg-slate-800 hover:bg-slate-750 border border-slate-750 hover:border-slate-700 text-slate-200 hover:text-slate-100 rounded-xl text-xs font-bold transition-all cursor-pointer"
+                title="Export Excel simulation ledger with custom file name and folder destination"
               >
                 <FileSpreadsheet className="w-3.5 h-3.5" />
                 <span>Excel Ledger</span>
@@ -1421,6 +1399,17 @@ export const InputControlSidebar: React.FC<InputControlSidebarProps> = ({
             </div>
           </div>
         </div>
+      )}
+
+      {/* Export Plan & Reports Dialog */}
+      {exportDialogFormat && (
+        <ExportPlanDialog
+          isOpen={exportDialogFormat !== null}
+          onClose={() => setExportDialogFormat(null)}
+          inputs={inputs}
+          ledger={ledger}
+          initialFormat={exportDialogFormat}
+        />
       )}
     </aside>
   );
