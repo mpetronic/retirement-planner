@@ -469,6 +469,14 @@ export const ConfigurationPDF: React.FC<PDFProps> = ({ inputs }) => {
                   <Text style={styles.rowLabel}>Randomizer Seed:</Text>
                   <Text style={styles.rowValue}>{inputs.monteCarloSettings.seed !== null ? inputs.monteCarloSettings.seed : 'Standard Random'}</Text>
                 </View>
+                <View style={styles.row}>
+                  <Text style={styles.rowLabel}>CPI Inflation Modeling:</Text>
+                  <Text style={styles.rowValue}>
+                    {inputs.monteCarloSettings.randomizeCPI !== false 
+                      ? 'Randomized (Historical)' 
+                      : `Constant (${formatPercent(inputs.monteCarloSettings.constantCPIRate ?? inputs.growthAssumptions.cpiInflationRate)})`}
+                  </Text>
+                </View>
               </View>
             </View>
           </View>

@@ -568,6 +568,88 @@ export const MonteCarloWorkspace: React.FC<MonteCarloWorkspaceProps> = ({
               )}
             </div>
           </div>
+
+          {/* Section: Inflation (CPI) Simulation Modeling */}
+          <div className="pt-4 border-t border-slate-800/60 space-y-3">
+            <div className="flex items-center justify-between">
+              <label className="text-xs font-semibold text-slate-300 flex items-center gap-2">
+                <span>Inflation (CPI) Simulation Modeling</span>
+              </label>
+              <span className={`text-[10px] font-mono font-bold px-2 py-0.5 rounded ${
+                inputs.monteCarloSettings.randomizeCPI !== false
+                  ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20'
+                  : 'bg-amber-500/10 text-amber-400 border border-amber-500/20'
+              }`}>
+                {inputs.monteCarloSettings.randomizeCPI !== false ? 'Stochastic (Randomized)' : 'Constant (Advisor Alignment)'}
+              </span>
+            </div>
+
+            <div className="flex items-center gap-2">
+              <input
+                type="checkbox"
+                id="randomizeCpiCheckbox"
+                checked={inputs.monteCarloSettings.randomizeCPI !== false}
+                onChange={(e) => {
+                  const randomize = e.target.checked;
+                  onChangeInputs({
+                    ...inputs,
+                    monteCarloSettings: {
+                      ...inputs.monteCarloSettings,
+                      randomizeCPI: randomize,
+                      constantCPIRate: randomize
+                        ? inputs.monteCarloSettings.constantCPIRate
+                        : (inputs.monteCarloSettings.constantCPIRate ?? inputs.growthAssumptions.cpiInflationRate),
+                    },
+                  });
+                }}
+                className="w-4 h-4 bg-slate-950 rounded border-slate-800 text-emerald-500 focus:ring-emerald-500 accent-emerald-500 cursor-pointer"
+              />
+              <label htmlFor="randomizeCpiCheckbox" className="text-xs text-slate-300 cursor-pointer select-none font-medium">
+                Randomize Annual CPI Across Trials (Co-sample from 1970–2025 History)
+              </label>
+            </div>
+
+            {inputs.monteCarloSettings.randomizeCPI !== false ? (
+              <p className="text-[10px] text-slate-500 leading-relaxed bg-slate-950/40 p-2.5 rounded-lg border border-slate-800/40">
+                <span className="text-slate-400 font-semibold">Stochastic Mode:</span> Annual inflation varies each trial by sampling historical year-over-year CPI changes centered around your configured baseline ({formatPercent(inputs.growthAssumptions.cpiInflationRate)}). This stresses retirement cashflows with historical inflation shocks.
+              </p>
+            ) : (
+              <div className="p-3 bg-slate-950/60 rounded-xl border border-amber-500/30 space-y-3">
+                <div className="flex justify-between items-center text-xs">
+                  <span className="text-slate-300 font-semibold">Constant Annual Inflation Rate (CPI):</span>
+                  <span className="text-amber-400 font-mono font-bold">
+                    {formatPercent(inputs.monteCarloSettings.constantCPIRate ?? inputs.growthAssumptions.cpiInflationRate)}
+                  </span>
+                </div>
+                <div className="flex items-center gap-3">
+                  <input
+                    type="range"
+                    min="0.00"
+                    max="0.08"
+                    step="0.002"
+                    value={inputs.monteCarloSettings.constantCPIRate ?? inputs.growthAssumptions.cpiInflationRate}
+                    onChange={(e) => updateSettings('constantCPIRate', Number(e.target.value))}
+                    className="w-full h-1.5 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-amber-500"
+                  />
+                  <div className="w-24">
+                    <input
+                      type="number"
+                      min="0"
+                      max="15"
+                      step="0.1"
+                      value={Number(((inputs.monteCarloSettings.constantCPIRate ?? inputs.growthAssumptions.cpiInflationRate) * 100).toFixed(2))}
+                      onChange={(e) => updateSettings('constantCPIRate', Number(e.target.value) / 100)}
+                      className="w-full text-xs font-mono font-bold px-2 py-1 bg-slate-900 text-amber-300 border border-slate-700 rounded-lg focus:outline-none focus:border-amber-500 text-right"
+                    />
+                  </div>
+                  <span className="text-xs text-slate-400 font-mono">%</span>
+                </div>
+                <p className="text-[10px] text-slate-400 leading-relaxed">
+                  <span className="text-amber-400 font-semibold">Deterministic Constant CPI:</span> Inflation is fixed at exactly {formatPercent(inputs.monteCarloSettings.constantCPIRate ?? inputs.growthAssumptions.cpiInflationRate)}/year across every trial and year. This matches the standard convention of financial advisor software (e.g. eMoney, RightCapital, MoneyGuidePro).
+                </p>
+              </div>
+            )}
+          </div>
         </div>
 
       </div>

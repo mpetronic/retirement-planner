@@ -358,4 +358,102 @@ describe('applyStressTestToSequence & stress testing', () => {
   });
 });
 
+describe('Constant vs Randomized CPI Simulation', () => {
+  it('should generate constant inflation rates when randomizeCPI is false', () => {
+    const rand = mulberry32(42);
+    const constantRate = 0.03;
+    const syntheticSeq = generateSyntheticSequence(0.08, 0.15, 0.04, 0.05, 0.15, rand, false, constantRate);
+    
+    expect(syntheticSeq.inflationRates).toBeDefined();
+    expect(syntheticSeq.inflationRates!.length).toBe(35);
+    syntheticSeq.inflationRates!.forEach(rate => {
+      expect(rate).toBe(constantRate);
+    });
+
+    const historicalSeq = generateHistoricalSequence(false, undefined, rand, false, constantRate);
+    expect(historicalSeq.inflationRates).toBeDefined();
+    expect(historicalSeq.inflationRates!.length).toBe(35);
+    historicalSeq.inflationRates!.forEach(rate => {
+      expect(rate).toBe(constantRate);
+    });
+  });
+
+  it('should generate randomized historical inflation rates when randomizeCPI is true', () => {
+    const rand = mulberry32(42);
+    const syntheticSeq = generateSyntheticSequence(0.08, 0.15, 0.04, 0.05, 0.15, rand, true);
+    
+    expect(syntheticSeq.inflationRates).toBeDefined();
+    const uniqueRates = new Set(syntheticSeq.inflationRates);
+    expect(uniqueRates.size).toBeGreaterThan(1);
+  });
+
+  it('should run Monte Carlo simulation with constant CPI when configured in inputs', () => {
+    const inputs: AppStateInputs = {
+      you: {
+        name: 'John',
+        birthDate: '1965-06-15',
+        estimatedPIA: 2000,
+        targetSSClaimingAge: 67,
+        plannedRetirementAge: 65,
+        activeSalary: 120000,
+        preMedicareMonthlyPremium: 500,
+      },
+      wife: {
+        name: 'Jane',
+        birthDate: '1968-09-20',
+        estimatedPIA: 1200,
+        targetSSClaimingAge: 67,
+        plannedRetirementAge: 62,
+        activeSalary: 80000,
+        preMedicareMonthlyPremium: 500,
+      },
+      portfolio: {
+        yourPreTaxIRA: 500000,
+        yourRothIRA: 100000,
+        yourTaxableBrokerage: 200000,
+        yourTaxableBasis: 150000,
+        wifePreTaxIRA: 300000,
+        wifeRothIRA: 50000,
+        wifeTaxableBrokerage: 100000,
+        wifeTaxableBasis: 80000,
+        yourCash: 50000,
+        wifeCash: 30000,
+      },
+      jurisdiction: {
+        relocationYear: null,
+        currentState: 'MD',
+        targetState: 'FL',
+      },
+      growthAssumptions: {
+        equityReturnRate: 0.08,
+        fixedIncomeReturnRate: 0.04,
+        cpiInflationRate: 0.025,
+        healthcareInflationRate: 0.05,
+      },
+      annualLivingExpenses: 80000,
+      annualRothConversion: 0,
+      rothConversionStartYear: 2026,
+      rothConversionEndYear: 2030,
+      rothConversionStrategy: 'flat',
+      rothConversionTargetValue: null,
+      monteCarloSettings: {
+        mode: 'monte-carlo',
+        equityVolatility: 0.15,
+        fixedIncomeVolatility: 0.05,
+        correlation: 0.15,
+        trials: 20,
+        seed: 42,
+        randomizeCPI: false,
+        constantCPIRate: 0.025,
+      },
+      isConfigured: true,
+      isSingleFiler: false,
+    };
+
+    const summary = runMonteCarloSimulation(inputs);
+    expect(summary.trialsRun).toBe(20);
+    expect(summary.percentiles.length).toBe(35);
+  });
+});
+
 

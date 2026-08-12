@@ -76,6 +76,7 @@ export const generateExcelWorkbook = (ledger: SimulationResultRow[], inputs: App
     ["Fixed Income Volatility", inputs.monteCarloSettings.fixedIncomeVolatility ?? 0.05],
     ["Asset Class Correlation", inputs.monteCarloSettings.correlation ?? 0.15],
     ["Randomizer Seed", inputs.monteCarloSettings.seed ?? "N/A (Standard Random)"],
+    ["CPI Inflation Modeling", inputs.monteCarloSettings.randomizeCPI !== false ? "Randomized (Historical)" : `Constant (${(((inputs.monteCarloSettings.constantCPIRate ?? inputs.growthAssumptions.cpiInflationRate) * 100)).toFixed(2)}%)`],
     [],
     ["STATE TAX RELOCATION"],
     ["Current Home State", inputs.jurisdiction.currentState],

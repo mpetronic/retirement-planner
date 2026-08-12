@@ -100,7 +100,9 @@ export function generateSyntheticSequence(
   bondMean: number,
   bondVol: number,
   correlation: number,
-  rand: () => number = Math.random
+  rand: () => number = Math.random,
+  randomizeCPI: boolean = true,
+  constantCPIRate?: number | null
 ): Omit<LockedReturnSequence, 'id'> {
   const equityReturns: number[] = [];
   const fixedIncomeReturns: number[] = [];
@@ -134,9 +136,13 @@ export function generateSyntheticSequence(
     equityReturns.push(equityReturn);
     fixedIncomeReturns.push(bondReturn);
     
-    // Fall back to sampling historical inflation for the current year
-    const histIdx = Math.floor(rand() * HISTORICAL_RETURNS.length);
-    inflationRates.push(HISTORICAL_RETURNS[histIdx].inflation);
+    if (randomizeCPI) {
+      // Fall back to sampling historical inflation for the current year
+      const histIdx = Math.floor(rand() * HISTORICAL_RETURNS.length);
+      inflationRates.push(HISTORICAL_RETURNS[histIdx].inflation);
+    } else {
+      inflationRates.push(constantCPIRate ?? 0.025);
+    }
   }
   
   return {
@@ -154,7 +160,9 @@ export function generateSyntheticSequence(
 export function generateHistoricalSequence(
   blockSampling: boolean = false,
   startYearIndex?: number,
-  rand: () => number = Math.random
+  rand: () => number = Math.random,
+  randomizeCPI: boolean = true,
+  constantCPIRate?: number | null
 ): Omit<LockedReturnSequence, 'id'> {
   const equityReturns: number[] = [];
   const fixedIncomeReturns: number[] = [];
@@ -173,7 +181,7 @@ export function generateHistoricalSequence(
       const yearData = HISTORICAL_RETURNS[idx];
       equityReturns.push(yearData.stock);
       fixedIncomeReturns.push(yearData.bond);
-      inflationRates.push(yearData.inflation);
+      inflationRates.push(randomizeCPI ? yearData.inflation : (constantCPIRate ?? 0.025));
       idx++;
     }
   } else {
@@ -183,7 +191,7 @@ export function generateHistoricalSequence(
       const yearData = HISTORICAL_RETURNS[idx];
       equityReturns.push(yearData.stock);
       fixedIncomeReturns.push(yearData.bond);
-      inflationRates.push(yearData.inflation);
+      inflationRates.push(randomizeCPI ? yearData.inflation : (constantCPIRate ?? 0.025));
     }
   }
   
@@ -284,6 +292,11 @@ export function runMonteCarloSimulation(
   const seed = inputs.monteCarloSettings?.seed;
   const rand = seed !== null && seed !== undefined ? mulberry32(seed) : mulberry32(12345);
   
+  const isCpiRandomized = inputs.monteCarloSettings?.randomizeCPI !== false;
+  const constantCpi = (inputs.monteCarloSettings?.randomizeCPI === false && inputs.monteCarloSettings?.constantCPIRate != null)
+    ? inputs.monteCarloSettings.constantCPIRate
+    : inputs.growthAssumptions.cpiInflationRate;
+  
   const results: MonteCarloTrialResult[] = [];
   
   for (let t = 0; t < trials; t++) {
@@ -294,9 +307,9 @@ export function runMonteCarloSimulation(
     } else if (mode === 'historical') {
       // 30% block bootstrapping, 70% random year sampling to preserve real historical cycles
       const block = rand() < 0.35;
-      seqData = generateHistoricalSequence(block, undefined, rand);
+      seqData = generateHistoricalSequence(block, undefined, rand, isCpiRandomized, constantCpi);
     } else {
-      seqData = generateSyntheticSequence(equityMean, equityVol, bondMean, bondVol, correlation, rand);
+      seqData = generateSyntheticSequence(equityMean, equityVol, bondMean, bondVol, correlation, rand, isCpiRandomized, constantCpi);
     }
 
     const stressedSeqData = applyStressTestToSequence(seqData, inputs.monteCarloSettings?.stressTest);

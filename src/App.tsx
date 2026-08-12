@@ -84,6 +84,8 @@ const DEFAULT_INPUTS: AppStateInputs = {
     correlation: 0.15,
     trials: 1000,
     seed: null, // Default is standard random
+    randomizeCPI: true, // Default is randomized historical inflation
+    constantCPIRate: null, // Custom constant rate when randomizeCPI is false
     stressTest: {
       enabled: false,
       mode: 'absolute',
@@ -199,7 +201,7 @@ function App() {
   }, [globalFontSize]);
 
 
-  // 1. Generate 1,000 return sequences once, keyed ONLY on volatility/correlation/seed.
+  // 1. Generate 1,000 return sequences once, keyed ONLY on volatility/correlation/seed/cpi.
   // This preserves stable market return percentages while strategy slider variables are tweaked.
   const returnSequences = useMemo(() => {
     const trials = inputs.monteCarloSettings?.trials || 1000;
@@ -213,6 +215,11 @@ function App() {
     const seed = inputs.monteCarloSettings?.seed;
     const nonce = inputs.monteCarloSettings?.nonce ?? 0;
     
+    const isCpiRandomized = inputs.monteCarloSettings?.randomizeCPI !== false;
+    const constantCpi = (inputs.monteCarloSettings?.randomizeCPI === false && inputs.monteCarloSettings?.constantCPIRate != null)
+      ? inputs.monteCarloSettings.constantCPIRate
+      : inputs.growthAssumptions.cpiInflationRate;
+    
     const baseSeed = seed !== null && seed !== undefined ? seed : 12345;
     const rand = mulberry32(baseSeed + nonce);
     
@@ -220,15 +227,16 @@ function App() {
     for (let t = 0; t < trials; t++) {
       if (mode === 'historical') {
         const block = rand() < 0.35;
-        list.push(generateHistoricalSequence(block, undefined, rand));
+        list.push(generateHistoricalSequence(block, undefined, rand, isCpiRandomized, constantCpi));
       } else {
-        list.push(generateSyntheticSequence(equityMean, equityVol, bondMean, bondVol, correlation, rand));
+        list.push(generateSyntheticSequence(equityMean, equityVol, bondMean, bondVol, correlation, rand, isCpiRandomized, constantCpi));
       }
     }
     return list;
   }, [
     inputs.growthAssumptions.equityReturnRate,
     inputs.growthAssumptions.fixedIncomeReturnRate,
+    inputs.growthAssumptions.cpiInflationRate,
     inputs.monteCarloSettings.mode,
     inputs.monteCarloSettings.trials,
     inputs.monteCarloSettings.equityVolatility,
@@ -236,6 +244,8 @@ function App() {
     inputs.monteCarloSettings.correlation,
     inputs.monteCarloSettings.seed,
     inputs.monteCarloSettings.nonce,
+    inputs.monteCarloSettings.randomizeCPI,
+    inputs.monteCarloSettings.constantCPIRate,
   ]);
 
   // 2. Reactively compute the Monte Carlo simulation. Takes ~25ms since returns are pre-generated.
@@ -300,7 +310,9 @@ function App() {
 
   const displayMonteCarloSummary = useMemo(() => {
     if (!useTodayDollars) return monteCarloSummary;
-    const cpi = inputs.growthAssumptions.cpiInflationRate;
+    const cpi = (inputs.monteCarloSettings?.randomizeCPI === false && inputs.monteCarloSettings?.constantCPIRate != null)
+      ? inputs.monteCarloSettings.constantCPIRate
+      : inputs.growthAssumptions.cpiInflationRate;
     
     const discountedPercentiles = monteCarloSummary.percentiles.map((p) => {
       const yearsElapsed = p.year - 2026;
@@ -319,7 +331,7 @@ function App() {
       ...monteCarloSummary,
       percentiles: discountedPercentiles,
     };
-  }, [monteCarloSummary, useTodayDollars, inputs.growthAssumptions.cpiInflationRate]);
+  }, [monteCarloSummary, useTodayDollars, inputs.growthAssumptions.cpiInflationRate, inputs.monteCarloSettings?.randomizeCPI, inputs.monteCarloSettings?.constantCPIRate]);
 
   // Handle applying a fully optimized retirement configuration at once
   const handleApplyOptimization = (annualConversion: number, targetValue: number | null, yourAge: number, wifeAge: number) => {

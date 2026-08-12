@@ -85,6 +85,8 @@ export interface MonteCarloSettings {
   seed: number | null;           // Null for standard random, integer for deterministic reproducibility
   nonce?: number;                // Incremental counter to regenerate standard random sequences
   stressTest?: StressTestConfig; // Optional multi-year sequence of returns stress test config
+  randomizeCPI?: boolean;        // If true (default), randomize annual CPI per trial; if false, hold constant
+  constantCPIRate?: number | null; // Optional custom constant CPI rate if held constant (e.g. 0.025)
 }
 
 export interface DetailedStateExpenses {
