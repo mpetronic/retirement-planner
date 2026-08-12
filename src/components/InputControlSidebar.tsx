@@ -24,6 +24,8 @@ import { DetailedExpensesDialog } from './DetailedExpensesDialog';
 import { HealthcareConfigDialog } from './HealthcareConfigDialog';
 import { ExportPlanDialog } from './ExportPlanDialog';
 import { ExportFormatType } from '../utils/exportHelpers';
+import { AboutDialog } from './AboutDialog';
+import { getVersionInfo } from '../utils/version';
 
 const getBirthMonth = (dateStr: string | undefined): number => {
   if (!dateStr) return 1;
@@ -66,7 +68,9 @@ export const InputControlSidebar: React.FC<InputControlSidebarProps> = ({
   const [editingHealthcarePerson, setEditingHealthcarePerson] = useState<'you' | 'wife' | null>(null);
   const [showResetConfirm, setShowResetConfirm] = useState(false);
   const [showDisplaySettings, setShowDisplaySettings] = useState(false);
+  const [showAboutDialog, setShowAboutDialog] = useState(false);
   const [exportDialogFormat, setExportDialogFormat] = useState<ExportFormatType | null>(null);
+  const versionInfo = useMemo(() => getVersionInfo(), []);
 
   const handleImportJSON = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -187,15 +191,25 @@ export const InputControlSidebar: React.FC<InputControlSidebarProps> = ({
           </div>
         </div>
 
-        {/* Display Settings Gear Button */}
-        <button
-          type="button"
-          onClick={() => setShowDisplaySettings(true)}
-          className="p-2 bg-slate-950/60 hover:bg-slate-800/80 text-slate-400 hover:text-slate-100 border border-slate-800 hover:border-slate-700/60 rounded-xl transition-all cursor-pointer flex items-center justify-center"
-          title="Display & Font Size Settings"
-        >
-          <Settings className="w-4 h-4" />
-        </button>
+        {/* Header Action Buttons */}
+        <div className="flex items-center gap-1.5">
+          <button
+            type="button"
+            onClick={() => setShowAboutDialog(true)}
+            className="p-2 bg-slate-950/60 hover:bg-slate-800/80 text-slate-400 hover:text-emerald-400 border border-slate-800 hover:border-slate-700/60 rounded-xl transition-all cursor-pointer flex items-center justify-center group"
+            title={`About Retirement Planner (${versionInfo.displayVersion})`}
+          >
+            <Info className="w-4 h-4 text-slate-400 group-hover:text-emerald-400" />
+          </button>
+          <button
+            type="button"
+            onClick={() => setShowDisplaySettings(true)}
+            className="p-2 bg-slate-950/60 hover:bg-slate-800/80 text-slate-400 hover:text-slate-100 border border-slate-800 hover:border-slate-700/60 rounded-xl transition-all cursor-pointer flex items-center justify-center"
+            title="Display & Font Size Settings"
+          >
+            <Settings className="w-4 h-4" />
+          </button>
+        </div>
       </div>
 
       <div className="p-4 space-y-6 flex-1">
@@ -1409,6 +1423,14 @@ export const InputControlSidebar: React.FC<InputControlSidebarProps> = ({
           inputs={inputs}
           ledger={ledger}
           initialFormat={exportDialogFormat}
+        />
+      )}
+
+      {/* About & SCM Version Dialog */}
+      {showAboutDialog && (
+        <AboutDialog
+          isOpen={showAboutDialog}
+          onClose={() => setShowAboutDialog(false)}
         />
       )}
     </aside>
