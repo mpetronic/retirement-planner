@@ -1,17 +1,6 @@
 import React, { useMemo } from 'react';
 import { Chart } from 'react-chartjs-2';
-import {
-  Chart as ChartJS,
-  CategoryScale,
-  LinearScale,
-  LineElement,
-  PointElement,
-  BarElement,
-  Title,
-  Tooltip,
-  Legend,
-  Filler
-} from 'chart.js';
+import { Chart as ChartJS, registerables } from 'chart.js';
 import { AppStateInputs } from '../types';
 import { MonteCarloSummary } from '../engine/monteCarloEngine';
 import { StressTestControlPanel } from './StressTestControlPanel';
@@ -22,17 +11,7 @@ import {
   RefreshCw
 } from 'lucide-react';
 
-ChartJS.register(
-  CategoryScale,
-  LinearScale,
-  LineElement,
-  PointElement,
-  BarElement,
-  Title,
-  Tooltip,
-  Legend,
-  Filler
-);
+ChartJS.register(...registerables);
 
 interface MonteCarloWorkspaceProps {
   inputs: AppStateInputs;

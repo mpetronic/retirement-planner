@@ -1,32 +1,11 @@
 import React, { useMemo, useState, useRef } from 'react';
 import { Chart } from 'react-chartjs-2';
-import {
-  Chart as ChartJS,
-  CategoryScale,
-  LinearScale,
-  BarElement,
-  LineElement,
-  PointElement,
-  Title,
-  Tooltip,
-  Legend,
-  Filler
-} from 'chart.js';
+import { Chart as ChartJS, registerables } from 'chart.js';
 import { SimulationResultRow, AppStateInputs, LockedReturnSequence } from '../types';
 import { Award, Zap, Check, X, AlertCircle } from 'lucide-react';
 import { optimizeRetirementScenario, OptimizationResult, OptimizationGoal } from '../engine/optimizer';
 
-ChartJS.register(
-  CategoryScale,
-  LinearScale,
-  BarElement,
-  LineElement,
-  PointElement,
-  Title,
-  Tooltip,
-  Legend,
-  Filler
-);
+ChartJS.register(...registerables);
 
 interface BracketMapChartProps {
   ledger: SimulationResultRow[];
