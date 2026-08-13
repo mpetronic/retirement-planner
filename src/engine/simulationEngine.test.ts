@@ -895,4 +895,51 @@ describe('runRetirementSimulation fixes', () => {
     const totalPreTaxDistributed = row2035!.yourRMD + row2035!.drawdownPreTax;
     expect(totalPreTaxDistributed).toBeGreaterThan(row2035!.yourRMD);
   });
+
+  it('should apply custom asset allocations and cash yield rates across accounts', () => {
+    // Configure inputs with distinct equity allocations per account
+    const inputs = getMockInputs();
+    inputs.isSingleFiler = true;
+    inputs.growthAssumptions.equityReturnRate = 0.10;
+    inputs.growthAssumptions.fixedIncomeReturnRate = 0.02;
+    inputs.growthAssumptions.preTaxEquityPortion = 0.80;
+    inputs.growthAssumptions.taxableEquityPortion = 0.20;
+    inputs.growthAssumptions.rothEquityPortion = 1.00;
+    inputs.growthAssumptions.cashYieldRate = 0.05;
+    inputs.annualLivingExpenses = 0;
+    inputs.annualRothConversion = 0;
+
+    // Set initial account balances
+    inputs.portfolio.yourPreTaxIRA = 100000;
+    inputs.portfolio.yourTaxableBrokerage = 100000;
+    inputs.portfolio.yourTaxableBasis = 100000;
+    inputs.portfolio.yourRothIRA = 100000;
+    inputs.portfolio.yourCash = 100000;
+
+    inputs.portfolio.taxableDividendYield = 0;
+    inputs.portfolio.taxableNonQualifiedPortion = 0;
+
+    const results = runRetirementSimulation(inputs);
+    const row1 = results[0];
+
+    // Pre-Tax IRA effective rate should be 80% * 10% + 20% * 2% = 8.4%
+    // Starting balance 100k grows to approximately 108.4k
+    expect(row1.endYourPreTaxIRA).toBeGreaterThan(108000);
+    expect(row1.endYourPreTaxIRA).toBeLessThan(109000);
+
+    // Taxable Brokerage effective rate should be 20% * 10% + 80% * 2% = 3.6%
+    // Starting balance 100k grows to approximately 103.6k
+    expect(row1.endYourTaxableBrokerage).toBeGreaterThan(103000);
+    expect(row1.endYourTaxableBrokerage).toBeLessThan(104000);
+
+    // Roth IRA effective rate should be 100% * 10% = 10.0%
+    // Starting balance 100k grows to 110.0k
+    expect(row1.endYourRothIRA).toBeGreaterThan(109500);
+    expect(row1.endYourRothIRA).toBeLessThan(110500);
+
+    // Cash savings should grow at custom cashYieldRate of 5.0%
+    // Starting balance 100k grows to 105.0k
+    expect(row1.endYourCash).toBeGreaterThan(104800);
+    expect(row1.endYourCash).toBeLessThan(105200);
+  });
 });

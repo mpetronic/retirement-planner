@@ -293,15 +293,19 @@ export function runRetirementSimulation(
       bondRate = activeSeq.fixedIncomeReturns[yearsElapsed] !== undefined ? activeSeq.fixedIncomeReturns[yearsElapsed] : bondRate;
     }
 
-    const taxableGrowthRate = 0.60 * equityRate + 0.40 * bondRate;
-    const preTaxGrowthRate = 0.50 * equityRate + 0.50 * bondRate;
-    const rothGrowthRate = 1.00 * equityRate;
+    const preTaxEquityPortion = inputs.growthAssumptions.preTaxEquityPortion ?? 0.50;
+    const taxableEquityPortion = inputs.growthAssumptions.taxableEquityPortion ?? 0.60;
+    const rothEquityPortion = inputs.growthAssumptions.rothEquityPortion ?? 1.00;
+
+    const taxableGrowthRate = taxableEquityPortion * equityRate + (1 - taxableEquityPortion) * bondRate;
+    const preTaxGrowthRate = preTaxEquityPortion * equityRate + (1 - preTaxEquityPortion) * bondRate;
+    const rothGrowthRate = rothEquityPortion * equityRate + (1 - rothEquityPortion) * bondRate;
 
     // Monthly Rates
     const monthlyTaxableRate = Math.pow(1 + taxableGrowthRate, 1 / 12) - 1;
     const monthlyPreTaxRate = Math.pow(1 + preTaxGrowthRate, 1 / 12) - 1;
     const monthlyRothRate = Math.pow(1 + rothGrowthRate, 1 / 12) - 1;
-    const cashRate = inputs.growthAssumptions.fixedIncomeReturnRate;
+    const cashRate = inputs.growthAssumptions.cashYieldRate ?? inputs.growthAssumptions.fixedIncomeReturnRate;
     const monthlyCashRate = Math.pow(1 + cashRate, 1 / 12) - 1;
 
     // State determination
@@ -506,7 +510,7 @@ export function runRetirementSimulation(
         if (!youDeceased && yourAge < youRetireAge) estSalary += (inputs.you.activeSalary ?? 0) * cpiFactor;
         if (!wifeDeceased && wifeAge < wifeRetireAge) estSalary += (inputs.wife.activeSalary ?? 0) * cpiFactor;
         const estDividends = (yourTaxable + (wifeDeceased ? 0 : wifeTaxable)) * taxableDividendYield;
-        const cashRate = inputs.growthAssumptions.fixedIncomeReturnRate;
+        const cashRate = inputs.growthAssumptions.cashYieldRate ?? inputs.growthAssumptions.fixedIncomeReturnRate;
         const estInterest = (yourCash + (wifeDeceased ? 0 : wifeCash)) * cashRate;
         const uncontrollable = estSalary + estSS + combinedRMD + estDividends + estInterest;
         targetConversion = Math.max(0, inflatedTarget - uncontrollable);
@@ -552,7 +556,7 @@ export function runRetirementSimulation(
       let estSalary = 0;
       if (!youDeceased && yourAge < youRetireAge) estSalary += (inputs.you.activeSalary ?? 0) * cpiFactor;
       if (!wifeDeceased && wifeAge < wifeRetireAge) estSalary += (inputs.wife.activeSalary ?? 0) * cpiFactor;
-      const cashRate = inputs.growthAssumptions.fixedIncomeReturnRate;
+      const cashRate = inputs.growthAssumptions.cashYieldRate ?? inputs.growthAssumptions.fixedIncomeReturnRate;
       const estInterest = (yourCash + (wifeDeceased ? 0 : wifeCash)) * cashRate;
       magiTwoYearsAgo = estSalary + estSS * 0.85 + combinedRMD + targetConversion + (yourTaxable + (wifeDeceased ? 0 : wifeTaxable)) * taxableDividendYield + estInterest;
     }

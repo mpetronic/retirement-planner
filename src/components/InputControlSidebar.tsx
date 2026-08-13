@@ -47,6 +47,7 @@ interface InputControlSidebarProps {
   ledger: SimulationResultRow[];
   globalFontSize: number;
   setGlobalFontSize: (val: number) => void;
+  onNavigateTab?: (tabIndex: number) => void;
 }
 
 export const InputControlSidebar: React.FC<InputControlSidebarProps> = ({
@@ -61,6 +62,7 @@ export const InputControlSidebar: React.FC<InputControlSidebarProps> = ({
   ledger,
   globalFontSize,
   setGlobalFontSize,
+  onNavigateTab,
 }) => {
   const [isEditingYou, setIsEditingYou] = useState(false);
   const [isEditingWife, setIsEditingWife] = useState(false);
@@ -869,99 +871,51 @@ export const InputControlSidebar: React.FC<InputControlSidebarProps> = ({
           </div>
         </div>
 
-        {/* Section 4: Growth Assumptions */}
+        {/* Section 4: Model Assumptions & Allocations Summary */}
         <div className="space-y-3">
-          <div className="flex items-center gap-2 text-emerald-400 font-semibold border-b border-slate-800 pb-2">
-            <TrendingUp className="w-5 h-5" />
-            <h2>Growth & Inflation</h2>
+          <div className="flex items-center justify-between text-emerald-400 font-semibold border-b border-slate-800 pb-2">
+            <div className="flex items-center gap-2">
+              <TrendingUp className="w-5 h-5" />
+              <h2>Model Assumptions</h2>
+              <span className="text-[9px] font-mono font-bold px-1.5 py-0.5 rounded bg-slate-900 text-emerald-400 border border-slate-800 uppercase">
+                {globalScenario}
+              </span>
+            </div>
+            <button
+              type="button"
+              onClick={() => onNavigateTab?.(2)}
+              className="p-1 text-slate-400 hover:text-emerald-400 hover:bg-slate-900 rounded-lg transition-colors cursor-pointer"
+              title="Configure Model Assumptions & Allocations in Workspace 3"
+            >
+              <Settings className="w-4 h-4" />
+            </button>
           </div>
 
-          <div className="p-3 bg-slate-950/60 rounded-xl border border-slate-800 space-y-3">
-            <div className={`relative ${globalScenario !== 'flat' ? 'group cursor-help' : ''}`}>
-              <div className="grid grid-cols-2 gap-3">
-                <div className={`space-y-1 transition-opacity duration-200 ${globalScenario !== 'flat' ? 'opacity-40' : ''}`}>
-                  <label className="text-[10px] text-slate-400 font-bold uppercase tracking-wider block truncate">Equity Return</label>
-                  <div className={`flex justify-between items-center text-xs font-mono font-bold ${globalScenario !== 'flat' ? 'text-slate-500' : 'text-slate-200'}`}>
-                    <span>Rate:</span>
-                    <span>{formatPercent(inputs.growthAssumptions.equityReturnRate)}</span>
-                  </div>
-                  <input
-                    type="range"
-                    min="0.00"
-                    max="0.15"
-                    step="0.005"
-                    value={inputs.growthAssumptions.equityReturnRate}
-                    disabled={globalScenario !== 'flat'}
-                    onChange={(e) => updateNestedState('growthAssumptions', 'equityReturnRate', Number(e.target.value))}
-                    className={`w-full h-1 bg-slate-800 rounded-lg appearance-none accent-emerald-500 ${globalScenario !== 'flat' ? 'cursor-not-allowed' : 'cursor-pointer'}`}
-                  />
-                </div>
-
-                <div className={`space-y-1 transition-opacity duration-200 ${globalScenario !== 'flat' ? 'opacity-40' : ''}`}>
-                  <label className="text-[10px] text-slate-400 font-bold uppercase tracking-wider block truncate">Fixed Income</label>
-                  <div className={`flex justify-between items-center text-xs font-mono font-bold ${globalScenario !== 'flat' ? 'text-slate-500' : 'text-slate-200'}`}>
-                    <span>Rate:</span>
-                    <span>{formatPercent(inputs.growthAssumptions.fixedIncomeReturnRate)}</span>
-                  </div>
-                  <input
-                    type="range"
-                    min="0.00"
-                    max="0.10"
-                    step="0.005"
-                    value={inputs.growthAssumptions.fixedIncomeReturnRate}
-                    disabled={globalScenario !== 'flat'}
-                    onChange={(e) => updateNestedState('growthAssumptions', 'fixedIncomeReturnRate', Number(e.target.value))}
-                    className={`w-full h-1 bg-slate-800 rounded-lg appearance-none accent-emerald-500 ${globalScenario !== 'flat' ? 'cursor-not-allowed' : 'cursor-pointer'}`}
-                  />
-                </div>
+          <div className="p-3.5 bg-slate-950/60 rounded-xl border border-slate-800 space-y-2.5 text-xs">
+            <div className="grid grid-cols-2 gap-2 text-[11px]">
+              <div className="p-2 bg-slate-900/60 rounded-lg border border-slate-800/60">
+                <span className="text-[10px] text-slate-400 block font-semibold">Stocks (Mean)</span>
+                <span className="font-mono font-bold text-slate-200">{formatPercent(inputs.growthAssumptions.equityReturnRate)}</span>
               </div>
-
-              {globalScenario !== 'flat' && (
-                <div className="absolute bottom-full mb-2 left-1/2 -translate-x-1/2 w-64 bg-slate-950/95 backdrop-blur-md border border-slate-800 rounded-2xl p-3 shadow-2xl opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 z-50 text-[10px] text-slate-300 normal-case pointer-events-none space-y-1 font-sans">
-                  <div className="text-amber-400 font-bold flex items-center gap-1">
-                    <span>🔒 Return Rates Overridden</span>
-                  </div>
-                  <p className="leading-relaxed">
-                    Locked: Overridden by the active stochastic <strong>Global Outlook ({globalScenario === 'p10' ? 'Worst' : globalScenario === 'p50' ? 'Median' : 'Best'})</strong> sequence. Switch to <strong>Flat</strong> to manually set static rates.
-                  </p>
-                </div>
-              )}
+              <div className="p-2 bg-slate-900/60 rounded-lg border border-slate-800/60">
+                <span className="text-[10px] text-slate-400 block font-semibold">Bonds (Mean)</span>
+                <span className="font-mono font-bold text-slate-200">{formatPercent(inputs.growthAssumptions.fixedIncomeReturnRate)}</span>
+              </div>
+              <div className="p-2 bg-slate-900/60 rounded-lg border border-slate-800/60">
+                <span className="text-[10px] text-slate-400 block font-semibold">CPI Inflation</span>
+                <span className="font-mono font-bold text-slate-200">{formatPercent(inputs.growthAssumptions.cpiInflationRate)}</span>
+              </div>
+              <div className="p-2 bg-slate-900/60 rounded-lg border border-slate-800/60">
+                <span className="text-[10px] text-slate-400 block font-semibold">Healthcare Infl.</span>
+                <span className="font-mono font-bold text-slate-200">{formatPercent(inputs.growthAssumptions.healthcareInflationRate)}</span>
+              </div>
             </div>
 
-            <div className="grid grid-cols-2 gap-3">
-              <div className="space-y-1">
-                <label className="text-[10px] text-slate-400 font-bold uppercase tracking-wider block truncate">CPI Inflation</label>
-                <div className="flex justify-between items-center text-xs font-mono font-bold text-slate-200">
-                  <span>Rate:</span>
-                  <span>{formatPercent(inputs.growthAssumptions.cpiInflationRate)}</span>
-                </div>
-                <input
-                  type="range"
-                  min="0.00"
-                  max="0.08"
-                  step="0.002"
-                  value={inputs.growthAssumptions.cpiInflationRate}
-                  onChange={(e) => updateNestedState('growthAssumptions', 'cpiInflationRate', Number(e.target.value))}
-                  className="w-full h-1 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-emerald-500"
-                />
-              </div>
-
-              <div className="space-y-1">
-                <label className="text-[10px] text-slate-400 font-bold uppercase tracking-wider block truncate">Healthcare</label>
-                <div className="flex justify-between items-center text-xs font-mono font-bold text-slate-200">
-                  <span>Inflation:</span>
-                  <span>{formatPercent(inputs.growthAssumptions.healthcareInflationRate)}</span>
-                </div>
-                <input
-                  type="range"
-                  min="0.00"
-                  max="0.10"
-                  step="0.005"
-                  value={inputs.growthAssumptions.healthcareInflationRate}
-                  onChange={(e) => updateNestedState('growthAssumptions', 'healthcareInflationRate', Number(e.target.value))}
-                  className="w-full h-1 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-emerald-500"
-                />
-              </div>
+            <div className="pt-2 border-t border-slate-800/40 text-[10px] text-slate-400 flex justify-between items-center">
+              <span>Account Allocations:</span>
+              <span className="font-mono text-slate-300 font-semibold">
+                Pre-Tax {Math.round((inputs.growthAssumptions.preTaxEquityPortion ?? 0.50) * 100)}/{Math.round((1 - (inputs.growthAssumptions.preTaxEquityPortion ?? 0.50)) * 100)} · Taxable {Math.round((inputs.growthAssumptions.taxableEquityPortion ?? 0.60) * 100)}/{Math.round((1 - (inputs.growthAssumptions.taxableEquityPortion ?? 0.60)) * 100)} · Roth {Math.round((inputs.growthAssumptions.rothEquityPortion ?? 1.00) * 100)}%
+              </span>
             </div>
           </div>
         </div>

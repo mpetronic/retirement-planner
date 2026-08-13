@@ -68,8 +68,12 @@ const DEFAULT_INPUTS: AppStateInputs = {
   growthAssumptions: {
     equityReturnRate: 0.07,
     fixedIncomeReturnRate: 0.04,
-    cpiInflationRate: 0.03, // 3% CPI default as requested
+    cpiInflationRate: 0.03,
     healthcareInflationRate: 0.05,
+    preTaxEquityPortion: 0.50,
+    taxableEquityPortion: 0.60,
+    rothEquityPortion: 1.00,
+    cashYieldRate: null,
   },
   annualLivingExpenses: null,
   annualRothConversion: 50000,
@@ -405,6 +409,7 @@ function App() {
         ledger={displayActiveLedger}
         globalFontSize={globalFontSize}
         setGlobalFontSize={setGlobalFontSize}
+        onNavigateTab={setActiveTab}
       />
 
       {/* Main Orchestration Dashboard Layout */}

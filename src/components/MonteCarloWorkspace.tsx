@@ -8,7 +8,9 @@ import {
   Sliders, 
   Info,
   Calendar,
-  RefreshCw
+  RefreshCw,
+  TrendingUp,
+  PieChart
 } from 'lucide-react';
 
 ChartJS.register(...registerables);
@@ -74,6 +76,27 @@ export const MonteCarloWorkspace: React.FC<MonteCarloWorkspaceProps> = ({
       },
     });
   };
+
+  const updateGrowthAssumptions = (field: keyof AppStateInputs['growthAssumptions'], value: number | null) => {
+    onChangeInputs({
+      ...inputs,
+      growthAssumptions: {
+        ...inputs.growthAssumptions,
+        [field]: value,
+      },
+    });
+  };
+
+  const eqRate = inputs.growthAssumptions.equityReturnRate;
+  const fiRate = inputs.growthAssumptions.fixedIncomeReturnRate;
+  const preTaxEq = inputs.growthAssumptions.preTaxEquityPortion ?? 0.50;
+  const taxableEq = inputs.growthAssumptions.taxableEquityPortion ?? 0.60;
+  const rothEq = inputs.growthAssumptions.rothEquityPortion ?? 1.00;
+  const cashYield = inputs.growthAssumptions.cashYieldRate ?? fiRate;
+
+  const effectivePreTaxRate = preTaxEq * eqRate + (1 - preTaxEq) * fiRate;
+  const effectiveTaxableRate = taxableEq * eqRate + (1 - taxableEq) * fiRate;
+  const effectiveRothRate = rothEq * eqRate + (1 - rothEq) * fiRate;
 
   const handleRegenerate = () => {
     if (inputs.monteCarloSettings.seed !== null) {
@@ -376,183 +399,393 @@ export const MonteCarloWorkspace: React.FC<MonteCarloWorkspaceProps> = ({
             </button>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            {/* Mode selection and Trials */}
-            <div className="space-y-4">
-              {/* Simulation Mode Toggle */}
-              <div className="space-y-2">
-                <label className="text-xs font-semibold text-slate-300 flex items-center justify-between">
-                  <span>Simulation Distribution Mode</span>
-                  <span className="text-[10px] text-slate-500 font-mono">Select data source</span>
-                </label>
-                <div className="flex bg-slate-950 p-1 rounded-xl border border-slate-800">
-                  <button
-                    onClick={() => updateSettings('mode', 'monte-carlo')}
-                    className={`flex-1 text-[10px] py-2 rounded-lg font-bold transition-all ${
-                      inputs.monteCarloSettings.mode === 'monte-carlo'
-                        ? 'bg-emerald-500 text-slate-950 shadow'
-                        : 'text-slate-400 hover:text-slate-200'
-                    }`}
-                  >
-                    Bivariate Normal MC
-                  </button>
-                  <button
-                    onClick={() => updateSettings('mode', 'historical')}
-                    className={`flex-1 text-[10px] py-2 rounded-lg font-bold transition-all ${
-                      inputs.monteCarloSettings.mode === 'historical'
-                        ? 'bg-emerald-500 text-slate-950 shadow'
-                        : 'text-slate-400 hover:text-slate-200'
-                    }`}
-                  >
-                    Historical Bootstrap
-                  </button>
-                </div>
-              </div>
-
-              {/* Number of Trials */}
-              <div className="space-y-2">
-                <label className="text-xs font-semibold text-slate-300 flex justify-between">
-                  <span>Simulated Sample Size</span>
-                  <span className="text-emerald-400 font-mono font-bold">{inputs.monteCarloSettings.trials} trials</span>
-                </label>
-                <input
-                  type="range"
-                  min="200"
-                  max="10000"
-                  step="100"
-                  value={inputs.monteCarloSettings.trials}
-                  onChange={(e) => updateSettings('trials', Number(e.target.value))}
-                  className="w-full h-1.5 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-emerald-500"
-                />
-                <div className="flex justify-between text-[9px] text-slate-500 font-mono">
-                  <span>200 (Draft)</span>
-                  <span>1000 (Recommended)</span>
-                  <span>10000 (High Precision)</span>
-                </div>
-              </div>
-
-              {/* Seedable Reproducibility */}
-              <div className="space-y-2 pt-3 border-t border-slate-800/40">
-                <label className="text-xs font-semibold text-slate-300 flex justify-between items-center">
-                  <span>Deterministic Random Seed</span>
-                  <span className="text-[10px] text-slate-500 font-mono">Reproducibility</span>
-                </label>
-                <div className="flex gap-2 items-center">
-                  <input
-                    type="checkbox"
-                    id="useSeedCheckbox"
-                    checked={inputs.monteCarloSettings.seed !== null}
-                    onChange={(e) => {
-                      const useSeed = e.target.checked;
-                      updateSettings('seed', useSeed ? 42 : null);
-                    }}
-                    className="w-4 h-4 bg-slate-950 rounded border-slate-800 text-emerald-500 focus:ring-emerald-500 accent-emerald-500 cursor-pointer"
-                  />
-                  <label htmlFor="useSeedCheckbox" className="text-xs text-slate-400 cursor-pointer select-none">
-                    Lock Seed Value
-                  </label>
-                  
-                  {inputs.monteCarloSettings.seed !== null && (
-                    <div className="flex items-center gap-1.5 flex-1">
-                      <input
-                        type="number"
-                        value={inputs.monteCarloSettings.seed}
-                        onChange={(e) => {
-                          const val = e.target.value === '' ? 42 : Number(e.target.value);
-                          updateSettings('seed', val);
-                        }}
-                        className="w-full text-xs font-mono font-bold px-2.5 py-1 bg-slate-950 text-slate-100 border border-slate-800 rounded-lg focus:outline-none focus:border-emerald-500"
-                        placeholder="e.g. 42"
-                      />
-                      <button
-                        type="button"
-                        onClick={handleRegenerate}
-                        className="p-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-emerald-400 border border-slate-700 rounded-lg transition-colors cursor-pointer group"
-                        title="Randomize seed value and regenerate"
-                      >
-                        <RefreshCw className="w-3 h-3 group-hover:rotate-180 transition-transform duration-500" />
-                      </button>
-                    </div>
-                  )}
-                </div>
-                <p className="text-[9px] text-slate-500 leading-normal">
-                  Locking a seed value ensures simulation returns remain 100% identical on page reloads or slider edits for debugging and repeatable analysis.
-                </p>
-              </div>
+          {/* Section 1: Baseline Market Returns & Inflation (Expected Means) */}
+          <div className="space-y-3">
+            <div className="flex items-center justify-between">
+              <label className="text-xs font-bold text-slate-200 flex items-center gap-2">
+                <TrendingUp className="w-4 h-4 text-emerald-400" />
+                <span>1. Baseline Market Returns & Inflation (Expected Means)</span>
+              </label>
+              <span className="text-[10px] text-slate-400 font-mono">
+                Active Scenario: <strong className="text-emerald-400 uppercase">{globalScenario}</strong>
+              </span>
             </div>
 
-            {/* Volatilities and Correlations (Normal mode parameters) */}
-            <div className="space-y-4">
-              {inputs.monteCarloSettings.mode === 'monte-carlo' ? (
-                <>
-                  {/* Equity Volatility */}
-                  <div className="space-y-1">
-                    <label className="text-xs font-semibold text-slate-300 flex justify-between">
-                      <span>Equity Return Volatility (Std Dev)</span>
-                      <span className="text-emerald-400 font-mono font-semibold">{formatPercent(inputs.monteCarloSettings.equityVolatility)}</span>
-                    </label>
-                    <input
-                      type="range"
-                      min="0.05"
-                      max="0.30"
-                      step="0.01"
-                      value={inputs.monteCarloSettings.equityVolatility}
-                      onChange={(e) => updateSettings('equityVolatility', Number(e.target.value))}
-                      className="w-full h-1 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-emerald-500"
-                    />
-                  </div>
+            <div className="bg-slate-950/60 p-3.5 rounded-xl border border-slate-800 space-y-3">
+              <p className="text-[11px] text-slate-400 leading-relaxed">
+                <span className="text-slate-200 font-semibold">How these values drive the simulation:</span> In <strong className="text-emerald-400">Flat Mode</strong>, these rates are applied as fixed, constant annual growth and inflation. In <strong className="text-emerald-400">Monte Carlo Mode</strong>, the Equity and Fixed Income rates form the <strong className="text-slate-200">expected distribution center (means)</strong> around which 1,000 randomized annual trials fluctuate based on your volatility settings. In <strong className="text-emerald-400">Historical Bootstrap Mode</strong>, market returns sample from 1970–2025 history.
+              </p>
 
-                  {/* Bond Volatility */}
-                  <div className="space-y-1">
-                    <label className="text-xs font-semibold text-slate-300 flex justify-between">
-                      <span>Bond Return Volatility (Std Dev)</span>
-                      <span className="text-emerald-400 font-mono font-semibold">{formatPercent(inputs.monteCarloSettings.fixedIncomeVolatility)}</span>
-                    </label>
-                    <input
-                      type="range"
-                      min="0.01"
-                      max="0.15"
-                      step="0.01"
-                      value={inputs.monteCarloSettings.fixedIncomeVolatility}
-                      onChange={(e) => updateSettings('fixedIncomeVolatility', Number(e.target.value))}
-                      className="w-full h-1 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-emerald-500"
-                    />
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 pt-1">
+                {/* Equity Return Rate */}
+                <div className="space-y-1.5 p-2.5 bg-slate-900/60 rounded-lg border border-slate-800/80">
+                  <label className="text-[10px] text-slate-400 font-bold uppercase tracking-wider block truncate">Equity Return (Mean)</label>
+                  <div className="flex justify-between items-center text-xs font-mono font-bold text-slate-200">
+                    <span>Rate:</span>
+                    <span className="text-emerald-400">{formatPercent(inputs.growthAssumptions.equityReturnRate)}</span>
                   </div>
-
-                  {/* Asset Correlation */}
-                  <div className="space-y-1">
-                    <label className="text-xs font-semibold text-slate-300 flex justify-between">
-                      <span>Asset Correlation Coefficient (ρ)</span>
-                      <span className="text-emerald-400 font-mono font-semibold">{(inputs.monteCarloSettings.correlation).toFixed(2)}</span>
-                    </label>
-                    <input
-                      type="range"
-                      min="-0.50"
-                      max="0.80"
-                      step="0.05"
-                      value={inputs.monteCarloSettings.correlation}
-                      onChange={(e) => updateSettings('correlation', Number(e.target.value))}
-                      className="w-full h-1 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-emerald-500"
-                    />
-                  </div>
-                </>
-              ) : (
-                <div className="h-full bg-slate-950/40 p-4 rounded-xl border border-slate-800/40 flex flex-col justify-center text-center">
-                  <Calendar className="w-8 h-8 text-emerald-500/50 mx-auto mb-2" />
-                  <span className="text-xs font-bold text-slate-300">Historical Bootstrap Mode Active</span>
-                  <p className="text-[10px] text-slate-400 leading-normal max-w-xs mx-auto mt-1">
-                    In this mode, return parameters are bootstrap-sampled directly from actual S&P 500 and US Treasury historical data from 1970–2025. Volatilities are determined natively by history.
-                  </p>
+                  <input
+                    type="range"
+                    min="0.00"
+                    max="0.15"
+                    step="0.005"
+                    value={inputs.growthAssumptions.equityReturnRate}
+                    onChange={(e) => updateGrowthAssumptions('equityReturnRate', Number(e.target.value))}
+                    className="w-full h-1 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-emerald-500"
+                  />
                 </div>
-              )}
+
+                {/* Fixed Income Return Rate */}
+                <div className="space-y-1.5 p-2.5 bg-slate-900/60 rounded-lg border border-slate-800/80">
+                  <label className="text-[10px] text-slate-400 font-bold uppercase tracking-wider block truncate">Fixed Income (Mean)</label>
+                  <div className="flex justify-between items-center text-xs font-mono font-bold text-slate-200">
+                    <span>Rate:</span>
+                    <span className="text-emerald-400">{formatPercent(inputs.growthAssumptions.fixedIncomeReturnRate)}</span>
+                  </div>
+                  <input
+                    type="range"
+                    min="0.00"
+                    max="0.10"
+                    step="0.005"
+                    value={inputs.growthAssumptions.fixedIncomeReturnRate}
+                    onChange={(e) => updateGrowthAssumptions('fixedIncomeReturnRate', Number(e.target.value))}
+                    className="w-full h-1 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-emerald-500"
+                  />
+                </div>
+
+                {/* CPI Inflation Rate */}
+                <div className="space-y-1.5 p-2.5 bg-slate-900/60 rounded-lg border border-slate-800/80">
+                  <label className="text-[10px] text-slate-400 font-bold uppercase tracking-wider block truncate">CPI Inflation</label>
+                  <div className="flex justify-between items-center text-xs font-mono font-bold text-slate-200">
+                    <span>Rate:</span>
+                    <span className="text-emerald-400">{formatPercent(inputs.growthAssumptions.cpiInflationRate)}</span>
+                  </div>
+                  <input
+                    type="range"
+                    min="0.00"
+                    max="0.08"
+                    step="0.002"
+                    value={inputs.growthAssumptions.cpiInflationRate}
+                    onChange={(e) => updateGrowthAssumptions('cpiInflationRate', Number(e.target.value))}
+                    className="w-full h-1 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-emerald-500"
+                  />
+                </div>
+
+                {/* Healthcare Inflation Rate */}
+                <div className="space-y-1.5 p-2.5 bg-slate-900/60 rounded-lg border border-slate-800/80">
+                  <label className="text-[10px] text-slate-400 font-bold uppercase tracking-wider block truncate">Healthcare Inflation</label>
+                  <div className="flex justify-between items-center text-xs font-mono font-bold text-slate-200">
+                    <span>Rate:</span>
+                    <span className="text-emerald-400">{formatPercent(inputs.growthAssumptions.healthcareInflationRate)}</span>
+                  </div>
+                  <input
+                    type="range"
+                    min="0.00"
+                    max="0.10"
+                    step="0.005"
+                    value={inputs.growthAssumptions.healthcareInflationRate}
+                    onChange={(e) => updateGrowthAssumptions('healthcareInflationRate', Number(e.target.value))}
+                    className="w-full h-1 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-emerald-500"
+                  />
+                </div>
+              </div>
             </div>
           </div>
 
-          {/* Section: Inflation (CPI) Simulation Modeling */}
+          {/* Section 2: Account Asset Allocations & Live Effective Rates */}
+          <div className="space-y-3 pt-2">
+            <div className="flex items-center justify-between">
+              <label className="text-xs font-bold text-slate-200 flex items-center gap-2">
+                <PieChart className="w-4 h-4 text-emerald-400" />
+                <span>2. Account Asset Allocations & Effective Growth Rates</span>
+              </label>
+              <span className="text-[10px] text-slate-500">
+                Adjust stock/bond mix per account
+              </span>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+              {/* Pre-Tax Traditional IRA */}
+              <div className="p-3 bg-slate-950/60 rounded-xl border border-slate-800 space-y-2">
+                <div className="flex justify-between items-center text-xs">
+                  <span className="font-semibold text-slate-200">Pre-Tax IRA</span>
+                  <span className="text-[10px] font-mono font-bold px-1.5 py-0.5 rounded bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+                    {formatPercent(effectivePreTaxRate)} mean
+                  </span>
+                </div>
+                <div className="flex justify-between text-[10px] text-slate-400 font-mono">
+                  <span>{Math.round(preTaxEq * 100)}% Stocks</span>
+                  <span>{Math.round((1 - preTaxEq) * 100)}% Bonds</span>
+                </div>
+                <input
+                  type="range"
+                  min="0.00"
+                  max="1.00"
+                  step="0.05"
+                  value={preTaxEq}
+                  onChange={(e) => updateGrowthAssumptions('preTaxEquityPortion', Number(e.target.value))}
+                  className="w-full h-1.5 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-emerald-500"
+                />
+              </div>
+
+              {/* Taxable Brokerage */}
+              <div className="p-3 bg-slate-950/60 rounded-xl border border-slate-800 space-y-2">
+                <div className="flex justify-between items-center text-xs">
+                  <span className="font-semibold text-slate-200">Taxable Brokerage</span>
+                  <span className="text-[10px] font-mono font-bold px-1.5 py-0.5 rounded bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+                    {formatPercent(effectiveTaxableRate)} mean
+                  </span>
+                </div>
+                <div className="flex justify-between text-[10px] text-slate-400 font-mono">
+                  <span>{Math.round(taxableEq * 100)}% Stocks</span>
+                  <span>{Math.round((1 - taxableEq) * 100)}% Bonds</span>
+                </div>
+                <input
+                  type="range"
+                  min="0.00"
+                  max="1.00"
+                  step="0.05"
+                  value={taxableEq}
+                  onChange={(e) => updateGrowthAssumptions('taxableEquityPortion', Number(e.target.value))}
+                  className="w-full h-1.5 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-emerald-500"
+                />
+              </div>
+
+              {/* Roth IRA */}
+              <div className="p-3 bg-slate-950/60 rounded-xl border border-slate-800 space-y-2">
+                <div className="flex justify-between items-center text-xs">
+                  <span className="font-semibold text-slate-200">Roth IRA</span>
+                  <span className="text-[10px] font-mono font-bold px-1.5 py-0.5 rounded bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+                    {formatPercent(effectiveRothRate)} mean
+                  </span>
+                </div>
+                <div className="flex justify-between text-[10px] text-slate-400 font-mono">
+                  <span>{Math.round(rothEq * 100)}% Stocks</span>
+                  <span>{Math.round((1 - rothEq) * 100)}% Bonds</span>
+                </div>
+                <input
+                  type="range"
+                  min="0.00"
+                  max="1.00"
+                  step="0.05"
+                  value={rothEq}
+                  onChange={(e) => updateGrowthAssumptions('rothEquityPortion', Number(e.target.value))}
+                  className="w-full h-1.5 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-emerald-500"
+                />
+              </div>
+
+              {/* Cash Savings Yield */}
+              <div className="p-3 bg-slate-950/60 rounded-xl border border-slate-800 space-y-2">
+                <div className="flex justify-between items-center text-xs">
+                  <span className="font-semibold text-slate-200">Cash Savings</span>
+                  <span className="text-[10px] font-mono font-bold px-1.5 py-0.5 rounded bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+                    {formatPercent(cashYield)} yield
+                  </span>
+                </div>
+                <div className="flex justify-between text-[10px] text-slate-400 font-mono">
+                  <span>{inputs.growthAssumptions.cashYieldRate !== null && inputs.growthAssumptions.cashYieldRate !== undefined ? 'Custom' : 'Matches Bonds'}</span>
+                  <span>{formatPercent(cashYield)}</span>
+                </div>
+                <input
+                  type="range"
+                  min="0.00"
+                  max="0.08"
+                  step="0.005"
+                  value={cashYield}
+                  onChange={(e) => updateGrowthAssumptions('cashYieldRate', Number(e.target.value))}
+                  className="w-full h-1.5 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-emerald-500"
+                />
+              </div>
+            </div>
+          </div>
+
+          {/* Section 3: Volatility, Correlation & Simulation Parameters */}
+          <div className="space-y-3 pt-2">
+            <div className="flex items-center justify-between">
+              <label className="text-xs font-bold text-slate-200 flex items-center gap-2">
+                <Sliders className="w-4 h-4 text-emerald-400" />
+                <span>3. Monte Carlo Volatility, Correlation & Sampling</span>
+              </label>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              {/* Mode selection and Trials */}
+              <div className="space-y-4">
+                {/* Simulation Mode Toggle */}
+                <div className="space-y-2">
+                  <label className="text-xs font-semibold text-slate-300 flex items-center justify-between">
+                    <span>Simulation Distribution Mode</span>
+                    <span className="text-[10px] text-slate-500 font-mono">Select data source</span>
+                  </label>
+                  <div className="flex bg-slate-950 p-1 rounded-xl border border-slate-800">
+                    <button
+                      onClick={() => updateSettings('mode', 'monte-carlo')}
+                      className={`flex-1 text-[10px] py-2 rounded-lg font-bold transition-all ${
+                        inputs.monteCarloSettings.mode === 'monte-carlo'
+                          ? 'bg-emerald-500 text-slate-950 shadow'
+                          : 'text-slate-400 hover:text-slate-200'
+                      }`}
+                    >
+                      Bivariate Normal MC
+                    </button>
+                    <button
+                      onClick={() => updateSettings('mode', 'historical')}
+                      className={`flex-1 text-[10px] py-2 rounded-lg font-bold transition-all ${
+                        inputs.monteCarloSettings.mode === 'historical'
+                          ? 'bg-emerald-500 text-slate-950 shadow'
+                          : 'text-slate-400 hover:text-slate-200'
+                      }`}
+                    >
+                      Historical Bootstrap
+                    </button>
+                  </div>
+                </div>
+
+                {/* Number of Trials */}
+                <div className="space-y-2">
+                  <label className="text-xs font-semibold text-slate-300 flex justify-between">
+                    <span>Simulated Sample Size</span>
+                    <span className="text-emerald-400 font-mono font-bold">{inputs.monteCarloSettings.trials} trials</span>
+                  </label>
+                  <input
+                    type="range"
+                    min="200"
+                    max="10000"
+                    step="100"
+                    value={inputs.monteCarloSettings.trials}
+                    onChange={(e) => updateSettings('trials', Number(e.target.value))}
+                    className="w-full h-1.5 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-emerald-500"
+                  />
+                  <div className="flex justify-between text-[9px] text-slate-500 font-mono">
+                    <span>200 (Draft)</span>
+                    <span>1000 (Recommended)</span>
+                    <span>10000 (High Precision)</span>
+                  </div>
+                </div>
+
+                {/* Seedable Reproducibility */}
+                <div className="space-y-2 pt-3 border-t border-slate-800/40">
+                  <label className="text-xs font-semibold text-slate-300 flex justify-between items-center">
+                    <span>Deterministic Random Seed</span>
+                    <span className="text-[10px] text-slate-500 font-mono">Reproducibility</span>
+                  </label>
+                  <div className="flex gap-2 items-center">
+                    <input
+                      type="checkbox"
+                      id="useSeedCheckbox"
+                      checked={inputs.monteCarloSettings.seed !== null}
+                      onChange={(e) => {
+                        const useSeed = e.target.checked;
+                        updateSettings('seed', useSeed ? 42 : null);
+                      }}
+                      className="w-4 h-4 bg-slate-950 rounded border-slate-800 text-emerald-500 focus:ring-emerald-500 accent-emerald-500 cursor-pointer"
+                    />
+                    <label htmlFor="useSeedCheckbox" className="text-xs text-slate-400 cursor-pointer select-none">
+                      Lock Seed Value
+                    </label>
+                    
+                    {inputs.monteCarloSettings.seed !== null && (
+                      <div className="flex items-center gap-1.5 flex-1">
+                        <input
+                          type="number"
+                          value={inputs.monteCarloSettings.seed}
+                          onChange={(e) => {
+                            const val = e.target.value === '' ? 42 : Number(e.target.value);
+                            updateSettings('seed', val);
+                          }}
+                          className="w-full text-xs font-mono font-bold px-2.5 py-1 bg-slate-950 text-slate-100 border border-slate-800 rounded-lg focus:outline-none focus:border-emerald-500"
+                          placeholder="e.g. 42"
+                        />
+                        <button
+                          type="button"
+                          onClick={handleRegenerate}
+                          className="p-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-emerald-400 border border-slate-700 rounded-lg transition-colors cursor-pointer group"
+                          title="Randomize seed value and regenerate"
+                        >
+                          <RefreshCw className="w-3.5 h-3.5 group-hover:rotate-180 transition-transform duration-500" />
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                  <p className="text-[9px] text-slate-500 leading-normal">
+                    Locking a seed value ensures simulation returns remain 100% identical on page reloads or slider edits for debugging and repeatable analysis.
+                  </p>
+                </div>
+              </div>
+
+              {/* Volatilities and Correlations (Normal mode parameters) */}
+              <div className="space-y-4">
+                {inputs.monteCarloSettings.mode === 'monte-carlo' ? (
+                  <>
+                    {/* Equity Volatility */}
+                    <div className="space-y-1">
+                      <label className="text-xs font-semibold text-slate-300 flex justify-between">
+                        <span>Equity Return Volatility (Std Dev)</span>
+                        <span className="text-emerald-400 font-mono font-semibold">{formatPercent(inputs.monteCarloSettings.equityVolatility)}</span>
+                      </label>
+                      <input
+                        type="range"
+                        min="0.05"
+                        max="0.30"
+                        step="0.01"
+                        value={inputs.monteCarloSettings.equityVolatility}
+                        onChange={(e) => updateSettings('equityVolatility', Number(e.target.value))}
+                        className="w-full h-1 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-emerald-500"
+                      />
+                    </div>
+
+                    {/* Bond Volatility */}
+                    <div className="space-y-1">
+                      <label className="text-xs font-semibold text-slate-300 flex justify-between">
+                        <span>Bond Return Volatility (Std Dev)</span>
+                        <span className="text-emerald-400 font-mono font-semibold">{formatPercent(inputs.monteCarloSettings.fixedIncomeVolatility)}</span>
+                      </label>
+                      <input
+                        type="range"
+                        min="0.01"
+                        max="0.15"
+                        step="0.01"
+                        value={inputs.monteCarloSettings.fixedIncomeVolatility}
+                        onChange={(e) => updateSettings('fixedIncomeVolatility', Number(e.target.value))}
+                        className="w-full h-1 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-emerald-500"
+                      />
+                    </div>
+
+                    {/* Asset Correlation */}
+                    <div className="space-y-1">
+                      <label className="text-xs font-semibold text-slate-300 flex justify-between">
+                        <span>Asset Correlation Coefficient (ρ)</span>
+                        <span className="text-emerald-400 font-mono font-semibold">{(inputs.monteCarloSettings.correlation).toFixed(2)}</span>
+                      </label>
+                      <input
+                        type="range"
+                        min="-0.50"
+                        max="0.80"
+                        step="0.05"
+                        value={inputs.monteCarloSettings.correlation}
+                        onChange={(e) => updateSettings('correlation', Number(e.target.value))}
+                        className="w-full h-1 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-emerald-500"
+                      />
+                    </div>
+                  </>
+                ) : (
+                  <div className="h-full bg-slate-950/40 p-4 rounded-xl border border-slate-800/40 flex flex-col justify-center text-center">
+                    <Calendar className="w-8 h-8 text-emerald-500/50 mx-auto mb-2" />
+                    <span className="text-xs font-bold text-slate-300">Historical Bootstrap Mode Active</span>
+                    <p className="text-[10px] text-slate-400 leading-normal max-w-xs mx-auto mt-1">
+                      In this mode, return parameters are bootstrap-sampled directly from actual S&P 500 and US Treasury historical data from 1970–2025. Volatilities are determined natively by history.
+                    </p>
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+
+          {/* Section 4: Inflation (CPI) Simulation Modeling */}
           <div className="pt-4 border-t border-slate-800/60 space-y-3">
             <div className="flex items-center justify-between">
               <label className="text-xs font-semibold text-slate-300 flex items-center gap-2">
-                <span>Inflation (CPI) Simulation Modeling</span>
+                <span>4. Inflation (CPI) Simulation Modeling</span>
               </label>
               <span className={`text-[10px] font-mono font-bold px-2 py-0.5 rounded ${
                 inputs.monteCarloSettings.randomizeCPI !== false
