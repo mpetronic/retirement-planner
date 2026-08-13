@@ -229,20 +229,33 @@ export function generateSyntheticSequence(
   };
 }
 
+// Calculate empirical dataset means across 1970–2025 for mean-calibrated bootstrapping
+export const HISTORICAL_STOCK_MEAN = HISTORICAL_RETURNS.reduce((sum, y) => sum + y.stock, 0) / HISTORICAL_RETURNS.length;
+export const HISTORICAL_BOND_MEAN = HISTORICAL_RETURNS.reduce((sum, y) => sum + y.bond, 0) / HISTORICAL_RETURNS.length;
+
 /**
  * Generates a historical bootstrapped sequence of 35 years.
  * Can be random sampling (with replacement) or contiguous block sampling.
+ * Optionally calibrates (shifts) historical shocks so their long-term mean matches
+ * user-configured baseline return rates.
  */
 export function generateHistoricalSequence(
   blockSampling: boolean = false,
   startYearIndex?: number,
   rand: () => number = Math.random,
   randomizeCPI: boolean = true,
-  constantCPIRate?: number | null
+  constantCPIRate?: number | null,
+  calibrateMeans: boolean = true,
+  equityMean?: number,
+  bondMean?: number
 ): Omit<LockedReturnSequence, 'id'> {
   const equityReturns: number[] = [];
   const fixedIncomeReturns: number[] = [];
   const inflationRates: number[] = [];
+  
+  // Compute calibration shift if calibrateMeans is enabled and target means are provided
+  const stockShift = calibrateMeans && equityMean !== undefined ? (equityMean - HISTORICAL_STOCK_MEAN) : 0;
+  const bondShift = calibrateMeans && bondMean !== undefined ? (bondMean - HISTORICAL_BOND_MEAN) : 0;
   
   if (blockSampling) {
     // Select a continuous 35-year historical segment.
@@ -255,8 +268,8 @@ export function generateHistoricalSequence(
       
     for (let i = 0; i < 35; i++) {
       const yearData = HISTORICAL_RETURNS[idx];
-      equityReturns.push(yearData.stock);
-      fixedIncomeReturns.push(yearData.bond);
+      equityReturns.push(yearData.stock + stockShift);
+      fixedIncomeReturns.push(yearData.bond + bondShift);
       inflationRates.push(randomizeCPI ? yearData.inflation : (constantCPIRate ?? 0.025));
       idx++;
     }
@@ -265,8 +278,8 @@ export function generateHistoricalSequence(
     for (let i = 0; i < 35; i++) {
       const idx = Math.floor(rand() * HISTORICAL_RETURNS.length);
       const yearData = HISTORICAL_RETURNS[idx];
-      equityReturns.push(yearData.stock);
-      fixedIncomeReturns.push(yearData.bond);
+      equityReturns.push(yearData.stock + stockShift);
+      fixedIncomeReturns.push(yearData.bond + bondShift);
       inflationRates.push(randomizeCPI ? yearData.inflation : (constantCPIRate ?? 0.025));
     }
   }
@@ -382,9 +395,19 @@ export function runMonteCarloSimulation(
     if (preGeneratedSequences && preGeneratedSequences[t]) {
       seqData = preGeneratedSequences[t];
     } else if (mode === 'historical') {
-      // 30% block bootstrapping, 70% random year sampling to preserve real historical cycles
-      const block = rand() < 0.35;
-      seqData = generateHistoricalSequence(block, undefined, rand, isCpiRandomized, constantCpi);
+      const strategy = inputs.monteCarloSettings?.historicalSamplingStrategy ?? 'hybrid';
+      const isBlock = strategy === 'block' ? true : strategy === 'random' ? false : rand() < 0.35;
+      const calibrateMeans = inputs.monteCarloSettings?.calibrateHistoricalMeans !== false;
+      seqData = generateHistoricalSequence(
+        isBlock,
+        undefined,
+        rand,
+        isCpiRandomized,
+        constantCpi,
+        calibrateMeans,
+        equityMean,
+        bondMean
+      );
     } else {
       seqData = generateSyntheticSequence(equityMean, equityVol, bondMean, bondVol, correlation, rand, isCpiRandomized, constantCpi, enableRegimeSwitching);
     }

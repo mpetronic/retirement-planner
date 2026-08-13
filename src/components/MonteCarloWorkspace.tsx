@@ -805,12 +805,106 @@ export const MonteCarloWorkspace: React.FC<MonteCarloWorkspaceProps> = ({
                     </div>
                   </>
                 ) : (
-                  <div className="h-full bg-slate-950/40 p-4 rounded-xl border border-slate-800/40 flex flex-col justify-center text-center">
-                    <Calendar className="w-8 h-8 text-emerald-500/50 mx-auto mb-2" />
-                    <span className="text-xs font-bold text-slate-300">Historical Bootstrap Mode Active</span>
-                    <p className="text-[10px] text-slate-400 leading-normal max-w-xs mx-auto mt-1">
-                      In this mode, return parameters are bootstrap-sampled directly from actual S&P 500 and US Treasury historical data from 1970–2025. Volatilities are determined natively by history.
-                    </p>
+                  <div className="h-full bg-slate-950/40 p-3.5 rounded-xl border border-slate-800/40 flex flex-col justify-between space-y-3">
+                    <div>
+                      <div className="flex items-center gap-2 mb-1.5">
+                        <Calendar className="w-4 h-4 text-emerald-400" />
+                        <span className="text-xs font-bold text-slate-200">Historical Sampling Strategy</span>
+                      </div>
+                      <p className="text-[10px] text-slate-400 leading-normal">
+                        Control how the 56-year dataset (1970–2025 S&P 500, Treasuries & CPI) is sampled across your 1,000 retirement trials:
+                      </p>
+                    </div>
+
+                    <div className="grid grid-cols-3 gap-1.5 bg-slate-950 p-1 rounded-xl border border-slate-800">
+                      <button
+                        type="button"
+                        onClick={() => updateSettings('historicalSamplingStrategy', 'hybrid')}
+                        className={`text-[9px] py-1.5 px-2 rounded-lg font-bold transition-all cursor-pointer ${
+                          (inputs.monteCarloSettings.historicalSamplingStrategy ?? 'hybrid') === 'hybrid'
+                            ? 'bg-emerald-500 text-slate-950 shadow'
+                            : 'text-slate-400 hover:text-slate-200 hover:bg-slate-900'
+                        }`}
+                      >
+                        Hybrid (35/65)
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => updateSettings('historicalSamplingStrategy', 'block')}
+                        className={`text-[9px] py-1.5 px-2 rounded-lg font-bold transition-all cursor-pointer ${
+                          inputs.monteCarloSettings.historicalSamplingStrategy === 'block'
+                            ? 'bg-emerald-500 text-slate-950 shadow'
+                            : 'text-slate-400 hover:text-slate-200 hover:bg-slate-900'
+                        }`}
+                      >
+                        100% Block
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => updateSettings('historicalSamplingStrategy', 'random')}
+                        className={`text-[9px] py-1.5 px-2 rounded-lg font-bold transition-all cursor-pointer ${
+                          inputs.monteCarloSettings.historicalSamplingStrategy === 'random'
+                            ? 'bg-emerald-500 text-slate-950 shadow'
+                            : 'text-slate-400 hover:text-slate-200 hover:bg-slate-900'
+                        }`}
+                      >
+                        100% Random
+                      </button>
+                    </div>
+
+                    <div className="p-2.5 bg-slate-900/60 rounded-lg border border-slate-800/80 text-[10px] text-slate-300 leading-normal">
+                      {(inputs.monteCarloSettings.historicalSamplingStrategy ?? 'hybrid') === 'hybrid' && (
+                        <span>
+                          <strong className="text-emerald-400">Hybrid (Recommended):</strong> ~350 trials replay 35-year contiguous chronological blocks (e.g. 1973–2007) to preserve exact historic bear market clusters, while ~650 trials resample random individual years to test novel sequence permutations.
+                        </span>
+                      )}
+                      {inputs.monteCarloSettings.historicalSamplingStrategy === 'block' && (
+                        <span>
+                          <strong className="text-emerald-400">100% Contiguous Chronological Blocks:</strong> Every trial strictly replays actual 35-year continuous historic windows (1970–2004, 1973–2007, 1982–2016, etc.) preserving true macroeconomic persistence and lived sequences.
+                        </span>
+                      )}
+                      {inputs.monteCarloSettings.historicalSamplingStrategy === 'random' && (
+                        <span>
+                          <strong className="text-emerald-400">100% Random Year Resampling:</strong> Every trial randomly shuffles 35 individual years from 1970–2025 with replacement (preserving joint stock/bond/inflation synchronization per year) to stress-test arbitrary combinations.
+                        </span>
+                      )}
+                    </div>
+
+                    {/* Mean Calibration Toggle */}
+                    <div className="pt-2 border-t border-slate-800/60 space-y-2">
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-2">
+                          <input
+                            type="checkbox"
+                            id="calibrateHistoricalMeansCheckbox"
+                            checked={inputs.monteCarloSettings.calibrateHistoricalMeans !== false}
+                            onChange={(e) => updateSettings('calibrateHistoricalMeans', e.target.checked)}
+                            className="w-3.5 h-3.5 bg-slate-950 rounded border-slate-800 text-emerald-500 focus:ring-emerald-500 accent-emerald-500 cursor-pointer"
+                          />
+                          <label htmlFor="calibrateHistoricalMeansCheckbox" className="text-[11px] text-slate-200 cursor-pointer select-none font-semibold">
+                            Calibrate Historical Shocks to Baseline Means
+                          </label>
+                        </div>
+                        <span className={`text-[9px] font-mono font-bold px-1.5 py-0.5 rounded ${
+                          inputs.monteCarloSettings.calibrateHistoricalMeans !== false
+                            ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20'
+                            : 'bg-amber-500/10 text-amber-400 border border-amber-500/20'
+                        }`}>
+                          {inputs.monteCarloSettings.calibrateHistoricalMeans !== false ? 'Calibrated (Aligned)' : 'Raw History (12.3% Stocks)'}
+                        </span>
+                      </div>
+                      <p className="text-[9px] text-slate-400 leading-normal pl-5">
+                        {inputs.monteCarloSettings.calibrateHistoricalMeans !== false ? (
+                          <>
+                            <strong className="text-slate-300">Calibrated (Recommended):</strong> Shifts 1970–2025 returns so the average matches your configured baseline ({formatPercent(inputs.growthAssumptions.equityReturnRate)} Stocks / {formatPercent(inputs.growthAssumptions.fixedIncomeReturnRate)} Bonds) while preserving 100% of historical volatility, crash depths (1973, 2008), and correlations. Aligns ending wealth scale with Bivariate mode.
+                          </>
+                        ) : (
+                          <>
+                            <strong className="text-amber-400">Raw Unadjusted History:</strong> Uses actual unadjusted nominal returns from 1970–2025 (averaging 12.3% stocks / 6.7% bonds). Because historical US returns were unusually high, ending estate balances will be significantly higher ($70M–$80M+).
+                          </>
+                        )}
+                      </p>
+                    </div>
                   </div>
                 )}
               </div>

@@ -82,6 +82,8 @@ export const generateExcelWorkbook = (ledger: SimulationResultRow[], inputs: App
     ["Randomizer Seed", inputs.monteCarloSettings.seed ?? "N/A (Standard Random)"],
     ["CPI Inflation Modeling", inputs.monteCarloSettings.randomizeCPI !== false ? "Randomized (Historical)" : `Constant (${(((inputs.monteCarloSettings.constantCPIRate ?? inputs.growthAssumptions.cpiInflationRate) * 100)).toFixed(2)}%)`],
     ["Regime Switching & Mean Reversion", inputs.monteCarloSettings.enableRegimeSwitching !== false ? "Enabled (Markov 2-State + Mean Reversion)" : "Disabled (i.i.d. Random Walk)"],
+    ["Historical Sampling Strategy", (inputs.monteCarloSettings.historicalSamplingStrategy ?? 'hybrid').toUpperCase()],
+    ["Historical Mean Calibration", inputs.monteCarloSettings.calibrateHistoricalMeans !== false ? "Calibrated (Aligned to Baseline)" : "Raw History (12.3% Stock)"],
     [],
     ["STATE TAX RELOCATION"],
     ["Current Home State", inputs.jurisdiction.currentState],

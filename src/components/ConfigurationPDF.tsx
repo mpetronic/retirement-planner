@@ -483,6 +483,22 @@ export const ConfigurationPDF: React.FC<PDFProps> = ({ inputs }) => {
                     {inputs.monteCarloSettings.enableRegimeSwitching !== false ? 'Enabled (Markov 2-State + Mean Reversion)' : 'Disabled (i.i.d. Random Walk)'}
                   </Text>
                 </View>
+                <View style={styles.row}>
+                  <Text style={styles.rowLabel}>Historical Sampling:</Text>
+                  <Text style={styles.rowValue}>
+                    {inputs.monteCarloSettings.historicalSamplingStrategy === 'block' 
+                      ? '100% Contiguous Blocks' 
+                      : inputs.monteCarloSettings.historicalSamplingStrategy === 'random' 
+                        ? '100% Random Resampling' 
+                        : 'Hybrid (35% Block / 65% Random)'}
+                  </Text>
+                </View>
+                <View style={styles.row}>
+                  <Text style={styles.rowLabel}>Historical Calibration:</Text>
+                  <Text style={styles.rowValue}>
+                    {inputs.monteCarloSettings.calibrateHistoricalMeans !== false ? 'Calibrated (Aligned to Baseline)' : 'Raw History (12.3% Stock)'}
+                  </Text>
+                </View>
               </View>
             </View>
           </View>

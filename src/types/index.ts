@@ -88,6 +88,8 @@ export interface MonteCarloSettings {
   randomizeCPI?: boolean;        // If true (default), randomize annual CPI per trial; if false, hold constant
   constantCPIRate?: number | null; // Optional custom constant CPI rate if held constant (e.g. 0.025)
   enableRegimeSwitching?: boolean; // If true (default), apply Markov 2-state regime switching and Ornstein-Uhlenbeck mean reversion
+  historicalSamplingStrategy?: 'hybrid' | 'block' | 'random'; // Historical bootstrap strategy (hybrid: 35% block / 65% random, block: 100% contiguous, random: 100% random resampled)
+  calibrateHistoricalMeans?: boolean; // If true (default), calibrate historical return shocks to match user configured baseline means (e.g. 7% equity / 4% bond)
 }
 
 export interface DetailedStateExpenses {

@@ -550,6 +550,138 @@ describe('Constant vs Randomized CPI Simulation', () => {
     expect(summaryNoRegimes.trialsRun).toBe(50);
     expect(summaryNoRegimes.successRate).toBeGreaterThan(0);
   });
+
+  it('should support configurable historical sampling strategies (block, random, hybrid)', () => {
+    const baseHistoricalInputs: AppStateInputs = {
+      you: {
+        birthDate: '1960-06-15',
+        estimatedPIA: 3000,
+        targetSSClaimingAge: 70,
+        plannedRetirementAge: 65,
+        activeSalary: 0,
+      },
+      wife: {
+        birthDate: '1964-03-10',
+        estimatedPIA: 2000,
+        targetSSClaimingAge: 67,
+        plannedRetirementAge: 62,
+        activeSalary: 0,
+      },
+      portfolio: {
+        yourPreTaxIRA: 1000000,
+        yourRothIRA: 50000,
+        yourTaxableBrokerage: 200000,
+        yourTaxableBasis: 150000,
+        wifePreTaxIRA: 200000,
+        wifeRothIRA: 0,
+        wifeTaxableBrokerage: 0,
+        wifeTaxableBasis: 0,
+        yourCash: 50000,
+      },
+      jurisdiction: {
+        relocationYear: null,
+        currentState: 'MD',
+        targetState: 'FL',
+      },
+      growthAssumptions: {
+        equityReturnRate: 0.07,
+        fixedIncomeReturnRate: 0.04,
+        cpiInflationRate: 0.03,
+        healthcareInflationRate: 0.05,
+      },
+      annualLivingExpenses: 80000,
+      annualRothConversion: 0,
+      rothConversionStrategy: 'flat',
+      rothConversionTargetValue: null,
+      monteCarloSettings: {
+        mode: 'historical',
+        equityVolatility: 0.15,
+        fixedIncomeVolatility: 0.05,
+        correlation: 0.15,
+        trials: 30,
+        seed: 42,
+        randomizeCPI: true,
+        historicalSamplingStrategy: 'block',
+      },
+      isConfigured: true,
+      isSingleFiler: false,
+    };
+
+    // Test 100% Contiguous Block sampling
+    const summaryBlock = runMonteCarloSimulation(baseHistoricalInputs);
+    expect(summaryBlock.trialsRun).toBe(30);
+    expect(summaryBlock.successRate).toBeGreaterThan(0);
+
+    // Test 100% Random Year Resampling
+    const inputsRandom: AppStateInputs = {
+      ...baseHistoricalInputs,
+      monteCarloSettings: {
+        ...baseHistoricalInputs.monteCarloSettings,
+        historicalSamplingStrategy: 'random',
+      },
+    };
+    const summaryRandom = runMonteCarloSimulation(inputsRandom);
+    expect(summaryRandom.trialsRun).toBe(30);
+    expect(summaryRandom.successRate).toBeGreaterThan(0);
+
+    // Test Hybrid Sampling
+    const inputsHybrid: AppStateInputs = {
+      ...baseHistoricalInputs,
+      monteCarloSettings: {
+        ...baseHistoricalInputs.monteCarloSettings,
+        historicalSamplingStrategy: 'hybrid',
+      },
+    };
+    const summaryHybrid = runMonteCarloSimulation(inputsHybrid);
+    expect(summaryHybrid.trialsRun).toBe(30);
+    expect(summaryHybrid.successRate).toBeGreaterThan(0);
+  });
+
+  it('should calibrate historical return shocks to configured baseline means when enabled', () => {
+    const rand = mulberry32(999);
+    const targetEquityMean = 0.07;
+    const targetBondMean = 0.04;
+
+    // Generate calibrated historical sequence
+    const calibratedSeq = generateHistoricalSequence(
+      false,
+      undefined,
+      rand,
+      true,
+      null,
+      true,
+      targetEquityMean,
+      targetBondMean
+    );
+
+    // Compute empirical average of the 35 sampled years
+    const avgCalibratedEquity = calibratedSeq.equityReturns.reduce((s, r) => s + r, 0) / 35;
+    const avgCalibratedBond = calibratedSeq.fixedIncomeReturns.reduce((s, r) => s + r, 0) / 35;
+
+    // Calibrated returns should be centered around the target 7.0% and 4.0%
+    expect(avgCalibratedEquity).toBeGreaterThan(0.03);
+    expect(avgCalibratedEquity).toBeLessThan(0.12);
+    expect(avgCalibratedBond).toBeGreaterThan(0.01);
+    expect(avgCalibratedBond).toBeLessThan(0.08);
+
+    // Generate raw unadjusted historical sequence (calibrateMeans = false)
+    const randRaw = mulberry32(999);
+    const rawSeq = generateHistoricalSequence(
+      false,
+      undefined,
+      randRaw,
+      true,
+      null,
+      false
+    );
+
+    const avgRawEquity = rawSeq.equityReturns.reduce((s, r) => s + r, 0) / 35;
+    const avgRawBond = rawSeq.fixedIncomeReturns.reduce((s, r) => s + r, 0) / 35;
+
+    // Raw historical returns should reflect the high 1970–2025 nominal averages (~12.3% and ~6.7%)
+    expect(avgRawEquity).toBeGreaterThan(avgCalibratedEquity);
+    expect(avgRawBond).toBeGreaterThan(avgCalibratedBond);
+  });
 });
 
 
