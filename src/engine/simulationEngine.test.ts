@@ -830,4 +830,69 @@ describe('runRetirementSimulation fixes', () => {
       expect(sumUses).toBeCloseTo(sumSources, 2);
     });
   });
+
+  it('should satisfy monthly deficits against upcoming RMD obligations before taking discretionary drawdowns', () => {
+    const inputs = getMockInputs();
+    inputs.isSingleFiler = true;
+    inputs.you.birthDate = '1960-01-01';
+    inputs.you.plannedRetirementAge = 60;
+    // Estimated SS to provide partial monthly income
+    inputs.you.estimatedPIA = 1500;
+    inputs.you.targetSSClaimingAge = 70;
+    // Set living expenses so that monthly deficit is less than annual RMD
+    inputs.annualLivingExpenses = 36000;
+    // Pre-tax IRA that generates ~40k+ RMD at age 75 (2035)
+    inputs.portfolio.yourPreTaxIRA = 1000000;
+    inputs.portfolio.yourTaxableBrokerage = 0;
+    inputs.portfolio.yourTaxableBasis = 0;
+    inputs.portfolio.yourCash = 0;
+    inputs.portfolio.yourRothIRA = 0;
+
+    const results = runRetirementSimulation(inputs);
+    // Find RMD year (age 75 in 2035)
+    const row2035 = results.find(r => r.year === 2035);
+    expect(row2035).toBeDefined();
+
+    // Verify statutory RMD is positive
+    expect(row2035!.yourRMD).toBeGreaterThan(0);
+
+    // Verify discretionary extra drawdown is 0 since RMD was sufficient to cover monthly cash needs
+    expect(row2035!.drawdownPreTax).toBe(0);
+
+    // Verify total pre-tax reduction corresponds to statutory RMD + growth rather than double withdrawal
+    expect(row2035!.otherTaxableIncome).toBe(0);
+  });
+
+  it('should take discretionary pre-tax drawdowns only for the amount exceeding the statutory RMD obligation', () => {
+    const inputs = getMockInputs();
+    inputs.isSingleFiler = true;
+    inputs.you.birthDate = '1960-01-01';
+    inputs.you.plannedRetirementAge = 60;
+    inputs.you.estimatedPIA = 0;
+    inputs.you.targetSSClaimingAge = null;
+    inputs.growthAssumptions.equityReturnRate = 0.07;
+    inputs.growthAssumptions.fixedIncomeReturnRate = 0.04;
+    // Large annual living expenses to exceed RMD in retirement
+    inputs.annualLivingExpenses = 120000;
+    // Large pre-tax IRA so account remains positive at age 75 (2035) with RMD ~30k-40k
+    inputs.portfolio.yourPreTaxIRA = 1500000;
+    inputs.portfolio.yourTaxableBrokerage = 0;
+    inputs.portfolio.yourTaxableBasis = 0;
+    inputs.portfolio.yourCash = 0;
+    inputs.portfolio.yourRothIRA = 0;
+
+    const results = runRetirementSimulation(inputs);
+    const row2035 = results.find(r => r.year === 2035);
+    expect(row2035).toBeDefined();
+
+    // Verify statutory RMD is positive
+    expect(row2035!.yourRMD).toBeGreaterThan(0);
+
+    // Discretionary drawdown should be positive and equal only the excess above the statutory RMD
+    expect(row2035!.drawdownPreTax).toBeGreaterThan(0);
+
+    // The sum of RMD + extra drawdown should cover the total deficit
+    const totalPreTaxDistributed = row2035!.yourRMD + row2035!.drawdownPreTax;
+    expect(totalPreTaxDistributed).toBeGreaterThan(row2035!.yourRMD);
+  });
 });

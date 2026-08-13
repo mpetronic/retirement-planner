@@ -414,6 +414,8 @@ export function runRetirementSimulation(
       if (factor > 0) wifeRMD = wifePreTax / factor;
     }
     const combinedRMD = yourRMD + wifeRMD;
+    let remainingYourRMD = yourRMD;
+    let remainingWifeRMD = wifeRMD;
 
     // Define healthcare parameters once per year
     let yourPreMedicareAnnual = 0;
@@ -768,7 +770,23 @@ export function runRetirementSimulation(
           }
         }
 
-        // Pre-tax third
+        // Pre-tax third: satisfy upcoming RMD obligations first before taking discretionary drawdowns
+        if (deficit > 0) {
+          if (!youDeceased && remainingYourRMD > 0 && yourPreTax > 0) {
+            const rmdDraw = Math.min(deficit, remainingYourRMD, yourPreTax);
+            remainingYourRMD -= rmdDraw;
+            yourPreTax -= rmdDraw;
+            deficit -= rmdDraw;
+          }
+          if (deficit > 0 && !wifeDeceased && remainingWifeRMD > 0 && wifePreTax > 0) {
+            const rmdDraw = Math.min(deficit, remainingWifeRMD, wifePreTax);
+            remainingWifeRMD -= rmdDraw;
+            wifePreTax -= rmdDraw;
+            deficit -= rmdDraw;
+          }
+        }
+
+        // Pre-tax fourth: if RMD obligations are exhausted and deficit remains, take discretionary pre-tax drawdowns
         if (deficit > 0) {
           if (!youDeceased && yourPreTax > 0) {
             const draw = Math.min(deficit, yourPreTax);
@@ -777,7 +795,7 @@ export function runRetirementSimulation(
             deficit -= draw;
             yourPreTax -= draw;
           }
-          if (deficit > 0 && wifePreTax > 0) {
+          if (deficit > 0 && !wifeDeceased && wifePreTax > 0) {
             const draw = Math.min(deficit, wifePreTax);
             annualWifeTradDraw += draw;
             annualDrawdownPreTax += draw;
@@ -839,9 +857,11 @@ export function runRetirementSimulation(
     }
 
     // December (month 11) is now processed
-    // Apply RMD and Roth Conversions first
-    yourPreTax = Math.max(0, yourPreTax - yourRMD);
-    wifePreTax = Math.max(0, wifePreTax - wifeRMD);
+    // Distribute any remaining undistributed RMD obligation from pre-tax accounts
+    const decDistributeYourRMD = Math.min(remainingYourRMD, yourPreTax);
+    const decDistributeWifeRMD = Math.min(remainingWifeRMD, wifePreTax);
+    yourPreTax = Math.max(0, yourPreTax - decDistributeYourRMD);
+    wifePreTax = Math.max(0, wifePreTax - decDistributeWifeRMD);
 
     if (targetConversion > 0) {
       if (isSurvivorActive || youDeceased) {
@@ -1048,7 +1068,7 @@ export function runRetirementSimulation(
       const decMed = (decMonthIdx >= yourMedicareMonthIdx ? monthlyYourPremDec : 0) + (!wifeDeceased && decMonthIdx >= wifeMedicareMonthIdx ? monthlyWifePremDec : 0);
 
       const decOutflows = decLiving + decPreMed + decMed + (decMonthIdx >= yourMedicareMonthIdx && !isYouWorkingDec ? yourPartBSurcharge + yourPartDSurcharge : 0) + (!wifeDeceased && decMonthIdx >= wifeMedicareMonthIdx && !isWifeWorkingDec ? wifePartBSurcharge + wifePartDSurcharge : 0) + totalTaxBill;
-      const decInflows = monthlyYourSSDec + monthlyWifeSSDec + monthlyYourSalaryDec + monthlyWifeSalaryDec + monthlyYourDividendsDec + monthlyWifeDividendsDec + yourRMD + wifeRMD;
+      const decInflows = monthlyYourSSDec + monthlyWifeSSDec + monthlyYourSalaryDec + monthlyWifeSalaryDec + monthlyYourDividendsDec + monthlyWifeDividendsDec + decDistributeYourRMD + decDistributeWifeRMD;
 
       let decDeficit = decOutflows - decInflows;
 

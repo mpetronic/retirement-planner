@@ -48,32 +48,33 @@ export const SankeyFlowDiagram: React.FC<SankeyFlowDiagramProps> = ({ row }) => 
 
   const totalExpenses = living + preMedicare + medBase + medSurcharge + taxes;
   const totalSourcesCash = salary + ss + rmd + divInterest + drawBrokerage + drawPreTax + drawRoth + drawCash;
-  const surplus = Math.max(0, totalSourcesCash - totalExpenses);
-  const unfundedDeficit = Math.max(0, totalExpenses - totalSourcesCash);
+  const cashDifference = totalSourcesCash - totalExpenses;
+  const surplus = cashDifference > 0.01 ? cashDifference : 0;
+  const unfundedDeficit = cashDifference < -0.01 ? -cashDifference : 0;
 
   // 3. Define logical sources
   const sources: NodeItem[] = [
-    { id: "salary", label: "Salary Income", value: salary, color: "#38bdf8" }, // sky-400
-    { id: "ss", label: "Social Security", value: ss, color: "#60a5fa" }, // blue-400
-    { id: "rmd", label: "Traditional IRA RMDs", value: rmd, color: "#818cf8" }, // indigo-400
-    { id: "divInterest", label: "Dividends & Interest", value: divInterest, color: "#a78bfa" }, // purple-400
-    { id: "drawBrokerage", label: "Brokerage Drawdown", value: drawBrokerage, color: "#fb7185" }, // rose-400
-    { id: "drawPreTax", label: "Extra IRA Drawdown", value: drawPreTax, color: "#f43f5e" }, // rose-500
-    { id: "drawRoth", label: "Roth IRA Drawdown", value: drawRoth, color: "#ec4899" }, // pink-500
-    { id: "drawCash", label: "Cash Savings Draw", value: drawCash, color: "#fda4af" }, // rose-300
-    { id: "unfundedDeficit", label: "Unfunded Deficit", value: unfundedDeficit, color: "#ef4444" }, // red-500
-    { id: "rothConvSrc", label: "IRA (Conversion Src)", value: rothConv, color: "#fbbf24" } // amber-400
-  ].filter(s => s.value > 0);
+    { id: "salary", label: "Salary Income", value: salary, color: "#38bdf8" },
+    { id: "ss", label: "Social Security", value: ss, color: "#60a5fa" },
+    { id: "rmd", label: "Traditional IRA RMDs", value: rmd, color: "#818cf8" },
+    { id: "divInterest", label: "Dividends & Interest", value: divInterest, color: "#a78bfa" },
+    { id: "drawBrokerage", label: "Brokerage Drawdown", value: drawBrokerage, color: "#fb7185" },
+    { id: "drawPreTax", label: "Extra IRA Drawdown", value: drawPreTax, color: "#f43f5e" },
+    { id: "drawRoth", label: "Roth IRA Drawdown", value: drawRoth, color: "#ec4899" },
+    { id: "drawCash", label: "Cash Savings Draw", value: drawCash, color: "#fda4af" },
+    { id: "unfundedDeficit", label: "Unfunded Deficit", value: unfundedDeficit, color: "#ef4444" },
+    { id: "rothConvSrc", label: "IRA (Conversion Src)", value: rothConv, color: "#fbbf24" }
+  ].filter(s => Math.round(s.value) > 0);
 
   // 4. Define logical uses
   const uses: NodeItem[] = [
-    { id: "living", label: "Living Expenses", value: living, color: "#34d399" }, // emerald-400
-    { id: "preMedicare", label: "Pre-Medicare Prem.", value: preMedicare, color: "#f97316" }, // orange-500
-    { id: "medPremiums", label: "Medicare Base & Surcharge", value: medBase + medSurcharge, color: "#ef4444" }, // red-500
-    { id: "taxes", label: "Income Taxes (Fed/State)", value: taxes, color: "#dc2626" }, // red-600
-    { id: "rothConvDest", label: "Roth IRA (Conv. Dest)", value: rothConv, color: "#d97706" }, // amber-600
-    { id: "surplus", label: "Reinvested Surplus", value: surplus, color: "#059669" } // emerald-600
-  ].filter(u => u.value > 0);
+    { id: "living", label: "Living Expenses", value: living, color: "#34d399" },
+    { id: "preMedicare", label: "Pre-Medicare Prem.", value: preMedicare, color: "#f97316" },
+    { id: "medPremiums", label: "Medicare Base & Surcharge", value: medBase + medSurcharge, color: "#ef4444" },
+    { id: "taxes", label: "Income Taxes (Fed/State)", value: taxes, color: "#dc2626" },
+    { id: "rothConvDest", label: "Roth IRA (Conv. Dest)", value: rothConv, color: "#d97706" },
+    { id: "surplus", label: "Reinvested Surplus", value: surplus, color: "#059669" }
+  ].filter(u => Math.round(u.value) > 0);
 
   const sumSources = sources.reduce((acc, s) => acc + s.value, 0);
   const sumUses = uses.reduce((acc, u) => acc + u.value, 0);
