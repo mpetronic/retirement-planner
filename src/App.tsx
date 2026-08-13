@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useDeferredValue } from 'react';
 import {
   AppStateInputs,
   LockedReturnSequence,
@@ -183,6 +183,11 @@ function App() {
   const [savedPlans, setSavedPlans] = useLocalStorage<SavedPlan[]>('retirement_planner_saved_plans', []);
   const [useTodayDollars, setUseTodayDollars] = useLocalStorage<boolean>('retirement_planner_use_today_dollars', false);
 
+  // Defer heavy mathematical calculations to maintain 60+ FPS UI responsiveness during slider drag/typing
+  const deferredInputs = useDeferredValue(inputs);
+  const deferredSimulateSurvivor = useDeferredValue(simulateSurvivor);
+  const isSimulating = inputs !== deferredInputs || simulateSurvivor !== deferredSimulateSurvivor;
+
   // Global persisted scenario for all worksheets
   const [globalScenario, setGlobalScenario] = useLocalStorage<'flat' | 'p10' | 'p50' | 'p90'>('retirement_planner_global_scenario', 'p50');
 
@@ -201,24 +206,24 @@ function App() {
   }, [globalFontSize]);
 
 
-  // 1. Generate 1,000 return sequences once, keyed ONLY on volatility/correlation/seed/cpi.
+  // 1. Generate 1,000 return sequences once, keyed ONLY on deferred volatility/correlation/seed/cpi.
   // This preserves stable market return percentages while strategy slider variables are tweaked.
   const returnSequences = useMemo(() => {
-    const trials = inputs.monteCarloSettings?.trials || 1000;
-    const mode = inputs.monteCarloSettings?.mode || 'monte-carlo';
+    const trials = deferredInputs.monteCarloSettings?.trials || 1000;
+    const mode = deferredInputs.monteCarloSettings?.mode || 'monte-carlo';
     
-    const equityMean = inputs.growthAssumptions.equityReturnRate;
-    const bondMean = inputs.growthAssumptions.fixedIncomeReturnRate;
-    const equityVol = inputs.monteCarloSettings?.equityVolatility ?? 0.15;
-    const bondVol = inputs.monteCarloSettings?.fixedIncomeVolatility ?? 0.05;
-    const correlation = inputs.monteCarloSettings?.correlation ?? 0.15;
-    const seed = inputs.monteCarloSettings?.seed;
-    const nonce = inputs.monteCarloSettings?.nonce ?? 0;
+    const equityMean = deferredInputs.growthAssumptions.equityReturnRate;
+    const bondMean = deferredInputs.growthAssumptions.fixedIncomeReturnRate;
+    const equityVol = deferredInputs.monteCarloSettings?.equityVolatility ?? 0.15;
+    const bondVol = deferredInputs.monteCarloSettings?.fixedIncomeVolatility ?? 0.05;
+    const correlation = deferredInputs.monteCarloSettings?.correlation ?? 0.15;
+    const seed = deferredInputs.monteCarloSettings?.seed;
+    const nonce = deferredInputs.monteCarloSettings?.nonce ?? 0;
     
-    const isCpiRandomized = inputs.monteCarloSettings?.randomizeCPI !== false;
-    const constantCpi = (inputs.monteCarloSettings?.randomizeCPI === false && inputs.monteCarloSettings?.constantCPIRate != null)
-      ? inputs.monteCarloSettings.constantCPIRate
-      : inputs.growthAssumptions.cpiInflationRate;
+    const isCpiRandomized = deferredInputs.monteCarloSettings?.randomizeCPI !== false;
+    const constantCpi = (deferredInputs.monteCarloSettings?.randomizeCPI === false && deferredInputs.monteCarloSettings?.constantCPIRate != null)
+      ? deferredInputs.monteCarloSettings.constantCPIRate
+      : deferredInputs.growthAssumptions.cpiInflationRate;
     
     const baseSeed = seed !== null && seed !== undefined ? seed : 12345;
     const rand = mulberry32(baseSeed + nonce);
@@ -234,34 +239,34 @@ function App() {
     }
     return list;
   }, [
-    inputs.growthAssumptions.equityReturnRate,
-    inputs.growthAssumptions.fixedIncomeReturnRate,
-    inputs.growthAssumptions.cpiInflationRate,
-    inputs.monteCarloSettings.mode,
-    inputs.monteCarloSettings.trials,
-    inputs.monteCarloSettings.equityVolatility,
-    inputs.monteCarloSettings.fixedIncomeVolatility,
-    inputs.monteCarloSettings.correlation,
-    inputs.monteCarloSettings.seed,
-    inputs.monteCarloSettings.nonce,
-    inputs.monteCarloSettings.randomizeCPI,
-    inputs.monteCarloSettings.constantCPIRate,
+    deferredInputs.growthAssumptions.equityReturnRate,
+    deferredInputs.growthAssumptions.fixedIncomeReturnRate,
+    deferredInputs.growthAssumptions.cpiInflationRate,
+    deferredInputs.monteCarloSettings.mode,
+    deferredInputs.monteCarloSettings.trials,
+    deferredInputs.monteCarloSettings.equityVolatility,
+    deferredInputs.monteCarloSettings.fixedIncomeVolatility,
+    deferredInputs.monteCarloSettings.correlation,
+    deferredInputs.monteCarloSettings.seed,
+    deferredInputs.monteCarloSettings.nonce,
+    deferredInputs.monteCarloSettings.randomizeCPI,
+    deferredInputs.monteCarloSettings.constantCPIRate,
   ]);
 
-  // 2. Reactively compute the Monte Carlo simulation. Takes ~25ms since returns are pre-generated.
+  // 2. Reactively compute the Monte Carlo simulation on deferred inputs.
   const monteCarloSummary = useMemo(() => {
-    return runMonteCarloSimulation(inputs, simulateSurvivor, returnSequences);
-  }, [inputs, simulateSurvivor, returnSequences]);
+    return runMonteCarloSimulation(deferredInputs, deferredSimulateSurvivor, returnSequences);
+  }, [deferredInputs, deferredSimulateSurvivor, returnSequences]);
 
   // 3. Compute parallel ledgers for flat expected returns and the representative percentiles.
   const parallelLedgers = useMemo(() => {
     return {
-      flat: runRetirementSimulation(inputs, simulateSurvivor, null),
-      p10: runRetirementSimulation(inputs, simulateSurvivor, monteCarloSummary.representativeSequences.worst),
-      p50: runRetirementSimulation(inputs, simulateSurvivor, monteCarloSummary.representativeSequences.median),
-      p90: runRetirementSimulation(inputs, simulateSurvivor, monteCarloSummary.representativeSequences.best),
+      flat: runRetirementSimulation(deferredInputs, deferredSimulateSurvivor, null),
+      p10: runRetirementSimulation(deferredInputs, deferredSimulateSurvivor, monteCarloSummary.representativeSequences.worst),
+      p50: runRetirementSimulation(deferredInputs, deferredSimulateSurvivor, monteCarloSummary.representativeSequences.median),
+      p90: runRetirementSimulation(deferredInputs, deferredSimulateSurvivor, monteCarloSummary.representativeSequences.best),
     };
-  }, [inputs, simulateSurvivor, monteCarloSummary]);
+  }, [deferredInputs, deferredSimulateSurvivor, monteCarloSummary]);
 
   // Active return sequence for optimizer/matrix sweeps depending on global scenario
   const activeSequence = useMemo(() => {
@@ -310,9 +315,9 @@ function App() {
 
   const displayMonteCarloSummary = useMemo(() => {
     if (!useTodayDollars) return monteCarloSummary;
-    const cpi = (inputs.monteCarloSettings?.randomizeCPI === false && inputs.monteCarloSettings?.constantCPIRate != null)
-      ? inputs.monteCarloSettings.constantCPIRate
-      : inputs.growthAssumptions.cpiInflationRate;
+    const cpi = (deferredInputs.monteCarloSettings?.randomizeCPI === false && deferredInputs.monteCarloSettings?.constantCPIRate != null)
+      ? deferredInputs.monteCarloSettings.constantCPIRate
+      : deferredInputs.growthAssumptions.cpiInflationRate;
     
     const discountedPercentiles = monteCarloSummary.percentiles.map((p) => {
       const yearsElapsed = p.year - 2026;
@@ -331,7 +336,7 @@ function App() {
       ...monteCarloSummary,
       percentiles: discountedPercentiles,
     };
-  }, [monteCarloSummary, useTodayDollars, inputs.growthAssumptions.cpiInflationRate, inputs.monteCarloSettings?.randomizeCPI, inputs.monteCarloSettings?.constantCPIRate]);
+  }, [monteCarloSummary, useTodayDollars, deferredInputs.growthAssumptions.cpiInflationRate, deferredInputs.monteCarloSettings?.randomizeCPI, deferredInputs.monteCarloSettings?.constantCPIRate]);
 
   // Handle applying a fully optimized retirement configuration at once
   const handleApplyOptimization = (annualConversion: number, targetValue: number | null, yourAge: number, wifeAge: number) => {
@@ -412,6 +417,7 @@ function App() {
         setActiveTab={setActiveTab}
         globalScenario={globalScenario}
         setGlobalScenario={setGlobalScenario}
+        isSimulating={isSimulating}
       >
         {activeTab === 0 && (
           <BracketMapChart

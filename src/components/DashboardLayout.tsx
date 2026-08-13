@@ -24,6 +24,7 @@ interface DashboardLayoutProps {
   setActiveTab: (tab: number) => void;
   globalScenario: 'flat' | 'p10' | 'p50' | 'p90';
   setGlobalScenario: (val: 'flat' | 'p10' | 'p50' | 'p90') => void;
+  isSimulating?: boolean;
   children: React.ReactNode;
 }
 
@@ -36,6 +37,7 @@ export const DashboardLayout: React.FC<DashboardLayoutProps> = ({
   setActiveTab,
   globalScenario,
   setGlobalScenario,
+  isSimulating = false,
   children,
 }) => {
   const formatCurrency = (val: number) => {
@@ -268,7 +270,7 @@ export const DashboardLayout: React.FC<DashboardLayoutProps> = ({
 
       {/* Main Tab Panels viewport scrollable */}
       <main className="flex-1 overflow-y-auto p-6 space-y-6 custom-scrollbar bg-slate-950">
-        <div className="w-full space-y-6">
+        <div className={`w-full space-y-6 transition-opacity duration-150 ${isSimulating ? 'opacity-75' : 'opacity-100'}`}>
           {children}
         </div>
       </main>
