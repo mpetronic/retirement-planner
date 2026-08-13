@@ -87,6 +87,7 @@ export interface MonteCarloSettings {
   stressTest?: StressTestConfig; // Optional multi-year sequence of returns stress test config
   randomizeCPI?: boolean;        // If true (default), randomize annual CPI per trial; if false, hold constant
   constantCPIRate?: number | null; // Optional custom constant CPI rate if held constant (e.g. 0.025)
+  enableRegimeSwitching?: boolean; // If true (default), apply Markov 2-state regime switching and Ornstein-Uhlenbeck mean reversion
 }
 
 export interface DetailedStateExpenses {

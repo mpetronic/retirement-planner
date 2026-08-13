@@ -608,6 +608,42 @@ export const MonteCarloWorkspace: React.FC<MonteCarloWorkspaceProps> = ({
               </label>
             </div>
 
+            {/* Regime Switching & Mean Reversion Toggle */}
+            <div className="p-3.5 bg-slate-950/60 rounded-xl border border-slate-800 space-y-2.5">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <input
+                    type="checkbox"
+                    id="enableRegimeSwitchingCheckbox"
+                    checked={inputs.monteCarloSettings.enableRegimeSwitching !== false}
+                    onChange={(e) => updateSettings('enableRegimeSwitching', e.target.checked)}
+                    className="w-4 h-4 bg-slate-950 rounded border-slate-800 text-emerald-500 focus:ring-emerald-500 accent-emerald-500 cursor-pointer"
+                  />
+                  <label htmlFor="enableRegimeSwitchingCheckbox" className="text-xs text-slate-200 cursor-pointer select-none font-semibold">
+                    Enable Markov Regime Switching & Mean Reversion
+                  </label>
+                </div>
+                <span className={`text-[10px] font-mono font-bold px-2 py-0.5 rounded ${
+                  inputs.monteCarloSettings.enableRegimeSwitching !== false
+                    ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20'
+                    : 'bg-slate-800 text-slate-400 border border-slate-700'
+                }`}>
+                  {inputs.monteCarloSettings.enableRegimeSwitching !== false ? 'Active (Cyclical + Mean Reversion)' : 'Inactive (i.i.d. Random Walk)'}
+                </span>
+              </div>
+              <p className="text-[11px] text-slate-400 leading-relaxed pl-6">
+                {inputs.monteCarloSettings.enableRegimeSwitching !== false ? (
+                  <>
+                    <strong className="text-slate-200">How this impacts outcomes:</strong> Models real-world multi-year economic cycles (expansions vs. recessions) using a 2-state Markov process and Ornstein-Uhlenbeck mean reversion. This clusters bear markets into realistic 1–3 year sequences, generates post-crisis recovery rebounds, and prevents unrealistic runaway compounding streaks without changing your configured long-term baseline return mean.
+                  </>
+                ) : (
+                  <>
+                    <strong className="text-amber-400">Pure i.i.d. Random Walk:</strong> Each year's market shock is sampled completely independently of the previous year (like flipping a coin each Dec 31). This can produce artificially prolonged multi-decade bull streaks or isolated single-year dips.
+                  </>
+                )}
+              </p>
+            </div>
+
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
               {/* Mode selection and Trials */}
               <div className="space-y-4">

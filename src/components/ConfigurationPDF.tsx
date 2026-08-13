@@ -477,6 +477,12 @@ export const ConfigurationPDF: React.FC<PDFProps> = ({ inputs }) => {
                       : `Constant (${formatPercent(inputs.monteCarloSettings.constantCPIRate ?? inputs.growthAssumptions.cpiInflationRate)})`}
                   </Text>
                 </View>
+                <View style={styles.row}>
+                  <Text style={styles.rowLabel}>Regime Switching & Drift:</Text>
+                  <Text style={styles.rowValue}>
+                    {inputs.monteCarloSettings.enableRegimeSwitching !== false ? 'Enabled (Markov 2-State + Mean Reversion)' : 'Disabled (i.i.d. Random Walk)'}
+                  </Text>
+                </View>
               </View>
             </View>
           </View>

@@ -454,6 +454,102 @@ describe('Constant vs Randomized CPI Simulation', () => {
     expect(summary.trialsRun).toBe(20);
     expect(summary.percentiles.length).toBe(35);
   });
+
+  it('should generate cyclical sequences with Markov regime switching and mean reversion', () => {
+    // Generate synthetic sequences with regime switching enabled
+    const rand = mulberry32(101);
+    const sequenceWithRegimes = generateSyntheticSequence(0.07, 0.15, 0.04, 0.05, 0.15, rand, true, null, true);
+
+    expect(sequenceWithRegimes.equityReturns.length).toBe(35);
+    expect(sequenceWithRegimes.fixedIncomeReturns.length).toBe(35);
+
+    // Compute average return across the 35-year sequence
+    const avgReturn = sequenceWithRegimes.equityReturns.reduce((acc, v) => acc + v, 0) / 35;
+
+    // Verify mean return remains grounded near the target mean
+    expect(avgReturn).toBeGreaterThan(0.01);
+    expect(avgReturn).toBeLessThan(0.15);
+
+    // Verify sequence contains both positive and negative returns
+    const hasNegative = sequenceWithRegimes.equityReturns.some(r => r < 0);
+    const hasPositive = sequenceWithRegimes.equityReturns.some(r => r > 0);
+    expect(hasNegative).toBe(true);
+    expect(hasPositive).toBe(true);
+  });
+
+  it('should run full Monte Carlo simulation with enableRegimeSwitching toggle enabled and disabled', () => {
+    const baseInputs: AppStateInputs = {
+      you: {
+        birthDate: '1960-06-15',
+        estimatedPIA: 3000,
+        targetSSClaimingAge: 70,
+        plannedRetirementAge: 65,
+        activeSalary: 0,
+      },
+      wife: {
+        birthDate: '1964-03-10',
+        estimatedPIA: 2000,
+        targetSSClaimingAge: 67,
+        plannedRetirementAge: 62,
+        activeSalary: 0,
+      },
+      portfolio: {
+        yourPreTaxIRA: 1000000,
+        yourRothIRA: 50000,
+        yourTaxableBrokerage: 200000,
+        yourTaxableBasis: 150000,
+        wifePreTaxIRA: 200000,
+        wifeRothIRA: 0,
+        wifeTaxableBrokerage: 0,
+        wifeTaxableBasis: 0,
+        yourCash: 50000,
+      },
+      jurisdiction: {
+        relocationYear: null,
+        currentState: 'MD',
+        targetState: 'FL',
+      },
+      growthAssumptions: {
+        equityReturnRate: 0.07,
+        fixedIncomeReturnRate: 0.04,
+        cpiInflationRate: 0.03,
+        healthcareInflationRate: 0.05,
+      },
+      annualLivingExpenses: 80000,
+      annualRothConversion: 0,
+      rothConversionStrategy: 'flat',
+      rothConversionTargetValue: null,
+      monteCarloSettings: {
+        mode: 'monte-carlo',
+        equityVolatility: 0.15,
+        fixedIncomeVolatility: 0.05,
+        correlation: 0.15,
+        trials: 50,
+        seed: 42,
+        randomizeCPI: true,
+        enableRegimeSwitching: true,
+      },
+      isConfigured: true,
+      isSingleFiler: false,
+    };
+
+    // Run with regime switching enabled
+    const summaryRegimes = runMonteCarloSimulation(baseInputs);
+    expect(summaryRegimes.trialsRun).toBe(50);
+    expect(summaryRegimes.successRate).toBeGreaterThan(0);
+
+    // Run with regime switching disabled (pure i.i.d.)
+    const inputsNoRegimes: AppStateInputs = {
+      ...baseInputs,
+      monteCarloSettings: {
+        ...baseInputs.monteCarloSettings,
+        enableRegimeSwitching: false,
+      },
+    };
+    const summaryNoRegimes = runMonteCarloSimulation(inputsNoRegimes);
+    expect(summaryNoRegimes.trialsRun).toBe(50);
+    expect(summaryNoRegimes.successRate).toBeGreaterThan(0);
+  });
 });
 
 

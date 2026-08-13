@@ -92,7 +92,8 @@ function nextGaussian(rand: () => number = Math.random): number {
 }
 
 /**
- * Generates joint stock/bond returns for 35 years using bivariate normal distribution
+ * Generates joint stock/bond returns for 35 years using bivariate Student-t distribution
+ * with optional 2-state Markov regime-switching and Ornstein-Uhlenbeck mean reversion.
  */
 export function generateSyntheticSequence(
   equityMean: number,
@@ -102,7 +103,8 @@ export function generateSyntheticSequence(
   correlation: number,
   rand: () => number = Math.random,
   randomizeCPI: boolean = true,
-  constantCPIRate?: number | null
+  constantCPIRate?: number | null,
+  enableRegimeSwitching: boolean = true
 ): Omit<LockedReturnSequence, 'id'> {
   const equityReturns: number[] = [];
   const fixedIncomeReturns: number[] = [];
@@ -110,36 +112,110 @@ export function generateSyntheticSequence(
   
   const df = 5; // Degrees of freedom for Student-t distribution to capture fat tails
   
+  // Markov 2-State regime parameters:
+  // State 0: Expansion / Normal Growth (80% unconditional probability)
+  // State 1: Contraction / Crisis / Bear Market (20% unconditional probability)
+  const p00 = 0.85; // 85% chance of remaining in expansion (avg duration ~6.7 yrs)
+  const p11 = 0.40; // 40% chance of remaining in bear/crisis (avg duration ~1.67 yrs)
+  
+  // Ergodic stationary distribution: pi_0 = (1 - p11) / ((1 - p00) + (1 - p11)) = 0.60 / 0.75 = 0.80
+  const pi0 = (1 - p11) / ((1 - p00) + (1 - p11));
+  const pi1 = 1 - pi0;
+  
+  // In crisis state, expected equity return is negative (-8%)
+  const muCrisis = -0.08;
+  // Calibrate expansion mean mu_0 so that unconditional weighted expectation equals equityMean:
+  // pi0 * mu_0 + pi1 * muCrisis = equityMean  =>  mu_0 = (equityMean - pi1 * muCrisis) / pi0
+  const muExpansion = (equityMean - pi1 * muCrisis) / pi0;
+  
+  // Initial state selection based on stationary probability
+  let currentState = rand() < pi0 ? 0 : 1;
+  
+  // Cumulative log return tracking for Ornstein-Uhlenbeck mean reversion
+  let cumulativeRealizedLogReturn = 0;
+  const targetLogRate = Math.log(Math.max(0.001, 1 + equityMean));
+  const kappa = 0.20; // Mean-reversion speed: 20% annual correction of cumulative tracking gap
+  
   for (let i = 0; i < 35; i++) {
+    // 1. Advance Markov State if regime switching is enabled
+    if (enableRegimeSwitching && i > 0) {
+      if (currentState === 0) {
+        currentState = rand() < p00 ? 0 : 1;
+      } else {
+        currentState = rand() < p11 ? 1 : 0;
+      }
+    }
+    
+    // 2. Base expected returns and volatilities per state
+    let effEquityMean = equityMean;
+    let effEquityVol = equityVol;
+    let effBondMean = bondMean;
+    let effBondVol = bondVol;
+    let effCorrelation = correlation;
+    
+    if (enableRegimeSwitching) {
+      if (currentState === 0) {
+        // Normal Expansion State
+        effEquityMean = muExpansion;
+        effEquityVol = equityVol * 0.85;
+        effBondMean = bondMean;
+        effBondVol = bondVol;
+      } else {
+        // Contraction / Crisis State: High volatility, depressed returns, flight-to-safety bond boost
+        effEquityMean = muCrisis;
+        effEquityVol = equityVol * 1.50;
+        effBondMean = bondMean + 0.015; // +1.5% flight-to-safety / rate-cut boost
+        effBondVol = bondVol * 1.20;
+        effCorrelation = Math.min(0.60, correlation + 0.20); // Correlation rises during systemic panics
+      }
+      
+      // 3. Mean Reversion Drift Adjustment
+      const targetCumLog = i * targetLogRate;
+      const trackingGap = cumulativeRealizedLogReturn - targetCumLog;
+      // Clamp drift adjustment to prevent over-correction / extreme swings ([-4%, +4%])
+      const driftAdjustment = Math.max(-0.04, Math.min(0.04, -kappa * trackingGap));
+      effEquityMean += driftAdjustment;
+    }
+    
+    // 4. Correlated standard normal variables (Box-Muller)
     const z1 = nextGaussian(rand);
     const z2 = nextGaussian(rand);
     
-    // Bivariate correlated standard normal transform
+    // Correlated transformation
     const x1 = z1;
-    const x2 = correlation * z1 + Math.sqrt(1 - correlation * correlation) * z2;
+    const x2 = effCorrelation * z1 + Math.sqrt(Math.max(0.0001, 1 - effCorrelation * effCorrelation)) * z2;
     
-    // Generate Chi-squared scaling factor for Student-t
+    // 5. Student-t scaling (df = 5) for fat tails
     let v = 0;
     for (let j = 0; j < df; j++) {
       const zi = nextGaussian(rand);
       v += zi * zi;
     }
-    const tScale = Math.sqrt((df - 2) / v);
+    const tScale = Math.sqrt((df - 2) / Math.max(0.0001, v));
     
-    // Convert normal shocks to Student-t (fat-tailed) shocks
     const t1 = x1 * tScale;
     const t2 = x2 * tScale;
     
-    const equityReturn = equityMean + equityVol * t1;
-    const bondReturn = bondMean + bondVol * t2;
+    const equityReturn = effEquityMean + effEquityVol * t1;
+    const bondReturn = effBondMean + effBondVol * t2;
     
     equityReturns.push(equityReturn);
     fixedIncomeReturns.push(bondReturn);
     
+    // Update cumulative realized log return for next year's mean reversion
+    cumulativeRealizedLogReturn += Math.log(Math.max(0.01, 1 + equityReturn));
+    
+    // 6. Inflation sampling
     if (randomizeCPI) {
-      // Fall back to sampling historical inflation for the current year
-      const histIdx = Math.floor(rand() * HISTORICAL_RETURNS.length);
-      inflationRates.push(HISTORICAL_RETURNS[histIdx].inflation);
+      if (enableRegimeSwitching && currentState === 1 && rand() < 0.40) {
+        // In crisis state, 40% probability of sampling elevated historical stagflation CPI
+        const stagflationIndices = [3, 4, 10, 11, 51, 52]; // 1973, 1974, 1980, 1981, 2021, 2022
+        const sIdx = stagflationIndices[Math.floor(rand() * stagflationIndices.length)];
+        inflationRates.push(HISTORICAL_RETURNS[sIdx].inflation);
+      } else {
+        const histIdx = Math.floor(rand() * HISTORICAL_RETURNS.length);
+        inflationRates.push(HISTORICAL_RETURNS[histIdx].inflation);
+      }
     } else {
       inflationRates.push(constantCPIRate ?? 0.025);
     }
@@ -296,6 +372,7 @@ export function runMonteCarloSimulation(
   const constantCpi = (inputs.monteCarloSettings?.randomizeCPI === false && inputs.monteCarloSettings?.constantCPIRate != null)
     ? inputs.monteCarloSettings.constantCPIRate
     : inputs.growthAssumptions.cpiInflationRate;
+  const enableRegimeSwitching = inputs.monteCarloSettings?.enableRegimeSwitching !== false;
   
   const results: MonteCarloTrialResult[] = [];
   
@@ -309,7 +386,7 @@ export function runMonteCarloSimulation(
       const block = rand() < 0.35;
       seqData = generateHistoricalSequence(block, undefined, rand, isCpiRandomized, constantCpi);
     } else {
-      seqData = generateSyntheticSequence(equityMean, equityVol, bondMean, bondVol, correlation, rand, isCpiRandomized, constantCpi);
+      seqData = generateSyntheticSequence(equityMean, equityVol, bondMean, bondVol, correlation, rand, isCpiRandomized, constantCpi, enableRegimeSwitching);
     }
 
     const stressedSeqData = applyStressTestToSequence(seqData, inputs.monteCarloSettings?.stressTest);
