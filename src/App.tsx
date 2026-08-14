@@ -339,9 +339,16 @@ function App() {
   }, [monteCarloSummary, useTodayDollars, deferredInputs.growthAssumptions.cpiInflationRate, deferredInputs.monteCarloSettings?.randomizeCPI, deferredInputs.monteCarloSettings?.constantCPIRate]);
 
   // Handle applying a fully optimized retirement configuration at once
-  const handleApplyOptimization = (annualConversion: number, targetValue: number | null, yourAge: number, wifeAge: number) => {
+  const handleApplyOptimization = (
+    annualConversion: number,
+    targetValue: number | null,
+    yourAge: number,
+    wifeAge: number,
+    strategy?: 'flat' | 'fill-to-target'
+  ) => {
     setInputs((prev) => ({
       ...prev,
+      rothConversionStrategy: strategy || prev.rothConversionStrategy,
       annualRothConversion: annualConversion,
       rothConversionTargetValue: targetValue,
       you: { ...prev.you, targetSSClaimingAge: yourAge },

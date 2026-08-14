@@ -12,7 +12,7 @@ interface BracketMapChartProps {
   inputs: AppStateInputs;
   simulateSurvivor: boolean;
   activeScenarioSequence: LockedReturnSequence | null;
-  onApplyOptimization: (annualConversion: number, targetValue: number | null, yourAge: number, wifeAge: number) => void;
+  onApplyOptimization: (annualConversion: number, targetValue: number | null, yourAge: number, wifeAge: number, strategy?: 'flat' | 'fill-to-target') => void;
   onUpdateStrategy: (strategy: 'flat' | 'fill-to-target') => void;
   onUpdateTargetValue: (val: number | null) => void;
   selectedQuickFill: number | null;
@@ -560,21 +560,24 @@ export const BracketMapChart: React.FC<BracketMapChartProps> = ({
                   <h4 className="text-xs font-bold text-slate-400 uppercase tracking-wider">Optimal Parameter Set</h4>
                   <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                     {/* Roth Conversion / Target MAGI Ceiling */}
-                    <div className="bg-slate-950/40 border border-slate-800/60 p-4 rounded-xl space-y-1">
+                    <div className="bg-slate-950/40 border border-slate-800/60 p-4 rounded-xl space-y-1.5">
                       <span className="text-[10px] text-slate-500 font-bold uppercase tracking-wider block">
-                        {inputs.rothConversionStrategy === 'fill-to-target' ? 'Target MAGI Ceiling' : 'Annual Roth Conversion'}
+                        {optimizationResult.bestStrategy === 'fill-to-target' ? 'Target MAGI Ceiling' : 'Annual Roth Conversion'}
                       </span>
                       <div className="flex justify-between items-baseline font-mono">
                         <span className="text-xs text-slate-400 line-through">
                           {formatCurrency(inputs.rothConversionStrategy === 'fill-to-target' ? (inputs.rothConversionTargetValue || 0) : inputs.annualRothConversion)}
                         </span>
                         <span className="text-base font-black text-emerald-400">
-                          {formatCurrency(inputs.rothConversionStrategy === 'fill-to-target' ? (optimizationResult.bestTargetValue || 0) : optimizationResult.bestAnnualRothConversion)}
+                          {formatCurrency(optimizationResult.bestStrategy === 'fill-to-target' ? (optimizationResult.bestTargetValue || 0) : optimizationResult.bestAnnualRothConversion)}
                         </span>
                       </div>
+                      <span className="text-[10px] text-slate-400 font-sans block">
+                        Strategy: <span className="font-semibold text-slate-300">{optimizationResult.bestStrategy === 'fill-to-target' ? 'Fill to Target Bracket' : 'Flat Annual Conversion'}</span>
+                      </span>
                     </div>
                     {/* Your Claiming Age */}
-                    <div className="bg-slate-950/40 border border-slate-800/60 p-4 rounded-xl space-y-1">
+                    <div className="bg-slate-950/40 border border-slate-800/60 p-4 rounded-xl space-y-1.5">
                       <span className="text-[10px] text-slate-500 font-bold uppercase tracking-wider block">Your Claiming Age</span>
                       <div className="flex justify-between items-baseline font-mono font-black text-emerald-400">
                         <span className="text-xs text-slate-400 line-through font-normal">Age {inputs.you.targetSSClaimingAge}</span>
@@ -582,7 +585,7 @@ export const BracketMapChart: React.FC<BracketMapChartProps> = ({
                       </div>
                     </div>
                     {/* Spouse Claiming Age */}
-                    <div className="bg-slate-950/40 border border-slate-800/60 p-4 rounded-xl space-y-1">
+                    <div className="bg-slate-950/40 border border-slate-800/60 p-4 rounded-xl space-y-1.5">
                       <span className="text-[10px] text-slate-500 font-bold uppercase tracking-wider block">Spouse Claiming Age</span>
                       <div className="flex justify-between items-baseline font-mono font-black text-emerald-400">
                         <span className="text-xs text-slate-400 line-through font-normal">Age {inputs.wife.targetSSClaimingAge}</span>
@@ -683,7 +686,8 @@ export const BracketMapChart: React.FC<BracketMapChartProps> = ({
                     optimizationResult.bestAnnualRothConversion,
                     optimizationResult.bestTargetValue,
                     optimizationResult.bestYourSSAge,
-                    optimizationResult.bestWifeSSAge
+                    optimizationResult.bestWifeSSAge,
+                    optimizationResult.bestStrategy
                   );
                   setShowOptimizerModal(false);
                 }}
@@ -751,7 +755,10 @@ export const BracketMapChart: React.FC<BracketMapChartProps> = ({
           >
             <option value="">No Active Target (Decluttered)</option>
             <optgroup label="Retirement Goal Optimizers">
-              <option value="opt-max-portfolio">Auto-Optimize Plan 🚀</option>
+              <option value="opt-max_portfolio">Auto-Optimize Plan (Max Estate) 🚀</option>
+              <option value="opt-min_taxes">Minimize Lifetime Taxes 🛡️</option>
+              <option value="opt-max_roth">Maximize Ending Roth Balances 💎</option>
+              <option value="opt-min_surcharges">Minimize Medicare IRMAA 🩺</option>
             </optgroup>
             <optgroup label="Federal Tax Brackets (MFJ)">
               <option value={57000}>Fill to Top of 10% Bracket ($57,000)</option>

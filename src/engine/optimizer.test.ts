@@ -61,13 +61,14 @@ describe('optimizeRetirementScenario', () => {
     isSingleFiler: false,
   });
 
-  it('should successfully find optimal scenario settings matching a goal', () => {
+  it('should successfully find optimal scenario settings matching max_portfolio', () => {
     const inputs = getMockInputs();
     
     // Test 'max_portfolio' optimization
     const result = optimizeRetirementScenario(inputs, 'max_portfolio', false, null);
 
     expect(result).toBeDefined();
+    expect(result.bestStrategy).toMatch(/^(flat|fill-to-target)$/);
     expect(result.bestYourSSAge).toBeGreaterThanOrEqual(62);
     expect(result.bestYourSSAge).toBeLessThanOrEqual(70);
     expect(result.bestWifeSSAge).toBeGreaterThanOrEqual(62);
@@ -82,5 +83,24 @@ describe('optimizeRetirementScenario', () => {
     expect(result.details.endingRoth).toBeGreaterThanOrEqual(0);
     expect(result.details.spousalAddOnAnnual).toBeDefined();
     expect(result.details.survivorBenefitAnnual).toBeDefined();
+  });
+
+  it('should handle hyphenated goals like max-portfolio gracefully', () => {
+    const inputs = getMockInputs();
+    const result = optimizeRetirementScenario(inputs, 'max-portfolio', false, null);
+
+    expect(result).toBeDefined();
+    expect(result.bestStrategy).toBeDefined();
+    expect(result.details.endingEstate).toBeGreaterThan(0);
+  });
+
+  it('should successfully optimize for max_roth and min_taxes', () => {
+    const inputs = getMockInputs();
+
+    const rothResult = optimizeRetirementScenario(inputs, 'max_roth', false, null);
+    expect(rothResult.details.endingRoth).toBeGreaterThan(0);
+
+    const taxResult = optimizeRetirementScenario(inputs, 'min_taxes', false, null);
+    expect(taxResult.details.lifetimeTaxes).toBeGreaterThanOrEqual(0);
   });
 });
