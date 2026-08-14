@@ -31,6 +31,7 @@ interface ExportPlanDialogProps {
   isOpen: boolean;
   onClose: () => void;
   inputs: AppStateInputs;
+  simulateSurvivor?: boolean;
   ledger: SimulationResultRow[];
   initialFormat?: ExportFormatType;
 }
@@ -39,6 +40,7 @@ export const ExportPlanDialog: React.FC<ExportPlanDialogProps> = ({
   isOpen,
   onClose,
   inputs,
+  simulateSurvivor = false,
   ledger,
   initialFormat = 'json',
 }) => {
@@ -94,7 +96,7 @@ export const ExportPlanDialog: React.FC<ExportPlanDialogProps> = ({
       let blob: Blob;
 
       if (selectedFormat === 'json') {
-        blob = generateJsonBlob(inputs);
+        blob = generateJsonBlob(inputs, simulateSurvivor);
       } else if (selectedFormat === 'pdf') {
         blob = await generatePdfBlob(inputs);
       } else {

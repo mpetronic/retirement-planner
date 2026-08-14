@@ -141,6 +141,14 @@ describe('exportHelpers', () => {
       const parsed = JSON.parse(text);
       expect(parsed.you.name).toBe('John Doe');
       expect(parsed.portfolio.yourPreTaxIRA).toBe(800000);
+      expect(parsed.simulateSurvivor).toBe(false);
+    });
+
+    it('preserves simulateSurvivor toggle state in exported JSON', async () => {
+      const blob = generateJsonBlob(mockInputs, true);
+      const text = await blob.text();
+      const parsed = JSON.parse(text);
+      expect(parsed.simulateSurvivor).toBe(true);
     });
   });
 

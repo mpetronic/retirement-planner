@@ -333,6 +333,7 @@ export interface AppStateInputs {
   isSingleFiler: boolean;
   simulationStartYear?: number | null; // Configured base simulation start year (defaults to current year when initialized)
   useDetailedExpenses?: boolean;
+  simulateSurvivor?: boolean;
   lockedReturnSequence?: LockedReturnSequence | null;
   you: SpouseProfile;
   wife: SpouseProfile;

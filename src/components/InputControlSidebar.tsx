@@ -104,6 +104,9 @@ export const InputControlSidebar: React.FC<InputControlSidebarProps> = ({
             ...parsed,
             isConfigured: true
           };
+          if (typeof parsed.simulateSurvivor === 'boolean') {
+            setSimulateSurvivor(parsed.simulateSurvivor);
+          }
           onChange(cleaned);
         } else {
           alert('Invalid plan configuration file. Please ensure the file is a valid JSON exported from this app.');
@@ -1432,6 +1435,7 @@ export const InputControlSidebar: React.FC<InputControlSidebarProps> = ({
           isOpen={exportDialogFormat !== null}
           onClose={() => setExportDialogFormat(null)}
           inputs={inputs}
+          simulateSurvivor={simulateSurvivor}
           ledger={ledger}
           initialFormat={exportDialogFormat}
         />

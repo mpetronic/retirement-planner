@@ -89,7 +89,10 @@ export const PlanComparisonWorkspace: React.FC<PlanComparisonWorkspaceProps> = (
     const newPlan: SavedPlan = {
       id: Date.now().toString(),
       name,
-      inputs: JSON.parse(JSON.stringify(inputs)), // Deep clone active inputs
+      inputs: {
+        ...JSON.parse(JSON.stringify(inputs)),
+        simulateSurvivor,
+      },
       createdAt: new Date().toLocaleDateString('en-US', {
         month: 'short',
         day: 'numeric',

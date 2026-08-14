@@ -85,11 +85,15 @@ export const getDefaultExportFileName = (
   }
 };
 
-/**
- * Generates a Blob for the JSON plan configuration.
- */
-export const generateJsonBlob = (inputs: AppStateInputs): Blob => {
-  const dataStr = JSON.stringify(inputs, null, 2);
+export const generateJsonBlob = (
+  inputs: AppStateInputs,
+  simulateSurvivor?: boolean
+): Blob => {
+  const payload: AppStateInputs = {
+    ...inputs,
+    simulateSurvivor: simulateSurvivor !== undefined ? simulateSurvivor : (inputs.simulateSurvivor ?? false),
+  };
+  const dataStr = JSON.stringify(payload, null, 2);
   return new Blob([dataStr], { type: 'application/json' });
 };
 

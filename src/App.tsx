@@ -201,6 +201,24 @@ function App() {
     setShowDocumentation(true);
   };
 
+  // Synchronize inputs while seamlessly restoring simulateSurvivor if present in imported/loaded plan
+  const handleInputsChange = (newInputs: AppStateInputs | ((prev: AppStateInputs) => AppStateInputs)) => {
+    if (typeof newInputs === 'function') {
+      setInputs((prev) => {
+        const next = newInputs(prev);
+        if (typeof next.simulateSurvivor === 'boolean') {
+          setSimulateSurvivor(next.simulateSurvivor);
+        }
+        return next;
+      });
+    } else {
+      if (typeof newInputs.simulateSurvivor === 'boolean') {
+        setSimulateSurvivor(newInputs.simulateSurvivor);
+      }
+      setInputs(newInputs);
+    }
+  };
+
   // Global keyboard shortcut ('?' or 'Shift + /') to summon Documentation & User Guide
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -451,14 +469,14 @@ function App() {
   return (
     <div className="flex flex-col lg:flex-row h-screen w-screen overflow-hidden bg-slate-950 text-slate-100 antialiased font-sans">
       {!inputs.isConfigured && (
-        <OnboardingWizard onComplete={setInputs} />
+        <OnboardingWizard onComplete={handleInputsChange} />
       )}
 
       {/* Sidebar Parameter Controls */}
       <InputControlSidebar 
         inputs={inputs} 
-        onChange={setInputs} 
-        onReset={() => setInputs(DEFAULT_INPUTS)} 
+        onChange={handleInputsChange} 
+        onReset={() => handleInputsChange(DEFAULT_INPUTS)} 
         useTodayDollars={useTodayDollars}
         setUseTodayDollars={setUseTodayDollars}
         globalScenario={globalScenario}
@@ -507,7 +525,7 @@ function App() {
         {activeTab === 2 && (
           <MonteCarloWorkspace
             inputs={inputs}
-            onChangeInputs={setInputs}
+            onChangeInputs={handleInputsChange}
             simulateSurvivor={simulateSurvivor}
             summary={displayMonteCarloSummary}
             globalScenario={globalScenario}
@@ -516,7 +534,7 @@ function App() {
         {activeTab === 3 && (
           <PlanComparisonWorkspace
             inputs={inputs}
-            onLoadPlan={setInputs}
+            onLoadPlan={handleInputsChange}
             savedPlans={savedPlans}
             onSavePlans={setSavedPlans}
             simulateSurvivor={simulateSurvivor}
