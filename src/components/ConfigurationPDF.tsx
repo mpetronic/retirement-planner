@@ -434,6 +434,67 @@ export const ConfigurationPDF: React.FC<PDFProps> = ({ inputs }) => {
         {/* Section 4: Relocation & Monte Carlo */}
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>4. Tax Jurisdiction, Relocation & Monte Carlo Parameters</Text>
+          
+          {/* Top: Monte Carlo & Volatility Settings (full width, single column) */}
+          <View style={styles.card}>
+            <Text style={styles.cardTitle}>Monte Carlo & Volatility Settings</Text>
+            <View style={styles.row}>
+              <Text style={styles.rowLabel}>Simulation Mode:</Text>
+              <Text style={styles.rowValue}>{inputs.monteCarloSettings.mode === 'historical' ? 'Historical Returns Block' : 'Synthetic (Geometric Brownian)'}</Text>
+            </View>
+            <View style={styles.row}>
+              <Text style={styles.rowLabel}>Number of Trials:</Text>
+              <Text style={styles.rowValue}>{inputs.monteCarloSettings.trials} runs</Text>
+            </View>
+            <View style={styles.row}>
+              <Text style={styles.rowLabel}>Randomizer Seed:</Text>
+              <Text style={styles.rowValue}>{inputs.monteCarloSettings.seed !== null ? inputs.monteCarloSettings.seed : 'Standard Random'}</Text>
+            </View>
+            <View style={styles.row}>
+              <Text style={styles.rowLabel}>Equity Volatility:</Text>
+              <Text style={styles.rowValue}>{formatPercent(inputs.monteCarloSettings.equityVolatility ?? 0.15)} (Annual Std Dev)</Text>
+            </View>
+            <View style={styles.row}>
+              <Text style={styles.rowLabel}>Bond Volatility:</Text>
+              <Text style={styles.rowValue}>{formatPercent(inputs.monteCarloSettings.fixedIncomeVolatility ?? 0.05)} (Annual Std Dev)</Text>
+            </View>
+            <View style={styles.row}>
+              <Text style={styles.rowLabel}>Asset Correlation:</Text>
+              <Text style={styles.rowValue}>{(inputs.monteCarloSettings.correlation ?? 0.15).toFixed(2)} (Stock / Bond)</Text>
+            </View>
+            <View style={styles.row}>
+              <Text style={styles.rowLabel}>CPI Inflation Modeling:</Text>
+              <Text style={styles.rowValue}>
+                {inputs.monteCarloSettings.randomizeCPI !== false 
+                  ? 'Randomized (Historical)' 
+                  : `Constant (${formatPercent(inputs.monteCarloSettings.constantCPIRate ?? inputs.growthAssumptions.cpiInflationRate)})`}
+              </Text>
+            </View>
+            <View style={styles.row}>
+              <Text style={styles.rowLabel}>Regime Switching & Drift:</Text>
+              <Text style={styles.rowValue}>
+                {inputs.monteCarloSettings.enableRegimeSwitching !== false ? 'Enabled (Markov 2-State + Reversion)' : 'Disabled (Random Walk)'}
+              </Text>
+            </View>
+            <View style={styles.row}>
+              <Text style={styles.rowLabel}>Historical Sampling:</Text>
+              <Text style={styles.rowValue}>
+                {inputs.monteCarloSettings.historicalSamplingStrategy === 'block' 
+                  ? '100% Contiguous Blocks' 
+                  : inputs.monteCarloSettings.historicalSamplingStrategy === 'random' 
+                    ? '100% Random Resampling' 
+                    : 'Hybrid (35% Block / 65% Random)'}
+              </Text>
+            </View>
+            <View style={[styles.row, { borderBottomWidth: 0 }]}>
+              <Text style={styles.rowLabel}>Historical Calibration:</Text>
+              <Text style={styles.rowValue}>
+                {inputs.monteCarloSettings.calibrateHistoricalMeans !== false ? 'Calibrated (Baseline Means)' : 'Raw History (12.3% Stock)'}
+              </Text>
+            </View>
+          </View>
+
+          {/* Bottom: Side-by-side cards */}
           <View style={styles.grid}>
             <View style={styles.col2}>
               <View style={styles.card}>
@@ -455,7 +516,9 @@ export const ConfigurationPDF: React.FC<PDFProps> = ({ inputs }) => {
                   <Text style={styles.rowValue}>{inputs.jurisdiction.relocationYear !== null ? inputs.jurisdiction.relocationYear : 'N/A'}</Text>
                 </View>
               </View>
+            </View>
 
+            <View style={styles.col2}>
               <View style={styles.card}>
                 <Text style={styles.cardTitle}>Sequence Risk & Stress Testing</Text>
                 <View style={styles.row}>
@@ -478,66 +541,6 @@ export const ConfigurationPDF: React.FC<PDFProps> = ({ inputs }) => {
                     {inputs.monteCarloSettings.stressTest?.enabled && inputs.monteCarloSettings.stressTest.overrides.length > 0
                       ? `${inputs.monteCarloSettings.stressTest.overrides.length} Year(s) Defined`
                       : 'None'}
-                  </Text>
-                </View>
-              </View>
-            </View>
-
-            <View style={styles.col2}>
-              <View style={styles.card}>
-                <Text style={styles.cardTitle}>Monte Carlo & Volatility Settings</Text>
-                <View style={styles.row}>
-                  <Text style={styles.rowLabel}>Simulation Mode:</Text>
-                  <Text style={styles.rowValue}>{inputs.monteCarloSettings.mode === 'historical' ? 'Historical Returns Block' : 'Synthetic (Geometric Brownian)'}</Text>
-                </View>
-                <View style={styles.row}>
-                  <Text style={styles.rowLabel}>Number of Trials:</Text>
-                  <Text style={styles.rowValue}>{inputs.monteCarloSettings.trials} runs</Text>
-                </View>
-                <View style={styles.row}>
-                  <Text style={styles.rowLabel}>Randomizer Seed:</Text>
-                  <Text style={styles.rowValue}>{inputs.monteCarloSettings.seed !== null ? inputs.monteCarloSettings.seed : 'Standard Random'}</Text>
-                </View>
-                <View style={styles.row}>
-                  <Text style={styles.rowLabel}>Equity Volatility (σ):</Text>
-                  <Text style={styles.rowValue}>{formatPercent(inputs.monteCarloSettings.equityVolatility ?? 0.15)} (Annual Std Dev)</Text>
-                </View>
-                <View style={styles.row}>
-                  <Text style={styles.rowLabel}>Bond Volatility (σ):</Text>
-                  <Text style={styles.rowValue}>{formatPercent(inputs.monteCarloSettings.fixedIncomeVolatility ?? 0.05)} (Annual Std Dev)</Text>
-                </View>
-                <View style={styles.row}>
-                  <Text style={styles.rowLabel}>Asset Correlation (ρ):</Text>
-                  <Text style={styles.rowValue}>{(inputs.monteCarloSettings.correlation ?? 0.15).toFixed(2)} (Stock / Bond)</Text>
-                </View>
-                <View style={styles.row}>
-                  <Text style={styles.rowLabel}>CPI Inflation Modeling:</Text>
-                  <Text style={styles.rowValue}>
-                    {inputs.monteCarloSettings.randomizeCPI !== false 
-                      ? 'Randomized (Historical)' 
-                      : `Constant (${formatPercent(inputs.monteCarloSettings.constantCPIRate ?? inputs.growthAssumptions.cpiInflationRate)})`}
-                  </Text>
-                </View>
-                <View style={styles.row}>
-                  <Text style={styles.rowLabel}>Regime Switching & Drift:</Text>
-                  <Text style={styles.rowValue}>
-                    {inputs.monteCarloSettings.enableRegimeSwitching !== false ? 'Enabled (Markov 2-State + Reversion)' : 'Disabled (Random Walk)'}
-                  </Text>
-                </View>
-                <View style={styles.row}>
-                  <Text style={styles.rowLabel}>Historical Sampling:</Text>
-                  <Text style={styles.rowValue}>
-                    {inputs.monteCarloSettings.historicalSamplingStrategy === 'block' 
-                      ? '100% Contiguous Blocks' 
-                      : inputs.monteCarloSettings.historicalSamplingStrategy === 'random' 
-                        ? '100% Random Resampling' 
-                        : 'Hybrid (35% Block / 65% Random)'}
-                  </Text>
-                </View>
-                <View style={[styles.row, { borderBottomWidth: 0 }]}>
-                  <Text style={styles.rowLabel}>Historical Calibration:</Text>
-                  <Text style={styles.rowValue}>
-                    {inputs.monteCarloSettings.calibrateHistoricalMeans !== false ? 'Calibrated (Baseline Means)' : 'Raw History (12.3% Stock)'}
                   </Text>
                 </View>
               </View>
