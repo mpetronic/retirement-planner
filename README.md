@@ -4,6 +4,23 @@ An interactive, premium, 35-year financial planning web application. This tool e
 
 ---
 
+## 📋 Table of Contents
+
+- [Workspace Structure](#workspace-structure)
+- [🛠️ Development & Environment Setup](#️-development--environment-setup)
+  - [System Requirements](#system-requirements)
+  - [🐧 Linux & WSL Setup](#-linux--wsl-setup)
+  - [🍎 macOS Setup](#-macos-setup)
+  - [🪟 Windows Setup (Native PowerShell/CMD)](#-windows-setup-native-powershellcmd)
+    - [Option A: With Administrator Access](#option-a-with-administrator-access)
+    - [Option B: Without Administrator Access (Non-Admin)](#option-b-without-administrator-access-non-admin)
+- [🛠️ Verification & Build Commands](#️-verification--build-commands)
+  - [Type Check the Codebase](#type-check-the-codebase)
+  - [Production Bundle Packager](#production-bundle-packager)
+- [💻 Recommended Developer Tools](#-recommended-developer-tools)
+
+---
+
 ## Workspace Structure
 
 The planner is organized into four dedicated, highly interactive workspaces:
