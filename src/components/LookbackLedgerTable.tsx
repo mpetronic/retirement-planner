@@ -126,21 +126,21 @@ export const LookbackLedgerTable: React.FC<LookbackLedgerTableProps> = ({
 
       {/* Ledger Table */}
       <div className="overflow-auto max-h-[600px] rounded-xl border border-slate-800 bg-slate-950/20 custom-scrollbar">
-        <table className="w-full text-left border-collapse text-sm">
+        <table className="w-full text-left border-collapse text-xs md:text-sm">
           <thead className="sticky top-0 z-10 bg-slate-900">
-             <tr className="bg-slate-900/60 border-b border-slate-800 text-slate-400 text-xs font-semibold uppercase tracking-wider whitespace-nowrap">
-              <th className="p-4">Year (t)</th>
-              <th className="p-4">MAGI (Income)</th>
-              <th className="p-4">Roth Conv. Amt</th>
-              <th className="p-4">Roth Conv. Tax</th>
-              <th className="p-4">Total Expenses</th>
-              <th className="p-4">Brokerage Assets</th>
-              <th className="p-4">Cash Assets</th>
-              <th className="p-4">Traditional IRA</th>
-              <th className="p-4">Roth (Tax-Free)</th>
-              <th className="p-4">Total Net Worth</th>
-              <th className="p-4">IRMAA Tier (T+2)</th>
-              <th className="p-4 text-right">Medicare Surcharge</th>
+            <tr className="bg-slate-900/95 border-b border-slate-800 text-slate-400 text-xs font-semibold uppercase tracking-wider leading-tight">
+              <th className="px-2.5 py-3">Year (t)</th>
+              <th className="px-2.5 py-3">MAGI<br /><span className="text-[10px] text-slate-500 font-normal normal-case">(Income)</span></th>
+              <th className="px-2.5 py-3">Roth Conv.<br /><span className="text-[10px] text-slate-500 font-normal normal-case">Amount</span></th>
+              <th className="px-2.5 py-3">Roth Conv.<br /><span className="text-[10px] text-slate-500 font-normal normal-case">Tax</span></th>
+              <th className="px-2.5 py-3">Total<br /><span className="text-[10px] text-slate-500 font-normal normal-case">Expenses</span></th>
+              <th className="px-2.5 py-3">Brokerage<br /><span className="text-[10px] text-slate-500 font-normal normal-case">Assets</span></th>
+              <th className="px-2.5 py-3">Cash<br /><span className="text-[10px] text-slate-500 font-normal normal-case">Assets</span></th>
+              <th className="px-2.5 py-3">Traditional<br /><span className="text-[10px] text-slate-500 font-normal normal-case">IRA</span></th>
+              <th className="px-2.5 py-3">Roth<br /><span className="text-[10px] text-slate-500 font-normal normal-case">(Tax-Free)</span></th>
+              <th className="px-2.5 py-3">Total<br /><span className="text-[10px] text-slate-500 font-normal normal-case">Net Worth</span></th>
+              <th className="px-2.5 py-3">IRMAA Tier<br /><span className="text-[10px] text-slate-500 font-normal normal-case">(t+2 Lookback)</span></th>
+              <th className="px-2.5 py-3 text-right">Medicare<br /><span className="text-[10px] text-slate-500 font-normal normal-case">Surcharge</span></th>
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-800/40">
@@ -248,9 +248,9 @@ export const LookbackLedgerTable: React.FC<LookbackLedgerTableProps> = ({
                        : 'text-slate-300 hover:text-slate-100'
                    }`}
                  >
-                  <td className="p-4 font-mono font-semibold whitespace-nowrap">
+                  <td className="px-2.5 py-2.5 font-mono font-semibold whitespace-nowrap">
                     {r.year}
-                    <span className="text-[10px] font-normal text-slate-400 ml-1.5">
+                    <span className="text-[10px] font-normal text-slate-400 ml-1">
                       {inputs.isSingleFiler 
                         ? `(${r.yourAge})` 
                         : (simulateSurvivor && r.year >= deathYear) 
@@ -258,7 +258,7 @@ export const LookbackLedgerTable: React.FC<LookbackLedgerTableProps> = ({
                           : `(${r.yourAge}/${r.wifeAge})`}
                     </span>
                   </td>
-                  <td className="p-4 font-mono relative group cursor-help text-slate-300">
+                  <td className="px-2.5 py-2.5 font-mono relative group cursor-help text-slate-300">
                     <span>{formatCurrency(r.magi)}</span>
                     <div className={`absolute left-1/2 -translate-x-1/2 w-72 bg-slate-950/95 backdrop-blur-md border border-slate-800 rounded-2xl p-4 shadow-2xl opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 z-50 text-xs text-slate-300 pointer-events-none space-y-2 font-sans normal-case ${
                       isTopRow ? 'top-full mt-2' : 'bottom-full mb-2'
@@ -318,7 +318,7 @@ export const LookbackLedgerTable: React.FC<LookbackLedgerTableProps> = ({
                       </div>
                     </div>
                   </td>
-                  <td className="p-4 font-mono text-slate-300">
+                  <td className="px-2.5 py-2.5 font-mono text-slate-300">
                     {r.intentionalRothConversion > 0 ? (
                       <span className="text-slate-300 font-mono">
                         {formatCurrency(r.intentionalRothConversion)}
@@ -327,7 +327,7 @@ export const LookbackLedgerTable: React.FC<LookbackLedgerTableProps> = ({
                       <span className="text-slate-600 font-mono">$0</span>
                     )}
                   </td>
-                  <td className="p-4 font-mono relative group cursor-help">
+                  <td className="px-2.5 py-2.5 font-mono relative group cursor-help">
                     {r.intentionalRothConversion > 0 ? (
                       <>
                         <span className="text-amber-400/90 font-semibold font-mono">
@@ -367,7 +367,7 @@ export const LookbackLedgerTable: React.FC<LookbackLedgerTableProps> = ({
                       <span className="text-slate-600 font-mono">$0</span>
                     )}
                   </td>
-                  <td className="p-4 font-mono text-rose-400/90 relative group cursor-help">
+                  <td className="px-2.5 py-2.5 font-mono text-rose-400/90 relative group cursor-help">
                     <span>{formatCurrency(r.totalExpenses)}</span>
                     <div className={`absolute left-1/2 -translate-x-1/2 w-64 bg-slate-950/95 backdrop-blur-md border border-slate-800 rounded-2xl p-4 shadow-2xl opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 z-50 text-xs text-slate-300 pointer-events-none space-y-2 font-sans normal-case ${
                       isTopRow ? 'top-full mt-2' : 'bottom-full mb-2'
@@ -432,14 +432,14 @@ export const LookbackLedgerTable: React.FC<LookbackLedgerTableProps> = ({
                       </div>
                     </div>
                   </td>
-                  <td className="p-4 font-mono text-slate-300">{formatCurrency(r.endYourTaxableBrokerage + r.endWifeTaxableBrokerage)}</td>
-                  <td className="p-4 font-mono text-slate-300">{formatCurrency(r.endYourCash + r.endWifeCash)}</td>
-                  <td className="p-4 font-mono text-slate-300">{formatCurrency(r.endYourPreTaxIRA + r.endWifePreTaxIRA)}</td>
-                  <td className="p-4 font-mono text-emerald-400/90">{formatCurrency(r.endYourRothIRA + r.endWifeRothIRA)}</td>
-                  <td className="p-4 font-mono font-bold text-slate-100">{formatCurrency(r.totalPortfolioValue)}</td>
-                  <td className="p-4 whitespace-nowrap relative group cursor-help">
+                  <td className="px-2.5 py-2.5 font-mono text-slate-300">{formatCurrency(r.endYourTaxableBrokerage + r.endWifeTaxableBrokerage)}</td>
+                  <td className="px-2.5 py-2.5 font-mono text-slate-300">{formatCurrency(r.endYourCash + r.endWifeCash)}</td>
+                  <td className="px-2.5 py-2.5 font-mono text-slate-300">{formatCurrency(r.endYourPreTaxIRA + r.endWifePreTaxIRA)}</td>
+                  <td className="px-2.5 py-2.5 font-mono text-emerald-400/90">{formatCurrency(r.endYourRothIRA + r.endWifeRothIRA)}</td>
+                  <td className="px-2.5 py-2.5 font-mono font-bold text-slate-100">{formatCurrency(r.totalPortfolioValue)}</td>
+                  <td className="px-2.5 py-2.5 whitespace-nowrap relative group cursor-help">
                     <span
-                      className={`px-2.5 py-0.5 rounded-full text-xs font-semibold ${
+                      className={`px-2 py-0.5 rounded-full text-xs font-semibold ${
                         r.surchargeTier > 0
                           ? 'bg-amber-600/10 text-amber-400 border border-amber-500/20'
                           : 'bg-slate-800 text-slate-400'
@@ -447,7 +447,7 @@ export const LookbackLedgerTable: React.FC<LookbackLedgerTableProps> = ({
                     >
                       Tier {r.surchargeTier}
                     </span>
-                    <span className="ml-2 font-mono text-xs text-slate-400">({affectedYear})</span>
+                    <span className="ml-1.5 font-mono text-[11px] text-slate-400">({affectedYear})</span>
 
                     {/* IRMAA Tier Reference Popup */}
                     {(() => {
@@ -505,13 +505,21 @@ export const LookbackLedgerTable: React.FC<LookbackLedgerTableProps> = ({
                       );
                     })()}
                   </td>
-                  <td className="p-4 text-right font-mono whitespace-nowrap">
+                  <td className="px-2.5 py-2.5 text-right font-mono whitespace-nowrap">
                     {r.combinedSurchargeMonthly > 0 ? (
-                      <span className="text-red-400 font-semibold">
-                        {formatCurrency(r.combinedSurchargeMonthly)}/mo ({formatCurrency(r.combinedSurchargeAnnual)}/yr)
-                      </span>
+                      <div className="leading-tight">
+                        <span className="text-red-400 font-semibold block">
+                          {formatCurrency(r.combinedSurchargeMonthly)}/mo
+                        </span>
+                        <span className="text-[10px] text-slate-400 block font-normal">
+                          ({formatCurrency(r.combinedSurchargeAnnual)}/yr)
+                        </span>
+                      </div>
                     ) : (
-                      <span className="text-slate-500">$0/mo ($0/yr)</span>
+                      <div className="leading-tight">
+                        <span className="text-slate-500 block">$0/mo</span>
+                        <span className="text-[10px] text-slate-600 block font-normal">($0/yr)</span>
+                      </div>
                     )}
                   </td>
                 </tr>
