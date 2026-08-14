@@ -370,13 +370,13 @@ export const ConfigurationPDF: React.FC<PDFProps> = ({ inputs }) => {
           <View style={styles.grid}>
             <View style={styles.col2}>
               <View style={styles.card}>
-                <Text style={styles.cardTitle}>Deterministic Returns</Text>
+                <Text style={styles.cardTitle}>Baseline Means & Inflation</Text>
                 <View style={styles.row}>
-                  <Text style={styles.rowLabel}>Equities (Stock) Return:</Text>
+                  <Text style={styles.rowLabel}>Equities (Stock) Return (Mean):</Text>
                   <Text style={styles.rowValue}>{formatPercent(inputs.growthAssumptions.equityReturnRate)}</Text>
                 </View>
                 <View style={styles.row}>
-                  <Text style={styles.rowLabel}>Fixed Income (Bonds/Cash) Yield:</Text>
+                  <Text style={styles.rowLabel}>Fixed Income / Bonds (Mean):</Text>
                   <Text style={styles.rowValue}>{formatPercent(inputs.growthAssumptions.fixedIncomeReturnRate)}</Text>
                 </View>
                 <View style={styles.row}>
@@ -384,7 +384,7 @@ export const ConfigurationPDF: React.FC<PDFProps> = ({ inputs }) => {
                   <Text style={styles.rowValue}>{formatPercent(inputs.growthAssumptions.cpiInflationRate)}</Text>
                 </View>
                 <View style={styles.row}>
-                  <Text style={styles.rowLabel}>Medical / Healthcare Inflation Rate:</Text>
+                  <Text style={styles.rowLabel}>Medical / Healthcare Inflation:</Text>
                   <Text style={styles.rowValue}>{formatPercent(inputs.growthAssumptions.healthcareInflationRate)}</Text>
                 </View>
               </View>
@@ -392,22 +392,22 @@ export const ConfigurationPDF: React.FC<PDFProps> = ({ inputs }) => {
 
             <View style={styles.col2}>
               <View style={styles.card}>
-                <Text style={styles.cardTitle}>Dividend Settings & Volatility</Text>
+                <Text style={styles.cardTitle}>Account Asset Allocations</Text>
                 <View style={styles.row}>
-                  <Text style={styles.rowLabel}>Taxable Dividend Yield:</Text>
-                  <Text style={styles.rowValue}>{formatPercent(inputs.portfolio.taxableDividendYield)}</Text>
+                  <Text style={styles.rowLabel}>Pre-Tax IRA Allocation:</Text>
+                  <Text style={styles.rowValue}>{Math.round((inputs.growthAssumptions.preTaxEquityPortion ?? 0.50) * 100)}% Stock / {Math.round((1 - (inputs.growthAssumptions.preTaxEquityPortion ?? 0.50)) * 100)}% Bond</Text>
                 </View>
                 <View style={styles.row}>
-                  <Text style={styles.rowLabel}>Non-Qualified Dividend Portion:</Text>
-                  <Text style={styles.rowValue}>{formatPercent(inputs.portfolio.taxableNonQualifiedPortion)}</Text>
+                  <Text style={styles.rowLabel}>Taxable Brokerage Allocation:</Text>
+                  <Text style={styles.rowValue}>{Math.round((inputs.growthAssumptions.taxableEquityPortion ?? 0.60) * 100)}% Stock / {Math.round((1 - (inputs.growthAssumptions.taxableEquityPortion ?? 0.60)) * 100)}% Bond</Text>
                 </View>
                 <View style={styles.row}>
-                  <Text style={styles.rowLabel}>Equity Volatility (Stochastic):</Text>
-                  <Text style={styles.rowValue}>{formatPercent(inputs.monteCarloSettings.equityVolatility)}</Text>
+                  <Text style={styles.rowLabel}>Roth IRA Allocation:</Text>
+                  <Text style={styles.rowValue}>{Math.round((inputs.growthAssumptions.rothEquityPortion ?? 1.00) * 100)}% Stock / {Math.round((1 - (inputs.growthAssumptions.rothEquityPortion ?? 1.00)) * 100)}% Bond</Text>
                 </View>
                 <View style={styles.row}>
-                  <Text style={styles.rowLabel}>Fixed Income Volatility (Stochastic):</Text>
-                  <Text style={styles.rowValue}>{formatPercent(inputs.monteCarloSettings.fixedIncomeVolatility)}</Text>
+                  <Text style={styles.rowLabel}>Cash Savings Yield:</Text>
+                  <Text style={styles.rowValue}>{formatPercent(inputs.growthAssumptions.cashYieldRate ?? inputs.growthAssumptions.fixedIncomeReturnRate)}</Text>
                 </View>
               </View>
             </View>
@@ -475,6 +475,28 @@ export const ConfigurationPDF: React.FC<PDFProps> = ({ inputs }) => {
                     {inputs.monteCarloSettings.randomizeCPI !== false 
                       ? 'Randomized (Historical)' 
                       : `Constant (${formatPercent(inputs.monteCarloSettings.constantCPIRate ?? inputs.growthAssumptions.cpiInflationRate)})`}
+                  </Text>
+                </View>
+                <View style={styles.row}>
+                  <Text style={styles.rowLabel}>Regime Switching & Drift:</Text>
+                  <Text style={styles.rowValue}>
+                    {inputs.monteCarloSettings.enableRegimeSwitching !== false ? 'Enabled (Markov 2-State + Mean Reversion)' : 'Disabled (i.i.d. Random Walk)'}
+                  </Text>
+                </View>
+                <View style={styles.row}>
+                  <Text style={styles.rowLabel}>Historical Sampling:</Text>
+                  <Text style={styles.rowValue}>
+                    {inputs.monteCarloSettings.historicalSamplingStrategy === 'block' 
+                      ? '100% Contiguous Blocks' 
+                      : inputs.monteCarloSettings.historicalSamplingStrategy === 'random' 
+                        ? '100% Random Resampling' 
+                        : 'Hybrid (35% Block / 65% Random)'}
+                  </Text>
+                </View>
+                <View style={styles.row}>
+                  <Text style={styles.rowLabel}>Historical Calibration:</Text>
+                  <Text style={styles.rowValue}>
+                    {inputs.monteCarloSettings.calibrateHistoricalMeans !== false ? 'Calibrated (Aligned to Baseline)' : 'Raw History (12.3% Stock)'}
                   </Text>
                 </View>
               </View>

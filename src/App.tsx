@@ -68,8 +68,12 @@ const DEFAULT_INPUTS: AppStateInputs = {
   growthAssumptions: {
     equityReturnRate: 0.07,
     fixedIncomeReturnRate: 0.04,
-    cpiInflationRate: 0.03, // 3% CPI default as requested
+    cpiInflationRate: 0.03,
     healthcareInflationRate: 0.05,
+    preTaxEquityPortion: 0.50,
+    taxableEquityPortion: 0.60,
+    rothEquityPortion: 1.00,
+    cashYieldRate: null,
   },
   annualLivingExpenses: null,
   annualRothConversion: 50000,
@@ -86,6 +90,9 @@ const DEFAULT_INPUTS: AppStateInputs = {
     seed: null, // Default is standard random
     randomizeCPI: true, // Default is randomized historical inflation
     constantCPIRate: null, // Custom constant rate when randomizeCPI is false
+    enableRegimeSwitching: true, // Default is enabled 2-state Markov regime switching and mean reversion
+    historicalSamplingStrategy: 'hybrid', // Default is hybrid (35% block / 65% random)
+    calibrateHistoricalMeans: true, // Default is calibrated to user-configured baseline expected returns
     stressTest: {
       enabled: false,
       mode: 'absolute',
@@ -224,6 +231,9 @@ function App() {
     const constantCpi = (deferredInputs.monteCarloSettings?.randomizeCPI === false && deferredInputs.monteCarloSettings?.constantCPIRate != null)
       ? deferredInputs.monteCarloSettings.constantCPIRate
       : deferredInputs.growthAssumptions.cpiInflationRate;
+    const enableRegimeSwitching = deferredInputs.monteCarloSettings?.enableRegimeSwitching !== false;
+    const historicalStrategy = deferredInputs.monteCarloSettings?.historicalSamplingStrategy ?? 'hybrid';
+    const calibrateHistoricalMeans = deferredInputs.monteCarloSettings?.calibrateHistoricalMeans !== false;
     
     const baseSeed = seed !== null && seed !== undefined ? seed : 12345;
     const rand = mulberry32(baseSeed + nonce);
@@ -231,10 +241,19 @@ function App() {
     const list: Omit<LockedReturnSequence, 'id'>[] = [];
     for (let t = 0; t < trials; t++) {
       if (mode === 'historical') {
-        const block = rand() < 0.35;
-        list.push(generateHistoricalSequence(block, undefined, rand, isCpiRandomized, constantCpi));
+        const isBlock = historicalStrategy === 'block' ? true : historicalStrategy === 'random' ? false : rand() < 0.35;
+        list.push(generateHistoricalSequence(
+          isBlock,
+          undefined,
+          rand,
+          isCpiRandomized,
+          constantCpi,
+          calibrateHistoricalMeans,
+          equityMean,
+          bondMean
+        ));
       } else {
-        list.push(generateSyntheticSequence(equityMean, equityVol, bondMean, bondVol, correlation, rand, isCpiRandomized, constantCpi));
+        list.push(generateSyntheticSequence(equityMean, equityVol, bondMean, bondVol, correlation, rand, isCpiRandomized, constantCpi, enableRegimeSwitching));
       }
     }
     return list;
@@ -251,6 +270,9 @@ function App() {
     deferredInputs.monteCarloSettings.nonce,
     deferredInputs.monteCarloSettings.randomizeCPI,
     deferredInputs.monteCarloSettings.constantCPIRate,
+    deferredInputs.monteCarloSettings.enableRegimeSwitching,
+    deferredInputs.monteCarloSettings.historicalSamplingStrategy,
+    deferredInputs.monteCarloSettings.calibrateHistoricalMeans,
   ]);
 
   // 2. Reactively compute the Monte Carlo simulation on deferred inputs.
@@ -412,6 +434,7 @@ function App() {
         ledger={displayActiveLedger}
         globalFontSize={globalFontSize}
         setGlobalFontSize={setGlobalFontSize}
+        onNavigateTab={setActiveTab}
       />
 
       {/* Main Orchestration Dashboard Layout */}

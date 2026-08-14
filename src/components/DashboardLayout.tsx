@@ -115,6 +115,7 @@ export const DashboardLayout: React.FC<DashboardLayoutProps> = ({
                     ? 'bg-slate-800 text-slate-100 border-slate-700/60 font-black'
                     : 'bg-transparent text-slate-400 hover:text-slate-200 border-transparent'
                 }`}
+                title="Deterministic static path: Applies your configured baseline mean return and inflation rates directly without random market volatility."
               >
                 Flat
               </button>
@@ -126,7 +127,7 @@ export const DashboardLayout: React.FC<DashboardLayoutProps> = ({
                     ? 'bg-rose-500/10 text-rose-400 border-rose-500/20 font-black'
                     : 'bg-transparent text-slate-400 hover:text-slate-200 border-transparent'
                 }`}
-                title="Pessimistic: 10th Percentile Run"
+                title="Pessimistic: 10th percentile outcome from 1,000 randomized Monte Carlo trials centered around your configured baseline means."
               >
                 Worst (P10)
               </button>
@@ -138,7 +139,7 @@ export const DashboardLayout: React.FC<DashboardLayoutProps> = ({
                     ? 'bg-indigo-500/10 text-indigo-400 border-indigo-500/20 font-black'
                     : 'bg-transparent text-slate-400 hover:text-slate-200 border-transparent'
                 }`}
-                title="Median: 50th Percentile Run"
+                title="Median: 50th percentile outcome from 1,000 randomized Monte Carlo trials centered around your configured baseline means."
               >
                 Median (P50)
               </button>
@@ -150,7 +151,7 @@ export const DashboardLayout: React.FC<DashboardLayoutProps> = ({
                     ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20 font-black'
                     : 'bg-transparent text-slate-400 hover:text-slate-200 border-transparent'
                 }`}
-                title="Optimistic: 90th Percentile Run"
+                title="Optimistic: 90th percentile outcome from 1,000 randomized Monte Carlo trials centered around your configured baseline means."
               >
                 Best (P90)
               </button>

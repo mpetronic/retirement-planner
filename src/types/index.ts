@@ -87,6 +87,9 @@ export interface MonteCarloSettings {
   stressTest?: StressTestConfig; // Optional multi-year sequence of returns stress test config
   randomizeCPI?: boolean;        // If true (default), randomize annual CPI per trial; if false, hold constant
   constantCPIRate?: number | null; // Optional custom constant CPI rate if held constant (e.g. 0.025)
+  enableRegimeSwitching?: boolean; // If true (default), apply Markov 2-state regime switching and Ornstein-Uhlenbeck mean reversion
+  historicalSamplingStrategy?: 'hybrid' | 'block' | 'random'; // Historical bootstrap strategy (hybrid: 35% block / 65% random, block: 100% contiguous, random: 100% random resampled)
+  calibrateHistoricalMeans?: boolean; // If true (default), calibrate historical return shocks to match user configured baseline means (e.g. 7% equity / 4% bond)
 }
 
 export interface DetailedStateExpenses {
@@ -314,7 +317,22 @@ export const DEFAULT_EXPENSE_FREQUENCIES: DetailedExpenseFrequencies = {
   diningOut: 12, amazonPrime: 1, golf: 12, theVillagesNetwork: 12, travel: 1, woodshopMembership: 1
 };
 
+export interface GrowthAssumptions {
+  equityReturnRate: number;
+  fixedIncomeReturnRate: number;
+  cpiInflationRate: number;
+  healthcareInflationRate: number;
+  preTaxEquityPortion?: number;
+  taxableEquityPortion?: number;
+  rothEquityPortion?: number;
+  cashYieldRate?: number | null;
+}
+
 export interface AppStateInputs {
+  isConfigured: boolean;
+  isSingleFiler: boolean;
+  useDetailedExpenses?: boolean;
+  lockedReturnSequence?: LockedReturnSequence | null;
   you: SpouseProfile;
   wife: SpouseProfile;
   portfolio: PortfolioBalances;
@@ -323,22 +341,14 @@ export interface AppStateInputs {
     targetState: 'MD' | 'FL';
     relocationYear: number | null;
   };
-  growthAssumptions: {
-    equityReturnRate: number; // e.g. 0.07 (7%)
-    fixedIncomeReturnRate: number; // e.g. 0.04 (4%)
-    cpiInflationRate: number; // e.g. 0.025 (2.5%)
-    healthcareInflationRate: number; // e.g. 0.05 (5%)
-  };
-  annualLivingExpenses: number | null; // Current dollars, inflated annually
-  annualRothConversion: number; // Custom conversion slider input
-  rothConversionStartYear?: number; // Starting year for Roth conversions
-  rothConversionEndYear?: number; // Ending year for Roth conversions
+  growthAssumptions: GrowthAssumptions;
+  annualLivingExpenses: number | null;
+  annualRothConversion: number;
+  rothConversionStartYear?: number;
+  rothConversionEndYear?: number;
   rothConversionStrategy: 'flat' | 'fill-to-target';
   rothConversionTargetValue: number | null;
   monteCarloSettings: MonteCarloSettings;
-  isConfigured: boolean;
-  isSingleFiler: boolean;
-  useDetailedExpenses?: boolean;
   detailedExpenses?: {
     MD: DetailedStateExpenses;
     FL: DetailedStateExpenses;

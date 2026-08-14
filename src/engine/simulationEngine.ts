@@ -293,15 +293,19 @@ export function runRetirementSimulation(
       bondRate = activeSeq.fixedIncomeReturns[yearsElapsed] !== undefined ? activeSeq.fixedIncomeReturns[yearsElapsed] : bondRate;
     }
 
-    const taxableGrowthRate = 0.60 * equityRate + 0.40 * bondRate;
-    const preTaxGrowthRate = 0.50 * equityRate + 0.50 * bondRate;
-    const rothGrowthRate = 1.00 * equityRate;
+    const preTaxEquityPortion = inputs.growthAssumptions.preTaxEquityPortion ?? 0.50;
+    const taxableEquityPortion = inputs.growthAssumptions.taxableEquityPortion ?? 0.60;
+    const rothEquityPortion = inputs.growthAssumptions.rothEquityPortion ?? 1.00;
+
+    const taxableGrowthRate = taxableEquityPortion * equityRate + (1 - taxableEquityPortion) * bondRate;
+    const preTaxGrowthRate = preTaxEquityPortion * equityRate + (1 - preTaxEquityPortion) * bondRate;
+    const rothGrowthRate = rothEquityPortion * equityRate + (1 - rothEquityPortion) * bondRate;
 
     // Monthly Rates
     const monthlyTaxableRate = Math.pow(1 + taxableGrowthRate, 1 / 12) - 1;
     const monthlyPreTaxRate = Math.pow(1 + preTaxGrowthRate, 1 / 12) - 1;
     const monthlyRothRate = Math.pow(1 + rothGrowthRate, 1 / 12) - 1;
-    const cashRate = inputs.growthAssumptions.fixedIncomeReturnRate;
+    const cashRate = inputs.growthAssumptions.cashYieldRate ?? inputs.growthAssumptions.fixedIncomeReturnRate;
     const monthlyCashRate = Math.pow(1 + cashRate, 1 / 12) - 1;
 
     // State determination
@@ -414,6 +418,8 @@ export function runRetirementSimulation(
       if (factor > 0) wifeRMD = wifePreTax / factor;
     }
     const combinedRMD = yourRMD + wifeRMD;
+    let remainingYourRMD = yourRMD;
+    let remainingWifeRMD = wifeRMD;
 
     // Define healthcare parameters once per year
     let yourPreMedicareAnnual = 0;
@@ -504,7 +510,7 @@ export function runRetirementSimulation(
         if (!youDeceased && yourAge < youRetireAge) estSalary += (inputs.you.activeSalary ?? 0) * cpiFactor;
         if (!wifeDeceased && wifeAge < wifeRetireAge) estSalary += (inputs.wife.activeSalary ?? 0) * cpiFactor;
         const estDividends = (yourTaxable + (wifeDeceased ? 0 : wifeTaxable)) * taxableDividendYield;
-        const cashRate = inputs.growthAssumptions.fixedIncomeReturnRate;
+        const cashRate = inputs.growthAssumptions.cashYieldRate ?? inputs.growthAssumptions.fixedIncomeReturnRate;
         const estInterest = (yourCash + (wifeDeceased ? 0 : wifeCash)) * cashRate;
         const uncontrollable = estSalary + estSS + combinedRMD + estDividends + estInterest;
         targetConversion = Math.max(0, inflatedTarget - uncontrollable);
@@ -550,7 +556,7 @@ export function runRetirementSimulation(
       let estSalary = 0;
       if (!youDeceased && yourAge < youRetireAge) estSalary += (inputs.you.activeSalary ?? 0) * cpiFactor;
       if (!wifeDeceased && wifeAge < wifeRetireAge) estSalary += (inputs.wife.activeSalary ?? 0) * cpiFactor;
-      const cashRate = inputs.growthAssumptions.fixedIncomeReturnRate;
+      const cashRate = inputs.growthAssumptions.cashYieldRate ?? inputs.growthAssumptions.fixedIncomeReturnRate;
       const estInterest = (yourCash + (wifeDeceased ? 0 : wifeCash)) * cashRate;
       magiTwoYearsAgo = estSalary + estSS * 0.85 + combinedRMD + targetConversion + (yourTaxable + (wifeDeceased ? 0 : wifeTaxable)) * taxableDividendYield + estInterest;
     }
@@ -768,7 +774,23 @@ export function runRetirementSimulation(
           }
         }
 
-        // Pre-tax third
+        // Pre-tax third: satisfy upcoming RMD obligations first before taking discretionary drawdowns
+        if (deficit > 0) {
+          if (!youDeceased && remainingYourRMD > 0 && yourPreTax > 0) {
+            const rmdDraw = Math.min(deficit, remainingYourRMD, yourPreTax);
+            remainingYourRMD -= rmdDraw;
+            yourPreTax -= rmdDraw;
+            deficit -= rmdDraw;
+          }
+          if (deficit > 0 && !wifeDeceased && remainingWifeRMD > 0 && wifePreTax > 0) {
+            const rmdDraw = Math.min(deficit, remainingWifeRMD, wifePreTax);
+            remainingWifeRMD -= rmdDraw;
+            wifePreTax -= rmdDraw;
+            deficit -= rmdDraw;
+          }
+        }
+
+        // Pre-tax fourth: if RMD obligations are exhausted and deficit remains, take discretionary pre-tax drawdowns
         if (deficit > 0) {
           if (!youDeceased && yourPreTax > 0) {
             const draw = Math.min(deficit, yourPreTax);
@@ -777,7 +799,7 @@ export function runRetirementSimulation(
             deficit -= draw;
             yourPreTax -= draw;
           }
-          if (deficit > 0 && wifePreTax > 0) {
+          if (deficit > 0 && !wifeDeceased && wifePreTax > 0) {
             const draw = Math.min(deficit, wifePreTax);
             annualWifeTradDraw += draw;
             annualDrawdownPreTax += draw;
@@ -839,9 +861,11 @@ export function runRetirementSimulation(
     }
 
     // December (month 11) is now processed
-    // Apply RMD and Roth Conversions first
-    yourPreTax = Math.max(0, yourPreTax - yourRMD);
-    wifePreTax = Math.max(0, wifePreTax - wifeRMD);
+    // Distribute any remaining undistributed RMD obligation from pre-tax accounts
+    const decDistributeYourRMD = Math.min(remainingYourRMD, yourPreTax);
+    const decDistributeWifeRMD = Math.min(remainingWifeRMD, wifePreTax);
+    yourPreTax = Math.max(0, yourPreTax - decDistributeYourRMD);
+    wifePreTax = Math.max(0, wifePreTax - decDistributeWifeRMD);
 
     if (targetConversion > 0) {
       if (isSurvivorActive || youDeceased) {
@@ -1048,7 +1072,7 @@ export function runRetirementSimulation(
       const decMed = (decMonthIdx >= yourMedicareMonthIdx ? monthlyYourPremDec : 0) + (!wifeDeceased && decMonthIdx >= wifeMedicareMonthIdx ? monthlyWifePremDec : 0);
 
       const decOutflows = decLiving + decPreMed + decMed + (decMonthIdx >= yourMedicareMonthIdx && !isYouWorkingDec ? yourPartBSurcharge + yourPartDSurcharge : 0) + (!wifeDeceased && decMonthIdx >= wifeMedicareMonthIdx && !isWifeWorkingDec ? wifePartBSurcharge + wifePartDSurcharge : 0) + totalTaxBill;
-      const decInflows = monthlyYourSSDec + monthlyWifeSSDec + monthlyYourSalaryDec + monthlyWifeSalaryDec + monthlyYourDividendsDec + monthlyWifeDividendsDec + yourRMD + wifeRMD;
+      const decInflows = monthlyYourSSDec + monthlyWifeSSDec + monthlyYourSalaryDec + monthlyWifeSalaryDec + monthlyYourDividendsDec + monthlyWifeDividendsDec + decDistributeYourRMD + decDistributeWifeRMD;
 
       let decDeficit = decOutflows - decInflows;
 
