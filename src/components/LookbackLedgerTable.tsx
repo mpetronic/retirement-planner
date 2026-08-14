@@ -1,6 +1,6 @@
 import React, { useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { SimulationResultRow, AppStateInputs } from '../types';
+import { SimulationResultRow, AppStateInputs, getSimulationStartYear } from '../types';
 import { ShieldAlert, Info, AlertTriangle, X } from 'lucide-react';
 import { IRMAA_TIERS_MFJ, IRMAA_TIERS_SINGLE } from '../engine/taxRates2026';
 import { calculateFedTaxWithLTCG, calculateTaxableSS, calculateMDStateTax } from '../engine/simulationEngine';
@@ -18,6 +18,7 @@ export const LookbackLedgerTable: React.FC<LookbackLedgerTableProps> = ({
   simulateSurvivor,
 }) => {
   const [selectedRow, setSelectedRow] = useState<SimulationResultRow | null>(null);
+  const simStartYear = getSimulationStartYear(inputs);
   const [showWarningsModal, setShowWarningsModal] = useState(false);
   const deathYear = useMemo(() => {
     if (!inputs.you.birthDate) return 2045;
@@ -79,7 +80,7 @@ export const LookbackLedgerTable: React.FC<LookbackLedgerTableProps> = ({
           const monthlyDiff = (currentTier.partBSurcharge + currentTier.partDSurcharge) - 
                               (prevTier.partBSurcharge + prevTier.partDSurcharge);
           
-          const healthcareFactor = Math.pow(1 + inputs.growthAssumptions.healthcareInflationRate, year - 2026);
+          const healthcareFactor = Math.pow(1 + inputs.growthAssumptions.healthcareInflationRate, year - simStartYear);
           const penalty = monthlyDiff * 12 * numOnMedicare * healthcareFactor;
 
           if (penalty > 0) {
@@ -453,7 +454,7 @@ export const LookbackLedgerTable: React.FC<LookbackLedgerTableProps> = ({
                       const isSingle = simulateSurvivor && r.year >= deathYear;
                       const tiers = isSingle ? IRMAA_TIERS_SINGLE : IRMAA_TIERS_MFJ;
                       const cpiFactor = r.cpiFactor;
-                      const healthcareFactor = Math.pow(1 + inputs.growthAssumptions.healthcareInflationRate, r.year - 2026);
+                      const healthcareFactor = Math.pow(1 + inputs.growthAssumptions.healthcareInflationRate, r.year - simStartYear);
                       return (
                         <div className={`absolute right-0 w-[380px] whitespace-normal bg-slate-950/95 backdrop-blur-md border border-slate-800 rounded-2xl p-4 shadow-2xl opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 z-50 text-xs text-slate-300 pointer-events-none font-sans normal-case ${
                           isTopRow ? 'top-full mt-2' : 'bottom-full mb-2'

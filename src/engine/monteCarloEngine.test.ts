@@ -356,6 +356,44 @@ describe('applyStressTestToSequence & stress testing', () => {
     expect(restoredSummary.successRate).toBe(baselineSummary.successRate);
     expect(restoredSummary.percentiles[2].p50).toBe(baselineSummary.percentiles[2].p50);
   });
+
+  it('should maintain matched-pair return rates for all non-stressed years in representative sequences', () => {
+    const inputs = getMockInputsLocal();
+    inputs.monteCarloSettings.seed = 42;
+    inputs.monteCarloSettings.trials = 50;
+
+    // Baseline run
+    const baseSummary = runMonteCarloSimulation(inputs);
+    const baseWorstSeq = baseSummary.representativeSequences.worst;
+    const baseMedianSeq = baseSummary.representativeSequences.median;
+
+    // Enable stress test for years 2026, 2027, 2028
+    inputs.monteCarloSettings.stressTest = {
+      enabled: true,
+      mode: 'absolute',
+      overrides: [
+        { year: 2026, equityReturn: -0.25, fixedIncomeReturn: -0.05 },
+        { year: 2027, equityReturn: -0.15, fixedIncomeReturn: -0.02 },
+        { year: 2028, equityReturn: 0.05, fixedIncomeReturn: 0.03 },
+      ],
+    };
+    const stressedSummary = runMonteCarloSimulation(inputs);
+    const stressedWorstSeq = stressedSummary.representativeSequences.worst;
+    const stressedMedianSeq = stressedSummary.representativeSequences.median;
+
+    // Stressed years (2026=index 0, 2027=index 1, 2028=index 2) must match overrides
+    expect(stressedWorstSeq.equityReturns[0]).toBe(-0.25);
+    expect(stressedWorstSeq.equityReturns[1]).toBe(-0.15);
+    expect(stressedWorstSeq.equityReturns[2]).toBe(0.05);
+
+    // All subsequent years (2029 through 2060, index 3 to 34) MUST be 100% identical to baseline
+    for (let yrIdx = 3; yrIdx < 35; yrIdx++) {
+      expect(stressedWorstSeq.equityReturns[yrIdx]).toBe(baseWorstSeq.equityReturns[yrIdx]);
+      expect(stressedWorstSeq.fixedIncomeReturns[yrIdx]).toBe(baseWorstSeq.fixedIncomeReturns[yrIdx]);
+      expect(stressedMedianSeq.equityReturns[yrIdx]).toBe(baseMedianSeq.equityReturns[yrIdx]);
+      expect(stressedMedianSeq.fixedIncomeReturns[yrIdx]).toBe(baseMedianSeq.fixedIncomeReturns[yrIdx]);
+    }
+  });
 });
 
 describe('Constant vs Randomized CPI Simulation', () => {

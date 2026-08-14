@@ -331,6 +331,7 @@ export interface GrowthAssumptions {
 export interface AppStateInputs {
   isConfigured: boolean;
   isSingleFiler: boolean;
+  simulationStartYear?: number | null; // Configured base simulation start year (defaults to current year when initialized)
   useDetailedExpenses?: boolean;
   lockedReturnSequence?: LockedReturnSequence | null;
   you: SpouseProfile;
@@ -354,6 +355,18 @@ export interface AppStateInputs {
     FL: DetailedStateExpenses;
     frequencies: DetailedExpenseFrequencies;
   };
+}
+
+/**
+ * Resolves the starting year for a retirement plan simulation.
+ * If explicitly configured on the plan inputs, returns that constant year.
+ * Otherwise, defaults to current calendar year (e.g. 2026).
+ */
+export function getSimulationStartYear(inputs?: { simulationStartYear?: number | null } | null): number {
+  if (inputs?.simulationStartYear !== undefined && inputs?.simulationStartYear !== null && !isNaN(inputs.simulationStartYear) && inputs.simulationStartYear > 1900) {
+    return inputs.simulationStartYear;
+  }
+  return new Date().getFullYear();
 }
 
 

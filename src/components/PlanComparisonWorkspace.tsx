@@ -1,5 +1,5 @@
 import React, { useState, useMemo } from 'react';
-import { AppStateInputs, SavedPlan, SimulationResultRow } from '../types';
+import { AppStateInputs, SavedPlan, SimulationResultRow, getSimulationStartYear } from '../types';
 import { runRetirementSimulation } from '../engine/simulationEngine';
 import { 
   Plus, 
@@ -42,13 +42,13 @@ export const PlanComparisonWorkspace: React.FC<PlanComparisonWorkspaceProps> = (
   const [newPlanName, setNewPlanName] = useState('');
   const [notification, setNotification] = useState<{ message: string; type: 'success' | 'info' | 'error' } | null>(null);
   const [showClearConfirm, setShowClearConfirm] = useState(false);
-
+  const simStartYear = getSimulationStartYear(inputs);
 
   const endingAge = useMemo(() => {
     if (!inputs.you.birthDate) return 90;
     const birthYear = parseInt(inputs.you.birthDate.split('-')[0], 10);
-    return isNaN(birthYear) ? 90 : (2060 - birthYear);
-  }, [inputs.you.birthDate]);
+    return isNaN(birthYear) ? 90 : (simStartYear + 34 - birthYear);
+  }, [inputs.you.birthDate, simStartYear]);
 
   // Trigger alert messages that auto-dismiss
   const triggerNotification = (message: string, type: 'success' | 'info' | 'error' = 'success') => {
@@ -597,7 +597,7 @@ export const PlanComparisonWorkspace: React.FC<PlanComparisonWorkspaceProps> = (
                   <table className="w-full text-left border-collapse text-xs">
                     <thead>
                       <tr className="bg-slate-900/60 border-b border-slate-800 text-slate-400 font-semibold uppercase tracking-wider">
-                        <th className="py-5 px-6">Lifetime Category (2026 - 2060)</th>
+                        <th className="py-5 px-6">Lifetime Category ({simStartYear} - {simStartYear + 34})</th>
                         <th className="py-5 px-5 text-right text-blue-300 font-bold bg-blue-500/5">Plan A: {planA.name}</th>
                         <th className="py-5 px-5 text-right text-emerald-300 font-bold bg-emerald-500/5">Plan B: {planB.name}</th>
                         <th className="py-5 px-5 text-right">Lifetime Delta</th>

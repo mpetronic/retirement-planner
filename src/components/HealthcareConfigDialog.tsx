@@ -10,10 +10,10 @@ interface HealthcareConfigDialogProps {
   birthDate: string;
   healthcareConfig: HealthcareConfig | undefined;
   healthcareInflationRate: number;
+  startYear?: number;
   onSave: (config: HealthcareConfig) => void;
 }
 
-const BASE_YEAR = 2026;
 const MEDICARE_PART_B_2026 = 202.90;
 const MEDICARE_PART_D_2026 = 34.50;
 const MEDICARE_PART_B_DEDUCTIBLE_2026 = 283;
@@ -25,6 +25,7 @@ export const HealthcareConfigDialog: React.FC<HealthcareConfigDialogProps> = ({
   birthDate,
   healthcareConfig,
   healthcareInflationRate,
+  startYear = 2026,
   onSave,
 }) => {
   const [activeTab, setActiveTab] = useState<'MD' | 'FL'>('MD');
@@ -37,7 +38,7 @@ export const HealthcareConfigDialog: React.FC<HealthcareConfigDialogProps> = ({
   }, [birthDate]);
 
   const age65Year = birthYear + 65;
-  const yearsTo65 = Math.max(0, age65Year - BASE_YEAR);
+  const yearsTo65 = Math.max(0, age65Year - startYear);
 
   const projectedPartB = useMemo(() => {
     return MEDICARE_PART_B_2026 * Math.pow(1 + healthcareInflationRate, yearsTo65);

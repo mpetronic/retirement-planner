@@ -7,7 +7,8 @@ import {
   ArrowRightLeft,
   Coins,
   MapPin,
-  Sliders
+  Sliders,
+  AlertTriangle
 } from 'lucide-react';
 
 interface DashboardLayoutProps {
@@ -47,6 +48,12 @@ export const DashboardLayout: React.FC<DashboardLayoutProps> = ({
       maximumFractionDigits: 0,
     }).format(val);
   };
+
+  const isStressTestActive = Boolean(
+    inputs.monteCarloSettings?.stressTest?.enabled &&
+    (inputs.monteCarloSettings?.stressTest?.overrides?.length ?? 0) > 0
+  );
+  const stressTestOverridesCount = inputs.monteCarloSettings?.stressTest?.overrides?.length ?? 0;
 
   // Compute key summary statistics for active ledger and all percentiles
   const stats = useMemo(() => {
@@ -103,10 +110,30 @@ export const DashboardLayout: React.FC<DashboardLayoutProps> = ({
             </div>
           </div>
           
-          <div className="flex items-center gap-3 text-xs font-semibold text-slate-300">
+          <div className="flex flex-wrap items-center gap-3 text-xs font-semibold text-slate-300">
+            {/* Obvious Warning Indicator when Stress Test is Enabled */}
+            {isStressTestActive && (
+              <button
+                type="button"
+                onClick={() => setActiveTab(2)}
+                className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/60 shadow-lg shadow-amber-950/50 transition-all cursor-pointer group animate-pulse hover:animate-none"
+                title={`Stress testing is actively overriding returns for ${stressTestOverridesCount} year${stressTestOverridesCount > 1 ? 's' : ''}. Click to view or customize in Monte Carlo Analysis.`}
+              >
+                <AlertTriangle className="w-4 h-4 text-amber-400 group-hover:scale-110 transition-transform shrink-0" />
+                <span className="text-[11px] font-black uppercase tracking-wider">
+                  Stress Test Active ({stressTestOverridesCount} yr{stressTestOverridesCount > 1 ? 's' : ''})
+                </span>
+              </button>
+            )}
+
             {/* Global Scenario Switcher */}
-            <div className="flex items-center gap-1 bg-slate-950/60 p-1 border border-slate-800 rounded-xl">
-              <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider px-2">Global Outlook:</span>
+            <div className={`flex items-center gap-1 bg-slate-950/60 p-1 border rounded-xl transition-all ${
+              isStressTestActive ? 'border-amber-500/50 ring-1 ring-amber-500/20' : 'border-slate-800'
+            }`}>
+              <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider px-2 flex items-center gap-1.5">
+                {isStressTestActive && <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-ping" />}
+                Global Outlook:
+              </span>
               <button
                 type="button"
                 onClick={() => setGlobalScenario('flat')}

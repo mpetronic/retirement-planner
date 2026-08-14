@@ -1,5 +1,5 @@
 import React, { useState, useRef, useMemo } from 'react';
-import { AppStateInputs, RECURRING_EXPENSE_ITEMS, SimulationResultRow } from '../types';
+import { AppStateInputs, RECURRING_EXPENSE_ITEMS, SimulationResultRow, getSimulationStartYear } from '../types';
 import {
   User,
   TrendingUp,
@@ -7,6 +7,7 @@ import {
   MapPin,
   Flame,
   DollarSign,
+  Calendar,
   Pencil,
   Check,
   RefreshCw,
@@ -73,6 +74,7 @@ export const InputControlSidebar: React.FC<InputControlSidebarProps> = ({
   const [showAboutDialog, setShowAboutDialog] = useState(false);
   const [exportDialogFormat, setExportDialogFormat] = useState<ExportFormatType | null>(null);
   const versionInfo = useMemo(() => getVersionInfo(), []);
+  const simStartYear = getSimulationStartYear(inputs);
 
   const handleImportJSON = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -257,6 +259,47 @@ export const InputControlSidebar: React.FC<InputControlSidebarProps> = ({
           </div>
         </div>
 
+        {/* Section: Plan Timeline & Simulation Start Year */}
+        <div className="space-y-3">
+          <div className="flex items-center gap-2 text-emerald-400 font-semibold border-b border-slate-800 pb-2">
+            <Calendar className="w-5 h-5" />
+            <h2>Plan Timeline & Start Year</h2>
+          </div>
+          <div className="p-4 bg-slate-950/60 rounded-xl border border-slate-800 space-y-3">
+            <div className="space-y-1">
+              <div className="flex items-center justify-between">
+                <label className="text-xs text-slate-400 font-medium">Simulation Start Year</label>
+                {simStartYear !== new Date().getFullYear() && (
+                  <button
+                    type="button"
+                    onClick={() => updateNestedState('simulationStartYear', '', new Date().getFullYear())}
+                    className="text-[10px] text-emerald-400 hover:text-emerald-300 underline cursor-pointer"
+                  >
+                    Reset to {new Date().getFullYear()}
+                  </button>
+                )}
+              </div>
+              <input
+                type="number"
+                min="1990"
+                max="2100"
+                value={inputs.simulationStartYear ?? simStartYear}
+                onChange={(e) => {
+                  const val = e.target.value === '' ? null : Number(e.target.value);
+                  updateNestedState('simulationStartYear', '', val);
+                }}
+                className="w-full bg-slate-900 border border-slate-800 rounded-lg px-3 py-1.5 text-xs text-slate-100 font-mono font-bold focus:outline-none focus:border-emerald-500"
+              />
+            </div>
+            <p className="text-[10px] text-slate-400 leading-normal flex items-start gap-1.5">
+              <Info className="w-4 h-4 text-emerald-500/80 flex-shrink-0 mt-0.5" />
+              <span>
+                Timeline anchor for starting balances, returns, and cash flows. Stored with the plan so it stays constant over time.
+              </span>
+            </p>
+          </div>
+        </div>
+
         {/* Section 1: Spouses Profiles */}
         <div className="space-y-3">
           <div className="flex items-center gap-2 text-emerald-400 font-semibold border-b border-slate-800 pb-2">
@@ -416,14 +459,76 @@ export const InputControlSidebar: React.FC<InputControlSidebarProps> = ({
 
             {/* Healthcare Planning Dialog Trigger */}
             <div className="pt-2 border-t border-slate-800/30">
-            <button
-              type="button"
-              onClick={() => setEditingHealthcarePerson('you')}
-              className="w-full flex items-center justify-center gap-2 px-3 py-1.5 bg-slate-900 hover:bg-slate-850 border border-slate-800 hover:border-slate-700 text-slate-300 hover:text-slate-100 rounded-lg text-xs font-bold transition-all cursor-pointer"
-            >
-              <Heart className="w-3.5 h-3.5 text-emerald-500" />
-              <span>Configure Health Expenses</span>
-            </button>
+              <button
+                type="button"
+                onClick={() => setEditingHealthcarePerson('you')}
+                className="w-full flex items-center justify-center gap-2 px-3 py-1.5 bg-slate-900 hover:bg-slate-850 border border-slate-800 hover:border-slate-700 text-slate-300 hover:text-slate-100 rounded-lg text-xs font-bold transition-all cursor-pointer"
+              >
+                <Heart className="w-3.5 h-3.5 text-emerald-500" />
+                <span>Configure Health Expenses</span>
+              </button>
+            </div>
+
+            {/* Starting Portfolio Balances */}
+            <div className="space-y-2 pt-2 border-t border-slate-800/30">
+              <div className="flex items-center gap-1.5">
+                <Coins className="w-3.5 h-3.5 text-emerald-500" />
+                <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">Starting Balances ({simStartYear})</span>
+              </div>
+              
+              <div className="grid grid-cols-2 gap-2">
+                <div className="space-y-1">
+                  <label className="text-[10px] text-slate-400 block truncate" title="Traditional IRA">Traditional IRA</label>
+                  <input
+                    type="number"
+                    value={inputs.portfolio.yourPreTaxIRA ?? ''}
+                    onChange={(e) => updateNestedState('portfolio', 'yourPreTaxIRA', e.target.value === '' ? null : Number(e.target.value))}
+                    className="w-full bg-slate-900 border border-slate-800 rounded-lg px-2.5 py-1 text-xs text-slate-100 font-mono focus:outline-none focus:border-emerald-500"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <label className="text-[10px] text-slate-400 block truncate" title="Roth IRA Balance">Roth IRA</label>
+                  <input
+                    type="number"
+                    value={inputs.portfolio.yourRothIRA ?? ''}
+                    onChange={(e) => updateNestedState('portfolio', 'yourRothIRA', e.target.value === '' ? null : Number(e.target.value))}
+                    className="w-full bg-slate-900 border border-slate-800 rounded-lg px-2.5 py-1 text-xs text-slate-100 font-mono focus:outline-none focus:border-emerald-500"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-2">
+                <div className="space-y-1">
+                  <label className="text-[10px] text-slate-400 block truncate" title="Brokerage Assets (Taxable)">Brokerage Assets</label>
+                  <input
+                    type="number"
+                    value={inputs.portfolio.yourTaxableBrokerage ?? ''}
+                    onChange={(e) => updateNestedState('portfolio', 'yourTaxableBrokerage', e.target.value === '' ? null : Number(e.target.value))}
+                    className="w-full bg-slate-900 border border-slate-800 rounded-lg px-2.5 py-1 text-xs text-slate-100 font-mono focus:outline-none focus:border-emerald-500"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <label className="text-[10px] text-slate-400 block truncate" title="Brokerage Cost Basis">Cost Basis</label>
+                  <input
+                    type="number"
+                    value={inputs.portfolio.yourTaxableBasis ?? ''}
+                    onChange={(e) => updateNestedState('portfolio', 'yourTaxableBasis', e.target.value === '' ? null : Number(e.target.value))}
+                    className="w-full bg-slate-900 border border-slate-800 rounded-lg px-2.5 py-1 text-xs text-slate-100 font-mono focus:outline-none focus:border-emerald-500"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-2">
+                <div className="space-y-1">
+                  <label className="text-[10px] text-slate-400 block truncate" title="Cash Assets Balance">Cash Assets</label>
+                  <input
+                    type="number"
+                    value={inputs.portfolio.yourCash ?? ''}
+                    onChange={(e) => updateNestedState('portfolio', 'yourCash', e.target.value === '' ? null : Number(e.target.value))}
+                    className="w-full bg-slate-900 border border-slate-800 rounded-lg px-2.5 py-1 text-xs text-slate-100 font-mono focus:outline-none focus:border-emerald-500"
+                  />
+                </div>
+              </div>
             </div>
           </div>
 
@@ -589,102 +694,13 @@ export const InputControlSidebar: React.FC<InputControlSidebarProps> = ({
                   <span>Configure Health Expenses</span>
                 </button>
               </div>
-            </div>
-          )}
 
-          {/* Survivor simulation mode toggle switch */}
-          {!inputs.isSingleFiler && (
-            <div className="p-4 bg-slate-950/60 rounded-xl border border-slate-800 flex items-center justify-between">
-              <div className="space-y-0.5 pr-2">
-                <label htmlFor="simulateSurvivorToggle" className="text-xs font-semibold text-slate-200 cursor-pointer block">
-                  Simulate Survivor View
-                </label>
-                <span className="text-[10px] text-slate-500 block leading-normal font-sans">
-                  Model compressed tax brackets and Medicare surcharges when one spouse passes away.
-                </span>
-              </div>
-              <input
-                type="checkbox"
-                id="simulateSurvivorToggle"
-                checked={simulateSurvivor}
-                onChange={(e) => setSimulateSurvivor(e.target.checked)}
-                className="w-4 h-4 bg-slate-900 rounded border-slate-800 text-emerald-500 focus:ring-emerald-500 accent-emerald-500 cursor-pointer flex-shrink-0"
-              />
-            </div>
-          )}
-        </div>
-
-        {/* Section 2: Portfolio Initial Balances */}
-        <div className="space-y-3">
-          <div className="flex items-center gap-2 text-emerald-400 font-semibold border-b border-slate-800 pb-2">
-            <Coins className="w-5 h-5" />
-            <h2>Starting Balances</h2>
-          </div>
-
-          <div className="grid grid-cols-1 gap-3">
-            {/* Your Balances */}
-            <div className="p-3 bg-slate-950/60 rounded-xl border border-slate-800 space-y-2">
-              <span className="text-xs font-bold text-slate-300 block border-b border-slate-800 pb-1">{(inputs.you.name || 'You')}'s Portfolio Assets</span>
-              
-              <div className="grid grid-cols-2 gap-2">
-                <div className="space-y-1">
-                  <label className="text-[10px] text-slate-400 block truncate" title="Traditional IRA">Traditional IRA</label>
-                  <input
-                    type="number"
-                    value={inputs.portfolio.yourPreTaxIRA ?? ''}
-                    onChange={(e) => updateNestedState('portfolio', 'yourPreTaxIRA', e.target.value === '' ? null : Number(e.target.value))}
-                    className="w-full bg-slate-900 border border-slate-800 rounded-lg px-2.5 py-1 text-xs text-slate-100 font-mono focus:outline-none focus:border-emerald-500"
-                  />
+              {/* Starting Portfolio Balances */}
+              <div className="space-y-2 pt-2 border-t border-slate-800/30">
+                <div className="flex items-center gap-1.5">
+                  <Coins className="w-3.5 h-3.5 text-emerald-500" />
+                  <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">Starting Balances ({simStartYear})</span>
                 </div>
-                <div className="space-y-1">
-                  <label className="text-[10px] text-slate-400 block truncate" title="Roth IRA Balance">Roth IRA</label>
-                  <input
-                    type="number"
-                    value={inputs.portfolio.yourRothIRA ?? ''}
-                    onChange={(e) => updateNestedState('portfolio', 'yourRothIRA', e.target.value === '' ? null : Number(e.target.value))}
-                    className="w-full bg-slate-900 border border-slate-800 rounded-lg px-2.5 py-1 text-xs text-slate-100 font-mono focus:outline-none focus:border-emerald-500"
-                  />
-                </div>
-              </div>
-
-              <div className="grid grid-cols-2 gap-2">
-                <div className="space-y-1">
-                  <label className="text-[10px] text-slate-400 block truncate" title="Brokerage Assets (Taxable)">Brokerage Assets</label>
-                  <input
-                    type="number"
-                    value={inputs.portfolio.yourTaxableBrokerage ?? ''}
-                    onChange={(e) => updateNestedState('portfolio', 'yourTaxableBrokerage', e.target.value === '' ? null : Number(e.target.value))}
-                    className="w-full bg-slate-900 border border-slate-800 rounded-lg px-2.5 py-1 text-xs text-slate-100 font-mono focus:outline-none focus:border-emerald-500"
-                  />
-                </div>
-                <div className="space-y-1">
-                  <label className="text-[10px] text-slate-400 block truncate" title="Brokerage Cost Basis">Cost Basis</label>
-                  <input
-                    type="number"
-                    value={inputs.portfolio.yourTaxableBasis ?? ''}
-                    onChange={(e) => updateNestedState('portfolio', 'yourTaxableBasis', e.target.value === '' ? null : Number(e.target.value))}
-                    className="w-full bg-slate-900 border border-slate-800 rounded-lg px-2.5 py-1 text-xs text-slate-100 font-mono focus:outline-none focus:border-emerald-500"
-                  />
-                </div>
-              </div>
-
-              <div className="grid grid-cols-2 gap-2">
-                <div className="space-y-1">
-                  <label className="text-[10px] text-slate-400 block truncate" title="Cash Assets Balance">Cash Assets</label>
-                  <input
-                    type="number"
-                    value={inputs.portfolio.yourCash ?? ''}
-                    onChange={(e) => updateNestedState('portfolio', 'yourCash', e.target.value === '' ? null : Number(e.target.value))}
-                    className="w-full bg-slate-900 border border-slate-800 rounded-lg px-2.5 py-1 text-xs text-slate-100 font-mono focus:outline-none focus:border-emerald-500"
-                  />
-                </div>
-              </div>
-            </div>
-
-            {/* Wife Balances */}
-            {!inputs.isSingleFiler && (
-              <div className="p-3 bg-slate-950/60 rounded-xl border border-slate-800 space-y-2">
-                <span className="text-xs font-bold text-slate-300 block border-b border-slate-800 pb-1">{(inputs.wife.name || 'Spouse')}'s Portfolio Assets</span>
                 
                 <div className="grid grid-cols-2 gap-2">
                   <div className="space-y-1">
@@ -740,53 +756,32 @@ export const InputControlSidebar: React.FC<InputControlSidebarProps> = ({
                   </div>
                 </div>
               </div>
-            )}
-
-            {/* Taxable Brokerage Yield & Interest settings */}
-            <div className="p-3 bg-slate-950/60 rounded-xl border border-slate-800 space-y-2">
-              <div className="flex items-center gap-1.5 border-b border-slate-800 pb-1">
-                <span className="text-xs font-bold text-slate-300 block">Taxable Assets Dividend Yield & Type</span>
-                <div className="relative group inline-block">
-                  <HelpCircle className="w-3.5 h-3.5 text-slate-500 hover:text-slate-300 transition-colors cursor-pointer" />
-                  <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 hidden group-hover:block w-64 bg-slate-950 text-slate-200 text-[10px] p-2.5 rounded-lg border border-slate-800 shadow-xl z-50 leading-normal pointer-events-none normal-case font-medium">
-                    <strong>Annual Yield (%)</strong>: The annual percentage of taxable brokerage assets paid out as dividends or interest. Taxed in the year received.<br /><br />
-                    <strong>Non-Qualified (%)</strong>: The portion of the yield taxed at ordinary income rates (e.g., bond interest/non-qualified dividends) vs. preferential capital gains rates.
-                  </div>
-                </div>
-              </div>
-              <div className="grid grid-cols-2 gap-2">
-                <div className="space-y-1">
-                  <label className="text-[10px] text-slate-400 block truncate" title="Annual Dividend/Interest Yield">Annual Yield (%)</label>
-                  <input
-                    type="number"
-                    step="0.1"
-                    min="0"
-                    max="20"
-                    value={inputs.portfolio.taxableDividendYield !== null && inputs.portfolio.taxableDividendYield !== undefined ? inputs.portfolio.taxableDividendYield * 100 : ''}
-                    onChange={(e) => updateNestedState('portfolio', 'taxableDividendYield', e.target.value === '' ? null : Number(e.target.value) / 100)}
-                    placeholder="2.0"
-                    className="w-full bg-slate-900 border border-slate-800 rounded-lg px-2.5 py-1 text-xs text-slate-100 font-mono focus:outline-none focus:border-emerald-500"
-                  />
-                </div>
-                <div className="space-y-1">
-                  <label className="text-[10px] text-slate-400 block truncate" title="Portion of yield taxed at ordinary income rate (e.g. interest, non-qualified dividends)">Non-Qualified (%)</label>
-                  <input
-                    type="number"
-                    step="1"
-                    min="0"
-                    max="100"
-                    value={inputs.portfolio.taxableNonQualifiedPortion !== null && inputs.portfolio.taxableNonQualifiedPortion !== undefined ? inputs.portfolio.taxableNonQualifiedPortion * 100 : ''}
-                    onChange={(e) => updateNestedState('portfolio', 'taxableNonQualifiedPortion', e.target.value === '' ? null : Number(e.target.value) / 100)}
-                    placeholder="30"
-                    className="w-full bg-slate-900 border border-slate-800 rounded-lg px-2.5 py-1 text-xs text-slate-100 font-mono focus:outline-none focus:border-emerald-500"
-                  />
-                </div>
-              </div>
             </div>
-          </div>
+          )}
+
+          {/* Survivor simulation mode toggle switch */}
+          {!inputs.isSingleFiler && (
+            <div className="p-4 bg-slate-950/60 rounded-xl border border-slate-800 flex items-center justify-between">
+              <div className="space-y-0.5 pr-2">
+                <label htmlFor="simulateSurvivorToggle" className="text-xs font-semibold text-slate-200 cursor-pointer block">
+                  Simulate Survivor View
+                </label>
+                <span className="text-[10px] text-slate-500 block leading-normal font-sans">
+                  Model compressed tax brackets and Medicare surcharges when one spouse passes away.
+                </span>
+              </div>
+              <input
+                type="checkbox"
+                id="simulateSurvivorToggle"
+                checked={simulateSurvivor}
+                onChange={(e) => setSimulateSurvivor(e.target.checked)}
+                className="w-4 h-4 bg-slate-900 rounded border-slate-800 text-emerald-500 focus:ring-emerald-500 accent-emerald-500 cursor-pointer flex-shrink-0"
+              />
+            </div>
+          )}
         </div>
 
-        {/* Section 3: Jurisdictional Tax Logic */}
+        {/* Section 2: Jurisdictional Tax Logic */}
         <div className="space-y-4">
           <div className="flex items-center gap-2 text-emerald-400 font-semibold border-b border-slate-800 pb-2">
             <MapPin className="w-5 h-5" />
@@ -829,8 +824,8 @@ export const InputControlSidebar: React.FC<InputControlSidebarProps> = ({
               <div className="flex items-center gap-3">
                 <input
                   type="range"
-                  min="2026"
-                  max="2060"
+                  min={simStartYear}
+                  max={simStartYear + 34}
                   step="1"
                   disabled={inputs.jurisdiction.relocationYear === null}
                   value={inputs.jurisdiction.relocationYear ?? lastRelocationYear.current}
@@ -871,7 +866,7 @@ export const InputControlSidebar: React.FC<InputControlSidebarProps> = ({
           </div>
         </div>
 
-        {/* Section 4: Model Assumptions & Allocations Summary */}
+        {/* Section 3: Model Assumptions & Allocations Summary */}
         <div className="space-y-3">
           <div className="flex items-center justify-between text-emerald-400 font-semibold border-b border-slate-800 pb-2">
             <div className="flex items-center gap-2">
@@ -918,9 +913,51 @@ export const InputControlSidebar: React.FC<InputControlSidebarProps> = ({
               </span>
             </div>
           </div>
+
+          {/* Taxable Brokerage Yield & Interest settings */}
+          <div className="p-3 bg-slate-950/60 rounded-xl border border-slate-800 space-y-2">
+            <div className="flex items-center gap-1.5 border-b border-slate-800 pb-1">
+              <span className="text-xs font-bold text-slate-300 block">Taxable Assets Dividend Yield & Type</span>
+              <div className="relative group inline-block">
+                <HelpCircle className="w-3.5 h-3.5 text-slate-500 hover:text-slate-300 transition-colors cursor-pointer" />
+                <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 hidden group-hover:block w-64 bg-slate-950 text-slate-200 text-[10px] p-2.5 rounded-lg border border-slate-800 shadow-xl z-50 leading-normal pointer-events-none normal-case font-medium">
+                  <strong>Annual Yield (%)</strong>: The annual percentage of taxable brokerage assets paid out as dividends or interest. Taxed in the year received.<br /><br />
+                  <strong>Non-Qualified (%)</strong>: The portion of the yield taxed at ordinary income rates (e.g., bond interest/non-qualified dividends) vs. preferential capital gains rates.
+                </div>
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-2">
+              <div className="space-y-1">
+                <label className="text-[10px] text-slate-400 block truncate" title="Annual Dividend/Interest Yield">Annual Yield (%)</label>
+                <input
+                  type="number"
+                  step="0.1"
+                  min="0"
+                  max="20"
+                  value={inputs.portfolio.taxableDividendYield !== null && inputs.portfolio.taxableDividendYield !== undefined ? inputs.portfolio.taxableDividendYield * 100 : ''}
+                  onChange={(e) => updateNestedState('portfolio', 'taxableDividendYield', e.target.value === '' ? null : Number(e.target.value) / 100)}
+                  placeholder="2.0"
+                  className="w-full bg-slate-900 border border-slate-800 rounded-lg px-2.5 py-1 text-xs text-slate-100 font-mono focus:outline-none focus:border-emerald-500"
+                />
+              </div>
+              <div className="space-y-1">
+                <label className="text-[10px] text-slate-400 block truncate" title="Portion of yield taxed at ordinary income rate (e.g. interest, non-qualified dividends)">Non-Qualified (%)</label>
+                <input
+                  type="number"
+                  step="1"
+                  min="0"
+                  max="100"
+                  value={inputs.portfolio.taxableNonQualifiedPortion !== null && inputs.portfolio.taxableNonQualifiedPortion !== undefined ? inputs.portfolio.taxableNonQualifiedPortion * 100 : ''}
+                  onChange={(e) => updateNestedState('portfolio', 'taxableNonQualifiedPortion', e.target.value === '' ? null : Number(e.target.value) / 100)}
+                  placeholder="30"
+                  className="w-full bg-slate-900 border border-slate-800 rounded-lg px-2.5 py-1 text-xs text-slate-100 font-mono focus:outline-none focus:border-emerald-500"
+                />
+              </div>
+            </div>
+          </div>
         </div>
 
-        {/* Section 5: Expenses */}
+        {/* Section 4: Expenses */}
         <div className="space-y-4">
           <div className="flex items-center gap-2 text-emerald-400 font-semibold border-b border-slate-800 pb-2">
             <DollarSign className="w-5 h-5" />
@@ -935,24 +972,24 @@ export const InputControlSidebar: React.FC<InputControlSidebarProps> = ({
                 <button
                   type="button"
                   onClick={() => updateNestedState('useDetailedExpenses', '', false)}
-                  className={`flex-1 text-[10px] py-1.5 rounded-lg font-bold transition-all ${
-                     !inputs.useDetailedExpenses
-                      ? 'bg-emerald-500 text-slate-950 shadow'
+                  className={`flex-1 py-1.5 rounded-lg text-xs font-semibold transition-all ${
+                    !inputs.useDetailedExpenses
+                      ? 'bg-emerald-500 text-slate-950 shadow-sm'
                       : 'text-slate-400 hover:text-slate-200'
                   }`}
                 >
-                  Simple Slider
+                  Simple Aggregate
                 </button>
                 <button
                   type="button"
                   onClick={() => updateNestedState('useDetailedExpenses', '', true)}
-                  className={`flex-1 text-[10px] py-1.5 rounded-lg font-bold transition-all ${
+                  className={`flex-1 py-1.5 rounded-lg text-xs font-semibold transition-all ${
                     inputs.useDetailedExpenses
-                      ? 'bg-emerald-500 text-slate-950 shadow'
+                      ? 'bg-emerald-500 text-slate-950 shadow-sm'
                       : 'text-slate-400 hover:text-slate-200'
                   }`}
                 >
-                  Detailed Expenses
+                  Itemized Expenses
                 </button>
               </div>
             </div>
@@ -1012,7 +1049,7 @@ export const InputControlSidebar: React.FC<InputControlSidebarProps> = ({
           </div>
         </div>
 
-        {/* Section 6: Roth Conversion Planning */}
+        {/* Section 5: Roth Conversion Planning */}
         <div className="space-y-4">
           <div className="flex items-center gap-2 text-emerald-400 font-semibold border-b border-slate-800 pb-2">
             <RefreshCw className="w-5 h-5" />
@@ -1069,15 +1106,15 @@ export const InputControlSidebar: React.FC<InputControlSidebarProps> = ({
               <label className="text-xs text-slate-400 flex justify-between">
                 <span>Start Year</span>
                 <span className="text-emerald-400 font-bold font-mono">
-                  {inputs.rothConversionStartYear !== undefined ? inputs.rothConversionStartYear : 2027}
+                  {inputs.rothConversionStartYear !== undefined ? inputs.rothConversionStartYear : (simStartYear + 1)}
                 </span>
               </label>
               <input
                 type="range"
-                min="2026"
-                max="2050"
+                min={simStartYear}
+                max={simStartYear + 24}
                 step="1"
-                value={inputs.rothConversionStartYear !== undefined ? inputs.rothConversionStartYear : 2027}
+                value={inputs.rothConversionStartYear !== undefined ? inputs.rothConversionStartYear : (simStartYear + 1)}
                 onChange={(e) => updateNestedState('rothConversionStartYear', '', Number(e.target.value))}
                 className="w-full h-1.5 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-emerald-500"
               />
@@ -1088,15 +1125,15 @@ export const InputControlSidebar: React.FC<InputControlSidebarProps> = ({
               <label className="text-xs text-slate-400 flex justify-between">
                 <span>End Year</span>
                 <span className="text-emerald-400 font-bold font-mono">
-                  {inputs.rothConversionEndYear !== undefined ? inputs.rothConversionEndYear : 2034}
+                  {inputs.rothConversionEndYear !== undefined ? inputs.rothConversionEndYear : (simStartYear + 8)}
                 </span>
               </label>
               <input
                 type="range"
-                min="2026"
-                max="2060"
+                min={simStartYear}
+                max={simStartYear + 34}
                 step="1"
-                value={inputs.rothConversionEndYear !== undefined ? inputs.rothConversionEndYear : 2034}
+                value={inputs.rothConversionEndYear !== undefined ? inputs.rothConversionEndYear : (simStartYear + 8)}
                 onChange={(e) => updateNestedState('rothConversionEndYear', '', Number(e.target.value))}
                 className="w-full h-1.5 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-emerald-500"
               />
@@ -1281,6 +1318,7 @@ export const InputControlSidebar: React.FC<InputControlSidebarProps> = ({
           birthDate={editingHealthcarePerson === 'you' ? inputs.you.birthDate : inputs.wife.birthDate}
           healthcareConfig={editingHealthcarePerson === 'you' ? inputs.you.healthcare : inputs.wife.healthcare}
           healthcareInflationRate={inputs.growthAssumptions.healthcareInflationRate}
+          startYear={simStartYear}
           onSave={(config) => updateNestedState(editingHealthcarePerson, 'healthcare', config)}
         />
       )}

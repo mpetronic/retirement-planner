@@ -942,4 +942,54 @@ describe('runRetirementSimulation fixes', () => {
     expect(row1.endYourCash).toBeGreaterThan(104800);
     expect(row1.endYourCash).toBeLessThan(105200);
   });
+
+  describe('Configurable Simulation Start Year', () => {
+    it('should anchor simulation timeline to a custom simulationStartYear (e.g. 2024)', () => {
+      const inputs = getMockInputs();
+      inputs.isSingleFiler = true;
+      inputs.simulationStartYear = 2024;
+      inputs.you.birthDate = '1960-01-01'; // Age 64 in 2024
+      inputs.you.plannedRetirementAge = 65; // Retires in 2025
+      inputs.you.activeSalary = 100000;
+      inputs.you.estimatedPIA = 2000;
+      inputs.you.targetSSClaimingAge = 67; // Claims in 2027
+      inputs.you.longevityAge = 90; // 1960 + 90 = 2050
+
+      const results = runRetirementSimulation(inputs);
+      expect(results[0].year).toBe(2024);
+      expect(results[0].yourAge).toBe(64);
+      expect(results[results.length - 1].year).toBe(2050);
+
+      // In 2024, salary is active, no SS
+      expect(results[0].yourSalary).toBeGreaterThan(0);
+      expect(results[0].yourSS).toBe(0);
+
+      // In 2027 (age 67), SS starts
+      const row2027 = results.find(r => r.year === 2027);
+      expect(row2027).toBeDefined();
+      expect(row2027!.yourSS).toBeGreaterThan(0);
+    });
+
+    it('should anchor simulation timeline to a future simulationStartYear (e.g. 2030)', () => {
+      const inputs = getMockInputs();
+      inputs.isSingleFiler = true;
+      inputs.simulationStartYear = 2030;
+      inputs.you.birthDate = '1970-01-01'; // Age 60 in 2030
+      inputs.you.plannedRetirementAge = 62; // Retires in 2032
+      inputs.you.activeSalary = 100000;
+      inputs.you.estimatedPIA = 2000;
+      inputs.you.targetSSClaimingAge = 70; // Claims in 2040
+      inputs.you.longevityAge = 95; // 1970 + 95 = 2065
+
+      const results = runRetirementSimulation(inputs);
+      expect(results[0].year).toBe(2030);
+      expect(results[0].yourAge).toBe(60);
+      expect(results[results.length - 1].year).toBe(2065);
+
+      const row2040 = results.find(r => r.year === 2040);
+      expect(row2040).toBeDefined();
+      expect(row2040!.yourAge).toBe(70);
+      expect(row2040!.yourSS).toBeGreaterThan(0);
+    });
+  });
 });

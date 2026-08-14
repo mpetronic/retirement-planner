@@ -5,7 +5,8 @@ import {
   SavedPlan,
   SimulationResultRow,
   DEFAULT_DETAILED_EXPENSES,
-  DEFAULT_EXPENSE_FREQUENCIES
+  DEFAULT_EXPENSE_FREQUENCIES,
+  getSimulationStartYear
 } from './types';
 import { runRetirementSimulation } from './engine/simulationEngine';
 import {
@@ -77,6 +78,7 @@ const DEFAULT_INPUTS: AppStateInputs = {
   },
   annualLivingExpenses: null,
   annualRothConversion: 50000,
+  simulationStartYear: 2026,
   rothConversionStartYear: 2027,
   rothConversionEndYear: 2034,
   rothConversionStrategy: 'flat',
@@ -122,6 +124,7 @@ function useLocalStorage<T>(key: string, initialValue: T): [T, (value: T | ((val
           return {
             ...initialValue,
             ...parsed,
+            simulationStartYear: parsed.simulationStartYear !== undefined ? parsed.simulationStartYear : (parsed.rothConversionStartYear ? parsed.rothConversionStartYear - 1 : 2026),
             growthAssumptions: {
               ...(initialValue as any).growthAssumptions,
               ...parsed.growthAssumptions,
@@ -341,8 +344,9 @@ function App() {
       ? deferredInputs.monteCarloSettings.constantCPIRate
       : deferredInputs.growthAssumptions.cpiInflationRate;
     
+    const simStartYear = getSimulationStartYear(deferredInputs);
     const discountedPercentiles = monteCarloSummary.percentiles.map((p) => {
-      const yearsElapsed = p.year - 2026;
+      const yearsElapsed = p.year - simStartYear;
       const factor = Math.pow(1 + cpi, yearsElapsed);
       return {
         year: p.year,

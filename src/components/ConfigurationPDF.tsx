@@ -1,6 +1,6 @@
 import React from 'react';
 import { Document, Page, Text, View, StyleSheet } from '@react-pdf/renderer';
-import { AppStateInputs, RECURRING_EXPENSE_ITEMS, ONE_TIME_EXPENSE_ITEMS, DetailedStateExpenses } from '../types';
+import { AppStateInputs, RECURRING_EXPENSE_ITEMS, ONE_TIME_EXPENSE_ITEMS, DetailedStateExpenses, getSimulationStartYear } from '../types';
 
 // Create stylesheet for PDF formatting
 const styles = StyleSheet.create({
@@ -191,6 +191,7 @@ export const ConfigurationPDF: React.FC<PDFProps> = ({ inputs }) => {
   });
 
   const hasDetailedHealthcare = !!(inputs.you.healthcare || (!inputs.isSingleFiler && inputs.wife.healthcare));
+  const simStartYear = getSimulationStartYear(inputs);
 
   return (
     <Document>
@@ -198,7 +199,7 @@ export const ConfigurationPDF: React.FC<PDFProps> = ({ inputs }) => {
       <Page size="LETTER" style={styles.page}>
         <View style={styles.header}>
           <Text style={styles.title}>Retirement Planner - Plan Configuration Report</Text>
-          <Text style={styles.subtitle}>Generated on {dateStr} | Comprehensive settings controlling simulation model</Text>
+          <Text style={styles.subtitle}>Generated on {dateStr} | Timeline Anchor: {simStartYear} | Comprehensive settings controlling simulation model</Text>
         </View>
 
         {/* Section 1: Spousal Profiles */}
@@ -290,7 +291,7 @@ export const ConfigurationPDF: React.FC<PDFProps> = ({ inputs }) => {
 
         {/* Section 2: Asset Balances */}
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>2. Starting Portfolio Asset Balances & Cost Basis (2026)</Text>
+          <Text style={styles.sectionTitle}>2. Starting Portfolio Asset Balances & Cost Basis ({simStartYear})</Text>
           <View style={{ borderWidth: 1, borderColor: '#cbd5e1', borderRadius: 6, overflow: 'hidden' }}>
             <View style={styles.tableHeader}>
               <Text style={[styles.colAsset, styles.tableCellHeader]}>Account Category</Text>
@@ -530,7 +531,7 @@ export const ConfigurationPDF: React.FC<PDFProps> = ({ inputs }) => {
                 )}
                 <View style={styles.row}>
                   <Text style={styles.rowLabel}>Start Year / End Year:</Text>
-                  <Text style={styles.rowValue}>{inputs.rothConversionStartYear ?? 2026} / {inputs.rothConversionEndYear ?? 2035}</Text>
+                  <Text style={styles.rowValue}>{inputs.rothConversionStartYear ?? simStartYear} / {inputs.rothConversionEndYear ?? (simStartYear + 9)}</Text>
                 </View>
               </View>
             </View>

@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { AppStateInputs, StressTestConfig, StressTestYearOverride } from '../types';
+import { AppStateInputs, StressTestConfig, StressTestYearOverride, getSimulationStartYear } from '../types';
 import { 
   Zap, 
   Plus, 
@@ -21,7 +21,7 @@ interface StressTestControlPanelProps {
 
 type PresetKey = '3yr-shock' | '2008-gfc' | '2000-dotcom';
 
-const PRESET_HELP_DATA: Record<PresetKey, {
+const getPresetHelpData = (startYear: number): Record<PresetKey, {
   title: string;
   badge: string;
   color: 'rose' | 'amber' | 'purple';
@@ -29,7 +29,7 @@ const PRESET_HELP_DATA: Record<PresetKey, {
   context: string;
   intent: string;
   rates: { yearLabel: string; stock: string; bond: string }[];
-}> = {
+}> => ({
   '3yr-shock': {
     title: '3-Year Early Retirement Crash',
     badge: 'Sequence of Returns Risk Test',
@@ -38,9 +38,9 @@ const PRESET_HELP_DATA: Record<PresetKey, {
     context: 'Sequence of Returns Risk occurs when severe market declines happen right when portfolio withdrawals begin. Experiencing negative returns in early retirement forces you to sell equities at depressed prices, permanently impairing portfolio recovery potential.',
     intent: 'Tests whether your retirement plan can remain solvent through a prolonged 3-year early retirement bear market (-25%, -15%, -10%) without suffering portfolio ruin.',
     rates: [
-      { yearLabel: 'Year 1 (2027)', stock: '-25.0%', bond: '-5.0%' },
-      { yearLabel: 'Year 2 (2028)', stock: '-15.0%', bond: '+2.0%' },
-      { yearLabel: 'Year 3 (2029)', stock: '-10.0%', bond: '+3.0%' },
+      { yearLabel: `Year 1 (${startYear})`, stock: '-25.0%', bond: '-5.0%' },
+      { yearLabel: `Year 2 (${startYear + 1})`, stock: '-15.0%', bond: '+2.0%' },
+      { yearLabel: `Year 3 (${startYear + 2})`, stock: '-10.0%', bond: '+3.0%' },
     ]
   },
   '2008-gfc': {
@@ -51,8 +51,8 @@ const PRESET_HELP_DATA: Record<PresetKey, {
     context: 'In 2008, the S&P 500 crashed -37.0% due to global financial systemic failures, while US 10-Yr Treasuries rallied +5.0% as investors fled to safety. The market rebounded sharply in 2009 (+26.0% S&P 500).',
     intent: 'Evaluates your portfolio against a sudden, violent liquidity shock followed by a rapid V-shaped recovery. Verifies if cash & fixed income buffers prevent locking in equity losses during sharp crashes.',
     rates: [
-      { yearLabel: 'Year 1 (2028)', stock: '-37.0%', bond: '+5.0%' },
-      { yearLabel: 'Year 2 (2029)', stock: '+26.0%', bond: '+5.0%' },
+      { yearLabel: `Year 1 (${startYear})`, stock: '-37.0%', bond: '+5.0%' },
+      { yearLabel: `Year 2 (${startYear + 1})`, stock: '+26.0%', bond: '+5.0%' },
     ]
   },
   '2000-dotcom': {
@@ -63,18 +63,19 @@ const PRESET_HELP_DATA: Record<PresetKey, {
     context: 'Following the 1990s tech boom, the S&P 500 fell for 3 consecutive years (2000: -9.1%, 2001: -11.9%, 2002: -22.1%) as technology valuations collapsed, while Treasury bonds posted positive returns (+8% to +10%/yr).',
     intent: 'Tests how your retirement strategy fares during an extended multi-year secular equity decline where stocks bleed out over several consecutive calendar years.',
     rates: [
-      { yearLabel: 'Year 1 (2028)', stock: '-9.0%', bond: '+8.0%' },
-      { yearLabel: 'Year 2 (2029)', stock: '-12.0%', bond: '+7.0%' },
-      { yearLabel: 'Year 3 (2030)', stock: '-22.0%', bond: '+10.0%' },
+      { yearLabel: `Year 1 (${startYear})`, stock: '-9.0%', bond: '+8.0%' },
+      { yearLabel: `Year 2 (${startYear + 1})`, stock: '-12.0%', bond: '+7.0%' },
+      { yearLabel: `Year 3 (${startYear + 2})`, stock: '-22.0%', bond: '+10.0%' },
     ]
   }
-};
+});
 
 export const StressTestControlPanel: React.FC<StressTestControlPanelProps> = ({
   inputs,
   onChangeInputs,
 }) => {
   const [activeHelpModal, setActiveHelpModal] = useState<PresetKey | null>(null);
+  const simStartYear = getSimulationStartYear(inputs);
 
   const currentConfig: StressTestConfig = inputs.monteCarloSettings.stressTest || {
     enabled: false,
@@ -99,26 +100,26 @@ export const StressTestControlPanel: React.FC<StressTestControlPanelProps> = ({
   // Helper to format percentages
   const formatPct = (val: number) => `${(val * 100).toFixed(1)}%`;
 
-  // Preset scenarios
+  // Preset scenarios dynamically derived from simulation start year
   const applyPreset = (presetName: PresetKey) => {
     let overrides: StressTestYearOverride[] = [];
     
     if (presetName === '2008-gfc') {
       overrides = [
-        { year: 2028, equityReturn: -0.37, fixedIncomeReturn: 0.05 },
-        { year: 2029, equityReturn: 0.26, fixedIncomeReturn: 0.05 },
+        { year: simStartYear, equityReturn: -0.37, fixedIncomeReturn: 0.05 },
+        { year: simStartYear + 1, equityReturn: 0.26, fixedIncomeReturn: 0.05 },
       ];
     } else if (presetName === '2000-dotcom') {
       overrides = [
-        { year: 2028, equityReturn: -0.09, fixedIncomeReturn: 0.08 },
-        { year: 2029, equityReturn: -0.12, fixedIncomeReturn: 0.07 },
-        { year: 2030, equityReturn: -0.22, fixedIncomeReturn: 0.10 },
+        { year: simStartYear, equityReturn: -0.09, fixedIncomeReturn: 0.08 },
+        { year: simStartYear + 1, equityReturn: -0.12, fixedIncomeReturn: 0.07 },
+        { year: simStartYear + 2, equityReturn: -0.22, fixedIncomeReturn: 0.10 },
       ];
     } else if (presetName === '3yr-shock') {
       overrides = [
-        { year: 2027, equityReturn: -0.25, fixedIncomeReturn: -0.05 },
-        { year: 2028, equityReturn: -0.15, fixedIncomeReturn: 0.02 },
-        { year: 2029, equityReturn: -0.10, fixedIncomeReturn: 0.03 },
+        { year: simStartYear, equityReturn: -0.25, fixedIncomeReturn: -0.05 },
+        { year: simStartYear + 1, equityReturn: -0.15, fixedIncomeReturn: 0.02 },
+        { year: simStartYear + 2, equityReturn: -0.10, fixedIncomeReturn: 0.03 },
       ];
     }
 
@@ -131,11 +132,11 @@ export const StressTestControlPanel: React.FC<StressTestControlPanelProps> = ({
 
   const addYearOverride = () => {
     const existingYears = new Set(currentConfig.overrides.map(o => o.year));
-    let nextYear = 2027;
-    while (nextYear <= 2060 && existingYears.has(nextYear)) {
+    let nextYear = simStartYear;
+    while (nextYear <= simStartYear + 34 && existingYears.has(nextYear)) {
       nextYear++;
     }
-    if (nextYear > 2060) nextYear = 2026;
+    if (nextYear > simStartYear + 34) nextYear = simStartYear;
 
     const newOverrides = [
       ...currentConfig.overrides,
@@ -164,7 +165,8 @@ export const StressTestControlPanel: React.FC<StressTestControlPanelProps> = ({
     updateStressConfig({ overrides: [] });
   };
 
-  const activeModalData = activeHelpModal ? PRESET_HELP_DATA[activeHelpModal] : null;
+  const presetHelpData = getPresetHelpData(simStartYear);
+  const activeModalData = activeHelpModal ? presetHelpData[activeHelpModal] : null;
 
   return (
     <div className={`glass-panel rounded-2xl p-6 border transition-all duration-300 ${
@@ -368,7 +370,7 @@ export const StressTestControlPanel: React.FC<StressTestControlPanelProps> = ({
                       onChange={(e) => updateYearOverride(index, 'year', Number(e.target.value))}
                       className="text-xs font-mono font-bold px-2.5 py-1 bg-slate-900 text-slate-100 border border-slate-700 rounded-lg focus:outline-none focus:border-rose-500 cursor-pointer"
                     >
-                      {Array.from({ length: 35 }, (_, i) => 2026 + i).map((yr) => (
+                      {Array.from({ length: 35 }, (_, i) => simStartYear + i).map((yr) => (
                         <option key={yr} value={yr}>
                           Year {yr}
                         </option>

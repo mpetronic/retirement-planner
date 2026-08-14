@@ -97,10 +97,11 @@ export const OnboardingWizard: React.FC<OnboardingWizardProps> = ({ onComplete }
   const [wifeBasis, setWifeBasis] = useState<number | null>(0);
   const [wifeCash, setWifeCash] = useState<number | null>(0);
 
+  const currentYear = new Date().getFullYear();
   const [livingExpenses, setLivingExpenses] = useState<number>(120000);
   const [currentState, setCurrentState] = useState<'MD' | 'FL'>('MD');
   const [targetState, setTargetState] = useState<'MD' | 'FL'>('FL');
-  const [relocationYear, setRelocationYear] = useState<number | null>(2032);
+  const [relocationYear, setRelocationYear] = useState<number | null>(currentYear + 6);
   const [enableRelocation, setEnableRelocation] = useState(true);
 
   // Field validation helper
@@ -233,10 +234,11 @@ export const OnboardingWizard: React.FC<OnboardingWizardProps> = ({ onComplete }
         cpiInflationRate: 0.03, // Defaulting to realistic 3% CPI
         healthcareInflationRate: 0.05,
       },
+      simulationStartYear: currentYear,
       annualLivingExpenses: livingExpenses,
       annualRothConversion: 50000,
-      rothConversionStartYear: 2027, // Default start year 2027
-      rothConversionEndYear: 2034,   // Default end year 2034
+      rothConversionStartYear: currentYear + 1,
+      rothConversionEndYear: currentYear + 8,
       rothConversionStrategy: 'flat',
       rothConversionTargetValue: null,
       monteCarloSettings: {
@@ -858,8 +860,8 @@ export const OnboardingWizard: React.FC<OnboardingWizardProps> = ({ onComplete }
                         <span className="text-[10px] font-bold text-slate-400 uppercase">Relocation Year:</span>
                         <input
                           type="number"
-                          min="2026"
-                          max="2060"
+                          min={currentYear}
+                          max={currentYear + 34}
                           value={relocationYear === null ? '' : relocationYear}
                           onChange={(e) => setRelocationYear(e.target.value === '' ? null : Number(e.target.value))}
                           className="w-20 bg-slate-950 border border-slate-850 focus:border-emerald-500 rounded-xl px-2 py-1 text-xs text-center text-slate-100 font-mono focus:outline-none"

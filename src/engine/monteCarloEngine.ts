@@ -1,4 +1,4 @@
-import { AppStateInputs, LockedReturnSequence, StressTestConfig, StressTestYearOverride } from '../types';
+import { AppStateInputs, LockedReturnSequence, StressTestConfig, StressTestYearOverride, getSimulationStartYear } from '../types';
 import { runRetirementSimulation } from './simulationEngine';
 
 // Modern historical stock (S&P 500 total return) and bond (US 10-Yr Treasury total return) annual returns from 1970 to 2025.
@@ -326,7 +326,8 @@ export interface MonteCarloSummary {
  */
 export function applyStressTestToSequence<T extends Omit<LockedReturnSequence, 'id'>>(
   seq: T,
-  stressTest?: StressTestConfig
+  stressTest?: StressTestConfig,
+  startYear: number = 2026
 ): T {
   if (!stressTest || !stressTest.enabled || !stressTest.overrides || stressTest.overrides.length === 0) {
     return seq;
@@ -341,7 +342,7 @@ export function applyStressTestToSequence<T extends Omit<LockedReturnSequence, '
   const fixedIncomeReturns = [...seq.fixedIncomeReturns];
 
   for (let yearIdx = 0; yearIdx < 35; yearIdx++) {
-    const year = 2026 + yearIdx;
+    const year = startYear + yearIdx;
     const ov = overrideMap.get(year);
     if (ov) {
       if (stressTest.mode === 'relative') {
@@ -387,18 +388,19 @@ export function runMonteCarloSimulation(
     : inputs.growthAssumptions.cpiInflationRate;
   const enableRegimeSwitching = inputs.monteCarloSettings?.enableRegimeSwitching !== false;
   
-  const results: MonteCarloTrialResult[] = [];
-  
+  const isStressTestActive = inputs.monteCarloSettings?.stressTest?.enabled &&
+    (inputs.monteCarloSettings.stressTest.overrides?.length ?? 0) > 0;
+
+  // Compile raw sequences across all trials
+  const rawSequences: Omit<LockedReturnSequence, 'id'>[] = [];
   for (let t = 0; t < trials; t++) {
-    // Generate returns for this trial
-    let seqData: Omit<LockedReturnSequence, 'id'>;
     if (preGeneratedSequences && preGeneratedSequences[t]) {
-      seqData = preGeneratedSequences[t];
+      rawSequences.push(preGeneratedSequences[t]);
     } else if (mode === 'historical') {
       const strategy = inputs.monteCarloSettings?.historicalSamplingStrategy ?? 'hybrid';
       const isBlock = strategy === 'block' ? true : strategy === 'random' ? false : rand() < 0.35;
       const calibrateMeans = inputs.monteCarloSettings?.calibrateHistoricalMeans !== false;
-      seqData = generateHistoricalSequence(
+      rawSequences.push(generateHistoricalSequence(
         isBlock,
         undefined,
         rand,
@@ -407,12 +409,42 @@ export function runMonteCarloSimulation(
         calibrateMeans,
         equityMean,
         bondMean
-      );
+      ));
     } else {
-      seqData = generateSyntheticSequence(equityMean, equityVol, bondMean, bondVol, correlation, rand, isCpiRandomized, constantCpi, enableRegimeSwitching);
+      rawSequences.push(generateSyntheticSequence(equityMean, equityVol, bondMean, bondVol, correlation, rand, isCpiRandomized, constantCpi, enableRegimeSwitching));
     }
+  }
 
-    const stressedSeqData = applyStressTestToSequence(seqData, inputs.monteCarloSettings?.stressTest);
+  // 1. If stress testing is active, determine the baseline (unstressed) representative trial indices
+  // so we can construct a true matched-pair comparison holding all non-stressed years fixed.
+  let baseWorstIdx = Math.floor(trials * 0.10);
+  let baseMedianIdx = Math.floor(trials * 0.50);
+  let baseBestIdx = Math.floor(trials * 0.90);
+
+  if (isStressTestActive) {
+    const baseTrialEstates: { trialIndex: number; endingEstate: number }[] = [];
+    for (let t = 0; t < trials; t++) {
+      const baseSeq: LockedReturnSequence = {
+        ...rawSequences[t],
+        id: `base_trial_${t}`,
+      };
+      const baseLedger = runRetirementSimulation(inputs, simulateSurvivor, baseSeq);
+      const endingEstate = baseLedger[baseLedger.length - 1]?.totalPortfolioValue || 0;
+      baseTrialEstates.push({ trialIndex: t, endingEstate });
+    }
+    baseTrialEstates.sort((a, b) => a.endingEstate - b.endingEstate);
+    baseWorstIdx = baseTrialEstates[Math.floor(trials * 0.10)]?.trialIndex ?? 0;
+    baseMedianIdx = baseTrialEstates[Math.floor(trials * 0.50)]?.trialIndex ?? Math.floor(trials / 2);
+    baseBestIdx = baseTrialEstates[Math.floor(trials * 0.90)]?.trialIndex ?? trials - 1;
+  }
+
+  const simStartYear = getSimulationStartYear(inputs);
+
+  // 2. Run the full Monte Carlo simulation across all trials (with stress testing applied if active)
+  const results: MonteCarloTrialResult[] = [];
+  for (let t = 0; t < trials; t++) {
+    const seqData = rawSequences[t];
+    const stressedSeqData = applyStressTestToSequence(seqData, inputs.monteCarloSettings?.stressTest, simStartYear);
     
     const randomPart = Math.floor(rand() * 100000).toString(36);
     const sequence: LockedReturnSequence = {
@@ -428,7 +460,7 @@ export function runMonteCarloSimulation(
     // Path-wise ruin check: successful only if ending estate is positive and was never ruined (balance <= 0.01) at any year
     const firstRuinIndex = portfolioHistory.findIndex(v => v <= 0.01);
     const success = firstRuinIndex === -1 && endingEstate > 0.01;
-    const timeToRuin = firstRuinIndex !== -1 ? 2026 + firstRuinIndex : null;
+    const timeToRuin = firstRuinIndex !== -1 ? simStartYear + firstRuinIndex : null;
     
     results.push({
       trialIndex: t,
@@ -462,18 +494,39 @@ export function runMonteCarloSimulation(
   // Sort trials by ending estate value to calculate percentiles and extract representative sequences
   const sortedTrials = [...results].sort((a, b) => a.endingEstate - b.endingEstate);
   
-  const worstIdx = Math.floor(trials * 0.10);  // 10th percentile
-  const medianIdx = Math.floor(trials * 0.50); // 50th percentile
-  const bestIdx = Math.floor(trials * 0.90);   // 90th percentile
-  
-  const worstTrial = sortedTrials[worstIdx] || sortedTrials[0];
-  const medianTrial = sortedTrials[medianIdx] || sortedTrials[Math.floor(trials / 2)];
-  const bestTrial = sortedTrials[bestIdx] || sortedTrials[trials - 1];
+  let worstSequence: LockedReturnSequence;
+  let medianSequence: LockedReturnSequence;
+  let bestSequence: LockedReturnSequence;
+
+  if (isStressTestActive) {
+    // Matched-Pair Approach: Take the exact baseline representative sequence and overlay stress overrides in-place.
+    // This guarantees all non-stressed years remain 100% fixed and comparable.
+    worstSequence = {
+      ...applyStressTestToSequence(rawSequences[baseWorstIdx], inputs.monteCarloSettings?.stressTest, simStartYear),
+      id: `trial_${baseWorstIdx}_matched_worst`,
+    };
+    medianSequence = {
+      ...applyStressTestToSequence(rawSequences[baseMedianIdx], inputs.monteCarloSettings?.stressTest, simStartYear),
+      id: `trial_${baseMedianIdx}_matched_median`,
+    };
+    bestSequence = {
+      ...applyStressTestToSequence(rawSequences[baseBestIdx], inputs.monteCarloSettings?.stressTest, simStartYear),
+      id: `trial_${baseBestIdx}_matched_best`,
+    };
+  } else {
+    const worstIdx = Math.floor(trials * 0.10);  // 10th percentile
+    const medianIdx = Math.floor(trials * 0.50); // 50th percentile
+    const bestIdx = Math.floor(trials * 0.90);   // 90th percentile
+    
+    worstSequence = (sortedTrials[worstIdx] || sortedTrials[0]).sequence;
+    medianSequence = (sortedTrials[medianIdx] || sortedTrials[Math.floor(trials / 2)]).sequence;
+    bestSequence = (sortedTrials[bestIdx] || sortedTrials[trials - 1]).sequence;
+  }
   
   // Compile annual percentile values
   const percentiles: MonteCarloSummary['percentiles'] = [];
   for (let yearIdx = 0; yearIdx < 35; yearIdx++) {
-    const year = 2026 + yearIdx;
+    const year = simStartYear + yearIdx;
     
     // Collect portfolio values for this year across all trials
     const yearValues = results.map(r => r.portfolioHistory[yearIdx] || 0);
@@ -494,9 +547,9 @@ export function runMonteCarloSimulation(
     trialsRun: trials,
     percentiles,
     representativeSequences: {
-      worst: worstTrial.sequence,
-      median: medianTrial.sequence,
-      best: bestTrial.sequence,
+      worst: worstSequence,
+      median: medianSequence,
+      best: bestSequence,
     },
     medianSurvivalYears,
   };

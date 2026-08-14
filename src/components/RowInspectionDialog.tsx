@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import { X, TrendingUp, TrendingDown, Wallet, Activity, ShieldAlert, Award } from 'lucide-react';
 import { SimulationResultRow, AppStateInputs } from '../types';
@@ -30,6 +30,52 @@ export const RowInspectionDialog: React.FC<RowInspectionDialogProps> = ({
 }) => {
   const [activeTab, setActiveTab] = useState<'income' | 'expenses' | 'assets' | 'irmaa' | 'flow'>('flow'); // Default to 'flow' for beautiful high-level starting visual!
 
+  // Ages and Filer Status
+  const isSingle = simulateSurvivor && row ? row.year >= deathYear : false;
+  const isSurvivorYear = simulateSurvivor && row ? row.year >= deathYear : false;
+
+  const currentIndex = row ? ledger.findIndex(r => r.year === row.year) : -1;
+  const handlePrev = useCallback(() => {
+    if (currentIndex > 0) {
+      onSelectRow(ledger[currentIndex - 1]);
+    }
+  }, [currentIndex, ledger, onSelectRow]);
+
+  const handleNext = useCallback(() => {
+    if (currentIndex >= 0 && currentIndex < ledger.length - 1) {
+      onSelectRow(ledger[currentIndex + 1]);
+    }
+  }, [currentIndex, ledger, onSelectRow]);
+
+  // Keyboard navigation for Up/Down/Left/Right arrow keys and Escape
+  useEffect(() => {
+    if (!isOpen || !row) return;
+
+    const handleKeyDown = (e: KeyboardEvent) => {
+      // Don't intercept if user is focused on an interactive input element
+      const target = e.target as HTMLElement | null;
+      if (target && ['INPUT', 'TEXTAREA', 'SELECT'].includes(target.tagName)) {
+        return;
+      }
+
+      if (e.key === 'ArrowUp' || e.key === 'ArrowLeft') {
+        e.preventDefault();
+        handlePrev();
+      } else if (e.key === 'ArrowDown' || e.key === 'ArrowRight') {
+        e.preventDefault();
+        handleNext();
+      } else if (e.key === 'Escape') {
+        e.preventDefault();
+        onClose();
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [isOpen, row, handlePrev, handleNext, onClose]);
+
   if (!isOpen || !row) return null;
 
   const formatCurrency = (val: number) => {
@@ -38,22 +84,6 @@ export const RowInspectionDialog: React.FC<RowInspectionDialogProps> = ({
       currency: 'USD',
       maximumFractionDigits: 0
     }).format(val);
-  };
-
-  // Ages and Filer Status
-  const isSingle = simulateSurvivor && row.year >= deathYear;
-  const isSurvivorYear = simulateSurvivor && row.year >= deathYear;
-
-  const currentIndex = ledger.findIndex(r => r.year === row.year);
-  const handlePrev = () => {
-    if (currentIndex > 0) {
-      onSelectRow(ledger[currentIndex - 1]);
-    }
-  };
-  const handleNext = () => {
-    if (currentIndex >= 0 && currentIndex < ledger.length - 1) {
-      onSelectRow(ledger[currentIndex + 1]);
-    }
   };
 
   // 1. Income & MAGI Calculations
@@ -72,20 +102,21 @@ export const RowInspectionDialog: React.FC<RowInspectionDialogProps> = ({
   const preMedicareAnnual = row.preMedicareHealthcareCost;
 
   // 3. Asset starting balances
-  const startYourPreTax = prevRow ? prevRow.endYourPreTaxIRA : (inputs.portfolio.yourPreTaxIRA || 0);
-  const startWifePreTax = prevRow ? prevRow.endWifePreTaxIRA : (inputs.isSingleFiler ? 0 : inputs.portfolio.wifePreTaxIRA || 0);
+  const effectivePrevRow = prevRow || (currentIndex > 0 ? ledger[currentIndex - 1] : null);
+  const startYourPreTax = effectivePrevRow ? effectivePrevRow.endYourPreTaxIRA : (inputs.portfolio.yourPreTaxIRA || 0);
+  const startWifePreTax = effectivePrevRow ? effectivePrevRow.endWifePreTaxIRA : (inputs.isSingleFiler ? 0 : inputs.portfolio.wifePreTaxIRA || 0);
   const startPreTax = startYourPreTax + startWifePreTax;
 
-  const startYourRoth = prevRow ? prevRow.endYourRothIRA : (inputs.portfolio.yourRothIRA || 0);
-  const startWifeRoth = prevRow ? prevRow.endWifeRothIRA : (inputs.isSingleFiler ? 0 : inputs.portfolio.wifeRothIRA || 0);
+  const startYourRoth = effectivePrevRow ? effectivePrevRow.endYourRothIRA : (inputs.portfolio.yourRothIRA || 0);
+  const startWifeRoth = effectivePrevRow ? effectivePrevRow.endWifeRothIRA : (inputs.isSingleFiler ? 0 : inputs.portfolio.wifeRothIRA || 0);
   const startRoth = startYourRoth + startWifeRoth;
 
-  const startYourTaxable = prevRow ? prevRow.endYourTaxableBrokerage : (inputs.portfolio.yourTaxableBrokerage || 0);
-  const startWifeTaxable = prevRow ? prevRow.endWifeTaxableBrokerage : (inputs.isSingleFiler ? 0 : inputs.portfolio.wifeTaxableBrokerage || 0);
+  const startYourTaxable = effectivePrevRow ? effectivePrevRow.endYourTaxableBrokerage : (inputs.portfolio.yourTaxableBrokerage || 0);
+  const startWifeTaxable = effectivePrevRow ? effectivePrevRow.endWifeTaxableBrokerage : (inputs.isSingleFiler ? 0 : inputs.portfolio.wifeTaxableBrokerage || 0);
   const startTaxable = startYourTaxable + startWifeTaxable;
 
-  const startYourCash = prevRow ? prevRow.endYourCash : (inputs.portfolio.yourCash || 0);
-  const startWifeCash = prevRow ? prevRow.endWifeCash : (inputs.isSingleFiler ? 0 : inputs.portfolio.wifeCash || 0);
+  const startYourCash = effectivePrevRow ? effectivePrevRow.endYourCash : (inputs.portfolio.yourCash || 0);
+  const startWifeCash = effectivePrevRow ? effectivePrevRow.endWifeCash : (inputs.isSingleFiler ? 0 : inputs.portfolio.wifeCash || 0);
   const startCash = startYourCash + startWifeCash;
 
   // Ending balances
@@ -114,7 +145,7 @@ export const RowInspectionDialog: React.FC<RowInspectionDialogProps> = ({
   // 4. Surcharge Cliffs & Limits
   const irmaaTiers = isSingle ? IRMAA_TIERS_SINGLE : IRMAA_TIERS_MFJ;
   const currentTier = irmaaTiers.find(t => t.tierNumber === row.surchargeTier) || irmaaTiers[0];
-  const lookbackCpi = prevRow && prevRow.cpiFactor ? prevRow.cpiFactor : row.cpiFactor;
+  const lookbackCpi = effectivePrevRow && effectivePrevRow.cpiFactor ? effectivePrevRow.cpiFactor : row.cpiFactor;
   
   // Find limits for this year's surcharge tier (based on t-2 MAGI)
   const tierMinLimit = (() => {

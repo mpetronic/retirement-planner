@@ -1,4 +1,4 @@
-import { AppStateInputs, SimulationResultRow, LockedReturnSequence, RECURRING_EXPENSE_ITEMS, ONE_TIME_EXPENSE_ITEMS } from '../types';
+import { AppStateInputs, SimulationResultRow, LockedReturnSequence, RECURRING_EXPENSE_ITEMS, ONE_TIME_EXPENSE_ITEMS, getSimulationStartYear } from '../types';
 import {
   BASE_MEDICARE_PART_B,
   BASE_MEDICARE_PART_D,
@@ -254,19 +254,21 @@ export function runRetirementSimulation(
   const DEATH_YEAR = yourBirthYear + (inputs.you.longevityAge ?? 85);
   const WIFE_DEATH_YEAR = inputs.isSingleFiler ? 0 : (wifeBirthYear + (inputs.wife.longevityAge ?? 95));
 
+  const simStartYear = getSimulationStartYear(inputs);
+
   // The simulation runs until the last survivor passes away
-  const endSimulationYear = Math.max(2026, inputs.isSingleFiler ? DEATH_YEAR : Math.max(DEATH_YEAR, WIFE_DEATH_YEAR));
+  const endSimulationYear = Math.max(simStartYear, inputs.isSingleFiler ? DEATH_YEAR : Math.max(DEATH_YEAR, WIFE_DEATH_YEAR));
 
   // Check if a stochastic sequence of returns is active
   const activeSeq = activeSequence;
 
   let cpiFactor = 1.0;
-  const startYear = inputs.rothConversionStartYear !== undefined ? inputs.rothConversionStartYear : 2026;
-  const endYear = inputs.rothConversionEndYear !== undefined ? inputs.rothConversionEndYear : 2035;
+  const startYear = inputs.rothConversionStartYear !== undefined ? inputs.rothConversionStartYear : simStartYear;
+  const endYear = inputs.rothConversionEndYear !== undefined ? inputs.rothConversionEndYear : (simStartYear + 9);
 
-  // Let's run year-by-year from 2026 to endSimulationYear
-  for (let year = 2026; year <= endSimulationYear; year++) {
-    const yearsElapsed = year - 2026;
+  // Let's run year-by-year from simStartYear to endSimulationYear
+  for (let year = simStartYear; year <= endSimulationYear; year++) {
+    const yearsElapsed = year - simStartYear;
     
     // Accumulate inflation index (CPI) dynamically based on co-sampled rates if available
     if (yearsElapsed > 0) {
@@ -380,18 +382,18 @@ export function runRetirementSimulation(
       ? inputs.wife.plannedRetirementMonth - 1
       : wifeBirthMonth;
 
-    const yourRetireMonthIdx = (yourBirthYear + youRetireAge - 2026) * 12 + youRetireMonth;
-    const wifeRetireMonthIdx = (wifeBirthYear + wifeRetireAge - 2026) * 12 + wifeRetireMonth;
+    const yourRetireMonthIdx = (yourBirthYear + youRetireAge - simStartYear) * 12 + youRetireMonth;
+    const wifeRetireMonthIdx = (wifeBirthYear + wifeRetireAge - simStartYear) * 12 + wifeRetireMonth;
     const yourSSClaimMonthIdx = inputs.you.targetSSClaimingAge
-      ? (yourBirthYear + inputs.you.targetSSClaimingAge - 2026) * 12 + yourBirthMonth
+      ? (yourBirthYear + inputs.you.targetSSClaimingAge - simStartYear) * 12 + yourBirthMonth
       : Infinity;
     const wifeSSClaimMonthIdx = (!inputs.isSingleFiler && inputs.wife.targetSSClaimingAge)
-      ? (wifeBirthYear + inputs.wife.targetSSClaimingAge - 2026) * 12 + wifeBirthMonth
+      ? (wifeBirthYear + inputs.wife.targetSSClaimingAge - simStartYear) * 12 + wifeBirthMonth
       : Infinity;
 
-    const yourMedicareMonthIdx = (yourBirthYear + 65 - 2026) * 12 + yourBirthMonth;
-    const wifeMedicareMonthIdx = (wifeBirthYear + 65 - 2026) * 12 + wifeBirthMonth;
-    const wifeSurvivorMonthIdx = (wifeBirthYear + 60 - 2026) * 12 + wifeBirthMonth;
+    const yourMedicareMonthIdx = (yourBirthYear + 65 - simStartYear) * 12 + yourBirthMonth;
+    const wifeMedicareMonthIdx = (wifeBirthYear + 65 - simStartYear) * 12 + wifeBirthMonth;
+    const wifeSurvivorMonthIdx = (wifeBirthYear + 60 - simStartYear) * 12 + wifeBirthMonth;
 
     const yourRmdStartAge = getRMDStartAge(yourBirthYear);
     const wifeRmdStartAge = getRMDStartAge(wifeBirthYear);
@@ -585,7 +587,7 @@ export function runRetirementSimulation(
 
     let oneTimeCosts = 0;
     if (inputs.useDetailedExpenses && inputs.detailedExpenses) {
-      if (year === 2026 && inputs.jurisdiction.relocationYear !== 2026) {
+      if (year === simStartYear && inputs.jurisdiction.relocationYear !== simStartYear) {
         const curExpenses = inputs.detailedExpenses[inputs.jurisdiction.currentState];
         if (curExpenses) {
           for (const item of ONE_TIME_EXPENSE_ITEMS) oneTimeCosts += curExpenses[item.key] ?? 0;
@@ -626,14 +628,14 @@ export function runRetirementSimulation(
     let wifeMedicareMonthCount = 0;
 
     // December month index hoisted here so it is available outside the solver loop.
-    const decMonthIdx = (year - 2026) * 12 + 11;
+    const decMonthIdx = (year - simStartYear) * 12 + 11;
 
     let monthlyYourDividends = 0;
     let monthlyWifeDividends = 0;
 
     // Monthly Loop: Jan to Nov
     for (let month = 0; month < 11; month++) {
-      const monthIdx = (year - 2026) * 12 + month;
+      const monthIdx = (year - simStartYear) * 12 + month;
 
       // 1. Age in months (not needed here, calculated via month index)
 

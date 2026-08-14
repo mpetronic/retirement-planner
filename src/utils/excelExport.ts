@@ -1,8 +1,9 @@
 import * as XLSX from 'xlsx';
-import { AppStateInputs, SimulationResultRow, RECURRING_EXPENSE_ITEMS, ONE_TIME_EXPENSE_ITEMS, DetailedStateExpenses } from '../types';
+import { AppStateInputs, SimulationResultRow, RECURRING_EXPENSE_ITEMS, ONE_TIME_EXPENSE_ITEMS, DetailedStateExpenses, getSimulationStartYear } from '../types';
 
 export const generateExcelWorkbook = (ledger: SimulationResultRow[], inputs: AppStateInputs): XLSX.WorkBook => {
   const wb = XLSX.utils.book_new();
+  const simStartYear = getSimulationStartYear(inputs);
 
   // Helper to safely format healthcare values
   const getHCVal = (person: 'you' | 'wife', state: 'MD' | 'FL', key: string) => {
@@ -17,26 +18,26 @@ export const generateExcelWorkbook = (ledger: SimulationResultRow[], inputs: App
     ["Retirement Plan Configuration Summary"],
     [],
     ["Date Generated", new Date().toLocaleDateString('en-US')],
+    ["Simulation Start Year", simStartYear],
     [],
-    ["PRIMARY USER SETTINGS"],
-    ["Name", inputs.you.name || "Primary User"],
-    ["Birth Date", inputs.you.birthDate || "N/A"],
-    ["Planned Retirement Age", inputs.you.plannedRetirementAge ?? 67],
-    ["Planned Retirement Month", inputs.you.plannedRetirementMonth ?? 1],
-    ["Projected Longevity Age", inputs.you.longevityAge ?? 85],
-    ["Active Work Salary", inputs.you.activeSalary ?? 0],
-    ["Target SS Claiming Age", inputs.you.targetSSClaimingAge ?? 67],
-    ["Estimated SS Benefit (PIA / monthly)", inputs.you.estimatedPIA ?? 0],
-    ["Pre-Medicare Monthly Premium", inputs.you.healthcare ? "N/A (Detailed Active)" : (inputs.you.preMedicareMonthlyPremium ?? 0)],
-    [],
-    ["SPOUSE SETTINGS"],
-    ["Filing Status Mode", inputs.isSingleFiler ? "Single Filer" : "Married Filing Jointly"],
+    ["PROFILE & SPOUSAL TIMELINES"],
+    ["Filing Status", inputs.isSingleFiler ? "Single Filer" : "Married Filing Jointly (MFJ)"],
+    ["Primary Person Name", inputs.you.name || "Primary"],
+    ["Primary Birth Date", inputs.you.birthDate],
+    ["Primary Planned Retirement Age", inputs.you.plannedRetirementAge ?? 65],
+    ["Primary Planned Retirement Month", inputs.you.plannedRetirementMonth ?? 1],
+    ["Primary Projected Longevity Age", inputs.you.longevityAge ?? 95],
+    ["Primary Active Work Salary", inputs.you.activeSalary ?? 0],
+    ["Primary Target SS Claiming Age", inputs.you.targetSSClaimingAge ?? 67],
+    ["Primary Estimated SS Benefit (PIA / monthly)", inputs.you.estimatedPIA ?? 0],
+    ["Primary Pre-Medicare Monthly Premium", inputs.you.healthcare ? "N/A (Detailed Active)" : (inputs.you.preMedicareMonthlyPremium ?? 0)],
   ];
 
   if (!inputs.isSingleFiler) {
     configData.push(
+      [],
       ["Spouse Name", inputs.wife.name || "Spouse"],
-      ["Birth Date", inputs.wife.birthDate || "N/A"],
+      ["Spouse Birth Date", inputs.wife.birthDate],
       ["Planned Retirement Age", inputs.wife.plannedRetirementAge ?? 65],
       ["Planned Retirement Month", inputs.wife.plannedRetirementMonth ?? 1],
       ["Projected Longevity Age", inputs.wife.longevityAge ?? 95],
@@ -49,7 +50,7 @@ export const generateExcelWorkbook = (ledger: SimulationResultRow[], inputs: App
 
   configData.push(
     [],
-    ["STARTING ASSET BALANCES (2026)"],
+    [`STARTING ASSET BALANCES (${simStartYear})`],
     ["Your Taxable Brokerage Balance", inputs.portfolio.yourTaxableBrokerage ?? 0],
     ["Your Taxable Account Cost Basis", inputs.portfolio.yourTaxableBasis ?? 0],
     ["Spouse Taxable Brokerage Balance", inputs.isSingleFiler ? 0 : (inputs.portfolio.wifeTaxableBrokerage ?? 0)],
@@ -95,8 +96,8 @@ export const generateExcelWorkbook = (ledger: SimulationResultRow[], inputs: App
     ["Strategy Category", inputs.rothConversionStrategy],
     ["Annual Flat Conversion Amount", inputs.annualRothConversion ?? 0],
     ["Target MAGI Limit (Fill-To-Target)", inputs.rothConversionTargetValue ?? 0],
-    ["Strategy Active Start Year", inputs.rothConversionStartYear ?? 2026],
-    ["Strategy Active End Year", inputs.rothConversionEndYear ?? 2035]
+    ["Strategy Active Start Year", inputs.rothConversionStartYear ?? simStartYear],
+    ["Strategy Active End Year", inputs.rothConversionEndYear ?? (simStartYear + 9)]
   );
 
   // Add healthcare specifics if configured
