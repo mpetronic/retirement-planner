@@ -8,7 +8,8 @@ import {
   Coins,
   MapPin,
   Sliders,
-  AlertTriangle
+  AlertTriangle,
+  BookOpen
 } from 'lucide-react';
 
 interface DashboardLayoutProps {
@@ -26,6 +27,7 @@ interface DashboardLayoutProps {
   globalScenario: 'flat' | 'p10' | 'p50' | 'p90';
   setGlobalScenario: (val: 'flat' | 'p10' | 'p50' | 'p90') => void;
   isSimulating?: boolean;
+  onOpenDocumentation?: (sectionId?: string) => void;
   children: React.ReactNode;
 }
 
@@ -39,6 +41,7 @@ export const DashboardLayout: React.FC<DashboardLayoutProps> = ({
   globalScenario,
   setGlobalScenario,
   isSimulating = false,
+  onOpenDocumentation,
   children,
 }) => {
   const formatCurrency = (val: number) => {
@@ -183,6 +186,28 @@ export const DashboardLayout: React.FC<DashboardLayoutProps> = ({
                 Best (P90)
               </button>
             </div>
+
+            {/* Prominent User Guide / Docs Header Button */}
+            <button
+              type="button"
+              onClick={() => {
+                const sectionMap: Record<number, string> = {
+                  0: 'workspace-1',
+                  1: 'workspace-2',
+                  2: 'workspace-3',
+                  3: 'workspace-4',
+                };
+                onOpenDocumentation?.(sectionMap[activeTab] || 'overview');
+              }}
+              className="flex items-center gap-2 px-3 py-1.5 bg-slate-900/80 hover:bg-slate-850 hover:bg-slate-800 border border-slate-700/60 hover:border-slate-600 text-slate-200 hover:text-white rounded-xl text-xs font-semibold transition-all cursor-pointer shadow-sm group active:scale-98"
+              title="Open User Guide & Documentation (Shortcut: ?)"
+            >
+              <BookOpen className="w-3.5 h-3.5 text-indigo-400 group-hover:scale-110 transition-transform" />
+              <span>User Guide</span>
+              <kbd className="hidden sm:inline-block px-1.5 py-0.2 text-[10px] font-mono bg-slate-950/80 border border-slate-800 rounded text-slate-400 group-hover:text-slate-300">
+                ?
+              </kbd>
+            </button>
           </div>
         </div>
 

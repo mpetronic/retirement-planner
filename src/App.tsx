@@ -22,6 +22,7 @@ import { LookbackLedgerTable } from './components/LookbackLedgerTable';
 import { MonteCarloWorkspace } from './components/MonteCarloWorkspace';
 import { PlanComparisonWorkspace } from './components/PlanComparisonWorkspace';
 import { OnboardingWizard } from './components/OnboardingWizard';
+import { DocumentationDialog } from './components/DocumentationDialog';
 
 // Default initial state matching specifications
 const DEFAULT_INPUTS: AppStateInputs = {
@@ -192,6 +193,34 @@ function App() {
   const [simulateSurvivor, setSimulateSurvivor] = useLocalStorage<boolean>('retirement_planner_survivor', false);
   const [savedPlans, setSavedPlans] = useLocalStorage<SavedPlan[]>('retirement_planner_saved_plans', []);
   const [useTodayDollars, setUseTodayDollars] = useLocalStorage<boolean>('retirement_planner_use_today_dollars', false);
+  const [showDocumentation, setShowDocumentation] = useState<boolean>(false);
+  const [documentationSectionId, setDocumentationSectionId] = useState<string>('overview');
+
+  const handleOpenDocumentation = (sectionId?: string) => {
+    setDocumentationSectionId(sectionId || 'overview');
+    setShowDocumentation(true);
+  };
+
+  // Global keyboard shortcut ('?' or 'Shift + /') to summon Documentation & User Guide
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      const target = e.target as HTMLElement | null;
+      const isInput = target && (
+        target.tagName === 'INPUT' ||
+        target.tagName === 'TEXTAREA' ||
+        target.tagName === 'SELECT' ||
+        target.isContentEditable
+      );
+      if (isInput) return;
+
+      if (e.key === '?' || (e.shiftKey && e.key === '/')) {
+        e.preventDefault();
+        setShowDocumentation((prev) => !prev);
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, []);
 
   // Defer heavy mathematical calculations to maintain 60+ FPS UI responsiveness during slider drag/typing
   const deferredInputs = useDeferredValue(inputs);
@@ -439,6 +468,7 @@ function App() {
         globalFontSize={globalFontSize}
         setGlobalFontSize={setGlobalFontSize}
         onNavigateTab={setActiveTab}
+        onOpenDocumentation={handleOpenDocumentation}
       />
 
       {/* Main Orchestration Dashboard Layout */}
@@ -452,6 +482,7 @@ function App() {
         globalScenario={globalScenario}
         setGlobalScenario={setGlobalScenario}
         isSimulating={isSimulating}
+        onOpenDocumentation={handleOpenDocumentation}
       >
         {activeTab === 0 && (
           <BracketMapChart
@@ -497,6 +528,16 @@ function App() {
           />
         )}
       </DashboardLayout>
+
+      {/* Global Application Documentation & User Guide Modal */}
+      {showDocumentation && (
+        <DocumentationDialog
+          isOpen={showDocumentation}
+          onClose={() => setShowDocumentation(false)}
+          initialSectionId={documentationSectionId}
+          onNavigateTab={setActiveTab}
+        />
+      )}
     </div>
   );
 }

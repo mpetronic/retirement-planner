@@ -15,15 +15,21 @@ import {
   ShieldCheck,
   Calendar,
   Sparkles,
+  BookOpen,
 } from 'lucide-react';
 import { getVersionInfo } from '../utils/version';
 
 interface AboutDialogProps {
   isOpen: boolean;
   onClose: () => void;
+  onOpenDocumentation?: () => void;
 }
 
-export const AboutDialog: React.FC<AboutDialogProps> = ({ isOpen, onClose }) => {
+export const AboutDialog: React.FC<AboutDialogProps> = ({
+  isOpen,
+  onClose,
+  onOpenDocumentation,
+}) => {
   const [copied, setCopied] = useState(false);
   const versionInfo = getVersionInfo();
 
@@ -251,24 +257,39 @@ export const AboutDialog: React.FC<AboutDialogProps> = ({ isOpen, onClose }) => 
         </div>
 
         {/* Footer Actions */}
-        <div className="px-6 py-4 bg-slate-950/60 border-t border-slate-800 flex items-center justify-between">
-          <button
-            type="button"
-            onClick={handleCopyDiagnostics}
-            className="flex items-center gap-2 px-3.5 py-2 bg-slate-800 hover:bg-slate-750 border border-slate-700/50 hover:border-slate-600 text-slate-200 hover:text-white rounded-xl text-xs font-semibold transition-all cursor-pointer active:scale-98"
-          >
-            {copied ? (
-              <>
-                <Check className="w-3.5 h-3.5 text-emerald-400" />
-                <span className="text-emerald-400">Copied to Clipboard!</span>
-              </>
-            ) : (
-              <>
-                <Copy className="w-3.5 h-3.5 text-slate-400" />
-                <span>Copy Version Diagnostics</span>
-              </>
-            )}
-          </button>
+        <div className="px-6 py-4 bg-slate-950/60 border-t border-slate-800 flex flex-wrap items-center justify-between gap-3">
+          <div className="flex flex-wrap items-center gap-2">
+            <button
+              type="button"
+              onClick={handleCopyDiagnostics}
+              className="flex items-center gap-2 px-3.5 py-2 bg-slate-800 hover:bg-slate-750 border border-slate-700/50 hover:border-slate-600 text-slate-200 hover:text-white rounded-xl text-xs font-semibold transition-all cursor-pointer active:scale-98"
+            >
+              {copied ? (
+                <>
+                  <Check className="w-3.5 h-3.5 text-emerald-400" />
+                  <span className="text-emerald-400">Copied to Clipboard!</span>
+                </>
+              ) : (
+                <>
+                  <Copy className="w-3.5 h-3.5 text-slate-400" />
+                  <span>Copy Version Diagnostics</span>
+                </>
+              )}
+            </button>
+
+            <button
+              type="button"
+              onClick={() => {
+                onClose();
+                onOpenDocumentation?.();
+              }}
+              className="flex items-center gap-2 px-3.5 py-2 bg-indigo-600/20 hover:bg-indigo-600/30 border border-indigo-500/40 hover:border-indigo-500/60 text-indigo-300 hover:text-white rounded-xl text-xs font-semibold transition-all cursor-pointer active:scale-98"
+              title="Open Application User Guide & Documentation"
+            >
+              <BookOpen className="w-3.5 h-3.5 text-indigo-400" />
+              <span>Documentation</span>
+            </button>
+          </div>
 
           <button
             type="button"

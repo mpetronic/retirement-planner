@@ -19,6 +19,7 @@ import {
   Upload,
   FileText,
   FileSpreadsheet,
+  BookOpen,
   X
 } from 'lucide-react';
 import { DetailedExpensesDialog } from './DetailedExpensesDialog';
@@ -26,6 +27,7 @@ import { HealthcareConfigDialog } from './HealthcareConfigDialog';
 import { ExportPlanDialog } from './ExportPlanDialog';
 import { ExportFormatType } from '../utils/exportHelpers';
 import { AboutDialog } from './AboutDialog';
+import { DocumentationDialog } from './DocumentationDialog';
 import { getVersionInfo } from '../utils/version';
 
 const getBirthMonth = (dateStr: string | undefined): number => {
@@ -49,6 +51,7 @@ interface InputControlSidebarProps {
   globalFontSize: number;
   setGlobalFontSize: (val: number) => void;
   onNavigateTab?: (tabIndex: number) => void;
+  onOpenDocumentation?: (sectionId?: string) => void;
 }
 
 export const InputControlSidebar: React.FC<InputControlSidebarProps> = ({
@@ -64,6 +67,7 @@ export const InputControlSidebar: React.FC<InputControlSidebarProps> = ({
   globalFontSize,
   setGlobalFontSize,
   onNavigateTab,
+  onOpenDocumentation,
 }) => {
   const [isEditingYou, setIsEditingYou] = useState(false);
   const [isEditingWife, setIsEditingWife] = useState(false);
@@ -72,6 +76,7 @@ export const InputControlSidebar: React.FC<InputControlSidebarProps> = ({
   const [showResetConfirm, setShowResetConfirm] = useState(false);
   const [showDisplaySettings, setShowDisplaySettings] = useState(false);
   const [showAboutDialog, setShowAboutDialog] = useState(false);
+  const [showDocumentation, setShowDocumentation] = useState(false);
   const [exportDialogFormat, setExportDialogFormat] = useState<ExportFormatType | null>(null);
   const versionInfo = useMemo(() => getVersionInfo(), []);
   const simStartYear = getSimulationStartYear(inputs);
@@ -197,6 +202,20 @@ export const InputControlSidebar: React.FC<InputControlSidebarProps> = ({
 
         {/* Header Action Buttons */}
         <div className="flex items-center gap-1.5">
+          <button
+            type="button"
+            onClick={() => {
+              if (onOpenDocumentation) {
+                onOpenDocumentation('overview');
+              } else {
+                setShowDocumentation(true);
+              }
+            }}
+            className="p-2 bg-slate-950/60 hover:bg-slate-800/80 text-slate-400 hover:text-indigo-400 border border-slate-800 hover:border-slate-700/60 rounded-xl transition-all cursor-pointer flex items-center justify-center group"
+            title="User Guide & Application Documentation"
+          >
+            <BookOpen className="w-4 h-4 text-slate-400 group-hover:text-indigo-400" />
+          </button>
           <button
             type="button"
             onClick={() => setShowAboutDialog(true)}
@@ -1423,6 +1442,23 @@ export const InputControlSidebar: React.FC<InputControlSidebarProps> = ({
         <AboutDialog
           isOpen={showAboutDialog}
           onClose={() => setShowAboutDialog(false)}
+          onOpenDocumentation={() => {
+            setShowAboutDialog(false);
+            if (onOpenDocumentation) {
+              onOpenDocumentation('overview');
+            } else {
+              setShowDocumentation(true);
+            }
+          }}
+        />
+      )}
+
+      {/* Application Documentation & User Guide Dialog */}
+      {showDocumentation && (
+        <DocumentationDialog
+          isOpen={showDocumentation}
+          onClose={() => setShowDocumentation(false)}
+          onNavigateTab={onNavigateTab}
         />
       )}
     </aside>
