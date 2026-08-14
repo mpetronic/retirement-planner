@@ -763,9 +763,9 @@ export const MonteCarloWorkspace: React.FC<MonteCarloWorkspaceProps> = ({
                         type="range"
                         min="0.05"
                         max="0.30"
-                        step="0.01"
+                        step="0.005"
                         value={inputs.monteCarloSettings.equityVolatility}
-                        onChange={(e) => updateSettings('equityVolatility', Number(e.target.value))}
+                        onChange={(e) => updateSettings('equityVolatility', Math.round(Number(e.target.value) * 1000) / 1000)}
                         className="w-full h-1 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-emerald-500"
                       />
                     </div>
@@ -778,11 +778,11 @@ export const MonteCarloWorkspace: React.FC<MonteCarloWorkspaceProps> = ({
                       </label>
                       <input
                         type="range"
-                        min="0.01"
+                        min="0.005"
                         max="0.15"
-                        step="0.01"
+                        step="0.005"
                         value={inputs.monteCarloSettings.fixedIncomeVolatility}
-                        onChange={(e) => updateSettings('fixedIncomeVolatility', Number(e.target.value))}
+                        onChange={(e) => updateSettings('fixedIncomeVolatility', Math.round(Number(e.target.value) * 1000) / 1000)}
                         className="w-full h-1 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-emerald-500"
                       />
                     </div>

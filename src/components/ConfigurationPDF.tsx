@@ -77,18 +77,24 @@ const styles = StyleSheet.create({
   row: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    paddingVertical: 2.5,
+    alignItems: 'flex-start',
+    paddingVertical: 2,
     borderBottomWidth: 0.5,
     borderBottomColor: '#f1f5f9',
   },
   rowLabel: {
     color: '#475569', // slate-600
-    maxWidth: '65%',
+    width: '46%',
+    fontSize: 8,
+    lineHeight: 1.25,
   },
   rowValue: {
     fontFamily: 'Helvetica-Bold',
     color: '#0f172a',
+    width: '54%',
     textAlign: 'right',
+    fontSize: 8,
+    lineHeight: 1.25,
   },
   tableHeader: {
     flexDirection: 'row',
@@ -444,31 +450,65 @@ export const ConfigurationPDF: React.FC<PDFProps> = ({ inputs }) => {
                   <Text style={styles.rowLabel}>Target Destination State:</Text>
                   <Text style={styles.rowValue}>{inputs.jurisdiction.targetState || 'N/A'}</Text>
                 </View>
-                <View style={styles.row}>
+                <View style={[styles.row, { borderBottomWidth: 0 }]}>
                   <Text style={styles.rowLabel}>Relocation Target Year:</Text>
                   <Text style={styles.rowValue}>{inputs.jurisdiction.relocationYear !== null ? inputs.jurisdiction.relocationYear : 'N/A'}</Text>
+                </View>
+              </View>
+
+              <View style={styles.card}>
+                <Text style={styles.cardTitle}>Sequence Risk & Stress Testing</Text>
+                <View style={styles.row}>
+                  <Text style={styles.rowLabel}>Stress Test Status:</Text>
+                  <Text style={styles.rowValue}>
+                    {inputs.monteCarloSettings.stressTest?.enabled ? 'Active Custom Shock' : 'Disabled (Standard)'}
+                  </Text>
+                </View>
+                <View style={styles.row}>
+                  <Text style={styles.rowLabel}>Shock Mode:</Text>
+                  <Text style={styles.rowValue}>
+                    {inputs.monteCarloSettings.stressTest?.enabled 
+                      ? (inputs.monteCarloSettings.stressTest.mode === 'relative' ? 'Relative Delta Offset (±%)' : 'Absolute Return Override (%)') 
+                      : 'N/A'}
+                  </Text>
+                </View>
+                <View style={[styles.row, { borderBottomWidth: 0 }]}>
+                  <Text style={styles.rowLabel}>Overridden Years:</Text>
+                  <Text style={styles.rowValue}>
+                    {inputs.monteCarloSettings.stressTest?.enabled && inputs.monteCarloSettings.stressTest.overrides.length > 0
+                      ? `${inputs.monteCarloSettings.stressTest.overrides.length} Year(s) Defined`
+                      : 'None'}
+                  </Text>
                 </View>
               </View>
             </View>
 
             <View style={styles.col2}>
               <View style={styles.card}>
-                <Text style={styles.cardTitle}>Monte Carlo & Trial Settings</Text>
+                <Text style={styles.cardTitle}>Monte Carlo & Volatility Settings</Text>
                 <View style={styles.row}>
                   <Text style={styles.rowLabel}>Simulation Mode:</Text>
-                  <Text style={styles.rowValue}>{inputs.monteCarloSettings.mode === 'historical' ? 'Historical Returns Block' : 'Synthetic Geometric Brownian'}</Text>
+                  <Text style={styles.rowValue}>{inputs.monteCarloSettings.mode === 'historical' ? 'Historical Returns Block' : 'Synthetic (Geometric Brownian)'}</Text>
                 </View>
                 <View style={styles.row}>
                   <Text style={styles.rowLabel}>Number of Trials:</Text>
                   <Text style={styles.rowValue}>{inputs.monteCarloSettings.trials} runs</Text>
                 </View>
                 <View style={styles.row}>
-                  <Text style={styles.rowLabel}>Asset Class Correlation:</Text>
-                  <Text style={styles.rowValue}>{inputs.monteCarloSettings.correlation.toFixed(2)}</Text>
-                </View>
-                <View style={styles.row}>
                   <Text style={styles.rowLabel}>Randomizer Seed:</Text>
                   <Text style={styles.rowValue}>{inputs.monteCarloSettings.seed !== null ? inputs.monteCarloSettings.seed : 'Standard Random'}</Text>
+                </View>
+                <View style={styles.row}>
+                  <Text style={styles.rowLabel}>Equity Volatility (σ):</Text>
+                  <Text style={styles.rowValue}>{formatPercent(inputs.monteCarloSettings.equityVolatility ?? 0.15)} (Annual Std Dev)</Text>
+                </View>
+                <View style={styles.row}>
+                  <Text style={styles.rowLabel}>Bond Volatility (σ):</Text>
+                  <Text style={styles.rowValue}>{formatPercent(inputs.monteCarloSettings.fixedIncomeVolatility ?? 0.05)} (Annual Std Dev)</Text>
+                </View>
+                <View style={styles.row}>
+                  <Text style={styles.rowLabel}>Asset Correlation (ρ):</Text>
+                  <Text style={styles.rowValue}>{(inputs.monteCarloSettings.correlation ?? 0.15).toFixed(2)} (Stock / Bond)</Text>
                 </View>
                 <View style={styles.row}>
                   <Text style={styles.rowLabel}>CPI Inflation Modeling:</Text>
@@ -481,7 +521,7 @@ export const ConfigurationPDF: React.FC<PDFProps> = ({ inputs }) => {
                 <View style={styles.row}>
                   <Text style={styles.rowLabel}>Regime Switching & Drift:</Text>
                   <Text style={styles.rowValue}>
-                    {inputs.monteCarloSettings.enableRegimeSwitching !== false ? 'Enabled (Markov 2-State + Mean Reversion)' : 'Disabled (i.i.d. Random Walk)'}
+                    {inputs.monteCarloSettings.enableRegimeSwitching !== false ? 'Enabled (Markov 2-State + Reversion)' : 'Disabled (Random Walk)'}
                   </Text>
                 </View>
                 <View style={styles.row}>
@@ -494,10 +534,10 @@ export const ConfigurationPDF: React.FC<PDFProps> = ({ inputs }) => {
                         : 'Hybrid (35% Block / 65% Random)'}
                   </Text>
                 </View>
-                <View style={styles.row}>
+                <View style={[styles.row, { borderBottomWidth: 0 }]}>
                   <Text style={styles.rowLabel}>Historical Calibration:</Text>
                   <Text style={styles.rowValue}>
-                    {inputs.monteCarloSettings.calibrateHistoricalMeans !== false ? 'Calibrated (Aligned to Baseline)' : 'Raw History (12.3% Stock)'}
+                    {inputs.monteCarloSettings.calibrateHistoricalMeans !== false ? 'Calibrated (Baseline Means)' : 'Raw History (12.3% Stock)'}
                   </Text>
                 </View>
               </View>
