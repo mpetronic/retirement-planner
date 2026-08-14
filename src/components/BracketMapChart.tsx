@@ -187,9 +187,17 @@ export const BracketMapChart: React.FC<BracketMapChartProps> = ({
       {
         label: 'Roth Conversions',
         data: rothConversions,
-        backgroundColor: 'rgba(16, 185, 129, 0.65)', // emerald-500 @ 65% opacity
+        backgroundColor: 'rgba(6, 95, 70, 0.95)', // deeper dark emerald green (emerald-800)
         stack: 'income',
         order: 7,
+        pointStyle: 'rect',
+      },
+      {
+        label: 'Cash Draws',
+        data: ledger.map((r) => r.drawdownCash),
+        backgroundColor: 'rgba(194, 65, 12, 0.85)', // dark orange (orange-700)
+        stack: 'income',
+        order: 8,
         pointStyle: 'rect',
       },
       // BOLD Line for Portfolio Value at all times on secondary Y-axis
@@ -455,7 +463,7 @@ export const BracketMapChart: React.FC<BracketMapChartProps> = ({
         }
       },
     };
-  }, [ssIncomes, rmds, activeSalaries]);
+  }, [ssIncomes, rmds, activeSalaries, ledger, inputs]);
 
   // Optimizer metrics and helper functions
   const currentEndingEstate = ledger[ledger.length - 1]?.totalPortfolioValue || 0;
