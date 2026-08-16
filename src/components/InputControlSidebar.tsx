@@ -1,5 +1,5 @@
 import React, { useState, useRef, useMemo } from 'react';
-import { AppStateInputs, RECURRING_EXPENSE_ITEMS, SimulationResultRow, getSimulationStartYear } from '../types';
+import { AppStateInputs, DEFAULT_EXPENSE_ITEMS, SimulationResultRow, getSimulationStartYear } from '../types';
 import {
   User,
   TrendingUp,
@@ -124,25 +124,37 @@ export const InputControlSidebar: React.FC<InputControlSidebarProps> = ({
 
   const mdMonthlySum = useMemo(() => {
     if (!inputs.detailedExpenses) return 0;
+    const de = inputs.detailedExpenses;
+    const stateCosts = de.costs?.[inputs.jurisdiction.currentState] ?? (de as any)[inputs.jurisdiction.currentState] ?? de.MD;
+    const freqs = de.frequencies || {};
+    const items = de.catalog?.items ?? DEFAULT_EXPENSE_ITEMS;
+    if (!stateCosts) return 0;
     let sum = 0;
-    for (const item of RECURRING_EXPENSE_ITEMS) {
-      const cost = inputs.detailedExpenses.MD[item.key] || 0;
-      const freq = inputs.detailedExpenses.frequencies[item.key] ?? item.defaultFrequency;
+    for (const item of items) {
+      if (item.isOneTime) continue;
+      const cost = stateCosts[item.id] ?? 0;
+      const freq = freqs[item.id] ?? item.defaultFrequency ?? 12;
       sum += cost * freq;
     }
     return sum / 12;
-  }, [inputs.detailedExpenses]);
+  }, [inputs.detailedExpenses, inputs.jurisdiction.currentState]);
 
   const flMonthlySum = useMemo(() => {
     if (!inputs.detailedExpenses) return 0;
+    const de = inputs.detailedExpenses;
+    const stateCosts = de.costs?.[inputs.jurisdiction.targetState] ?? (de as any)[inputs.jurisdiction.targetState] ?? de.FL;
+    const freqs = de.frequencies || {};
+    const items = de.catalog?.items ?? DEFAULT_EXPENSE_ITEMS;
+    if (!stateCosts) return 0;
     let sum = 0;
-    for (const item of RECURRING_EXPENSE_ITEMS) {
-      const cost = inputs.detailedExpenses.FL[item.key] || 0;
-      const freq = inputs.detailedExpenses.frequencies[item.key] ?? item.defaultFrequency;
+    for (const item of items) {
+      if (item.isOneTime) continue;
+      const cost = stateCosts[item.id] ?? 0;
+      const freq = freqs[item.id] ?? item.defaultFrequency ?? 12;
       sum += cost * freq;
     }
     return sum / 12;
-  }, [inputs.detailedExpenses]);
+  }, [inputs.detailedExpenses, inputs.jurisdiction.targetState]);
 
   const yourBirthYear = React.useMemo(() => {
     if (!inputs.you.birthDate) return 1960;
@@ -1328,6 +1340,8 @@ export const InputControlSidebar: React.FC<InputControlSidebarProps> = ({
         <DetailedExpensesDialog
           isOpen={showExpensesDialog}
           onClose={() => setShowExpensesDialog(false)}
+          currentState={inputs.jurisdiction.currentState}
+          targetState={inputs.jurisdiction.targetState}
           detailedExpenses={inputs.detailedExpenses}
           onSave={(expenses) => updateNestedState('detailedExpenses', '', expenses)}
         />

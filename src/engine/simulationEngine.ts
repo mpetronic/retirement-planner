@@ -1,4 +1,4 @@
-import { AppStateInputs, SimulationResultRow, LockedReturnSequence, RECURRING_EXPENSE_ITEMS, ONE_TIME_EXPENSE_ITEMS, getSimulationStartYear } from '../types';
+import { AppStateInputs, SimulationResultRow, LockedReturnSequence, DEFAULT_EXPENSE_ITEMS, getSimulationStartYear } from '../types';
 import {
   BASE_MEDICARE_PART_B,
   BASE_MEDICARE_PART_D,
@@ -475,12 +475,15 @@ export function runRetirementSimulation(
     let baseLivingExpensesAnnual = inputs.annualLivingExpenses ?? 120000;
     if (inputs.useDetailedExpenses && inputs.detailedExpenses) {
       let detailedSum = 0;
-      const stateExpenses = inputs.detailedExpenses[activeState];
-      const freqs = inputs.detailedExpenses.frequencies;
-      if (stateExpenses && freqs) {
-        for (const item of RECURRING_EXPENSE_ITEMS) {
-          const cost = stateExpenses[item.key] ?? 0;
-          const freq = freqs[item.key] ?? item.defaultFrequency;
+      const de = inputs.detailedExpenses;
+      const stateCosts = de.costs?.[activeState] ?? (de as any)[activeState];
+      const freqs = de.frequencies || {};
+      const items = de.catalog?.items ?? DEFAULT_EXPENSE_ITEMS;
+      if (stateCosts) {
+        for (const item of items) {
+          if (item.isOneTime) continue;
+          const cost = stateCosts[item.id] ?? 0;
+          const freq = freqs[item.id] ?? item.defaultFrequency ?? 12;
           detailedSum += cost * freq;
         }
       }
@@ -587,16 +590,24 @@ export function runRetirementSimulation(
 
     let oneTimeCosts = 0;
     if (inputs.useDetailedExpenses && inputs.detailedExpenses) {
+      const de = inputs.detailedExpenses;
+      const items = de.catalog?.items ?? DEFAULT_EXPENSE_ITEMS;
+      const oneTimeItems = items.filter((i) => i.isOneTime);
+      const curCosts = de.costs?.[inputs.jurisdiction.currentState] ?? (de as any)[inputs.jurisdiction.currentState];
+      const tgtCosts = de.costs?.[inputs.jurisdiction.targetState] ?? (de as any)[inputs.jurisdiction.targetState];
+
       if (year === simStartYear && inputs.jurisdiction.relocationYear !== simStartYear) {
-        const curExpenses = inputs.detailedExpenses[inputs.jurisdiction.currentState];
-        if (curExpenses) {
-          for (const item of ONE_TIME_EXPENSE_ITEMS) oneTimeCosts += curExpenses[item.key] ?? 0;
+        if (curCosts) {
+          for (const item of oneTimeItems) {
+            oneTimeCosts += curCosts[item.id] ?? 0;
+          }
         }
       }
       if (inputs.jurisdiction.relocationYear !== null && year === inputs.jurisdiction.relocationYear) {
-        const tgtExpenses = inputs.detailedExpenses[inputs.jurisdiction.targetState];
-        if (tgtExpenses) {
-          for (const item of ONE_TIME_EXPENSE_ITEMS) oneTimeCosts += tgtExpenses[item.key] ?? 0;
+        if (tgtCosts) {
+          for (const item of oneTimeItems) {
+            oneTimeCosts += tgtCosts[item.id] ?? 0;
+          }
         }
       }
     }

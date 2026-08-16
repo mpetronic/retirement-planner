@@ -1,5 +1,5 @@
 import * as XLSX from 'xlsx';
-import { AppStateInputs, SimulationResultRow, RECURRING_EXPENSE_ITEMS, ONE_TIME_EXPENSE_ITEMS, DetailedStateExpenses, getSimulationStartYear } from '../types';
+import { AppStateInputs, SimulationResultRow, normalizeDetailedExpenses, getSimulationStartYear } from '../types';
 
 export const generateExcelWorkbook = (ledger: SimulationResultRow[], inputs: AppStateInputs): XLSX.WorkBook => {
   const wb = XLSX.utils.book_new();
@@ -170,42 +170,28 @@ export const generateExcelWorkbook = (ledger: SimulationResultRow[], inputs: App
   // Tab 3: Detailed Expenses (if enabled)
   if (inputs.useDetailedExpenses && inputs.detailedExpenses) {
     const expensesSheetData: any[] = [];
-    
-    // Recurring
-    RECURRING_EXPENSE_ITEMS.forEach(item => {
-      const mdVal = inputs.detailedExpenses?.MD[item.key] ?? 0;
-      const flVal = inputs.detailedExpenses?.FL[item.key] ?? 0;
-      const freq = inputs.detailedExpenses?.frequencies[item.key] ?? item.defaultFrequency;
-      
-      if (mdVal > 0 || flVal > 0) {
-        expensesSheetData.push({
-          "Description": item.label,
-          "Category": item.category,
-          "Type": "Recurring",
-          "Frequency / Year": freq,
-          "Monthly Cost (MD)": mdVal,
-          "Monthly Cost (FL)": flVal,
-          "Annualized Cost (MD)": mdVal * freq,
-          "Annualized Cost (FL)": flVal * freq
-        });
-      }
-    });
+    const stateA = inputs.jurisdiction.currentState || 'MD';
+    const stateB = inputs.jurisdiction.targetState || 'FL';
+    const normExpenses = normalizeDetailedExpenses(inputs.detailedExpenses);
+    const catalog = normExpenses.catalog;
+    const costs = normExpenses.costs;
+    const frequencies = normExpenses.frequencies;
 
-    // One-Time
-    ONE_TIME_EXPENSE_ITEMS.forEach(item => {
-      const mdVal = inputs.detailedExpenses?.MD[item.key as keyof DetailedStateExpenses] ?? 0;
-      const flVal = inputs.detailedExpenses?.FL[item.key as keyof DetailedStateExpenses] ?? 0;
-      
-      if (mdVal > 0 || flVal > 0) {
+    catalog.items.forEach((item) => {
+      const costA = costs[stateA]?.[item.id] ?? 0;
+      const costB = costs[stateB]?.[item.id] ?? 0;
+      const freq = item.isOneTime ? 1 : (frequencies[item.id] ?? item.defaultFrequency ?? 12);
+
+      if (costA > 0 || costB > 0) {
         expensesSheetData.push({
-          "Description": item.label,
-          "Category": "One-Time",
-          "Type": "One-Time",
-          "Frequency / Year": 1,
-          "Monthly Cost (MD)": mdVal,
-          "Monthly Cost (FL)": flVal,
-          "Annualized Cost (MD)": mdVal,
-          "Annualized Cost (FL)": flVal
+          "Description": item.name,
+          "Category": item.category,
+          "Type": item.isOneTime ? "One-Time" : "Recurring",
+          "Frequency / Year": freq,
+          [`Cost (${stateA})`]: costA,
+          [`Cost (${stateB})`]: costB,
+          [`Annualized Cost (${stateA})`]: costA * freq,
+          [`Annualized Cost (${stateB})`]: costB * freq,
         });
       }
     });

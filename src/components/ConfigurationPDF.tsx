@@ -1,6 +1,6 @@
 import React from 'react';
 import { Document, Page, Text, View, StyleSheet } from '@react-pdf/renderer';
-import { AppStateInputs, RECURRING_EXPENSE_ITEMS, ONE_TIME_EXPENSE_ITEMS, DetailedStateExpenses, getSimulationStartYear } from '../types';
+import { AppStateInputs, normalizeDetailedExpenses, getSimulationStartYear } from '../types';
 
 // Create stylesheet for PDF formatting
 const styles = StyleSheet.create({
@@ -149,25 +149,37 @@ interface PDFProps {
 }
 
 export const ConfigurationPDF: React.FC<PDFProps> = ({ inputs }) => {
-  const mdRecurringAnnual = RECURRING_EXPENSE_ITEMS.reduce((sum, item) => {
-    const cost = inputs.detailedExpenses?.MD[item.key] ?? 0;
-    const freq = inputs.detailedExpenses?.frequencies[item.key] ?? item.defaultFrequency;
+  const stateA = inputs.jurisdiction.currentState || 'MD';
+  const stateB = inputs.jurisdiction.targetState || 'FL';
+  const normExpenses = normalizeDetailedExpenses(inputs.detailedExpenses);
+  const catalog = normExpenses.catalog;
+  const costs = normExpenses.costs;
+  const frequencies = normExpenses.frequencies;
+
+  const recurringItems = catalog.items.filter((i) => !i.isOneTime);
+  const oneTimeItems = catalog.items.filter((i) => i.isOneTime);
+
+  const mdRecurringAnnual = recurringItems.reduce((sum, item) => {
+    const cost = costs[stateA]?.[item.id] ?? 0;
+    const freq = frequencies[item.id] ?? item.defaultFrequency ?? 12;
     return sum + cost * freq;
   }, 0);
-  const flRecurringAnnual = RECURRING_EXPENSE_ITEMS.reduce((sum, item) => {
-    const cost = inputs.detailedExpenses?.FL[item.key] ?? 0;
-    const freq = inputs.detailedExpenses?.frequencies[item.key] ?? item.defaultFrequency;
+
+  const flRecurringAnnual = recurringItems.reduce((sum, item) => {
+    const cost = costs[stateB]?.[item.id] ?? 0;
+    const freq = frequencies[item.id] ?? item.defaultFrequency ?? 12;
     return sum + cost * freq;
   }, 0);
 
   const mdRecurringMonthly = mdRecurringAnnual / 12;
   const flRecurringMonthly = flRecurringAnnual / 12;
 
-  const mdOneTime = ONE_TIME_EXPENSE_ITEMS.reduce((sum, item) => {
-    return sum + (inputs.detailedExpenses?.MD[item.key as keyof DetailedStateExpenses] ?? 0);
+  const mdOneTime = oneTimeItems.reduce((sum, item) => {
+    return sum + (costs[stateA]?.[item.id] ?? 0);
   }, 0);
-  const flOneTime = ONE_TIME_EXPENSE_ITEMS.reduce((sum, item) => {
-    return sum + (inputs.detailedExpenses?.FL[item.key as keyof DetailedStateExpenses] ?? 0);
+
+  const flOneTime = oneTimeItems.reduce((sum, item) => {
+    return sum + (costs[stateB]?.[item.id] ?? 0);
   }, 0);
 
   const formatCurrency = (val: number | null | undefined) => {
@@ -673,7 +685,7 @@ export const ConfigurationPDF: React.FC<PDFProps> = ({ inputs }) => {
       </Page>
 
       {/* Page 3: Itemized detailed expenses (if active) */}
-      {inputs.useDetailedExpenses && inputs.detailedExpenses && (
+      {inputs.useDetailedExpenses && (
         <Page size="LETTER" style={styles.page}>
           <View style={styles.header}>
             <Text style={styles.title}>Retirement Planner - Plan Configuration Report</Text>
@@ -688,101 +700,32 @@ export const ConfigurationPDF: React.FC<PDFProps> = ({ inputs }) => {
                 <Text style={[styles.colExpName, styles.tableCellHeader]}>Expense Item Description</Text>
                 <Text style={[styles.colExpCat, styles.tableCellHeader]}>Category</Text>
                 <Text style={[styles.colExpFreq, styles.tableCellHeader]}>Freq/yr</Text>
-                <Text style={[styles.colExpMD, styles.tableCellHeader]}>Cost (MD)</Text>
-                <Text style={[styles.colExpFL, styles.tableCellHeader]}>Cost (FL)</Text>
+                <Text style={[styles.colExpMD, styles.tableCellHeader]}>Cost ({stateA})</Text>
+                <Text style={[styles.colExpFL, styles.tableCellHeader]}>Cost ({stateB})</Text>
               </View>
 
-              {(() => {
-                const categories = ['Housing', 'Transportation', 'Charities', 'Health', 'Living', 'Insurance', 'Leisure'] as const;
-                
-                return categories.map((catName) => {
-                  const catItems = RECURRING_EXPENSE_ITEMS.filter((i) => i.category === catName);
-                  const activeCatItems = catItems.filter((item) => {
-                    const mdVal = inputs.detailedExpenses?.MD[item.key] ?? 0;
-                    const flVal = inputs.detailedExpenses?.FL[item.key] ?? 0;
-                    return mdVal !== 0 || flVal !== 0;
-                  });
+              {catalog.categories.map((catName) => {
+                const catItems = recurringItems.filter((i) => i.category === catName);
+                if (catItems.length === 0) return null;
 
-                  if (activeCatItems.length === 0) return null;
+                const subtotalA = catItems.reduce((sum, item) => {
+                  const cost = costs[stateA]?.[item.id] ?? 0;
+                  const freq = frequencies[item.id] ?? item.defaultFrequency ?? 12;
+                  return sum + cost * freq;
+                }, 0);
 
-                  const subtotalMD = activeCatItems.reduce((sum, item) => {
-                    const cost = inputs.detailedExpenses?.MD[item.key] ?? 0;
-                    const freq = inputs.detailedExpenses?.frequencies[item.key] ?? item.defaultFrequency;
-                    return sum + cost * freq;
-                  }, 0);
-
-                  const subtotalFL = activeCatItems.reduce((sum, item) => {
-                    const cost = inputs.detailedExpenses?.FL[item.key] ?? 0;
-                    const freq = inputs.detailedExpenses?.frequencies[item.key] ?? item.defaultFrequency;
-                    return sum + cost * freq;
-                  }, 0);
-
-                  return (
-                    <React.Fragment key={catName}>
-                      {/* Category Header Row */}
-                      <View style={[styles.tableRow, { backgroundColor: '#f8fafc', borderBottomColor: '#cbd5e1' }]}>
-                        <Text style={[styles.colExpName, styles.tableCell, { fontFamily: 'Helvetica-Bold', color: '#0369a1' }]}>
-                          {catName === 'Health' ? 'Health Expenses (2x at age 65+)' : `${catName} Expenses`}
-                        </Text>
-                        <Text style={styles.colExpCat} />
-                        <Text style={styles.colExpFreq} />
-                        <Text style={styles.colExpMD} />
-                        <Text style={styles.colExpFL} />
-                      </View>
-
-                      {/* Expense Item Rows */}
-                      {activeCatItems.map((item) => {
-                        const mdVal = inputs.detailedExpenses?.MD[item.key] ?? 0;
-                        const flVal = inputs.detailedExpenses?.FL[item.key] ?? 0;
-                        const freq = inputs.detailedExpenses?.frequencies[item.key] ?? item.defaultFrequency;
-                        return (
-                          <View style={styles.tableRow} key={item.key}>
-                            <Text style={[styles.colExpName, styles.tableCell]}>{item.label}</Text>
-                            <Text style={[styles.colExpCat, styles.tableCell]}>{item.category}</Text>
-                            <Text style={[styles.colExpFreq, styles.tableCell]}>{freq}x</Text>
-                            <Text style={[styles.colExpMD, styles.tableCell]}>{formatCurrency(mdVal)}</Text>
-                            <Text style={[styles.colExpFL, styles.tableCell]}>{formatCurrency(flVal)}</Text>
-                          </View>
-                        );
-                      })}
-
-                      {/* Category Subtotal Row */}
-                      <View style={[styles.tableRow, { backgroundColor: '#f8fafc', borderBottomWidth: 1, borderBottomColor: '#cbd5e1' }]}>
-                        <Text style={[styles.colExpName, styles.tableCell, { fontFamily: 'Helvetica-Bold', color: '#0284c7' }]}>
-                          Subtotal ({catName} - Annualized)
-                        </Text>
-                        <Text style={[styles.colExpCat, styles.tableCell, { color: '#64748b' }]}>-</Text>
-                        <Text style={[styles.colExpFreq, styles.tableCell, { color: '#64748b', textAlign: 'center' }]}>-</Text>
-                        <Text style={[styles.colExpMD, styles.tableCell, { fontFamily: 'Helvetica-Bold', color: '#0284c7' }]}>
-                          {formatCurrency(subtotalMD)}
-                        </Text>
-                        <Text style={[styles.colExpFL, styles.tableCell, { fontFamily: 'Helvetica-Bold', color: '#0284c7' }]}>
-                          {formatCurrency(subtotalFL)}
-                        </Text>
-                      </View>
-                    </React.Fragment>
-                  );
-                });
-              })()}
-
-              {(() => {
-                const activeOneTimeItems = ONE_TIME_EXPENSE_ITEMS.filter((item) => {
-                  const mdVal = inputs.detailedExpenses?.MD[item.key as keyof DetailedStateExpenses] ?? 0;
-                  const flVal = inputs.detailedExpenses?.FL[item.key as keyof DetailedStateExpenses] ?? 0;
-                  return mdVal !== 0 || flVal !== 0;
-                });
-
-                if (activeOneTimeItems.length === 0) return null;
-
-                const oneTimeMD = activeOneTimeItems.reduce((sum, item) => sum + (inputs.detailedExpenses?.MD[item.key as keyof DetailedStateExpenses] ?? 0), 0);
-                const oneTimeFL = activeOneTimeItems.reduce((sum, item) => sum + (inputs.detailedExpenses?.FL[item.key as keyof DetailedStateExpenses] ?? 0), 0);
+                const subtotalB = catItems.reduce((sum, item) => {
+                  const cost = costs[stateB]?.[item.id] ?? 0;
+                  const freq = frequencies[item.id] ?? item.defaultFrequency ?? 12;
+                  return sum + cost * freq;
+                }, 0);
 
                 return (
-                  <React.Fragment>
-                    {/* One-Time Header Row */}
-                    <View style={[styles.tableRow, { backgroundColor: '#fffbeb', borderBottomColor: '#fde68a' }]}>
-                      <Text style={[styles.colExpName, styles.tableCell, { fontFamily: 'Helvetica-Bold', color: '#b45309' }]}>
-                        One-Time Setup Costs
+                  <React.Fragment key={catName}>
+                    {/* Category Header Row */}
+                    <View style={[styles.tableRow, { backgroundColor: '#f8fafc', borderBottomColor: '#cbd5e1' }]}>
+                      <Text style={[styles.colExpName, styles.tableCell, { fontFamily: 'Helvetica-Bold', color: '#0369a1' }]}>
+                        {catName} Expenses
                       </Text>
                       <Text style={styles.colExpCat} />
                       <Text style={styles.colExpFreq} />
@@ -790,38 +733,84 @@ export const ConfigurationPDF: React.FC<PDFProps> = ({ inputs }) => {
                       <Text style={styles.colExpFL} />
                     </View>
 
-                    {/* One-Time Item Rows */}
-                    {activeOneTimeItems.map((item) => {
-                      const mdVal = inputs.detailedExpenses?.MD[item.key as keyof DetailedStateExpenses] ?? 0;
-                      const flVal = inputs.detailedExpenses?.FL[item.key as keyof DetailedStateExpenses] ?? 0;
+                    {/* Expense Item Rows */}
+                    {catItems.map((item) => {
+                      const costA = costs[stateA]?.[item.id] ?? 0;
+                      const costB = costs[stateB]?.[item.id] ?? 0;
+                      const freq = frequencies[item.id] ?? item.defaultFrequency ?? 12;
                       return (
-                        <View style={styles.tableRow} key={item.key}>
-                          <Text style={[styles.colExpName, styles.tableCell, { fontFamily: 'Helvetica-Bold' }]}>{item.label}</Text>
-                          <Text style={[styles.colExpCat, styles.tableCell]}>One-Time</Text>
-                          <Text style={[styles.colExpFreq, styles.tableCell]}>1x</Text>
-                          <Text style={[styles.colExpMD, styles.tableCell]}>{formatCurrency(mdVal)}</Text>
-                          <Text style={[styles.colExpFL, styles.tableCell]}>{formatCurrency(flVal)}</Text>
+                        <View style={styles.tableRow} key={item.id}>
+                          <Text style={[styles.colExpName, styles.tableCell]}>{item.name}</Text>
+                          <Text style={[styles.colExpCat, styles.tableCell]}>{item.category}</Text>
+                          <Text style={[styles.colExpFreq, styles.tableCell]}>{freq}x</Text>
+                          <Text style={[styles.colExpMD, styles.tableCell]}>{formatCurrency(costA)}</Text>
+                          <Text style={[styles.colExpFL, styles.tableCell]}>{formatCurrency(costB)}</Text>
                         </View>
                       );
                     })}
 
-                    {/* One-Time Subtotal Row */}
-                    <View style={[styles.tableRow, { backgroundColor: '#fffbeb', borderBottomWidth: 1, borderBottomColor: '#fde68a' }]}>
-                      <Text style={[styles.colExpName, styles.tableCell, { fontFamily: 'Helvetica-Bold', color: '#b45309' }]}>
-                        Subtotal (One-Time)
+                    {/* Category Subtotal Row */}
+                    <View style={[styles.tableRow, { backgroundColor: '#f8fafc', borderBottomWidth: 1, borderBottomColor: '#cbd5e1' }]}>
+                      <Text style={[styles.colExpName, styles.tableCell, { fontFamily: 'Helvetica-Bold', color: '#0284c7' }]}>
+                        Subtotal ({catName} - Annualized)
                       </Text>
                       <Text style={[styles.colExpCat, styles.tableCell, { color: '#64748b' }]}>-</Text>
                       <Text style={[styles.colExpFreq, styles.tableCell, { color: '#64748b', textAlign: 'center' }]}>-</Text>
-                      <Text style={[styles.colExpMD, styles.tableCell, { fontFamily: 'Helvetica-Bold', color: '#b45309' }]}>
-                        {formatCurrency(oneTimeMD)}
+                      <Text style={[styles.colExpMD, styles.tableCell, { fontFamily: 'Helvetica-Bold', color: '#0284c7' }]}>
+                        {formatCurrency(subtotalA)}
                       </Text>
-                      <Text style={[styles.colExpFL, styles.tableCell, { fontFamily: 'Helvetica-Bold', color: '#b45309' }]}>
-                        {formatCurrency(oneTimeFL)}
+                      <Text style={[styles.colExpFL, styles.tableCell, { fontFamily: 'Helvetica-Bold', color: '#0284c7' }]}>
+                        {formatCurrency(subtotalB)}
                       </Text>
                     </View>
                   </React.Fragment>
                 );
-              })()}
+              })}
+
+              {oneTimeItems.length > 0 && (
+                <React.Fragment>
+                  {/* One-Time Header Row */}
+                  <View style={[styles.tableRow, { backgroundColor: '#fffbeb', borderBottomColor: '#fde68a' }]}>
+                    <Text style={[styles.colExpName, styles.tableCell, { fontFamily: 'Helvetica-Bold', color: '#b45309' }]}>
+                      One-Time Setup Costs
+                    </Text>
+                    <Text style={styles.colExpCat} />
+                    <Text style={styles.colExpFreq} />
+                    <Text style={styles.colExpMD} />
+                    <Text style={styles.colExpFL} />
+                  </View>
+
+                  {/* One-Time Item Rows */}
+                  {oneTimeItems.map((item) => {
+                    const costA = costs[stateA]?.[item.id] ?? 0;
+                    const costB = costs[stateB]?.[item.id] ?? 0;
+                    return (
+                      <View style={styles.tableRow} key={item.id}>
+                        <Text style={[styles.colExpName, styles.tableCell, { fontFamily: 'Helvetica-Bold' }]}>{item.name}</Text>
+                        <Text style={[styles.colExpCat, styles.tableCell]}>One-Time</Text>
+                        <Text style={[styles.colExpFreq, styles.tableCell]}>1x</Text>
+                        <Text style={[styles.colExpMD, styles.tableCell]}>{formatCurrency(costA)}</Text>
+                        <Text style={[styles.colExpFL, styles.tableCell]}>{formatCurrency(costB)}</Text>
+                      </View>
+                    );
+                  })}
+
+                  {/* One-Time Subtotal Row */}
+                  <View style={[styles.tableRow, { backgroundColor: '#fffbeb', borderBottomWidth: 1, borderBottomColor: '#fde68a' }]}>
+                    <Text style={[styles.colExpName, styles.tableCell, { fontFamily: 'Helvetica-Bold', color: '#b45309' }]}>
+                      Subtotal (One-Time)
+                    </Text>
+                    <Text style={[styles.colExpCat, styles.tableCell, { color: '#64748b' }]}>-</Text>
+                    <Text style={[styles.colExpFreq, styles.tableCell, { color: '#64748b', textAlign: 'center' }]}>-</Text>
+                    <Text style={[styles.colExpMD, styles.tableCell, { fontFamily: 'Helvetica-Bold', color: '#b45309' }]}>
+                      {formatCurrency(mdOneTime)}
+                    </Text>
+                    <Text style={[styles.colExpFL, styles.tableCell, { fontFamily: 'Helvetica-Bold', color: '#b45309' }]}>
+                      {formatCurrency(flOneTime)}
+                    </Text>
+                  </View>
+                </React.Fragment>
+              )}
             </View>
           </View>
 

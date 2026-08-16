@@ -7,7 +7,7 @@ import {
   saveFileWithLocationPrompt,
   isFileSystemAccessSupported,
 } from './exportHelpers';
-import { AppStateInputs, DEFAULT_DETAILED_EXPENSES, DEFAULT_EXPENSE_FREQUENCIES } from '../types';
+import { AppStateInputs, DEFAULT_DETAILED_EXPENSES_STATE } from '../types';
 
 const mockInputs: AppStateInputs = {
   isSingleFiler: false,
@@ -52,11 +52,7 @@ const mockInputs: AppStateInputs = {
   annualLivingExpenses: 90000,
   isConfigured: true,
   useDetailedExpenses: false,
-  detailedExpenses: {
-    MD: DEFAULT_DETAILED_EXPENSES,
-    FL: DEFAULT_DETAILED_EXPENSES,
-    frequencies: DEFAULT_EXPENSE_FREQUENCIES,
-  },
+  detailedExpenses: JSON.parse(JSON.stringify(DEFAULT_DETAILED_EXPENSES_STATE)),
   growthAssumptions: {
     equityReturnRate: 0.07,
     fixedIncomeReturnRate: 0.04,
@@ -155,6 +151,33 @@ describe('exportHelpers', () => {
   describe('generateExcelExportBlob', () => {
     it('generates valid Excel spreadsheet blob', () => {
       const blob = generateExcelExportBlob([], mockInputs);
+      expect(blob.type).toBe('application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+      expect(blob.size).toBeGreaterThan(0);
+    });
+
+    it('generates valid Excel spreadsheet blob with dynamic detailed expenses catalog', () => {
+      const detailedInputs: AppStateInputs = {
+        ...mockInputs,
+        useDetailedExpenses: true,
+        detailedExpenses: {
+          catalog: {
+            categories: ['Hobbies', 'Utilities'],
+            items: [
+              { id: 'woodworking', name: 'Woodworking Shop', category: 'Hobbies', defaultFrequency: 12 },
+              { id: 'newTools', name: 'New Table Saw', category: 'One-Time Setup Costs', defaultFrequency: 1, isOneTime: true },
+            ]
+          },
+          costs: {
+            MD: { woodworking: 250, newTools: 1500 },
+            FL: { woodworking: 150, newTools: 800 }
+          },
+          frequencies: {
+            woodworking: 12
+          }
+        }
+      };
+
+      const blob = generateExcelExportBlob([], detailedInputs);
       expect(blob.type).toBe('application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
       expect(blob.size).toBeGreaterThan(0);
     });

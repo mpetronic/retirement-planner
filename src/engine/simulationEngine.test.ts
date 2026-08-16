@@ -9,7 +9,7 @@ import {
   calculateFedTaxWithLTCG,
   getRMDStartAge,
 } from './simulationEngine';
-import { DEFAULT_DETAILED_EXPENSES, DEFAULT_EXPENSE_FREQUENCIES } from '../types';
+import { DEFAULT_DETAILED_EXPENSES, DEFAULT_EXPENSE_FREQUENCIES, normalizeDetailedExpenses, DetailedExpensesState } from '../types';
 
 describe('calculateSSBenefit', () => {
   const PIA = 1000;
@@ -990,6 +990,119 @@ describe('runRetirementSimulation fixes', () => {
       expect(row2040).toBeDefined();
       expect(row2040!.yourAge).toBe(70);
       expect(row2040!.yourSS).toBeGreaterThan(0);
+    });
+  });
+
+  describe('Customized Living Expenses & Catalog Normalization', () => {
+    it('should normalize legacy detailedExpenses objects into standard dynamic catalog structure', () => {
+      const legacy = {
+        MD: { amenityFee: 150, electric: 200 },
+        FL: { amenityFee: 190, electric: 180 },
+        frequencies: { amenityFee: 12, electric: 12 }
+      };
+
+      const normalized = normalizeDetailedExpenses(legacy);
+      expect(normalized.catalog).toBeDefined();
+      expect(normalized.catalog.items.length).toBeGreaterThan(0);
+      expect(normalized.catalog.categories).toContain('Housing');
+      expect(normalized.costs.MD.amenityFee).toBe(150);
+      expect(normalized.costs.FL.amenityFee).toBe(190);
+      expect(normalized.frequencies.amenityFee).toBe(12);
+    });
+
+    it('should return default detailed expenses state when input is null or undefined', () => {
+      const normalized = normalizeDetailedExpenses(undefined);
+      expect(normalized.catalog).toBeDefined();
+      expect(normalized.catalog.categories.length).toBeGreaterThan(0);
+      expect(normalized.costs.MD).toBeDefined();
+      expect(normalized.costs.FL).toBeDefined();
+    });
+
+    it('should accurately calculate living expenses from dynamic custom catalog items and categories', () => {
+      const inputs = getMockInputs();
+      inputs.useDetailedExpenses = true;
+      inputs.jurisdiction = {
+        currentState: 'MD',
+        targetState: 'FL',
+        relocationYear: null // stays in MD
+      };
+
+      // Set up custom catalog with custom categories and items
+      const customExpenses: DetailedExpensesState = {
+        catalog: {
+          categories: ['Hobbies', 'Utilities'],
+          items: [
+            { id: 'boatDues', name: 'Boat Club Dues', category: 'Hobbies', defaultFrequency: 12 },
+            { id: 'solarGrid', name: 'Solar Grid Fee', category: 'Utilities', defaultFrequency: 1 }
+          ]
+        },
+        costs: {
+          MD: { boatDues: 300, solarGrid: 1200 },
+          FL: { boatDues: 200, solarGrid: 600 }
+        },
+        frequencies: {
+          boatDues: 12, // 300 * 12 = 3,600
+          solarGrid: 1   // 1200 * 1 = 1,200
+        }
+      };
+      // Expected annual recurring living expenses = 3,600 + 1,200 = 4,800
+
+      inputs.detailedExpenses = customExpenses;
+
+      const results = runRetirementSimulation(inputs);
+      expect(results[0].livingExpenses).toBeCloseTo(4800, 0);
+    });
+
+    it('should assess custom one-time setup costs in year 1 for current state and relocation year for target state', () => {
+      const inputs = getMockInputs();
+      inputs.useDetailedExpenses = true;
+      inputs.simulationStartYear = 2026;
+      inputs.growthAssumptions.cpiInflationRate = 0.025;
+      inputs.jurisdiction = {
+        currentState: 'MD',
+        targetState: 'FL',
+        relocationYear: 2030
+      };
+
+      const customExpenses: DetailedExpensesState = {
+        catalog: {
+          categories: ['Living', 'One-Time Setup Costs'],
+          items: [
+            { id: 'groceries', name: 'Groceries', category: 'Living', defaultFrequency: 12 },
+            { id: 'mdFurniture', name: 'MD Living Room Set', category: 'One-Time Setup Costs', defaultFrequency: 1, isOneTime: true },
+            { id: 'flGolfCart', name: 'FL Golf Cart Purchase', category: 'One-Time Setup Costs', defaultFrequency: 1, isOneTime: true }
+          ]
+        },
+        costs: {
+          MD: { groceries: 500, mdFurniture: 10000, flGolfCart: 0 },
+          FL: { groceries: 400, mdFurniture: 0, flGolfCart: 15000 }
+        },
+        frequencies: {
+          groceries: 12
+        }
+      };
+
+      inputs.detailedExpenses = customExpenses;
+
+      const results = runRetirementSimulation(inputs);
+
+      // Year 1 (2026, MD): livingExpenses includes $10,000 one-time cost + (500 * 12 = 6,000) = $16,000
+      const row2026 = results.find(r => r.year === 2026)!;
+      expect(row2026.livingExpenses).toBeCloseTo(16000, 0);
+
+      // Year 2 (2027, MD): No one-time costs -> ~$6,000 * 1.025 = ~6,150
+      const row2027 = results.find(r => r.year === 2027)!;
+      expect(row2027.livingExpenses).toBeCloseTo(6000 * 1.025, 0);
+
+      // Relocation Year (2030, FL): Relocation one-time cost ($15,000 inflated) triggers + FL base living expenses (400 * 12 = 4,800 inflated)
+      const row2030 = results.find(r => r.year === 2030)!;
+      const cpiFactor2030 = Math.pow(1.025, 4);
+      expect(row2030.livingExpenses).toBeCloseTo((4800 + 15000) * cpiFactor2030, 0);
+
+      // Year after relocation (2031, FL): Back to base FL expenses without one-time costs
+      const row2031 = results.find(r => r.year === 2031)!;
+      const cpiFactor2031 = Math.pow(1.025, 5);
+      expect(row2031.livingExpenses).toBeCloseTo(4800 * cpiFactor2031, 0);
     });
   });
 });

@@ -4,8 +4,8 @@ import {
   LockedReturnSequence,
   SavedPlan,
   SimulationResultRow,
-  DEFAULT_DETAILED_EXPENSES,
-  DEFAULT_EXPENSE_FREQUENCIES,
+  DEFAULT_DETAILED_EXPENSES_STATE,
+  normalizeDetailedExpenses,
   getSimulationStartYear
 } from './types';
 import { runRetirementSimulation } from './engine/simulationEngine';
@@ -21,67 +21,63 @@ import { BracketMapChart } from './components/BracketMapChart';
 import { LookbackLedgerTable } from './components/LookbackLedgerTable';
 import { MonteCarloWorkspace } from './components/MonteCarloWorkspace';
 import { PlanComparisonWorkspace } from './components/PlanComparisonWorkspace';
-import { OnboardingWizard } from './components/OnboardingWizard';
 import { DocumentationDialog } from './components/DocumentationDialog';
+import { OnboardingWizard } from './components/OnboardingWizard';
 
 // Default initial state matching specifications
 const DEFAULT_INPUTS: AppStateInputs = {
   you: {
-    name: '',
-    birthDate: '',
-    estimatedPIA: null,
-    targetSSClaimingAge: null,
-    plannedRetirementAge: null,
-    plannedRetirementMonth: null,
-    activeSalary: null,
+    name: 'Primary',
+    birthDate: '1960-01-01',
+    plannedRetirementAge: 65,
+    targetSSClaimingAge: 67,
+    estimatedPIA: 3000,
+    activeSalary: 0,
     preMedicareMonthlyPremium: null,
-    longevityAge: 85,
   },
   wife: {
-    name: '',
-    birthDate: '',
-    estimatedPIA: null,
-    targetSSClaimingAge: null,
-    plannedRetirementAge: null,
-    plannedRetirementMonth: null,
-    activeSalary: null,
+    name: 'Spouse',
+    birthDate: '1964-01-01',
+    plannedRetirementAge: 65,
+    targetSSClaimingAge: 67,
+    estimatedPIA: 1500,
+    activeSalary: 0,
     preMedicareMonthlyPremium: null,
-    longevityAge: 95,
   },
   portfolio: {
-    yourPreTaxIRA: null,
-    yourRothIRA: null,
-    yourTaxableBrokerage: null,
-    yourTaxableBasis: null,
-    yourCash: null,
-    wifePreTaxIRA: null,
-    wifeRothIRA: null,
-    wifeTaxableBrokerage: null,
-    wifeTaxableBasis: null,
-    wifeCash: null,
+    yourPreTaxIRA: 1000000,
+    yourRothIRA: 200000,
+    yourTaxableBrokerage: 500000,
+    yourTaxableBasis: 350000,
+    yourCash: 50000,
+    wifePreTaxIRA: 500000,
+    wifeRothIRA: 100000,
+    wifeTaxableBrokerage: 250000,
+    wifeTaxableBasis: 175000,
+    wifeCash: 50000,
     taxableDividendYield: 0.02,
-    taxableNonQualifiedPortion: 0.30,
+    taxableNonQualifiedPortion: 0.15,
   },
   jurisdiction: {
     currentState: 'MD',
     targetState: 'FL',
-    relocationYear: null,
+    relocationYear: 2032,
   },
   growthAssumptions: {
     equityReturnRate: 0.07,
     fixedIncomeReturnRate: 0.04,
-    cpiInflationRate: 0.03,
+    cpiInflationRate: 0.025,
     healthcareInflationRate: 0.05,
-    preTaxEquityPortion: 0.50,
-    taxableEquityPortion: 0.60,
+    preTaxEquityPortion: 0.60,
+    taxableEquityPortion: 0.80,
     rothEquityPortion: 1.00,
-    cashYieldRate: null,
+    cashYieldRate: 0.035,
   },
-  annualLivingExpenses: null,
+  annualLivingExpenses: 120000,
   annualRothConversion: 50000,
   simulationStartYear: 2026,
   rothConversionStartYear: 2027,
-  rothConversionEndYear: 2034,
+  rothConversionEndYear: 2032,
   rothConversionStrategy: 'flat',
   rothConversionTargetValue: null,
   monteCarloSettings: {
@@ -90,12 +86,12 @@ const DEFAULT_INPUTS: AppStateInputs = {
     fixedIncomeVolatility: 0.05,
     correlation: 0.15,
     trials: 1000,
-    seed: null, // Default is standard random
-    randomizeCPI: true, // Default is randomized historical inflation
-    constantCPIRate: null, // Custom constant rate when randomizeCPI is false
-    enableRegimeSwitching: true, // Default is enabled 2-state Markov regime switching and mean reversion
-    historicalSamplingStrategy: 'hybrid', // Default is hybrid (35% block / 65% random)
-    calibrateHistoricalMeans: true, // Default is calibrated to user-configured baseline expected returns
+    seed: null,
+    randomizeCPI: true,
+    constantCPIRate: null,
+    enableRegimeSwitching: true,
+    historicalSamplingStrategy: 'hybrid',
+    calibrateHistoricalMeans: true,
     stressTest: {
       enabled: false,
       mode: 'absolute',
@@ -105,11 +101,7 @@ const DEFAULT_INPUTS: AppStateInputs = {
   isConfigured: false,
   isSingleFiler: false,
   useDetailedExpenses: false,
-  detailedExpenses: {
-    MD: { ...DEFAULT_DETAILED_EXPENSES },
-    FL: { ...DEFAULT_DETAILED_EXPENSES },
-    frequencies: { ...DEFAULT_EXPENSE_FREQUENCIES }
-  }
+  detailedExpenses: JSON.parse(JSON.stringify(DEFAULT_DETAILED_EXPENSES_STATE))
 };
 
 // Custom hook for LocalStorage persistence with defensive deep merge schema protection
@@ -151,16 +143,18 @@ function useLocalStorage<T>(key: string, initialValue: T): [T, (value: T | ((val
               ...parsed.monteCarloSettings,
             },
             useDetailedExpenses: parsed.useDetailedExpenses !== undefined ? parsed.useDetailedExpenses : false,
-            detailedExpenses: parsed.detailedExpenses ? {
-              MD: { ...DEFAULT_DETAILED_EXPENSES, ...parsed.detailedExpenses.MD },
-              FL: { ...DEFAULT_DETAILED_EXPENSES, ...parsed.detailedExpenses.FL },
-              frequencies: { ...DEFAULT_EXPENSE_FREQUENCIES, ...parsed.detailedExpenses.frequencies }
-            } : {
-              MD: { ...DEFAULT_DETAILED_EXPENSES },
-              FL: { ...DEFAULT_DETAILED_EXPENSES },
-              frequencies: { ...DEFAULT_EXPENSE_FREQUENCIES }
-            },
+            detailedExpenses: normalizeDetailedExpenses(parsed.detailedExpenses),
           } as any;
+        }
+
+        if (key === 'retirement_planner_saved_plans' && Array.isArray(parsed)) {
+          return parsed.map((p: any) => ({
+            ...p,
+            inputs: {
+              ...p.inputs,
+              detailedExpenses: normalizeDetailedExpenses(p.inputs?.detailedExpenses)
+            }
+          })) as any;
         }
         
         return parsed;
