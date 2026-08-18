@@ -1,4 +1,4 @@
-import { AppStateInputs, SimulationResultRow, LockedReturnSequence, DEFAULT_EXPENSE_ITEMS, getSimulationStartYear } from '../types';
+import { AppStateInputs, SimulationResultRow, LockedReturnSequence, DEFAULT_EXPENSE_ITEMS, getSimulationStartYear, BASE_QCD_LIMIT } from '../types';
 import {
   BASE_MEDICARE_PART_B,
   BASE_MEDICARE_PART_D,
@@ -633,6 +633,10 @@ export function runRetirementSimulation(
     let annualWifeTradDraw = 0;
     let annualCapitalGainsTriggered = 0;
 
+    let annualPreTaxGrowth = 0;
+    let annualRothGrowth = 0;
+    let annualTaxableGrowth = 0;
+
     // Medicare month counters — IRMAA surcharges are annual premium amounts,
     // so we count eligible months and pro-rate at the end (avoids 12× over-count).
     let yourMedicareMonthCount = 0;
@@ -854,6 +858,10 @@ export function runRetirementSimulation(
       }
 
       // Apply monthly growth at the end of the month
+      const startPreTax = yourPreTax + wifePreTax;
+      const startRoth = yourRoth + wifeRoth;
+      const startTaxable = yourTaxable + wifeTaxable;
+
       yourTaxable = yourTaxable * (1 + monthlyTaxableRate);
       yourBasis = Math.max(0, yourBasis);
       yourPreTax = yourPreTax * (1 + monthlyPreTaxRate);
@@ -871,7 +879,82 @@ export function runRetirementSimulation(
       const wifeInterest = wifeDeceased ? 0 : wifeCash * monthlyCashRate;
       annualWifeInterest += wifeInterest;
       wifeCash = wifeCash + wifeInterest;
+
+      annualPreTaxGrowth += (yourPreTax + wifePreTax) - startPreTax;
+      annualRothGrowth += (yourRoth + wifeRoth) - startRoth;
+      annualTaxableGrowth += (yourTaxable + wifeTaxable) - startTaxable;
     }
+
+    // Compute December dividends and interest from post-November balances (before Dec drawdowns)
+    const monthlyYourDividendsDec = youDeceased ? 0 : yourTaxable * taxableDividendYield / 12;
+    const monthlyWifeDividendsDec = (inputs.isSingleFiler || wifeDeceased) ? 0 : wifeTaxable * taxableDividendYield / 12;
+    let yourDecInterest = youDeceased ? 0 : yourCash * monthlyCashRate;
+    let wifeDecInterest = wifeDeceased ? 0 : wifeCash * monthlyCashRate;
+
+    // Calculate total gross portfolio dollar growth for the year (gains + dividends + interest)
+    const annualTotalDividends = annualYourDividends + annualWifeDividends + monthlyYourDividendsDec + monthlyWifeDividendsDec;
+    const annualTotalInterest = (annualYourInterest + annualWifeInterest) + (yourDecInterest + wifeDecInterest);
+    const rawPortfolioGrowth = annualPreTaxGrowth + annualRothGrowth + annualTaxableGrowth + annualTotalDividends + annualTotalInterest;
+    const portfolioGrowth = Math.max(0, rawPortfolioGrowth);
+
+    // Charitable Giving & Tithe Calculation
+    let charitableTithe = 0;
+    let qcdAmount = 0;
+    let yourQCD = 0;
+    let wifeQCD = 0;
+    let nonQcdTithe = 0;
+    let qcdTaxSavings = 0;
+
+    if (inputs.charitySettings?.enabled) {
+      const growthPercentage = inputs.charitySettings.growthPercentage ?? 0.10;
+      let tithe = portfolioGrowth * growthPercentage;
+      if (inputs.charitySettings.minAnnualTithe !== null && inputs.charitySettings.minAnnualTithe !== undefined && inputs.charitySettings.minAnnualTithe > 0) {
+        tithe = Math.max(tithe, inputs.charitySettings.minAnnualTithe);
+      }
+      if (inputs.charitySettings.maxAnnualTithe !== null && inputs.charitySettings.maxAnnualTithe !== undefined && inputs.charitySettings.maxAnnualTithe > 0) {
+        tithe = Math.min(tithe, inputs.charitySettings.maxAnnualTithe);
+      }
+      charitableTithe = tithe;
+
+      let remainingTithe = charitableTithe;
+      const useQCD = inputs.charitySettings.useQCD !== false;
+
+      // Age 70.5 check for QCD eligibility (turns 70.5 in month 6 of age 70)
+      const your70_5_MonthIdx = (yourBirthYear + 70 - simStartYear) * 12 + yourBirthMonth + 6;
+      const wife70_5_MonthIdx = (wifeBirthYear + 70 - simStartYear) * 12 + wifeBirthMonth + 6;
+      const isYouQCDEligible = !youDeceased && (decMonthIdx >= your70_5_MonthIdx);
+      const isWifeQCDEligible = !wifeDeceased && !inputs.isSingleFiler && (decMonthIdx >= wife70_5_MonthIdx);
+
+      const qcdLimit = BASE_QCD_LIMIT * cpiFactor;
+
+      if (useQCD && remainingTithe > 0) {
+        // 1. Primary Traditional IRA QCD
+        if (isYouQCDEligible && yourPreTax > 0) {
+          yourQCD = Math.min(qcdLimit, remainingTithe, yourPreTax);
+          yourPreTax = Math.max(0, yourPreTax - yourQCD);
+          remainingTithe -= yourQCD;
+        }
+        // 2. Secondary Spouse Traditional IRA QCD
+        if (isWifeQCDEligible && wifePreTax > 0 && remainingTithe > 0) {
+          wifeQCD = Math.min(qcdLimit, remainingTithe, wifePreTax);
+          wifePreTax = Math.max(0, wifePreTax - wifeQCD);
+          remainingTithe -= wifeQCD;
+        }
+        qcdAmount = yourQCD + wifeQCD;
+      }
+
+      nonQcdTithe = Math.max(0, remainingTithe);
+    }
+
+    // Under IRS rules, QCDs satisfy statutory RMDs dollar-for-dollar.
+    // The taxable portion of the RMD is the statutory RMD minus the QCD amount.
+    const taxableYourRMD = Math.max(0, yourRMD - yourQCD);
+    const taxableWifeRMD = Math.max(0, wifeRMD - wifeQCD);
+    const taxableCombinedRMD = taxableYourRMD + taxableWifeRMD;
+
+    // Remaining RMD to distribute in December:
+    remainingYourRMD = Math.max(0, taxableYourRMD - annualYourTradDraw);
+    remainingWifeRMD = Math.max(0, taxableWifeRMD - annualWifeTradDraw);
 
     // December (month 11) is now processed
     // Distribute any remaining undistributed RMD obligation from pre-tax accounts
@@ -929,11 +1012,6 @@ export function runRetirementSimulation(
     let stdDeduction = 0;
     let mdPensionExclusion = 0;
 
-    // Compute December dividends from the post-November brokerage balances (before any Dec drawdowns).
-    // These must be computed once here (not inside the solver loop) so they aren't recalculated per iteration.
-    const monthlyYourDividendsDec = youDeceased ? 0 : yourTaxable * taxableDividendYield / 12;
-    const monthlyWifeDividendsDec = inputs.isSingleFiler ? 0 : wifeTaxable * taxableDividendYield / 12;
-
     // Dec starting account values (dividends leave the brokerage like Jan-Nov months)
     let decYourTaxable = Math.max(0, yourTaxable - monthlyYourDividendsDec);
     let decYourBasis = yourBasis;
@@ -962,9 +1040,6 @@ export function runRetirementSimulation(
     const isYouWorkingDec = !youDeceased && (decMonthIdx < yourRetireMonthIdx);
     const isWifeWorkingDec = !wifeDeceased && (decMonthIdx < wifeRetireMonthIdx);
 
-    let yourDecInterest = youDeceased ? 0 : yourCash * monthlyCashRate;
-    let wifeDecInterest = wifeDeceased ? 0 : wifeCash * monthlyCashRate;
-
     while (Math.abs(totalTaxBill - lastTaxBill) > 1 && iterations < 15) {
       lastTaxBill = totalTaxBill;
       iterations++;
@@ -991,7 +1066,7 @@ export function runRetirementSimulation(
       // Tax Calculations
       const totalSS = annualYourSS + annualWifeSS;
       const salary = annualYourSalary + annualWifeSalary;
-      const rmd = combinedRMD;
+      const rmd = taxableCombinedRMD;
       const rothConv = combinedRothConversion;
       const janToNovTradDraw = annualYourTradDraw + annualWifeTradDraw;
       
@@ -1019,14 +1094,27 @@ export function runRetirementSimulation(
         if (yourAge >= 65) ageAddition += 1650 * cpiFactor;
         if (!wifeDeceased && wifeAge >= 65) ageAddition += 1650 * cpiFactor;
       }
-      stdDeduction = stdDeductionBase + ageAddition;
+      const standardDeductionTotal = stdDeductionBase + ageAddition;
 
       const capExcl = 34300 * cpiFactor;
       const exclusionCapJohn = Math.max(0, capExcl - annualYourSS);
       const exclusionCapWife = Math.max(0, capExcl - annualWifeSS);
-      const exclJohn = (!youDeceased && yourAge >= 65) ? Math.min(yourRMD + annualYourTradDraw + decYourTradDraw, exclusionCapJohn) : 0;
-      const exclWife = (!wifeDeceased && wifeAge >= 65) ? Math.min(wifeRMD + annualWifeTradDraw + decWifeTradDraw, exclusionCapWife) : 0;
+      const exclJohn = (!youDeceased && yourAge >= 65) ? Math.min(taxableYourRMD + annualYourTradDraw + decYourTradDraw, exclusionCapJohn) : 0;
+      const exclWife = (!wifeDeceased && wifeAge >= 65) ? Math.min(taxableWifeRMD + annualWifeTradDraw + decWifeTradDraw, exclusionCapWife) : 0;
       mdPensionExclusion = exclJohn + exclWife;
+
+      if (isStateFL) {
+        stateIncomeTax = 0;
+      } else {
+        stateIncomeTax = calculateMDStateTax(fedAGI, taxableSS, isSingle, cpiFactor, mdPensionExclusion);
+      }
+
+      // Itemized deduction optimization:
+      // State taxes (capped at $10k SALT cap * cpiFactor) + Non-QCD charitable contributions
+      const saltCap = 10000 * cpiFactor;
+      const saltDeduction = Math.min(saltCap, stateIncomeTax);
+      const itemizedDeduction = saltDeduction + nonQcdTithe;
+      stdDeduction = Math.max(standardDeductionTotal, itemizedDeduction);
 
       const taxableOrdinary = Math.max(0, fedAGI - capitalGains - stdDeduction);
       const { totalTax: fedBaseTax } = calculateFedTaxWithLTCG(taxableOrdinary, capitalGains, isSingle, cpiFactor);
@@ -1039,11 +1127,6 @@ export function runRetirementSimulation(
       niitTax = niitBase * 0.038;
       fedIncomeTax += niitTax;
 
-      if (isStateFL) {
-        stateIncomeTax = 0;
-      } else {
-        stateIncomeTax = calculateMDStateTax(fedAGI, taxableSS, isSingle, cpiFactor, mdPensionExclusion);
-      }
       totalTaxBill = fedIncomeTax + stateIncomeTax;
 
       // Dec standard cash flow values (decMonthIdx, isYouWorkingDec, isWifeWorkingDec hoisted above the loop)
@@ -1084,7 +1167,7 @@ export function runRetirementSimulation(
       const decPreMed = (decMonthIdx < yourMedicareMonthIdx ? monthlyYourPremDec : 0) + (!wifeDeceased && decMonthIdx < wifeMedicareMonthIdx ? monthlyWifePremDec : 0);
       const decMed = (decMonthIdx >= yourMedicareMonthIdx ? monthlyYourPremDec : 0) + (!wifeDeceased && decMonthIdx >= wifeMedicareMonthIdx ? monthlyWifePremDec : 0);
 
-      const decOutflows = decLiving + decPreMed + decMed + (decMonthIdx >= yourMedicareMonthIdx && !isYouWorkingDec ? yourPartBSurcharge + yourPartDSurcharge : 0) + (!wifeDeceased && decMonthIdx >= wifeMedicareMonthIdx && !isWifeWorkingDec ? wifePartBSurcharge + wifePartDSurcharge : 0) + totalTaxBill;
+      const decOutflows = decLiving + nonQcdTithe + decPreMed + decMed + (decMonthIdx >= yourMedicareMonthIdx && !isYouWorkingDec ? yourPartBSurcharge + yourPartDSurcharge : 0) + (!wifeDeceased && decMonthIdx >= wifeMedicareMonthIdx && !isWifeWorkingDec ? wifePartBSurcharge + wifePartDSurcharge : 0) + totalTaxBill;
       const decInflows = monthlyYourSSDec + monthlyWifeSSDec + monthlyYourSalaryDec + monthlyWifeSalaryDec + monthlyYourDividendsDec + monthlyWifeDividendsDec + decDistributeYourRMD + decDistributeWifeRMD;
 
       let decDeficit = decOutflows - decInflows;
@@ -1282,7 +1365,7 @@ export function runRetirementSimulation(
 
     const totalSS = annualYourSS + annualWifeSS;
     const salary = annualYourSalary + annualWifeSalary;
-    const rmd = combinedRMD;
+    const rmd = taxableCombinedRMD;
     const rothConv = combinedRothConversion;
     const janToNovTradDraw = annualYourTradDraw + annualWifeTradDraw;
 
@@ -1306,8 +1389,15 @@ export function runRetirementSimulation(
     drawdownRoth = annualDrawdownRoth + drawdownRothDec;
     capitalGainsTriggered = annualCapitalGainsTriggered + capitalGainsTriggeredDec;
 
-    const totalExpenses = annualLivingExpenses + fedIncomeTax + stateIncomeTax + annualMedicareBasePremiums + annualMedicareSurcharges + annualPreMedicarePremium;
-    const incomeInflow = totalSS + combinedRMD + (annualYourSalary + annualWifeSalary) + totalDividends;
+    if (qcdAmount > 0) {
+      // Estimated direct tax savings: avoided federal marginal rate + state income tax on the excluded QCD
+      const marginalFedRate = fedAGI > (isSingle ? 100000 * cpiFactor : 200000 * cpiFactor) ? 0.22 : 0.12;
+      const stateRate = isStateFL ? 0 : 0.0475;
+      qcdTaxSavings = qcdAmount * (marginalFedRate + stateRate);
+    }
+
+    const totalExpenses = annualLivingExpenses + nonQcdTithe + fedIncomeTax + stateIncomeTax + annualMedicareBasePremiums + annualMedicareSurcharges + annualPreMedicarePremium;
+    const incomeInflow = totalSS + taxableCombinedRMD + (annualYourSalary + annualWifeSalary) + totalDividends;
     const deficit = Math.max(0, totalExpenses - incomeInflow);
 
     ledger.push({
@@ -1316,8 +1406,8 @@ export function runRetirementSimulation(
       wifeAge,
       yourSS: annualYourSS,
       wifeSS: annualWifeSS,
-      yourRMD,
-      wifeRMD,
+      yourRMD: taxableYourRMD,
+      wifeRMD: taxableWifeRMD,
       yourSalary: annualYourSalary,
       wifeSalary: annualWifeSalary,
       capitalGainsTriggered,
@@ -1353,6 +1443,11 @@ export function runRetirementSimulation(
       drawdownPreTax,
       drawdownRoth,
       drawdownCash,
+      portfolioGrowth,
+      charitableTithe,
+      qcdAmount,
+      nonQcdTithe,
+      qcdTaxSavings,
       endYourPreTaxIRA: yourPreTax,
       endYourRothIRA: yourRoth,
       endYourTaxableBrokerage: yourTaxable,

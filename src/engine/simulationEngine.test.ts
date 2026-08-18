@@ -1105,4 +1105,161 @@ describe('runRetirementSimulation fixes', () => {
       expect(row2031.livingExpenses).toBeCloseTo(4800 * cpiFactor2031, 0);
     });
   });
+
+  describe('Charitable Giving & Tithe Engine (with QCD)', () => {
+    it('should track annual portfolio growth and calculate a 10% tithe when enabled', () => {
+      const inputs = getMockInputs();
+      inputs.charitySettings = {
+        enabled: true,
+        growthPercentage: 0.10,
+        minAnnualTithe: null,
+        maxAnnualTithe: null,
+        useQCD: false, // Pure cash/taxable tithe for testing growth math
+      };
+
+      const results = runRetirementSimulation(inputs);
+      const row1 = results[0];
+
+      expect(row1.portfolioGrowth).toBeGreaterThan(0);
+      expect(row1.charitableTithe).toBeCloseTo(row1.portfolioGrowth * 0.10, 0);
+      expect(row1.nonQcdTithe).toBeCloseTo(row1.charitableTithe, 0);
+      expect(row1.qcdAmount).toBe(0);
+    });
+
+    it('should enforce a $0 floor on tithe during flat or down return years unless a minAnnualTithe is set', () => {
+      const inputs = getMockInputs();
+      // Set zero growth rates
+      inputs.growthAssumptions.equityReturnRate = 0.0;
+      inputs.growthAssumptions.fixedIncomeReturnRate = 0.0;
+      inputs.growthAssumptions.cashYieldRate = 0.0;
+      inputs.portfolio.taxableDividendYield = 0.0;
+
+      inputs.charitySettings = {
+        enabled: true,
+        growthPercentage: 0.10,
+        minAnnualTithe: null,
+        maxAnnualTithe: null,
+        useQCD: false,
+      };
+
+      const results = runRetirementSimulation(inputs);
+      const row1 = results[0];
+
+      expect(row1.portfolioGrowth).toBe(0);
+      expect(row1.charitableTithe).toBe(0);
+
+      // Now set a minimum floor of $5,000
+      inputs.charitySettings.minAnnualTithe = 5000;
+      const resultsWithFloor = runRetirementSimulation(inputs);
+      expect(resultsWithFloor[0].charitableTithe).toBe(5000);
+    });
+
+    it('should respect custom percentage and maximum annual cap', () => {
+      const inputs = getMockInputs();
+      inputs.charitySettings = {
+        enabled: true,
+        growthPercentage: 0.20,
+        minAnnualTithe: null,
+        maxAnnualTithe: 15000,
+        useQCD: false,
+      };
+
+      const results = runRetirementSimulation(inputs);
+      const row1 = results[0];
+
+      expect(row1.portfolioGrowth).toBeGreaterThan(0);
+      // Even if 20% of growth is > $15,000, tithe should be capped at $15,000
+      expect(row1.charitableTithe).toBeLessThanOrEqual(15000);
+    });
+
+    it('should execute tax-free QCDs starting at age 70.5 and satisfy RMDs dollar-for-dollar', () => {
+      const inputs = getMockInputs();
+      inputs.isSingleFiler = false;
+      inputs.simulationStartYear = 2026;
+      inputs.you.birthDate = '1953-01-01'; // Age 73 in 2026 (RMD active)
+      inputs.you.targetSSClaimingAge = 70;
+      inputs.wife.birthDate = '1953-01-01'; // Age 73 in 2026 (RMD active)
+      inputs.portfolio.yourPreTaxIRA = 1000000;
+      inputs.portfolio.wifePreTaxIRA = 500000;
+
+      // Run baseline without charity
+      inputs.charitySettings = { enabled: false, growthPercentage: 0.10, useQCD: false };
+      const baselineResults = runRetirementSimulation(inputs);
+      const baseRow = baselineResults[0];
+
+      // Run with QCD enabled
+      inputs.charitySettings = {
+        enabled: true,
+        growthPercentage: 0.10,
+        minAnnualTithe: 20000,
+        maxAnnualTithe: null,
+        useQCD: true,
+      };
+      const qcdResults = runRetirementSimulation(inputs);
+      const qcdRow = qcdResults[0];
+
+      expect(qcdRow.qcdAmount).toBeGreaterThan(0);
+      // QCD reduces taxable RMD dollar-for-dollar:
+      expect(qcdRow.yourRMD).toBeLessThan(baseRow.yourRMD);
+      // QCD reduces federal taxable AGI compared to baseline:
+      expect(qcdRow.fedAGI).toBeLessThan(baseRow.fedAGI);
+      // QCD generates direct tax savings:
+      expect(qcdRow.qcdTaxSavings).toBeGreaterThan(0);
+    });
+
+    it('should prioritize Primary IRA for QCD first, then Spouse IRA second when both are age 70.5+', () => {
+      const inputs = getMockInputs();
+      inputs.isSingleFiler = false;
+      inputs.simulationStartYear = 2026;
+      inputs.you.birthDate = '1955-01-01'; // Age 71 (age >= 70.5)
+      inputs.wife.birthDate = '1955-01-01'; // Age 71 (age >= 70.5)
+      inputs.portfolio.yourPreTaxIRA = 10000; // Small primary IRA balance
+      inputs.portfolio.wifePreTaxIRA = 500000; // Large wife IRA balance
+
+      inputs.charitySettings = {
+        enabled: true,
+        growthPercentage: 0.10,
+        minAnnualTithe: 25000, // Large tithe exceeding primary IRA
+        maxAnnualTithe: null,
+        useQCD: true,
+      };
+
+      const results = runRetirementSimulation(inputs);
+      const row1 = results[0];
+
+      // Primary IRA should be depleted by QCD, and spouse IRA should cover the remainder
+      expect(row1.endYourPreTaxIRA).toBe(0);
+      expect(row1.qcdAmount).toBeCloseTo(25000, 0);
+      expect(row1.nonQcdTithe).toBe(0);
+    });
+
+    it('should optimize itemized deductions vs standard deduction for non-QCD charitable donations', () => {
+      const inputs = getMockInputs();
+      inputs.simulationStartYear = 2026;
+      inputs.you.birthDate = '1970-01-01'; // Age 56 (under 70.5, no QCD)
+      inputs.wife.birthDate = '1970-01-01';
+      inputs.jurisdiction.currentState = 'MD';
+      inputs.jurisdiction.relocationYear = null;
+
+      // Run baseline without charity
+      inputs.charitySettings = { enabled: false, growthPercentage: 0.10, useQCD: false };
+      const baseResults = runRetirementSimulation(inputs);
+      const baseStdDed = baseResults[0].standardDeduction;
+
+      // Run with large non-QCD tithe ($50,000)
+      inputs.charitySettings = {
+        enabled: true,
+        growthPercentage: 0.10,
+        minAnnualTithe: 50000,
+        maxAnnualTithe: null,
+        useQCD: false,
+      };
+      const itemizedResults = runRetirementSimulation(inputs);
+      const rowWithGifts = itemizedResults[0];
+
+      // Standard deduction reported on the row should be elevated due to itemized optimization ($10k SALT + $50k charity = $60k > standard deduction)
+      expect(rowWithGifts.standardDeduction).toBeGreaterThan(baseStdDed);
+      expect(rowWithGifts.standardDeduction).toBeGreaterThanOrEqual(50000);
+    });
+  });
 });

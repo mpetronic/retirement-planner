@@ -97,7 +97,14 @@ export const generateExcelWorkbook = (ledger: SimulationResultRow[], inputs: App
     ["Annual Flat Conversion Amount", inputs.annualRothConversion ?? 0],
     ["Target MAGI Limit (Fill-To-Target)", inputs.rothConversionTargetValue ?? 0],
     ["Strategy Active Start Year", inputs.rothConversionStartYear ?? simStartYear],
-    ["Strategy Active End Year", inputs.rothConversionEndYear ?? (simStartYear + 9)]
+    ["Strategy Active End Year", inputs.rothConversionEndYear ?? (simStartYear + 9)],
+    [],
+    ["CHARITABLE GIVING & TITHING (WITH QCD)"],
+    ["Tithing Engine Enabled", inputs.charitySettings?.enabled ? "Yes" : "No"],
+    ["Tithe Percentage of Growth", `${(((inputs.charitySettings?.growthPercentage ?? 0.10) * 100)).toFixed(1)}%`],
+    ["Annual Minimum Floor", inputs.charitySettings?.minAnnualTithe ? `$${inputs.charitySettings.minAnnualTithe.toLocaleString()}` : "None ($0 in down years)"],
+    ["Annual Maximum Cap", inputs.charitySettings?.maxAnnualTithe ? `$${inputs.charitySettings.maxAnnualTithe.toLocaleString()}` : "None"],
+    ["QCD Optimization (Age 70.5+)", inputs.charitySettings?.useQCD !== false ? "Enabled (Traditional IRA to Charity)" : "Disabled"]
   );
 
   // Add healthcare specifics if configured
@@ -135,6 +142,11 @@ export const generateExcelWorkbook = (ledger: SimulationResultRow[], inputs: App
     "Your Age": row.yourAge,
     "Spouse Age": inputs.isSingleFiler ? "-" : row.wifeAge,
     "Portfolio Value": Math.round(row.totalPortfolioValue),
+    "Annual Portfolio Growth": Math.round(row.portfolioGrowth ?? 0),
+    "Charitable Tithe (Total)": Math.round(row.charitableTithe ?? 0),
+    "QCD Distributed (Tax-Free)": Math.round(row.qcdAmount ?? 0),
+    "Non-QCD Charitable Gift": Math.round(row.nonQcdTithe ?? 0),
+    "Estimated QCD Tax Savings": Math.round(row.qcdTaxSavings ?? 0),
     "Total MAGI": Math.round(row.magi),
     "Federal Taxable Income": Math.round(row.taxableIncome),
     "Federal Income Tax": Math.round(row.fedIncomeTax),

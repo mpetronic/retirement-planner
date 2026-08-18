@@ -131,6 +131,10 @@ export const LookbackLedgerTable: React.FC<LookbackLedgerTableProps> = ({
             <tr className="bg-slate-900/95 border-b border-slate-800 text-slate-400 text-xs font-semibold uppercase tracking-wider leading-tight">
               <th className="px-2.5 py-3">Year (t)</th>
               <th className="px-2.5 py-3">MAGI<br /><span className="text-[10px] text-slate-500 font-normal normal-case">(Income)</span></th>
+              <th className="px-2.5 py-3 text-emerald-400">Annual Growth<br /><span className="text-[10px] text-slate-500 font-normal normal-case">Portfolio</span></th>
+              {inputs.charitySettings?.enabled && (
+                <th className="px-2.5 py-3 text-rose-400">Charitable Tithe<br /><span className="text-[10px] text-rose-500 font-normal normal-case">(QCD & Cash)</span></th>
+              )}
               <th className="px-2.5 py-3">Roth Conv.<br /><span className="text-[10px] text-slate-500 font-normal normal-case">Amount</span></th>
               <th className="px-2.5 py-3">Roth Conv.<br /><span className="text-[10px] text-slate-500 font-normal normal-case">Tax</span></th>
               <th className="px-2.5 py-3">Total<br /><span className="text-[10px] text-slate-500 font-normal normal-case">Expenses</span></th>
@@ -318,6 +322,52 @@ export const LookbackLedgerTable: React.FC<LookbackLedgerTableProps> = ({
                       </div>
                     </div>
                   </td>
+
+                  {/* Portfolio Growth Return */}
+                  <td className="px-2.5 py-2.5 font-mono text-emerald-400/90 relative group cursor-help">
+                    <span>{formatCurrency(r.portfolioGrowth || 0)}</span>
+                    <div className={`absolute left-1/2 -translate-x-1/2 w-64 bg-slate-950/95 backdrop-blur-md border border-slate-800 rounded-2xl p-3.5 shadow-2xl opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 z-50 text-xs text-slate-300 pointer-events-none space-y-1.5 font-sans normal-case ${
+                      isTopRow ? 'top-full mt-2' : 'bottom-full mb-2'
+                    }`}>
+                      <div className="flex items-center justify-between border-b border-slate-800/80 pb-1 mb-1">
+                        <span className="font-bold text-slate-200 uppercase tracking-wider text-[9px]">Portfolio Growth Return</span>
+                        <span className="font-bold text-emerald-400 font-mono text-[10px]">{formatCurrency(r.portfolioGrowth || 0)}</span>
+                      </div>
+                      <div className="text-[10px] text-slate-400">
+                        Total investment gains, dividends, and interest generated across all portfolio accounts in {r.year}.
+                      </div>
+                    </div>
+                  </td>
+
+                  {/* Charitable Tithe & QCD */}
+                  {inputs.charitySettings?.enabled && (
+                    <td className="px-2.5 py-2.5 font-mono text-rose-400 relative group cursor-help">
+                      <span>{formatCurrency(r.charitableTithe || 0)}</span>
+                      <div className={`absolute left-1/2 -translate-x-1/2 w-64 bg-slate-950/95 backdrop-blur-md border border-slate-800 rounded-2xl p-3.5 shadow-2xl opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 z-50 text-xs text-slate-300 pointer-events-none space-y-1.5 font-sans normal-case ${
+                        isTopRow ? 'top-full mt-2' : 'bottom-full mb-2'
+                      }`}>
+                        <div className="flex items-center justify-between border-b border-slate-800/80 pb-1 mb-1">
+                          <span className="font-bold text-slate-200 uppercase tracking-wider text-[9px]">Tithe Breakdown</span>
+                          <span className="font-bold text-rose-400 font-mono text-[10px]">{formatCurrency(r.charitableTithe || 0)}</span>
+                        </div>
+                        <div className="flex justify-between items-center text-[11px]">
+                          <span className="text-slate-400">QCD (Tax-Free IRA):</span>
+                          <span className="font-mono text-sky-300 font-medium">{formatCurrency(r.qcdAmount || 0)}</span>
+                        </div>
+                        <div className="flex justify-between items-center text-[11px]">
+                          <span className="text-slate-400">Cash / Taxable Tithe:</span>
+                          <span className="font-mono text-slate-200 font-medium">{formatCurrency(r.nonQcdTithe || 0)}</span>
+                        </div>
+                        {r.qcdTaxSavings > 0 && (
+                          <div className="flex justify-between items-center border-t border-slate-800/80 pt-1.5 mt-1 text-[11px] font-semibold text-emerald-400">
+                            <span>Est. Tax Saved via QCD:</span>
+                            <span className="font-mono">+{formatCurrency(r.qcdTaxSavings)}</span>
+                          </div>
+                        )}
+                      </div>
+                    </td>
+                  )}
+
                   <td className="px-2.5 py-2.5 font-mono text-slate-300">
                     {r.intentionalRothConversion > 0 ? (
                       <span className="text-slate-300 font-mono">
@@ -424,6 +474,12 @@ export const LookbackLedgerTable: React.FC<LookbackLedgerTableProps> = ({
                         <div className="flex justify-between items-center text-[11px]">
                           <span className="text-slate-400">Pre-Medicare Premium:</span>
                           <span className="font-mono text-slate-200 font-medium">{formatCurrency(r.preMedicareHealthcareCost)}</span>
+                        </div>
+                      )}
+                      {r.nonQcdTithe > 0 && (
+                        <div className="flex justify-between items-center text-[11px]">
+                          <span className="text-slate-400">Non-QCD Charitable Gift:</span>
+                          <span className="font-mono text-rose-300 font-medium">{formatCurrency(r.nonQcdTithe)}</span>
                         </div>
                       )}
                       <div className="flex justify-between items-center border-t border-slate-800/80 pt-2 mt-1 text-[11px] font-bold">

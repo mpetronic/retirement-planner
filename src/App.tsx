@@ -5,6 +5,7 @@ import {
   SavedPlan,
   SimulationResultRow,
   DEFAULT_DETAILED_EXPENSES_STATE,
+  DEFAULT_CHARITY_SETTINGS,
   normalizeDetailedExpenses,
   getSimulationStartYear
 } from './types';
@@ -101,7 +102,8 @@ const DEFAULT_INPUTS: AppStateInputs = {
   isConfigured: false,
   isSingleFiler: false,
   useDetailedExpenses: false,
-  detailedExpenses: JSON.parse(JSON.stringify(DEFAULT_DETAILED_EXPENSES_STATE))
+  detailedExpenses: JSON.parse(JSON.stringify(DEFAULT_DETAILED_EXPENSES_STATE)),
+  charitySettings: DEFAULT_CHARITY_SETTINGS
 };
 
 // Custom hook for LocalStorage persistence with defensive deep merge schema protection

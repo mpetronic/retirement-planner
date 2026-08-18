@@ -401,6 +401,24 @@ export const RowInspectionDialog: React.FC<RowInspectionDialogProps> = ({
                     <span className="font-mono text-slate-200">{formatCurrency(row.niitTax)}</span>
                   </div>
                 )}
+                {(row.charitableTithe ?? 0) > 0 && (
+                  <div className="flex justify-between items-center py-1 border-b border-slate-800/30">
+                    <span className="text-rose-300 font-medium">Charitable Tithe (Total):</span>
+                    <span className="font-mono text-rose-300 font-semibold">{formatCurrency(row.charitableTithe)}</span>
+                  </div>
+                )}
+                {(row.qcdAmount ?? 0) > 0 && (
+                  <div className="flex justify-between items-center py-1 border-b border-slate-800/30 text-xs pl-3">
+                    <span className="text-sky-400">↳ Qualified Charitable Dist. (QCD):</span>
+                    <span className="font-mono text-sky-400">{formatCurrency(row.qcdAmount)}</span>
+                  </div>
+                )}
+                {(row.nonQcdTithe ?? 0) > 0 && (
+                  <div className="flex justify-between items-center py-1 border-b border-slate-800/30 text-xs pl-3">
+                    <span className="text-slate-400">↳ Cash / Taxable Tithe:</span>
+                    <span className="font-mono text-slate-300">{formatCurrency(row.nonQcdTithe)}</span>
+                  </div>
+                )}
               </div>
               <div className="flex justify-between items-center border-t border-slate-800 pt-4 mt-2 font-bold text-sm bg-slate-900/30 p-3 rounded-lg">
                 <span className="text-slate-200">Total Annual Outflow:</span>

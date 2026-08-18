@@ -336,6 +336,24 @@ export interface GrowthAssumptions {
   cashYieldRate?: number | null;
 }
 
+export interface CharitySettings {
+  enabled: boolean;
+  growthPercentage: number; // e.g. 0.10 for 10%
+  minAnnualTithe?: number | null; // Optional annual dollar floor (even if growth is 0)
+  maxAnnualTithe?: number | null; // Optional annual dollar cap
+  useQCD: boolean; // Enable Qualified Charitable Distributions (QCDs) at age 70.5+
+}
+
+export const DEFAULT_CHARITY_SETTINGS: CharitySettings = {
+  enabled: false,
+  growthPercentage: 0.10,
+  minAnnualTithe: null,
+  maxAnnualTithe: null,
+  useQCD: true,
+};
+
+export const BASE_QCD_LIMIT = 105000;
+
 export interface AppStateInputs {
   isConfigured: boolean;
   isSingleFiler: boolean;
@@ -360,6 +378,7 @@ export interface AppStateInputs {
   rothConversionTargetValue: number | null;
   monteCarloSettings: MonteCarloSettings;
   detailedExpenses?: DetailedExpensesState;
+  charitySettings?: CharitySettings;
 }
 
 /**
@@ -430,6 +449,13 @@ export interface SimulationResultRow {
   drawdownPreTax: number;
   drawdownRoth: number;
   drawdownCash: number;
+
+  // Charitable Giving & Tithing (with QCD)
+  portfolioGrowth: number; // Total dollar return across accounts in the year
+  charitableTithe: number; // Total annual tithe amount from growth
+  qcdAmount: number; // Portion funded via tax-free QCDs from Traditional IRAs (offsets RMDs)
+  nonQcdTithe: number; // Portion funded from Cash and Taxable Brokerage
+  qcdTaxSavings: number; // Estimated direct tax savings via QCD vs taking taxable RMDs
   
   // Ending Balances (after growth and drawdowns)
   endYourPreTaxIRA: number;

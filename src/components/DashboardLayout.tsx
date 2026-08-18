@@ -9,7 +9,8 @@ import {
   MapPin,
   Sliders,
   AlertTriangle,
-  BookOpen
+  BookOpen,
+  HeartHandshake
 } from 'lucide-react';
 
 interface DashboardLayoutProps {
@@ -66,8 +67,11 @@ export const DashboardLayout: React.FC<DashboardLayoutProps> = ({
       const totalTaxes = l.reduce((sum, r) => sum + r.totalIncomeTax, 0);
       const totalSurcharges = l.reduce((sum, r) => sum + r.combinedSurchargeAnnual, 0);
       const totalBasePremiums = l.reduce((sum, r) => sum + r.medicareBasePremiums, 0);
+      const totalTithe = l.reduce((sum, r) => sum + (r.charitableTithe || 0), 0);
+      const totalQCD = l.reduce((sum, r) => sum + (r.qcdAmount || 0), 0);
+      const totalQcdTaxSaved = l.reduce((sum, r) => sum + (r.qcdTaxSavings || 0), 0);
       const endingAge = finalRow ? finalRow.yourAge : 90;
-      return { endingEstate, totalTaxes, totalSurcharges, totalBasePremiums, endingAge };
+      return { endingEstate, totalTaxes, totalSurcharges, totalBasePremiums, totalTithe, totalQCD, totalQcdTaxSaved, endingAge };
     };
 
     return {
@@ -110,6 +114,13 @@ export const DashboardLayout: React.FC<DashboardLayoutProps> = ({
                 <MapPin className="w-3 h-3 text-blue-500/95" />
                 {stateTaxContext}
               </span>
+              {inputs.charitySettings?.enabled && (
+                <span className="flex items-center gap-1.5 bg-rose-950/40 px-2 py-1 rounded-lg border border-rose-800/60 text-rose-300">
+                  <HeartHandshake className="w-3 h-3 text-rose-400" />
+                  Tithe: {formatCurrency(stats.active.totalTithe)} ({(((inputs.charitySettings.growthPercentage ?? 0.10) * 100)).toFixed(0)}% Growth)
+                  {stats.active.totalQCD > 0 && ` | QCDs: ${formatCurrency(stats.active.totalQCD)} (Tax Saved: +${formatCurrency(stats.active.totalQcdTaxSaved)})`}
+                </span>
+              )}
             </div>
           </div>
           

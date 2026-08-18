@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { AppStateInputs, DEFAULT_DETAILED_EXPENSES_STATE } from '../types';
+import { AppStateInputs, DEFAULT_DETAILED_EXPENSES_STATE, DEFAULT_CHARITY_SETTINGS } from '../types';
 import {
   User,
   Coins,
@@ -252,7 +252,8 @@ export const OnboardingWizard: React.FC<OnboardingWizardProps> = ({ onComplete }
       isConfigured: true,
       isSingleFiler,
       useDetailedExpenses: false,
-      detailedExpenses: JSON.parse(JSON.stringify(DEFAULT_DETAILED_EXPENSES_STATE))
+      detailedExpenses: JSON.parse(JSON.stringify(DEFAULT_DETAILED_EXPENSES_STATE)),
+      charitySettings: DEFAULT_CHARITY_SETTINGS
     };
 
     onComplete(finalInputs);

@@ -45,9 +45,11 @@ export const SankeyFlowDiagram: React.FC<SankeyFlowDiagramProps> = ({ row }) => 
   const medBase = row.medicareBasePremiums ?? 0;
   const medSurcharge = row.combinedSurchargeAnnual ?? 0;
   const taxes = row.fedIncomeTax + row.stateIncomeTax; // fedIncomeTax already includes niitTax
+  const qcd = row.qcdAmount ?? 0;
+  const nonQcdTithe = row.nonQcdTithe ?? 0;
 
-  const totalExpenses = living + preMedicare + medBase + medSurcharge + taxes;
-  const totalSourcesCash = salary + ss + rmd + divInterest + drawBrokerage + drawPreTax + drawRoth + drawCash;
+  const totalExpenses = living + preMedicare + medBase + medSurcharge + taxes + nonQcdTithe + qcd;
+  const totalSourcesCash = salary + ss + rmd + divInterest + drawBrokerage + drawPreTax + drawRoth + drawCash + qcd;
   const cashDifference = totalSourcesCash - totalExpenses;
   const surplus = cashDifference > 0.01 ? cashDifference : 0;
   const unfundedDeficit = cashDifference < -0.01 ? -cashDifference : 0;
@@ -58,6 +60,7 @@ export const SankeyFlowDiagram: React.FC<SankeyFlowDiagramProps> = ({ row }) => 
     { id: "ss", label: "Social Security", value: ss, color: "#60a5fa" },
     { id: "rmd", label: "Traditional IRA RMDs", value: rmd, color: "#818cf8" },
     { id: "divInterest", label: "Dividends & Interest", value: divInterest, color: "#a78bfa" },
+    { id: "qcdSrc", label: "IRA (QCD Direct)", value: qcd, color: "#38bdf8" },
     { id: "drawBrokerage", label: "Brokerage Drawdown", value: drawBrokerage, color: "#fb7185" },
     { id: "drawPreTax", label: "Extra IRA Drawdown", value: drawPreTax, color: "#f43f5e" },
     { id: "drawRoth", label: "Roth IRA Drawdown", value: drawRoth, color: "#ec4899" },
@@ -72,6 +75,8 @@ export const SankeyFlowDiagram: React.FC<SankeyFlowDiagramProps> = ({ row }) => 
     { id: "preMedicare", label: "Pre-Medicare Prem.", value: preMedicare, color: "#f97316" },
     { id: "medPremiums", label: "Medicare Base & Surcharge", value: medBase + medSurcharge, color: "#ef4444" },
     { id: "taxes", label: "Income Taxes (Fed/State)", value: taxes, color: "#dc2626" },
+    { id: "qcdDest", label: "Charitable QCD", value: qcd, color: "#f43f5e" },
+    { id: "titheCash", label: "Charity / Tithe (Cash)", value: nonQcdTithe, color: "#fb7185" },
     { id: "rothConvDest", label: "Roth IRA (Conv. Dest)", value: rothConv, color: "#d97706" },
     { id: "surplus", label: "Reinvested Surplus", value: surplus, color: "#059669" }
   ].filter(u => Math.round(u.value) > 0);

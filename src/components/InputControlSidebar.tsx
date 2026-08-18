@@ -24,6 +24,7 @@ import {
 } from 'lucide-react';
 import { DetailedExpensesDialog } from './DetailedExpensesDialog';
 import { HealthcareConfigDialog } from './HealthcareConfigDialog';
+import { CharityControlPanel } from './CharityControlPanel';
 import { ExportPlanDialog } from './ExportPlanDialog';
 import { ExportFormatType } from '../utils/exportHelpers';
 import { AboutDialog } from './AboutDialog';
@@ -1232,7 +1233,18 @@ export const InputControlSidebar: React.FC<InputControlSidebarProps> = ({
           </div>
         </div>
 
-        {/* Section 6.5: Backup & Portability */}
+        {/* Section 6: Charitable Giving & Tithe Engine */}
+        <div className="space-y-3 pt-2">
+          <CharityControlPanel
+            settings={inputs.charitySettings}
+            onChange={(newSettings) => onChange({ ...inputs, charitySettings: newSettings })}
+            yourAge={new Date().getFullYear() - (parseInt(inputs.you.birthDate?.split('-')[0] || '1960', 10))}
+            wifeAge={new Date().getFullYear() - (parseInt(inputs.wife.birthDate?.split('-')[0] || '1964', 10))}
+            isSingleFiler={inputs.isSingleFiler}
+          />
+        </div>
+
+        {/* Section 7: Backup & Portability */}
         <div className="space-y-3 pt-4 border-t border-slate-800">
           <div className="flex items-center gap-2 text-emerald-500 font-semibold pb-1">
             <Upload className="w-4 h-4 text-emerald-500" />

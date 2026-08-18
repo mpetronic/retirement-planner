@@ -614,6 +614,35 @@ export const ConfigurationPDF: React.FC<PDFProps> = ({ inputs }) => {
                 </View>
               </View>
             </View>
+
+            {/* Charity & QCD Card */}
+            <View style={styles.col2}>
+              <View style={styles.card}>
+                <Text style={styles.cardTitle}>Charitable Tithe & QCD Engine</Text>
+                <View style={styles.row}>
+                  <Text style={styles.rowLabel}>Tithing Engine Status:</Text>
+                  <Text style={styles.rowValue}>{inputs.charitySettings?.enabled ? 'Enabled' : 'Disabled'}</Text>
+                </View>
+                {inputs.charitySettings?.enabled && (
+                  <>
+                    <View style={styles.row}>
+                      <Text style={styles.rowLabel}>Tithe % of Annual Growth:</Text>
+                      <Text style={styles.rowValue}>{(((inputs.charitySettings?.growthPercentage ?? 0.10) * 100)).toFixed(1)}%</Text>
+                    </View>
+                    <View style={styles.row}>
+                      <Text style={styles.rowLabel}>Min Floor / Max Cap:</Text>
+                      <Text style={styles.rowValue}>
+                        {inputs.charitySettings?.minAnnualTithe ? formatCurrency(inputs.charitySettings.minAnnualTithe) : '$0'} / {inputs.charitySettings?.maxAnnualTithe ? formatCurrency(inputs.charitySettings.maxAnnualTithe) : 'None'}
+                      </Text>
+                    </View>
+                    <View style={[styles.row, { borderBottomWidth: 0 }]}>
+                      <Text style={styles.rowLabel}>QCD Sourcing (Age 70.5+):</Text>
+                      <Text style={styles.rowValue}>{inputs.charitySettings?.useQCD !== false ? 'Active (Tax-Free IRA)' : 'Disabled'}</Text>
+                    </View>
+                  </>
+                )}
+              </View>
+            </View>
           </View>
         </View>
 
