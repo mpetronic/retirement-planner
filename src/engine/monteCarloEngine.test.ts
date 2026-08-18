@@ -720,6 +720,90 @@ describe('Constant vs Randomized CPI Simulation', () => {
     expect(avgRawEquity).toBeGreaterThan(avgCalibratedEquity);
     expect(avgRawBond).toBeGreaterThan(avgCalibratedBond);
   });
+
+  it('should maintain 100% identical representative market sequences when expenses or relocation change', () => {
+    const inputs1: AppStateInputs = {
+      you: {
+        birthDate: '1960-06-15',
+        estimatedPIA: 3000,
+        targetSSClaimingAge: 70,
+        plannedRetirementAge: 65,
+        activeSalary: 0,
+      },
+      wife: {
+        birthDate: '1964-03-10',
+        estimatedPIA: 2000,
+        targetSSClaimingAge: 67,
+        plannedRetirementAge: 62,
+        activeSalary: 0,
+      },
+      portfolio: {
+        yourPreTaxIRA: 1000000,
+        yourRothIRA: 50000,
+        yourTaxableBrokerage: 200000,
+        yourTaxableBasis: 150000,
+        wifePreTaxIRA: 200000,
+        wifeRothIRA: 0,
+        wifeTaxableBrokerage: 0,
+        wifeTaxableBasis: 0,
+        yourCash: 50000,
+        wifeCash: 0,
+      },
+      jurisdiction: {
+        relocationYear: null,
+        currentState: 'MD',
+        targetState: 'MD',
+      },
+      growthAssumptions: {
+        equityReturnRate: 0.07,
+        fixedIncomeReturnRate: 0.04,
+        cpiInflationRate: 0.03,
+        healthcareInflationRate: 0.05,
+      },
+      annualLivingExpenses: 50000,
+      annualRothConversion: 0,
+      rothConversionStrategy: 'flat',
+      rothConversionTargetValue: null,
+      monteCarloSettings: {
+        mode: 'monte-carlo',
+        equityVolatility: 0.15,
+        fixedIncomeVolatility: 0.05,
+        correlation: 0.15,
+        trials: 50,
+        seed: 777,
+        randomizeCPI: true,
+        enableRegimeSwitching: true,
+      },
+      isConfigured: true,
+      isSingleFiler: false,
+    };
+
+    const summary1 = runMonteCarloSimulation(inputs1);
+
+    // Create scenario 2: radically different expenses and relocation to FL in 2030
+    const inputs2: AppStateInputs = {
+      ...inputs1,
+      annualLivingExpenses: 180000,
+      jurisdiction: {
+        currentState: 'MD',
+        targetState: 'FL',
+        relocationYear: 2030,
+      },
+    };
+
+    const summary2 = runMonteCarloSimulation(inputs2);
+
+    // Success rates should differ due to expense difference
+    expect(summary2.successRate).toBeLessThan(summary1.successRate);
+
+    // Representative market return sequences (P10, P50, P90) MUST be 100% identical for apples-to-apples comparison
+    expect(summary1.representativeSequences.worst.equityReturns).toEqual(summary2.representativeSequences.worst.equityReturns);
+    expect(summary1.representativeSequences.worst.fixedIncomeReturns).toEqual(summary2.representativeSequences.worst.fixedIncomeReturns);
+    expect(summary1.representativeSequences.median.equityReturns).toEqual(summary2.representativeSequences.median.equityReturns);
+    expect(summary1.representativeSequences.median.fixedIncomeReturns).toEqual(summary2.representativeSequences.median.fixedIncomeReturns);
+    expect(summary1.representativeSequences.best.equityReturns).toEqual(summary2.representativeSequences.best.equityReturns);
+    expect(summary1.representativeSequences.best.fixedIncomeReturns).toEqual(summary2.representativeSequences.best.fixedIncomeReturns);
+  });
 });
 
 
