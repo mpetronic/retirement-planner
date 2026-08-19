@@ -44,11 +44,13 @@ export const SankeyFlowDiagram: React.FC<SankeyFlowDiagramProps> = ({ row }) => 
   const preMedicare = row.preMedicareHealthcareCost ?? 0;
   const medBase = row.medicareBasePremiums ?? 0;
   const medSurcharge = row.combinedSurchargeAnnual ?? 0;
-  const taxes = row.fedIncomeTax + row.stateIncomeTax; // fedIncomeTax already includes niitTax
+  const employee401k = row.employee401kContribution ?? 0;
+  const fica = row.ficaTaxesPaid ?? 0;
+  const taxes = row.fedIncomeTax + row.stateIncomeTax + fica; // Includes Federal, State, and FICA taxes
   const qcd = row.qcdAmount ?? 0;
   const nonQcdTithe = row.nonQcdTithe ?? 0;
 
-  const totalExpenses = living + preMedicare + medBase + medSurcharge + taxes + nonQcdTithe + qcd;
+  const totalExpenses = living + preMedicare + medBase + medSurcharge + taxes + nonQcdTithe + qcd + employee401k;
   const totalSourcesCash = salary + ss + rmd + divInterest + drawBrokerage + drawPreTax + drawRoth + drawCash + qcd;
   const cashDifference = totalSourcesCash - totalExpenses;
   const surplus = cashDifference > 0.01 ? cashDifference : 0;
@@ -74,7 +76,8 @@ export const SankeyFlowDiagram: React.FC<SankeyFlowDiagramProps> = ({ row }) => 
     { id: "living", label: "Living Expenses", value: living, color: "#34d399" },
     { id: "preMedicare", label: "Pre-Medicare Prem.", value: preMedicare, color: "#f97316" },
     { id: "medPremiums", label: "Medicare Base & Surcharge", value: medBase + medSurcharge, color: "#ef4444" },
-    { id: "taxes", label: "Income Taxes (Fed/State)", value: taxes, color: "#dc2626" },
+    { id: "taxes", label: "Taxes (Income & FICA)", value: taxes, color: "#dc2626" },
+    { id: "employee401k", label: "401(k) Pre-Tax Contribution", value: employee401k, color: "#0284c7" },
     { id: "qcdDest", label: "Charitable QCD", value: qcd, color: "#f43f5e" },
     { id: "titheCash", label: "Charity / Tithe (Cash)", value: nonQcdTithe, color: "#fb7185" },
     { id: "rothConvDest", label: "Roth IRA (Conv. Dest)", value: rothConv, color: "#d97706" },

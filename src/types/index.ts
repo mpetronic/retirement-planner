@@ -23,6 +23,7 @@ export interface StateHealthcareConfig {
 
 export interface HealthcareConfig {
   medicarePartBPremium: number | null;
+  fileSSA44LifeChangingEvent?: boolean; // Form SSA-44 Life-Changing Event (Work Stoppage / Wage Reduction)
   MD: StateHealthcareConfig;
   FL: StateHealthcareConfig;
 }
@@ -379,6 +380,7 @@ export interface AppStateInputs {
   monteCarloSettings: MonteCarloSettings;
   detailedExpenses?: DetailedExpensesState;
   charitySettings?: CharitySettings;
+  fileSSA44LifeChangingEvent?: boolean; // Form SSA-44 Life-Changing Event (Work Stoppage / Wage Reduction)
 }
 
 /**
@@ -428,6 +430,8 @@ export interface SimulationResultRow {
   
   // Medicare Surcharges (applied in Year t based on Year t-2 MAGI)
   magiTwoYearsAgo: number;
+  rawLookbackMAGI?: number; // Unadjusted 2-year lookback MAGI before Form SSA-44 life changing event adjustment
+  isSSA44Applied?: boolean; // True if Form SSA-44 Work Stoppage adjustment was applied to reduce lookback MAGI
   surchargeTier: number;
   yourPartBSurcharge: number;
   yourPartDSurcharge: number;
@@ -449,6 +453,13 @@ export interface SimulationResultRow {
   drawdownPreTax: number;
   drawdownRoth: number;
   drawdownCash: number;
+  reinvestedSurplus?: number; // Total annual surplus reinvested into Taxable Brokerage
+
+  // Pre-Retirement Contributions & Payroll
+  employee401kContribution?: number; // Total annual employee pre-tax 401(k) contributions
+  ficaTaxesPaid?: number; // Social Security (6.2%) + Medicare (1.45% + 0.9%) payroll taxes paid
+  incomeTaxWithheld?: number; // Estimated federal and state paycheck income tax withholdings
+  netTakeHomeSalary?: number; // Net take-home salary available for expenses
 
   // Charitable Giving & Tithing (with QCD)
   portfolioGrowth: number; // Total dollar return across accounts in the year

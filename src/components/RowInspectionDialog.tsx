@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { createPortal } from 'react-dom';
-import { X, TrendingUp, TrendingDown, Wallet, Activity, ShieldAlert, Award } from 'lucide-react';
+import { X, TrendingUp, TrendingDown, Wallet, Activity, ShieldAlert, Shield, Award } from 'lucide-react';
 import { SimulationResultRow, AppStateInputs } from '../types';
 import { IRMAA_TIERS_SINGLE, IRMAA_TIERS_MFJ } from '../engine/taxRates2026';
 import { SankeyFlowDiagram } from './SankeyFlowDiagram';
@@ -274,9 +274,33 @@ export const RowInspectionDialog: React.FC<RowInspectionDialogProps> = ({
                   </h4>
                   <div className="space-y-2 text-sm">
                     <div className="flex justify-between items-center">
-                      <span className="text-slate-400">Salary (Active Work):</span>
+                      <span className="text-slate-400">Gross Salary (Active Work):</span>
                       <span className="font-mono text-slate-200">{formatCurrency(salary)}</span>
                     </div>
+                    {row.employee401kContribution !== undefined && row.employee401kContribution > 0 && (
+                      <div className="flex justify-between items-center pl-2 text-xs text-sky-400">
+                        <span>↳ Less 401(k) Pre-Tax Contribution:</span>
+                        <span className="font-mono">-{formatCurrency(row.employee401kContribution)}</span>
+                      </div>
+                    )}
+                    {row.ficaTaxesPaid !== undefined && row.ficaTaxesPaid > 0 && (
+                      <div className="flex justify-between items-center pl-2 text-xs text-rose-400">
+                        <span>↳ Less FICA Payroll Taxes:</span>
+                        <span className="font-mono">-{formatCurrency(row.ficaTaxesPaid)}</span>
+                      </div>
+                    )}
+                    {row.incomeTaxWithheld !== undefined && row.incomeTaxWithheld > 0 && (
+                      <div className="flex justify-between items-center pl-2 text-xs text-amber-400">
+                        <span>↳ Less Est. Paycheck Tax Withholdings:</span>
+                        <span className="font-mono">-{formatCurrency(row.incomeTaxWithheld)}</span>
+                      </div>
+                    )}
+                    {row.netTakeHomeSalary !== undefined && row.netTakeHomeSalary > 0 && (
+                      <div className="flex justify-between items-center pl-2 text-xs text-emerald-400 font-semibold border-t border-slate-800/60 pt-1">
+                        <span>↳ Net Take-Home Salary:</span>
+                        <span className="font-mono">{formatCurrency(row.netTakeHomeSalary)}</span>
+                      </div>
+                    )}
                     <div className="flex justify-between items-center">
                       <span className="text-slate-400">Required Minimum Distributions (RMD):</span>
                       <span className="font-mono text-slate-200">{formatCurrency(rmd)}</span>
@@ -576,6 +600,22 @@ export const RowInspectionDialog: React.FC<RowInspectionDialogProps> = ({
                 <p className="text-slate-400 leading-relaxed text-sm">
                   Your Medicare premium surcharges in year <strong className="text-slate-200">{row.year}</strong> are determined by the Modified Adjusted Gross Income (MAGI) earned in year <strong className="text-slate-200">{row.year - 2}</strong>.
                 </p>
+
+                {row.isSSA44Applied && (
+                  <div className="p-3.5 bg-sky-950/40 border border-sky-500/30 rounded-xl flex items-start gap-3">
+                    <Shield className="w-5 h-5 text-sky-400 shrink-0 mt-0.5" />
+                    <div className="space-y-1 text-xs">
+                      <div className="flex items-center gap-2">
+                        <span className="font-bold text-sky-300 uppercase tracking-wide">
+                          Form SSA-44 Life-Changing Event Active (Work Stoppage)
+                        </span>
+                      </div>
+                      <p className="text-slate-300 leading-relaxed">
+                        Social Security Form SSA-44 reset your 2-year lookback determination to your <strong>post-retirement income</strong> ({formatCurrency(row.magiTwoYearsAgo)}) rather than your unadjusted pre-retirement tax return income ({formatCurrency(row.rawLookbackMAGI ?? 0)}), eliminating high-wage surcharge penalties.
+                      </p>
+                    </div>
+                  </div>
+                )}
 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div className="bg-slate-900/60 border border-slate-800 p-4 rounded-xl space-y-2">

@@ -80,6 +80,10 @@ export const HealthcareConfigDialog: React.FC<HealthcareConfigDialogProps> = ({
     return healthcareConfig?.medicarePartBPremium !== undefined ? healthcareConfig.medicarePartBPremium : null;
   });
 
+  const [fileSSA44, setFileSSA44] = useState<boolean>(() => {
+    return healthcareConfig?.fileSSA44LifeChangingEvent !== false;
+  });
+
   const [mdConfig, setMdConfig] = useState<StateHealthcareConfig>(() => {
     return healthcareConfig?.MD ? { ...healthcareConfig.MD } : createDefaultStateConfig();
   });
@@ -101,6 +105,7 @@ export const HealthcareConfigDialog: React.FC<HealthcareConfigDialogProps> = ({
   const handleSave = () => {
     onSave({
       medicarePartBPremium: partBPremium,
+      fileSSA44LifeChangingEvent: fileSSA44,
       MD: mdConfig,
       FL: flConfig
     });
@@ -464,6 +469,38 @@ export const HealthcareConfigDialog: React.FC<HealthcareConfigDialogProps> = ({
                 This premium is federal and does not vary by state. The system will automatically compute any dynamic IRMAA surcharges on top of this base amount during simulation.
               </div>
             </div>
+          </div>
+
+          {/* Form SSA-44 Life-Changing Event (Work Stoppage / Wage Reduction) */}
+          <div className="p-4 bg-slate-950/40 rounded-xl border border-slate-800/60 space-y-3">
+            <div className="flex items-center justify-between border-b border-slate-850 pb-2">
+              <div className="flex items-center gap-2">
+                <Shield className="w-4 h-4 text-sky-400" />
+                <h4 className="text-xs font-bold text-slate-300 uppercase tracking-wider">
+                  Social Security Form SSA-44 (Life-Changing Event)
+                </h4>
+              </div>
+              <span className="text-[10px] text-sky-400 font-semibold uppercase tracking-wider bg-sky-500/10 px-2 py-0.5 rounded border border-sky-500/20">
+                IRMAA Optimization
+              </span>
+            </div>
+
+            <label className="flex items-start gap-3 cursor-pointer group">
+              <input
+                type="checkbox"
+                checked={fileSSA44}
+                onChange={(e) => setFileSSA44(e.target.checked)}
+                className="mt-0.5 w-4 h-4 rounded border-slate-700 bg-slate-900 text-emerald-500 focus:ring-emerald-500/40 focus:ring-offset-0 transition-all cursor-pointer"
+              />
+              <div className="space-y-1">
+                <span className="text-xs font-bold text-slate-200 group-hover:text-emerald-400 transition-colors block">
+                  File Form SSA-44 for Work Stoppage / Retirement
+                </span>
+                <p className="text-[11px] text-slate-400 leading-relaxed">
+                  Upon retirement, beneficiaries file Form SSA-44 to request that Social Security calculate Medicare IRMAA surcharges using their <strong>current post-retirement income</strong> rather than their high pre-retirement W-2 wages from 2 years prior.
+                </p>
+              </div>
+            </label>
           </div>
 
           {/* State Tabs */}

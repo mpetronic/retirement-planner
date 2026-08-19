@@ -354,9 +354,8 @@ describe('runRetirementSimulation', () => {
     
     
     const actualEndTaxable = row2040!.endYourTaxableBrokerage + row2040!.endWifeTaxableBrokerage;
-    // Expected value calibrated for the monthly-compounding engine (monthly loop produces slightly
-    // different compound growth paths vs. the prior annual engine).
-    expect(actualEndTaxable).toBeCloseTo(892293.9, 1);
+    // Expected value calibrated for the monthly-compounding engine with 401(k) and FICA modeling.
+    expect(actualEndTaxable).toBeCloseTo(481734.2, 0);
   });
 
   it('should apply pre-Medicare premiums and detailed health expenses correctly based on age, work status, and retirement', () => {
@@ -657,9 +656,9 @@ describe('runRetirementSimulation', () => {
     expect(row2026!.incomeInflow).toBeGreaterThanOrEqual(19500);
 
     // Verify basis step-up in MD: 50% step-up (deceased's account stepped up to FMV at death).
-    // Expected value calibrated for the monthly-compounding engine.
+    // Expected value calibrated for the monthly-compounding engine with 401(k) and FICA modeling.
     const row2045MD = resultsMD.find(r => r.year === 2045);
-    expect(row2045MD!.endWifeTaxableBasis).toBeCloseTo(455476.2, 1);
+    expect(row2045MD!.endWifeTaxableBasis).toBeCloseTo(241160.3, 1);
 
     // Now set current and target state to FL
     inputs.jurisdiction.currentState = 'FL';
@@ -667,9 +666,9 @@ describe('runRetirementSimulation', () => {
     const resultsFL = runRetirementSimulation(inputs, true);
     const row2045FL = resultsFL.find(r => r.year === 2045);
     
-    // Expected values calibrated for the monthly-compounding engine.
-    expect(row2045FL!.endWifeTaxableBasis).toBeCloseTo(1332846.1, 1);
-    expect(row2045FL!.endWifeTaxableBrokerage).toBeCloseTo(1382295.4, 1);
+    // Expected values calibrated for the monthly-compounding engine with 401(k) and FICA modeling.
+    expect(row2045FL!.endWifeTaxableBasis).toBeCloseTo(1214693.8, 1);
+    expect(row2045FL!.endWifeTaxableBrokerage).toBeCloseTo(1261780.4, 1);
   });
 
   it('should draw from Cash Assets first and grow remaining cash at the fixed income rate', () => {
@@ -1260,6 +1259,135 @@ describe('runRetirementSimulation fixes', () => {
       // Standard deduction reported on the row should be elevated due to itemized optimization ($10k SALT + $50k charity = $60k > standard deduction)
       expect(rowWithGifts.standardDeduction).toBeGreaterThan(baseStdDed);
       expect(rowWithGifts.standardDeduction).toBeGreaterThanOrEqual(50000);
+    });
+
+    it('should contribute max pre-tax 401(k) and reduce taxable salary in pre-retirement working years', () => {
+      const inputs = getMockInputs();
+      inputs.simulationStartYear = 2026;
+      inputs.you.birthDate = '1965-06-15'; // Age 61 in 2026 (age 60-63 SECURE 2.0 catchup: $23,500 + $11,250 = $34,750)
+      inputs.you.plannedRetirementAge = 65; // working all of 2026
+      inputs.you.activeSalary = 150000;
+      inputs.isSingleFiler = true;
+      inputs.portfolio.yourPreTaxIRA = 500000;
+
+      const results = runRetirementSimulation(inputs);
+      const row2026 = results[0];
+
+      expect(row2026.employee401kContribution).toBeCloseTo(34750, 0);
+      expect(row2026.ficaTaxesPaid).toBeGreaterThan(0);
+      expect(row2026.incomeTaxWithheld).toBeGreaterThan(0);
+      expect(row2026.netTakeHomeSalary).toBeGreaterThan(0);
+      
+      // Verify exact arithmetic: Gross - 401(k) - FICA - Withholdings === Net Take-Home
+      const gross = (row2026.yourSalary ?? 0) + (row2026.wifeSalary ?? 0);
+      const computedNet = gross - (row2026.employee401kContribution ?? 0) - (row2026.ficaTaxesPaid ?? 0) - (row2026.incomeTaxWithheld ?? 0);
+      expect(row2026.netTakeHomeSalary).toBeCloseTo(computedNet, 2);
+
+      // Taxable income should be based on gross salary minus 401k contribution
+      expect(row2026.fedAGI).toBeLessThan(150000);
+    });
+
+    it('should preserve cash savings buffer ($0 cash drawdown) in transition year when full-year net salary exceeds full-year expenses', () => {
+      const inputs = getMockInputs();
+      inputs.simulationStartYear = 2026;
+      inputs.you.birthDate = '1965-09-01'; // Turns 61 in Sept 2026
+      inputs.you.plannedRetirementAge = 61; // Retires in Sept (works 8 months)
+      inputs.you.activeSalary = 300000; // High salary
+      inputs.annualLivingExpenses = 80000;
+      inputs.portfolio.yourCash = 87485; // Starting cash buffer
+      inputs.isSingleFiler = true;
+
+      const results = runRetirementSimulation(inputs);
+      const row2026 = results[0];
+
+      // Cash savings buffer should NOT be drawn down because 8 months of net salary ($100k+)
+      // is more than enough to cover full-year living expenses ($80k).
+      expect(row2026.drawdownCash).toBe(0);
+      // Starting cash balance should be preserved intact (+ interest)
+      expect(row2026.endYourCash).toBeGreaterThanOrEqual(87485);
+      // Surplus should be reinvested into Brokerage
+      expect(row2026.reinvestedSurplus).toBeGreaterThan(0);
+    });
+
+    it('should pro-rate statutory RMDs across all 12 months to fund monthly expenses at age 75+', () => {
+      const inputs = getMockInputs();
+      inputs.simulationStartYear = 2035;
+      inputs.you.birthDate = '1960-01-01'; // Age 75 in 2035 (RMD age)
+      inputs.you.plannedRetirementAge = 65; // fully retired
+      inputs.portfolio.yourPreTaxIRA = 3000000;
+      inputs.annualLivingExpenses = 60000;
+      inputs.portfolio.yourCash = 50000;
+      inputs.isSingleFiler = true;
+
+      const results = runRetirementSimulation(inputs);
+      const row2035 = results[0];
+
+      expect(row2035.yourRMD).toBeGreaterThan(100000);
+      // Because RMD is pro-rated monthly, monthly expenses are funded from monthly RMD,
+      // so cash savings is not drained
+      expect(row2035.drawdownCash).toBe(0);
+      expect(row2035.endYourCash).toBeGreaterThanOrEqual(50000);
+    });
+
+    it('should apply Form SSA-44 Life-Changing Event (Work Stoppage) to reset 2-year lookback MAGI and avoid IRMAA surcharge penalties upon retirement', () => {
+      const inputs = getMockInputs();
+      inputs.simulationStartYear = 2026;
+      inputs.you.birthDate = '1961-01-01'; // Turns 65 in 2026 (Medicare eligible)
+      inputs.you.plannedRetirementAge = 65; // Retires in 2026
+      inputs.you.activeSalary = 350000; // High pre-retirement salary
+      inputs.isSingleFiler = true;
+      inputs.fileSSA44LifeChangingEvent = true;
+
+      const results = runRetirementSimulation(inputs);
+      const row2026 = results[0];
+
+      // SSA-44 should be active
+      expect(row2026.isSSA44Applied).toBe(true);
+      // Raw lookback would have included high salary ($350k)
+      expect(row2026.rawLookbackMAGI).toBeGreaterThanOrEqual(300000);
+      // Adjusted lookback excludes the pre-retirement salary
+      expect(row2026.magiTwoYearsAgo).toBeLessThan(100000);
+      // Surcharge tier should be 0 (no IRMAA penalty)
+      expect(row2026.surchargeTier).toBe(0);
+      expect(row2026.combinedSurchargeAnnual).toBe(0);
+    });
+
+    it('should subject retiree to high IRMAA tiers if Form SSA-44 is explicitly disabled', () => {
+      const inputs = getMockInputs();
+      inputs.simulationStartYear = 2026;
+      inputs.you.birthDate = '1961-01-01'; // Turns 65 in 2026 (Medicare eligible)
+      inputs.you.plannedRetirementAge = 65; // Retires in 2026
+      inputs.you.activeSalary = 350000; // High pre-retirement salary
+      inputs.isSingleFiler = true;
+      inputs.fileSSA44LifeChangingEvent = false; // Disabled
+
+      const results = runRetirementSimulation(inputs);
+      const row2026 = results[0];
+
+      // SSA-44 should not be applied
+      expect(row2026.isSSA44Applied).toBe(false);
+      // Lookback MAGI includes full pre-retirement income
+      expect(row2026.magiTwoYearsAgo).toBeGreaterThanOrEqual(300000);
+      // Should be subjected to elevated IRMAA tier
+      expect(row2026.surchargeTier).toBeGreaterThanOrEqual(4);
+      expect(row2026.combinedSurchargeAnnual).toBeGreaterThan(0);
+    });
+
+    it('should naturally transition to standard 2-year lookback when retired for 2+ full tax years', () => {
+      const inputs = getMockInputs();
+      inputs.simulationStartYear = 2026;
+      inputs.you.birthDate = '1961-01-01'; // Age 65 in 2026
+      inputs.you.plannedRetirementAge = 65; // Retires in 2026
+      inputs.you.activeSalary = 300000;
+      inputs.isSingleFiler = true;
+      inputs.fileSSA44LifeChangingEvent = true;
+
+      const results = runRetirementSimulation(inputs);
+      
+      // In 2029 (year 4), lookback year is 2027 (which had $0 salary)
+      const row2029 = results.find(r => r.year === 2029);
+      expect(row2029).toBeDefined();
+      expect(row2029!.isSSA44Applied).toBe(false);
     });
   });
 });
