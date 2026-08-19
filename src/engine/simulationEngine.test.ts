@@ -354,8 +354,8 @@ describe('runRetirementSimulation', () => {
     
     
     const actualEndTaxable = row2040!.endYourTaxableBrokerage + row2040!.endWifeTaxableBrokerage;
-    // Expected value calibrated for the monthly-compounding engine with 401(k) and FICA modeling.
-    expect(actualEndTaxable).toBeCloseTo(481734.2, 0);
+    // Expected value calibrated for the monthly-compounding engine without double-counted RMDs.
+    expect(actualEndTaxable).toBeCloseTo(658264.9, 0);
   });
 
   it('should apply pre-Medicare premiums and detailed health expenses correctly based on age, work status, and retirement', () => {
@@ -656,9 +656,9 @@ describe('runRetirementSimulation', () => {
     expect(row2026!.incomeInflow).toBeGreaterThanOrEqual(19500);
 
     // Verify basis step-up in MD: 50% step-up (deceased's account stepped up to FMV at death).
-    // Expected value calibrated for the monthly-compounding engine with 401(k) and FICA modeling.
+    // Expected value calibrated for the monthly-compounding engine without double-counted RMDs.
     const row2045MD = resultsMD.find(r => r.year === 2045);
-    expect(row2045MD!.endWifeTaxableBasis).toBeCloseTo(241160.3, 1);
+    expect(row2045MD!.endWifeTaxableBasis).toBeCloseTo(399761.8, 1);
 
     // Now set current and target state to FL
     inputs.jurisdiction.currentState = 'FL';
@@ -666,9 +666,9 @@ describe('runRetirementSimulation', () => {
     const resultsFL = runRetirementSimulation(inputs, true);
     const row2045FL = resultsFL.find(r => r.year === 2045);
     
-    // Expected values calibrated for the monthly-compounding engine with 401(k) and FICA modeling.
-    expect(row2045FL!.endWifeTaxableBasis).toBeCloseTo(1214693.8, 1);
-    expect(row2045FL!.endWifeTaxableBrokerage).toBeCloseTo(1261780.4, 1);
+    // Expected values calibrated for the monthly-compounding engine without double-counted RMDs.
+    expect(row2045FL!.endWifeTaxableBasis).toBeCloseTo(1341133.7, 1);
+    expect(row2045FL!.endWifeTaxableBrokerage).toBeCloseTo(1393096.1, 1);
   });
 
   it('should draw from Cash Assets first and grow remaining cash at the fixed income rate', () => {
@@ -1388,6 +1388,33 @@ describe('runRetirementSimulation fixes', () => {
       const row2029 = results.find(r => r.year === 2029);
       expect(row2029).toBeDefined();
       expect(row2029!.isSSA44Applied).toBe(false);
+    });
+
+    it('should ensure MAGI equals the exact sum of all itemized income components in RMD years without double-counting', () => {
+      const inputs = getMockInputs();
+      inputs.simulationStartYear = 2026;
+      inputs.you.birthDate = '1960-01-01'; // Age 75 in 2035
+      inputs.you.plannedRetirementAge = 65;
+      inputs.portfolio.yourPreTaxIRA = 2000000;
+      inputs.portfolio.yourTaxableBrokerage = 500000;
+      inputs.portfolio.yourCash = 100000;
+
+      const results = runRetirementSimulation(inputs);
+      const row2040 = results.find(r => r.year === 2040);
+      expect(row2040).toBeDefined();
+
+      const grossSalary = Math.max(0, (row2040!.yourSalary ?? 0) + (row2040!.wifeSalary ?? 0) - (row2040!.employee401kContribution ?? 0));
+      const rmd = (row2040!.yourRMD ?? 0) + (row2040!.wifeRMD ?? 0);
+      const extraPreTax = row2040!.otherTaxableIncome ?? 0;
+      const rothConv = row2040!.intentionalRothConversion ?? 0;
+      const capGains = row2040!.capitalGainsTriggered ?? 0;
+      const divYield = row2040!.taxableDividends ?? 0;
+      const interestYield = row2040!.taxableInterest ?? 0;
+      const taxableSS = row2040!.taxableSS ?? 0;
+
+      // In the UI: Gross Salary + RMD + Extra Pre-Tax + Roth Conv + Cap Gains + Dividends + Interest + Taxable SS
+      const sumOfComponents = grossSalary + rmd + extraPreTax + rothConv + capGains + divYield + interestYield + taxableSS;
+      expect(row2040!.magi).toBeCloseTo(sumOfComponents, 0);
     });
   });
 });

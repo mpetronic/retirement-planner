@@ -278,7 +278,7 @@ export const RowInspectionDialog: React.FC<RowInspectionDialogProps> = ({
                       <span className="font-mono text-slate-200">{formatCurrency(salary)}</span>
                     </div>
                     {row.employee401kContribution !== undefined && row.employee401kContribution > 0 && (
-                      <div className="flex justify-between items-center pl-2 text-xs text-sky-400">
+                      <div className="flex justify-between items-center pl-2 text-xs text-rose-400">
                         <span>↳ Less 401(k) Pre-Tax Contribution:</span>
                         <span className="font-mono">-{formatCurrency(row.employee401kContribution)}</span>
                       </div>
@@ -290,7 +290,7 @@ export const RowInspectionDialog: React.FC<RowInspectionDialogProps> = ({
                       </div>
                     )}
                     {row.incomeTaxWithheld !== undefined && row.incomeTaxWithheld > 0 && (
-                      <div className="flex justify-between items-center pl-2 text-xs text-amber-400">
+                      <div className="flex justify-between items-center pl-2 text-xs text-rose-400">
                         <span>↳ Less Est. Paycheck Tax Withholdings:</span>
                         <span className="font-mono">-{formatCurrency(row.incomeTaxWithheld)}</span>
                       </div>
@@ -353,7 +353,7 @@ export const RowInspectionDialog: React.FC<RowInspectionDialogProps> = ({
                       </div>
                       <div className="flex justify-between items-center">
                         <span className="text-slate-400">Standard Deduction ({isSingle ? 'Single' : 'MFJ'}):</span>
-                        <span className="font-mono text-slate-200">-{formatCurrency(row.standardDeduction)}</span>
+                        <span className="font-mono text-rose-400">-{formatCurrency(row.standardDeduction)}</span>
                       </div>
                       <div className="flex justify-between items-center border-t border-slate-800/50 pt-2 font-semibold">
                         <span className="text-slate-300">Taxable Income:</span>

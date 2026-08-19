@@ -45,12 +45,13 @@ export const SankeyFlowDiagram: React.FC<SankeyFlowDiagramProps> = ({ row }) => 
   const medBase = row.medicareBasePremiums ?? 0;
   const medSurcharge = row.combinedSurchargeAnnual ?? 0;
   const employee401k = row.employee401kContribution ?? 0;
-  const fica = row.ficaTaxesPaid ?? 0;
-  const taxes = row.fedIncomeTax + row.stateIncomeTax + fica; // Includes Federal, State, and FICA taxes
+  const fedTax = Math.max(0, row.fedIncomeTax ?? 0); // Includes Federal Income Tax and NIIT
+  const stateTax = Math.max(0, row.stateIncomeTax ?? 0);
+  const fica = Math.max(0, row.ficaTaxesPaid ?? 0);
   const qcd = row.qcdAmount ?? 0;
   const nonQcdTithe = row.nonQcdTithe ?? 0;
 
-  const totalExpenses = living + preMedicare + medBase + medSurcharge + taxes + nonQcdTithe + qcd + employee401k;
+  const totalExpenses = living + preMedicare + medBase + medSurcharge + fedTax + stateTax + fica + nonQcdTithe + qcd + employee401k;
   const totalSourcesCash = salary + ss + rmd + divInterest + drawBrokerage + drawPreTax + drawRoth + drawCash + qcd;
   const cashDifference = totalSourcesCash - totalExpenses;
   const surplus = cashDifference > 0.01 ? cashDifference : 0;
@@ -75,8 +76,11 @@ export const SankeyFlowDiagram: React.FC<SankeyFlowDiagramProps> = ({ row }) => 
   const uses: NodeItem[] = [
     { id: "living", label: "Living Expenses", value: living, color: "#34d399" },
     { id: "preMedicare", label: "Pre-Medicare Prem.", value: preMedicare, color: "#f97316" },
-    { id: "medPremiums", label: "Medicare Base & Surcharge", value: medBase + medSurcharge, color: "#ef4444" },
-    { id: "taxes", label: "Taxes (Income & FICA)", value: taxes, color: "#dc2626" },
+    { id: "medBase", label: "Medicare Base Premiums", value: medBase, color: "#ef4444" },
+    { id: "medSurcharge", label: "Medicare IRMAA Surcharge", value: medSurcharge, color: "#f87171" },
+    { id: "fedTax", label: "Federal Income Tax", value: fedTax, color: "#dc2626" },
+    { id: "stateTax", label: "State Income Tax", value: stateTax, color: "#e11d48" },
+    { id: "ficaTax", label: "FICA Payroll Taxes", value: fica, color: "#ea580c" },
     { id: "employee401k", label: "401(k) Pre-Tax Contribution", value: employee401k, color: "#0284c7" },
     { id: "qcdDest", label: "Charitable QCD", value: qcd, color: "#f43f5e" },
     { id: "titheCash", label: "Charity / Tithe (Cash)", value: nonQcdTithe, color: "#fb7185" },
@@ -313,6 +317,16 @@ export const SankeyFlowDiagram: React.FC<SankeyFlowDiagramProps> = ({ row }) => 
                   className="transition-colors duration-200"
                 >
                   {u.label} ({formatCurrency(u.value)})
+                  {u.id === 'medSurcharge' && row.surchargeTier > 0 && (
+                    <tspan
+                      dx="6"
+                      fill="#f59e0b"
+                      fontWeight="bold"
+                      fontSize="9.5"
+                    >
+                      [Tier {row.surchargeTier}]
+                    </tspan>
+                  )}
                 </text>
               </g>
             );

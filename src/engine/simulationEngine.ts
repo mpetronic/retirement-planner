@@ -673,22 +673,31 @@ export function runRetirementSimulation(
         magiTwoYearsAgo = rawLookbackMAGI;
       }
     } else {
+      const lookbackYourAge = yourAge - 2;
+      const lookbackWifeAge = wifeAge - 2;
+
       let estSS = 0;
-      if (!youDeceased && yourAge >= (inputs.you.targetSSClaimingAge || 67)) estSS += yourSSAnnualBase;
+      if (!youDeceased && lookbackYourAge >= (inputs.you.targetSSClaimingAge || 67)) estSS += yourSSAnnualBase;
       if (!wifeDeceased) {
         if (youDeceased) {
-          if (wifeAge >= 60) estSS += wifeSurvivorSSBenefit;
-        } else if (wifeAge >= (inputs.wife.targetSSClaimingAge || 67)) {
+          if (lookbackWifeAge >= 60) estSS += wifeSurvivorSSBenefit;
+        } else if (lookbackWifeAge >= (inputs.wife.targetSSClaimingAge || 67)) {
           estSS += Math.max(wifeSSAnnualBase, spousalSSAnnualFloor);
         }
       }
+
+      let estRMD = 0;
+      if (!youDeceased && lookbackYourAge >= yourRmdStartAge) estRMD += yourRMD;
+      if (!wifeDeceased && lookbackWifeAge >= wifeRmdStartAge) estRMD += wifeRMD;
+
       const preSimYourSalary = inputs.you.activeSalary ?? 0;
       const preSimWifeSalary = (!inputs.isSingleFiler ? inputs.wife.activeSalary : 0) ?? 0;
       const preSimSalary = preSimYourSalary + preSimWifeSalary;
 
       const cashRate = inputs.growthAssumptions.cashYieldRate ?? inputs.growthAssumptions.fixedIncomeReturnRate;
       const estInterest = (yourCash + (wifeDeceased ? 0 : wifeCash)) * cashRate;
-      const baseNonSalaryIncome = estSS * 0.85 + combinedRMD + targetConversion + (yourTaxable + (wifeDeceased ? 0 : wifeTaxable)) * taxableDividendYield + estInterest;
+      const estDividends = (yourTaxable + (wifeDeceased ? 0 : wifeTaxable)) * taxableDividendYield;
+      const baseNonSalaryIncome = estSS * 0.85 + estRMD + estDividends + estInterest;
       rawLookbackMAGI = preSimSalary + baseNonSalaryIncome;
 
       if (isSSA44Enabled && preSimSalary > 0 && (isYouRetiredThisYear || isWifeRetiredThisYear)) {
@@ -764,6 +773,8 @@ export function runRetirementSimulation(
     let annualDrawdownRoth = 0;
     let annualYourTradDraw = 0;
     let annualWifeTradDraw = 0;
+    let annualYourRMDDistributed = 0;
+    let annualWifeRMDDistributed = 0;
     let annualCapitalGainsTriggered = 0;
 
     let annualPreTaxGrowth = 0;
@@ -807,12 +818,12 @@ export function runRetirementSimulation(
       if (monthlyYourRMD > 0 && yourPreTax > 0) {
         monthlyYourRmdDraw = Math.min(monthlyYourRMD, yourPreTax);
         yourPreTax -= monthlyYourRmdDraw;
-        annualYourTradDraw += monthlyYourRmdDraw;
+        annualYourRMDDistributed += monthlyYourRmdDraw;
       }
       if (monthlyWifeRMD > 0 && wifePreTax > 0) {
         monthlyWifeRmdDraw = Math.min(monthlyWifeRMD, wifePreTax);
         wifePreTax -= monthlyWifeRmdDraw;
-        annualWifeTradDraw += monthlyWifeRmdDraw;
+        annualWifeRMDDistributed += monthlyWifeRmdDraw;
       }
 
       // Gross salaries for ledger rollups
@@ -1093,16 +1104,16 @@ export function runRetirementSimulation(
     const taxableCombinedRMD = taxableYourRMD + taxableWifeRMD;
 
     // Remaining RMD to distribute in December (if any unpaid portion remains):
-    remainingYourRMD = Math.max(0, taxableYourRMD - annualYourTradDraw);
-    remainingWifeRMD = Math.max(0, taxableWifeRMD - annualWifeTradDraw);
+    remainingYourRMD = Math.max(0, taxableYourRMD - annualYourRMDDistributed);
+    remainingWifeRMD = Math.max(0, taxableWifeRMD - annualWifeRMDDistributed);
 
     // December (month 11) is now processed
     const decDistributeYourRMD = Math.min(remainingYourRMD, yourPreTax);
     const decDistributeWifeRMD = Math.min(remainingWifeRMD, wifePreTax);
     yourPreTax = Math.max(0, yourPreTax - decDistributeYourRMD);
     wifePreTax = Math.max(0, wifePreTax - decDistributeWifeRMD);
-    annualYourTradDraw += decDistributeYourRMD;
-    annualWifeTradDraw += decDistributeWifeRMD;
+    annualYourRMDDistributed += decDistributeYourRMD;
+    annualWifeRMDDistributed += decDistributeWifeRMD;
 
     if (targetConversion > 0) {
       if (isSurvivorActive || youDeceased) {
@@ -1527,7 +1538,7 @@ export function runRetirementSimulation(
     const ordinaryDividends = totalDividends * taxableNonQualifiedPortion;
     const qualifiedDividends = totalDividends * (1 - taxableNonQualifiedPortion);
 
-    const totalCashInterest = annualYourInterest + annualWifeInterest;
+    const totalCashInterest = (annualYourInterest + annualWifeInterest) + (yourDecInterest + wifeDecInterest);
     const taxableSalary = Math.max(0, grossSalary - annualTotal401k);
     const nonSSOrdinary = taxableSalary + rmd + rothConv + ordinaryDividends + totalCashInterest + janToNovTradDraw + decYourTradDraw + decWifeTradDraw;
     const capitalGains = annualCapitalGainsTriggered + capitalGainsTriggeredDec + qualifiedDividends;
@@ -1583,7 +1594,7 @@ export function runRetirementSimulation(
       niitTax,
       taxableSS,
       taxableDividends: totalDividends,
-      taxableInterest: annualYourInterest + annualWifeInterest,
+      taxableInterest: totalCashInterest,
       cpiFactor,
       magiTwoYearsAgo,
       rawLookbackMAGI,
