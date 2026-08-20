@@ -4,6 +4,7 @@ import {
   getDefaultExportFileName,
   generateJsonBlob,
   generateExcelExportBlob,
+  generatePdfBlob,
   saveFileWithLocationPrompt,
   isFileSystemAccessSupported,
 } from './exportHelpers';
@@ -260,6 +261,75 @@ describe('exportHelpers', () => {
     it('returns true when showSaveFilePicker is in window', () => {
       (globalThis as any).window.showSaveFilePicker = () => {};
       expect(isFileSystemAccessSupported()).toBe(true);
+    });
+  });
+
+  describe('generatePdfBlob', () => {
+    /**
+     * Verifies PDF blob generation produces a valid application/pdf Blob with flat healthcare inputs.
+     */
+    it('generates a valid PDF blob for flat healthcare inputs', async () => {
+      // Test PDF generation under flat healthcare configuration
+      const blob = await generatePdfBlob(mockInputs);
+      expect(blob).toBeDefined();
+      expect(blob.type).toBe('application/pdf');
+      expect(blob.size).toBeGreaterThan(0);
+    });
+
+    /**
+     * Verifies PDF blob generation produces a valid application/pdf Blob with detailed healthcare inputs.
+     */
+    it('generates a valid PDF blob for detailed healthcare inputs', async () => {
+      // Create detailed healthcare test inputs
+      const detailedInputs: AppStateInputs = {
+        ...mockInputs,
+        you: {
+          ...mockInputs.you,
+          healthcare: {
+            medicarePartBPremium: 210,
+            MD: {
+              pre65MedicalPremium: 500,
+              pre65MedicalOOP: 1000,
+              pre65DentalPremium: 40,
+              pre65DentalOOP: 200,
+              pre65VisionPremium: 20,
+              pre65VisionOOP: 100,
+              medicarePartDPremium: 40,
+              medicarePartDDeductibleCopays: 300,
+              supplementPremium: 150,
+              supplementOOP: 500,
+              post65HearingCare: 200,
+              post65DentalPremium: 50,
+              post65DentalOOP: 300,
+              post65VisionPremium: 25,
+              post65VisionOOP: 150,
+            },
+            FL: {
+              pre65MedicalPremium: 450,
+              pre65MedicalOOP: 800,
+              pre65DentalPremium: 35,
+              pre65DentalOOP: 150,
+              pre65VisionPremium: 15,
+              pre65VisionOOP: 80,
+              medicarePartDPremium: 35,
+              medicarePartDDeductibleCopays: 250,
+              supplementPremium: 130,
+              supplementOOP: 400,
+              post65HearingCare: 150,
+              post65DentalPremium: 45,
+              post65DentalOOP: 250,
+              post65VisionPremium: 20,
+              post65VisionOOP: 120,
+            },
+          },
+        },
+      };
+
+      // Generate PDF blob and verify output
+      const blob = await generatePdfBlob(detailedInputs);
+      expect(blob).toBeDefined();
+      expect(blob.type).toBe('application/pdf');
+      expect(blob.size).toBeGreaterThan(0);
     });
   });
 });

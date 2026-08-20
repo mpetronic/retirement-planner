@@ -144,10 +144,53 @@ const styles = StyleSheet.create({
   }
 });
 
+// Standard Medicare Part B and Part D baseline monthly rates
+const BASE_MEDICARE_PART_B_RATE = 202.90;
+const BASE_MEDICARE_PART_D_RATE = 34.50;
+
+/**
+ * Calculates pre-65 (Pre-Medicare) annual healthcare costs for a person in a specific state.
+ */
+const getPersonPre65HealthcareAnnual = (
+  person: AppStateInputs['you'] | AppStateInputs['wife'],
+  stateKey: 'MD' | 'FL'
+): number => {
+  if (person.healthcare) {
+    const stateHc = person.healthcare[stateKey];
+    const monthlyPrem = (stateHc?.pre65MedicalPremium ?? 0) + (stateHc?.pre65DentalPremium ?? 0) + (stateHc?.pre65VisionPremium ?? 0);
+    const annualOOP = (stateHc?.pre65MedicalOOP ?? 0) + (stateHc?.pre65DentalOOP ?? 0) + (stateHc?.pre65VisionOOP ?? 0);
+    return monthlyPrem * 12 + annualOOP;
+  }
+  return (person.preMedicareMonthlyPremium ?? 0) * 12;
+};
+
+/**
+ * Calculates post-65 (Medicare) annual healthcare costs for a person in a specific state.
+ */
+const getPersonPost65HealthcareAnnual = (
+  person: AppStateInputs['you'] | AppStateInputs['wife'],
+  stateKey: 'MD' | 'FL'
+): number => {
+  if (person.healthcare) {
+    const stateHc = person.healthcare[stateKey];
+    const customB = person.healthcare.medicarePartBPremium;
+    const partB = (customB !== null && customB !== undefined) ? customB : BASE_MEDICARE_PART_B_RATE;
+    const customD = stateHc?.medicarePartDPremium;
+    const partD = (customD !== null && customD !== undefined) ? customD : BASE_MEDICARE_PART_D_RATE;
+    const monthlyPrem = partB + partD + (stateHc?.supplementPremium ?? 0) + (stateHc?.post65DentalPremium ?? 0) + (stateHc?.post65VisionPremium ?? 0);
+    const annualOOP = (stateHc?.medicarePartDDeductibleCopays ?? 0) + (stateHc?.supplementOOP ?? 0) + (stateHc?.post65HearingCare ?? 0) + (stateHc?.post65DentalOOP ?? 0) + (stateHc?.post65VisionOOP ?? 0);
+    return monthlyPrem * 12 + annualOOP;
+  }
+  return (BASE_MEDICARE_PART_B_RATE + BASE_MEDICARE_PART_D_RATE) * 12;
+};
+
 interface PDFProps {
   inputs: AppStateInputs;
 }
 
+/**
+ * Renders the executive PDF retirement plan configuration report.
+ */
 export const ConfigurationPDF: React.FC<PDFProps> = ({ inputs }) => {
   const stateA = inputs.jurisdiction.currentState || 'MD';
   const stateB = inputs.jurisdiction.targetState || 'FL';
@@ -182,6 +225,9 @@ export const ConfigurationPDF: React.FC<PDFProps> = ({ inputs }) => {
     return sum + (costs[stateB]?.[item.id] ?? 0);
   }, 0);
 
+  /**
+   * Formats a numeric value into USD currency format without decimal places.
+   */
   const formatCurrency = (val: number | null | undefined) => {
     if (val === undefined || val === null) return '$0';
     return new Intl.NumberFormat('en-US', {
@@ -191,11 +237,17 @@ export const ConfigurationPDF: React.FC<PDFProps> = ({ inputs }) => {
     }).format(val);
   };
 
+  /**
+   * Formats a numeric ratio into a percentage string formatted to 2 decimal places.
+   */
   const formatPercent = (val: number | undefined | null) => {
     if (val === undefined || val === null) return '0.00%';
     return (val * 100).toFixed(2) + '%';
   };
 
+  /**
+   * Converts a 1-based month index to a formatted string.
+   */
   const formatMonth = (m: number | undefined | null) => {
     if (m === undefined || m === null) return 'Birth Month';
     const MONTH_NAMES = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
@@ -211,6 +263,118 @@ export const ConfigurationPDF: React.FC<PDFProps> = ({ inputs }) => {
   const hasDetailedHealthcare = !!(inputs.you.healthcare || (!inputs.isSingleFiler && inputs.wife.healthcare));
   const simStartYear = getSimulationStartYear(inputs);
 
+  // Calculate Primary annual healthcare totals for stateA and stateB
+  const youPre65_A = getPersonPre65HealthcareAnnual(inputs.you, stateA as 'MD' | 'FL');
+  const youPost65_A = getPersonPost65HealthcareAnnual(inputs.you, stateA as 'MD' | 'FL');
+  const youPre65_B = getPersonPre65HealthcareAnnual(inputs.you, stateB as 'MD' | 'FL');
+  const youPost65_B = getPersonPost65HealthcareAnnual(inputs.you, stateB as 'MD' | 'FL');
+
+  // Calculate Spouse annual healthcare totals for stateA and stateB
+  const wifePre65_A = inputs.isSingleFiler ? 0 : getPersonPre65HealthcareAnnual(inputs.wife, stateA as 'MD' | 'FL');
+  const wifePost65_A = inputs.isSingleFiler ? 0 : getPersonPost65HealthcareAnnual(inputs.wife, stateA as 'MD' | 'FL');
+  const wifePre65_B = inputs.isSingleFiler ? 0 : getPersonPre65HealthcareAnnual(inputs.wife, stateB as 'MD' | 'FL');
+  const wifePost65_B = inputs.isSingleFiler ? 0 : getPersonPost65HealthcareAnnual(inputs.wife, stateB as 'MD' | 'FL');
+
+  // Combine household annual healthcare totals per state
+  const totalPre65_A = youPre65_A + wifePre65_A;
+  const totalPost65_A = youPost65_A + wifePost65_A;
+  const totalPre65_B = youPre65_B + wifePre65_B;
+  const totalPost65_B = youPost65_B + wifePost65_B;
+
+  // Calculate annual living expenses for stateA and stateB
+  const livingAnnual_A = inputs.useDetailedExpenses ? mdRecurringAnnual : (inputs.annualLivingExpenses ?? 0);
+  const livingAnnual_B = inputs.useDetailedExpenses ? flRecurringAnnual : (inputs.annualLivingExpenses ?? 0);
+
+  // Calculate overall total annual expenses (Living + Healthcare)
+  const overallPre65_A = livingAnnual_A + totalPre65_A;
+  const overallPost65_A = livingAnnual_A + totalPost65_A;
+  const overallPre65_B = livingAnnual_B + totalPre65_B;
+  const overallPost65_B = livingAnnual_B + totalPost65_B;
+
+  /**
+   * Renders the final Overall Total Annual Expenses section combining living and healthcare costs.
+   */
+  const renderOverallTotalExpensesSection = (sectionNumber: number) => (
+    <View style={styles.section}>
+      <Text style={styles.sectionTitle}>{sectionNumber}. Overall Total Annual Expenses (Living & Healthcare)</Text>
+      <View style={styles.grid}>
+        {/* State A Overall Totals Card */}
+        <View style={styles.col2}>
+          <View style={[styles.card, { borderColor: '#0284c7', backgroundColor: '#f8fafc', borderWidth: 1.5 }]}>
+            <Text style={[styles.cardTitle, { color: '#0369a1', borderBottomColor: '#cbd5e1', fontSize: 9.5 }]}>
+              {stateA} Total Annual Expenses
+            </Text>
+            <View style={styles.row}>
+              <Text style={styles.rowLabel}>Annual Living Expenses:</Text>
+              <Text style={styles.rowValue}>{formatCurrency(livingAnnual_A)}/yr</Text>
+            </View>
+            <View style={styles.row}>
+              <Text style={styles.rowLabel}>Pre-65 Annual Healthcare:</Text>
+              <Text style={styles.rowValue}>{formatCurrency(totalPre65_A)}/yr</Text>
+            </View>
+            <View style={[styles.row, { backgroundColor: '#e0f2fe', marginHorizontal: -8, paddingHorizontal: 8, paddingVertical: 3 }]}>
+              <Text style={[styles.rowLabel, { fontFamily: 'Helvetica-Bold', color: '#0369a1' }]}>
+                Pre-65 Total Expenses:
+              </Text>
+              <Text style={[styles.rowValue, { fontFamily: 'Helvetica-Bold', color: '#0369a1' }]}>
+                {formatCurrency(overallPre65_A)}/yr ({formatCurrency(overallPre65_A / 12)}/mo)
+              </Text>
+            </View>
+            <View style={[styles.row, { marginTop: 4 }]}>
+              <Text style={styles.rowLabel}>Post-65 Annual Healthcare:</Text>
+              <Text style={styles.rowValue}>{formatCurrency(totalPost65_A)}/yr</Text>
+            </View>
+            <View style={[styles.row, { backgroundColor: '#e0f2fe', marginHorizontal: -8, paddingHorizontal: 8, paddingVertical: 3, borderBottomWidth: 0 }]}>
+              <Text style={[styles.rowLabel, { fontFamily: 'Helvetica-Bold', color: '#0369a1' }]}>
+                Post-65 Total Expenses:
+              </Text>
+              <Text style={[styles.rowValue, { fontFamily: 'Helvetica-Bold', color: '#0369a1' }]}>
+                {formatCurrency(overallPost65_A)}/yr ({formatCurrency(overallPost65_A / 12)}/mo)
+              </Text>
+            </View>
+          </View>
+        </View>
+
+        {/* State B Overall Totals Card */}
+        <View style={styles.col2}>
+          <View style={[styles.card, { borderColor: '#0284c7', backgroundColor: '#f8fafc', borderWidth: 1.5 }]}>
+            <Text style={[styles.cardTitle, { color: '#0369a1', borderBottomColor: '#cbd5e1', fontSize: 9.5 }]}>
+              {stateB} Total Annual Expenses
+            </Text>
+            <View style={styles.row}>
+              <Text style={styles.rowLabel}>Annual Living Expenses:</Text>
+              <Text style={styles.rowValue}>{formatCurrency(livingAnnual_B)}/yr</Text>
+            </View>
+            <View style={styles.row}>
+              <Text style={styles.rowLabel}>Pre-65 Annual Healthcare:</Text>
+              <Text style={styles.rowValue}>{formatCurrency(totalPre65_B)}/yr</Text>
+            </View>
+            <View style={[styles.row, { backgroundColor: '#e0f2fe', marginHorizontal: -8, paddingHorizontal: 8, paddingVertical: 3 }]}>
+              <Text style={[styles.rowLabel, { fontFamily: 'Helvetica-Bold', color: '#0369a1' }]}>
+                Pre-65 Total Expenses:
+              </Text>
+              <Text style={[styles.rowValue, { fontFamily: 'Helvetica-Bold', color: '#0369a1' }]}>
+                {formatCurrency(overallPre65_B)}/yr ({formatCurrency(overallPre65_B / 12)}/mo)
+              </Text>
+            </View>
+            <View style={[styles.row, { marginTop: 4 }]}>
+              <Text style={styles.rowLabel}>Post-65 Annual Healthcare:</Text>
+              <Text style={styles.rowValue}>{formatCurrency(totalPost65_B)}/yr</Text>
+            </View>
+            <View style={[styles.row, { backgroundColor: '#e0f2fe', marginHorizontal: -8, paddingHorizontal: 8, paddingVertical: 3, borderBottomWidth: 0 }]}>
+              <Text style={[styles.rowLabel, { fontFamily: 'Helvetica-Bold', color: '#0369a1' }]}>
+                Post-65 Total Expenses:
+              </Text>
+              <Text style={[styles.rowValue, { fontFamily: 'Helvetica-Bold', color: '#0369a1' }]}>
+                {formatCurrency(overallPost65_B)}/yr ({formatCurrency(overallPost65_B / 12)}/mo)
+              </Text>
+            </View>
+          </View>
+        </View>
+      </View>
+    </View>
+  );
+
   return (
     <Document>
       {/* Page 1: Profiles & Portfolio Assets */}
@@ -220,7 +384,7 @@ export const ConfigurationPDF: React.FC<PDFProps> = ({ inputs }) => {
           <Text style={styles.subtitle}>Generated on {dateStr} | Timeline Anchor: {simStartYear} | Comprehensive settings controlling simulation model</Text>
         </View>
 
-        {/* Section 1: Spousal Profiles */}
+        {/* Section 1: Personal Profiles */}
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>1. Personal Profiles & SS Claiming Settings</Text>
           <View style={styles.grid}>
@@ -447,7 +611,7 @@ export const ConfigurationPDF: React.FC<PDFProps> = ({ inputs }) => {
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>4. Tax Jurisdiction, Relocation & Monte Carlo Parameters</Text>
           
-          {/* Top: Monte Carlo & Volatility Settings (full width, single column) */}
+          {/* Top: Monte Carlo & Volatility Settings */}
           <View style={styles.card}>
             <Text style={styles.cardTitle}>Monte Carlo & Volatility Settings</Text>
             <View style={styles.row}>
@@ -646,10 +810,11 @@ export const ConfigurationPDF: React.FC<PDFProps> = ({ inputs }) => {
           </View>
         </View>
 
-        {/* Section 6: Healthcare details (conditional rendering for cleaner formatting) */}
-        {hasDetailedHealthcare && (
-          <View style={styles.section}>
-            <Text style={styles.sectionTitle}>6. Detailed Healthcare Configurations (State-Level)</Text>
+        {/* Section 6: Healthcare details & annual totals */}
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>6. Detailed Healthcare Configurations & State-Level Annual Totals</Text>
+          
+          {hasDetailedHealthcare ? (
             <View style={styles.grid}>
               {inputs.you.healthcare && (
                 <View style={styles.col2}>
@@ -660,20 +825,28 @@ export const ConfigurationPDF: React.FC<PDFProps> = ({ inputs }) => {
                       <Text style={styles.rowValue}>{inputs.you.healthcare.medicarePartBPremium !== null ? `${formatCurrency(inputs.you.healthcare.medicarePartBPremium)}/mo` : 'Default'}</Text>
                     </View>
                     <View style={styles.row}>
-                      <Text style={styles.rowLabel}>MD Pre-65 Med Premium / OOP:</Text>
-                      <Text style={styles.rowValue}>{formatCurrency(inputs.you.healthcare.MD.pre65MedicalPremium)} / {formatCurrency(inputs.you.healthcare.MD.pre65MedicalOOP)}</Text>
+                      <Text style={styles.rowLabel}>{stateA} Pre-65 Med Premium / OOP:</Text>
+                      <Text style={styles.rowValue}>{formatCurrency(inputs.you.healthcare[stateA as 'MD' | 'FL']?.pre65MedicalPremium)} / {formatCurrency(inputs.you.healthcare[stateA as 'MD' | 'FL']?.pre65MedicalOOP)}</Text>
                     </View>
                     <View style={styles.row}>
-                      <Text style={styles.rowLabel}>MD Post-65 Supp Prem / OOP:</Text>
-                      <Text style={styles.rowValue}>{formatCurrency(inputs.you.healthcare.MD.supplementPremium)} / {formatCurrency(inputs.you.healthcare.MD.supplementOOP)}</Text>
+                      <Text style={styles.rowLabel}>{stateA} Post-65 Supp Prem / OOP:</Text>
+                      <Text style={styles.rowValue}>{formatCurrency(inputs.you.healthcare[stateA as 'MD' | 'FL']?.supplementPremium)} / {formatCurrency(inputs.you.healthcare[stateA as 'MD' | 'FL']?.supplementOOP)}</Text>
                     </View>
                     <View style={styles.row}>
-                      <Text style={styles.rowLabel}>FL Pre-65 Med Premium / OOP:</Text>
-                      <Text style={styles.rowValue}>{formatCurrency(inputs.you.healthcare.FL.pre65MedicalPremium)} / {formatCurrency(inputs.you.healthcare.FL.pre65MedicalOOP)}</Text>
+                      <Text style={styles.rowLabel}>{stateB} Pre-65 Med Premium / OOP:</Text>
+                      <Text style={styles.rowValue}>{formatCurrency(inputs.you.healthcare[stateB as 'MD' | 'FL']?.pre65MedicalPremium)} / {formatCurrency(inputs.you.healthcare[stateB as 'MD' | 'FL']?.pre65MedicalOOP)}</Text>
                     </View>
                     <View style={styles.row}>
-                      <Text style={styles.rowLabel}>FL Post-65 Supp Prem / OOP:</Text>
-                      <Text style={styles.rowValue}>{formatCurrency(inputs.you.healthcare.FL.supplementPremium)} / {formatCurrency(inputs.you.healthcare.FL.supplementOOP)}</Text>
+                      <Text style={styles.rowLabel}>{stateB} Post-65 Supp Prem / OOP:</Text>
+                      <Text style={styles.rowValue}>{formatCurrency(inputs.you.healthcare[stateB as 'MD' | 'FL']?.supplementPremium)} / {formatCurrency(inputs.you.healthcare[stateB as 'MD' | 'FL']?.supplementOOP)}</Text>
+                    </View>
+                    <View style={[styles.row, { borderTopWidth: 0.5, borderTopColor: '#cbd5e1', marginTop: 4, paddingTop: 4 }]}>
+                      <Text style={[styles.rowLabel, { fontFamily: 'Helvetica-Bold', color: '#0369a1' }]}>{stateA} Annual (Pre / Post):</Text>
+                      <Text style={[styles.rowValue, { fontFamily: 'Helvetica-Bold', color: '#0369a1' }]}>{formatCurrency(youPre65_A)} / {formatCurrency(youPost65_A)}</Text>
+                    </View>
+                    <View style={[styles.row, { borderBottomWidth: 0 }]}>
+                      <Text style={[styles.rowLabel, { fontFamily: 'Helvetica-Bold', color: '#0369a1' }]}>{stateB} Annual (Pre / Post):</Text>
+                      <Text style={[styles.rowValue, { fontFamily: 'Helvetica-Bold', color: '#0369a1' }]}>{formatCurrency(youPre65_B)} / {formatCurrency(youPost65_B)}</Text>
                     </View>
                   </View>
                 </View>
@@ -688,32 +861,94 @@ export const ConfigurationPDF: React.FC<PDFProps> = ({ inputs }) => {
                       <Text style={styles.rowValue}>{inputs.wife.healthcare.medicarePartBPremium !== null ? `${formatCurrency(inputs.wife.healthcare.medicarePartBPremium)}/mo` : 'Default'}</Text>
                     </View>
                     <View style={styles.row}>
-                      <Text style={styles.rowLabel}>MD Pre-65 Med Premium / OOP:</Text>
-                      <Text style={styles.rowValue}>{formatCurrency(inputs.wife.healthcare.MD.pre65MedicalPremium)} / {formatCurrency(inputs.wife.healthcare.MD.pre65MedicalOOP)}</Text>
+                      <Text style={styles.rowLabel}>{stateA} Pre-65 Med Premium / OOP:</Text>
+                      <Text style={styles.rowValue}>{formatCurrency(inputs.wife.healthcare[stateA as 'MD' | 'FL']?.pre65MedicalPremium)} / {formatCurrency(inputs.wife.healthcare[stateA as 'MD' | 'FL']?.pre65MedicalOOP)}</Text>
                     </View>
                     <View style={styles.row}>
-                      <Text style={styles.rowLabel}>MD Post-65 Supp Prem / OOP:</Text>
-                      <Text style={styles.rowValue}>{formatCurrency(inputs.wife.healthcare.MD.supplementPremium)} / {formatCurrency(inputs.wife.healthcare.MD.supplementOOP)}</Text>
+                      <Text style={styles.rowLabel}>{stateA} Post-65 Supp Prem / OOP:</Text>
+                      <Text style={styles.rowValue}>{formatCurrency(inputs.wife.healthcare[stateA as 'MD' | 'FL']?.supplementPremium)} / {formatCurrency(inputs.wife.healthcare[stateA as 'MD' | 'FL']?.supplementOOP)}</Text>
                     </View>
                     <View style={styles.row}>
-                      <Text style={styles.rowLabel}>FL Pre-65 Med Premium / OOP:</Text>
-                      <Text style={styles.rowValue}>{formatCurrency(inputs.wife.healthcare.FL.pre65MedicalPremium)} / {formatCurrency(inputs.wife.healthcare.FL.pre65MedicalOOP)}</Text>
+                      <Text style={styles.rowLabel}>{stateB} Pre-65 Med Premium / OOP:</Text>
+                      <Text style={styles.rowValue}>{formatCurrency(inputs.wife.healthcare[stateB as 'MD' | 'FL']?.pre65MedicalPremium)} / {formatCurrency(inputs.wife.healthcare[stateB as 'MD' | 'FL']?.pre65MedicalOOP)}</Text>
                     </View>
                     <View style={styles.row}>
-                      <Text style={styles.rowLabel}>FL Post-65 Supp Prem / OOP:</Text>
-                      <Text style={styles.rowValue}>{formatCurrency(inputs.wife.healthcare.FL.supplementPremium)} / {formatCurrency(inputs.wife.healthcare.FL.supplementOOP)}</Text>
+                      <Text style={styles.rowLabel}>{stateB} Post-65 Supp Prem / OOP:</Text>
+                      <Text style={styles.rowValue}>{formatCurrency(inputs.wife.healthcare[stateB as 'MD' | 'FL']?.supplementPremium)} / {formatCurrency(inputs.wife.healthcare[stateB as 'MD' | 'FL']?.supplementOOP)}</Text>
+                    </View>
+                    <View style={[styles.row, { borderTopWidth: 0.5, borderTopColor: '#cbd5e1', marginTop: 4, paddingTop: 4 }]}>
+                      <Text style={[styles.rowLabel, { fontFamily: 'Helvetica-Bold', color: '#0369a1' }]}>{stateA} Annual (Pre / Post):</Text>
+                      <Text style={[styles.rowValue, { fontFamily: 'Helvetica-Bold', color: '#0369a1' }]}>{formatCurrency(wifePre65_A)} / {formatCurrency(wifePost65_A)}</Text>
+                    </View>
+                    <View style={[styles.row, { borderBottomWidth: 0 }]}>
+                      <Text style={[styles.rowLabel, { fontFamily: 'Helvetica-Bold', color: '#0369a1' }]}>{stateB} Annual (Pre / Post):</Text>
+                      <Text style={[styles.rowValue, { fontFamily: 'Helvetica-Bold', color: '#0369a1' }]}>{formatCurrency(wifePre65_B)} / {formatCurrency(wifePost65_B)}</Text>
                     </View>
                   </View>
                 </View>
               )}
             </View>
+          ) : (
+            <View style={styles.card}>
+              <Text style={styles.cardTitle}>Standard Healthcare Overview</Text>
+              <View style={styles.row}>
+                <Text style={styles.rowLabel}>Primary Pre-65 Premium:</Text>
+                <Text style={styles.rowValue}>{formatCurrency(inputs.you.preMedicareMonthlyPremium)}/mo ({formatCurrency((inputs.you.preMedicareMonthlyPremium ?? 0) * 12)}/yr)</Text>
+              </View>
+              {!inputs.isSingleFiler && (
+                <View style={styles.row}>
+                  <Text style={styles.rowLabel}>Spouse Pre-65 Premium:</Text>
+                  <Text style={styles.rowValue}>{formatCurrency(inputs.wife.preMedicareMonthlyPremium)}/mo ({formatCurrency((inputs.wife.preMedicareMonthlyPremium ?? 0) * 12)}/yr)</Text>
+                </View>
+              )}
+              <View style={[styles.row, { borderBottomWidth: 0 }]}>
+                <Text style={styles.rowLabel}>Medicare Base Premiums (B+D):</Text>
+                <Text style={styles.rowValue}>Default Base Rates ({formatCurrency(BASE_MEDICARE_PART_B_RATE + BASE_MEDICARE_PART_D_RATE)}/mo per person)</Text>
+              </View>
+            </View>
+          )}
+
+          {/* Household Healthcare Annual Totals Card Grid */}
+          <View style={{ marginTop: 6 }}>
+            <View style={styles.grid}>
+              <View style={styles.col2}>
+                <View style={[styles.card, { borderColor: '#bae6fd', backgroundColor: '#f0f9ff' }]}>
+                  <Text style={[styles.cardTitle, { color: '#0369a1', borderBottomColor: '#bae6fd' }]}>{stateA} Healthcare Annual Totals</Text>
+                  <View style={styles.row}>
+                    <Text style={styles.rowLabel}>Pre-Medicare (Under 65):</Text>
+                    <Text style={[styles.rowValue, { color: '#0f172a' }]}>{formatCurrency(totalPre65_A)}/yr ({formatCurrency(totalPre65_A / 12)}/mo)</Text>
+                  </View>
+                  <View style={[styles.row, { borderBottomWidth: 0 }]}>
+                    <Text style={styles.rowLabel}>Post-Medicare (Age 65+):</Text>
+                    <Text style={[styles.rowValue, { color: '#0f172a' }]}>{formatCurrency(totalPost65_A)}/yr ({formatCurrency(totalPost65_A / 12)}/mo)</Text>
+                  </View>
+                </View>
+              </View>
+
+              <View style={styles.col2}>
+                <View style={[styles.card, { borderColor: '#bae6fd', backgroundColor: '#f0f9ff' }]}>
+                  <Text style={[styles.cardTitle, { color: '#0369a1', borderBottomColor: '#bae6fd' }]}>{stateB} Healthcare Annual Totals</Text>
+                  <View style={styles.row}>
+                    <Text style={styles.rowLabel}>Pre-Medicare (Under 65):</Text>
+                    <Text style={[styles.rowValue, { color: '#0f172a' }]}>{formatCurrency(totalPre65_B)}/yr ({formatCurrency(totalPre65_B / 12)}/mo)</Text>
+                  </View>
+                  <View style={[styles.row, { borderBottomWidth: 0 }]}>
+                    <Text style={styles.rowLabel}>Post-Medicare (Age 65+):</Text>
+                    <Text style={[styles.rowValue, { color: '#0f172a' }]}>{formatCurrency(totalPost65_B)}/yr ({formatCurrency(totalPost65_B / 12)}/mo)</Text>
+                  </View>
+                </View>
+              </View>
+            </View>
           </View>
-        )}
+        </View>
+
+        {/* If detailed expenses is not enabled, render Overall Total Annual Expenses section here on Page 2 */}
+        {!inputs.useDetailedExpenses && renderOverallTotalExpensesSection(7)}
 
         <Text style={styles.footer} render={({ pageNumber }) => `Retirement Plan Configuration Summary  |  Page ${pageNumber}`} />
       </Page>
 
-      {/* Page 3: Itemized detailed expenses (if active) */}
+      {/* Page 3: Itemized detailed expenses & overall total expenses (if detailed expenses active) */}
       {inputs.useDetailedExpenses && (
         <Page size="LETTER" style={styles.page}>
           <View style={styles.header}>
@@ -888,6 +1123,9 @@ export const ConfigurationPDF: React.FC<PDFProps> = ({ inputs }) => {
               </View>
             </View>
           </View>
+
+          {/* Render Overall Total Annual Expenses section here on Page 3 */}
+          {renderOverallTotalExpensesSection(8)}
 
           <Text style={styles.footer} render={({ pageNumber }) => `Retirement Plan Configuration Summary  |  Page ${pageNumber}`} />
         </Page>
