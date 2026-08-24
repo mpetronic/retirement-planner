@@ -10,7 +10,8 @@ import {
   Sliders,
   AlertTriangle,
   BookOpen,
-  HeartHandshake
+  HeartHandshake,
+  Calculator
 } from 'lucide-react';
 
 interface DashboardLayoutProps {
@@ -129,7 +130,7 @@ export const DashboardLayout: React.FC<DashboardLayoutProps> = ({
             {isStressTestActive && (
               <button
                 type="button"
-                onClick={() => setActiveTab(2)}
+                onClick={() => setActiveTab(3)}
                 className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/60 shadow-lg shadow-amber-950/50 transition-all cursor-pointer group animate-pulse hover:animate-none"
                 title={`Stress testing is actively overriding returns for ${stressTestOverridesCount} year${stressTestOverridesCount > 1 ? 's' : ''}. Click to view or customize in Monte Carlo Analysis.`}
               >
@@ -203,10 +204,11 @@ export const DashboardLayout: React.FC<DashboardLayoutProps> = ({
               type="button"
               onClick={() => {
                 const sectionMap: Record<number, string> = {
-                  0: 'workspace-1',
-                  1: 'workspace-2',
-                  2: 'workspace-3',
-                  3: 'workspace-4',
+                  0: 'overview',
+                  1: 'taxable-income',
+                  2: 'workspace-2',
+                  3: 'workspace-3',
+                  4: 'workspace-4',
                 };
                 onOpenDocumentation?.(sectionMap[activeTab] || 'overview');
               }}
@@ -304,8 +306,8 @@ export const DashboardLayout: React.FC<DashboardLayoutProps> = ({
                 : 'border-transparent text-slate-400 hover:text-slate-200 hover:bg-slate-900/10'
             }`}
           >
-            <ShieldAlert className="w-4 h-4" />
-            Lookback Ledger
+            <Calculator className="w-4 h-4" />
+            Taxable Income Planner
           </button>
           <button
             onClick={() => setActiveTab(2)}
@@ -315,13 +317,24 @@ export const DashboardLayout: React.FC<DashboardLayoutProps> = ({
                 : 'border-transparent text-slate-400 hover:text-slate-200 hover:bg-slate-900/10'
             }`}
           >
-            <Sliders className="w-4 h-4" />
-            Monte Carlo Analysis
+            <ShieldAlert className="w-4 h-4" />
+            Lookback Ledger
           </button>
           <button
             onClick={() => setActiveTab(3)}
             className={`py-3 px-6 text-sm font-bold border-b-2 transition-all flex items-center gap-2 ${
               activeTab === 3
+                ? 'border-emerald-500 text-emerald-400 bg-slate-900/40 rounded-t-xl'
+                : 'border-transparent text-slate-400 hover:text-slate-200 hover:bg-slate-900/10'
+            }`}
+          >
+            <Sliders className="w-4 h-4" />
+            Monte Carlo Analysis
+          </button>
+          <button
+            onClick={() => setActiveTab(4)}
+            className={`py-3 px-6 text-sm font-bold border-b-2 transition-all flex items-center gap-2 ${
+              activeTab === 4
                 ? 'border-emerald-500 text-emerald-400 bg-slate-900/40 rounded-t-xl'
                 : 'border-transparent text-slate-400 hover:text-slate-200 hover:bg-slate-900/10'
             }`}

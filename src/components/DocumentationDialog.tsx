@@ -156,12 +156,12 @@ export const DocumentationDialog: React.FC<DocumentationDialogProps> = ({
               >
                 <div className="flex items-center justify-between">
                   <span className="text-xs font-bold text-slate-200 group-hover:text-emerald-400 flex items-center gap-1.5">
-                    <ShieldAlert className="w-3.5 h-3.5 text-blue-400" />
-                    Workspace 2
+                    <Calculator className="w-3.5 h-3.5 text-emerald-400" />
+                    Taxable Income Planner
                   </span>
                   <ExternalLink className="w-3 h-3 text-slate-500 group-hover:text-emerald-400" />
                 </div>
-                <div className="text-[10px] text-slate-400 mt-1">35-Year Lookback Ledger</div>
+                <div className="text-[10px] text-slate-400 mt-1">Taxable Income & Roth Conversions</div>
               </button>
 
               <button
@@ -174,12 +174,12 @@ export const DocumentationDialog: React.FC<DocumentationDialogProps> = ({
               >
                 <div className="flex items-center justify-between">
                   <span className="text-xs font-bold text-slate-200 group-hover:text-emerald-400 flex items-center gap-1.5">
-                    <Sliders className="w-3.5 h-3.5 text-indigo-400" />
-                    Workspace 3
+                    <ShieldAlert className="w-3.5 h-3.5 text-blue-400" />
+                    Lookback Ledger
                   </span>
                   <ExternalLink className="w-3 h-3 text-slate-500 group-hover:text-emerald-400" />
                 </div>
-                <div className="text-[10px] text-slate-400 mt-1">Monte Carlo & Stress Test</div>
+                <div className="text-[10px] text-slate-400 mt-1">35-Year Audit Ledger</div>
               </button>
 
               <button
@@ -192,8 +192,26 @@ export const DocumentationDialog: React.FC<DocumentationDialogProps> = ({
               >
                 <div className="flex items-center justify-between">
                   <span className="text-xs font-bold text-slate-200 group-hover:text-emerald-400 flex items-center gap-1.5">
+                    <Sliders className="w-3.5 h-3.5 text-indigo-400" />
+                    Monte Carlo Analysis
+                  </span>
+                  <ExternalLink className="w-3 h-3 text-slate-500 group-hover:text-emerald-400" />
+                </div>
+                <div className="text-[10px] text-slate-400 mt-1">Monte Carlo & Stress Test</div>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  onNavigateTab?.(4);
+                  onClose();
+                }}
+                className="p-3 bg-slate-950/70 hover:bg-emerald-950/30 border border-slate-800 hover:border-emerald-500/40 rounded-xl text-left transition-all group cursor-pointer"
+              >
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-bold text-slate-200 group-hover:text-emerald-400 flex items-center gap-1.5">
                     <ArrowRightLeft className="w-3.5 h-3.5 text-purple-400" />
-                    Workspace 4
+                    Plan Comparison
                   </span>
                   <ExternalLink className="w-3 h-3 text-slate-500 group-hover:text-emerald-400" />
                 </div>

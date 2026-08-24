@@ -19,6 +19,7 @@ import {
 import { InputControlSidebar } from './components/InputControlSidebar';
 import { DashboardLayout } from './components/DashboardLayout';
 import { BracketMapChart } from './components/BracketMapChart';
+import { TaxableIncomeWorkspace } from './components/TaxableIncomeWorkspace';
 import { LookbackLedgerTable } from './components/LookbackLedgerTable';
 import { MonteCarloWorkspace } from './components/MonteCarloWorkspace';
 import { PlanComparisonWorkspace } from './components/PlanComparisonWorkspace';
@@ -512,13 +513,26 @@ function App() {
           />
         )}
         {activeTab === 1 && (
+          <TaxableIncomeWorkspace
+            ledger={displayActiveLedger}
+            inputs={inputs}
+            simulateSurvivor={simulateSurvivor}
+            activeScenarioSequence={activeSequence}
+            onApplyOptimization={handleApplyOptimization}
+            onUpdateStrategy={handleUpdateStrategy}
+            onUpdateTargetValue={handleUpdateTargetValue}
+            selectedQuickFill={selectedQuickFill}
+            setSelectedQuickFill={setSelectedQuickFill}
+          />
+        )}
+        {activeTab === 2 && (
           <LookbackLedgerTable
             ledger={displayActiveLedger}
             inputs={inputs}
             simulateSurvivor={simulateSurvivor}
           />
         )}
-        {activeTab === 2 && (
+        {activeTab === 3 && (
           <MonteCarloWorkspace
             inputs={inputs}
             onChangeInputs={handleInputsChange}
@@ -527,7 +541,7 @@ function App() {
             globalScenario={globalScenario}
           />
         )}
-        {activeTab === 3 && (
+        {activeTab === 4 && (
           <PlanComparisonWorkspace
             inputs={inputs}
             onLoadPlan={handleInputsChange}

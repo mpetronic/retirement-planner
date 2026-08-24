@@ -617,9 +617,7 @@ export function runRetirementSimulation(
             estSS += Math.max(wifeSSAnnualBase, spousalSSAnnualFloor);
           }
         }
-        let estSalary = 0;
-        if (!youDeceased && yourAge < youRetireAge) estSalary += taxableYourSalary;
-        if (!wifeDeceased && wifeAge < wifeRetireAge) estSalary += taxableWifeSalary;
+        const estSalary = (!youDeceased ? taxableYourSalary : 0) + (!wifeDeceased ? taxableWifeSalary : 0);
         const estDividends = (yourTaxable + (wifeDeceased ? 0 : wifeTaxable)) * taxableDividendYield;
         const cashRate = inputs.growthAssumptions.cashYieldRate ?? inputs.growthAssumptions.fixedIncomeReturnRate;
         const estInterest = (yourCash + (wifeDeceased ? 0 : wifeCash)) * cashRate;

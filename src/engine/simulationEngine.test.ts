@@ -1416,5 +1416,33 @@ describe('runRetirementSimulation fixes', () => {
       const sumOfComponents = grossSalary + rmd + extraPreTax + rothConv + capGains + divYield + interestYield + taxableSS;
       expect(row2040!.magi).toBeCloseTo(sumOfComponents, 0);
     });
+
+    it('should correctly account for active salary in 2026 when fill-to-target strategy is enabled so 2026 total AGI does not exceed target limit', () => {
+      const getMockInputs = (): any => ({
+        you: { birthDate: '1961-01-01', plannedRetirementAge: 66, activeSalary: 150000, targetSSClaimingAge: 67, estimatedPIA: 3000 },
+        wife: { birthDate: '1965-01-01', plannedRetirementAge: 65, activeSalary: 0, targetSSClaimingAge: 67, estimatedPIA: 1500 },
+        portfolio: { yourPreTaxIRA: 1000000, yourRothIRA: 100000, yourTaxableBrokerage: 500000, wifePreTaxIRA: 0, wifeRothIRA: 0, wifeTaxableBrokerage: 0 },
+        jurisdiction: { currentState: 'FL', targetState: 'FL', relocationYear: null },
+        growthAssumptions: { equityReturnRate: 0.07, fixedIncomeReturnRate: 0.04, cpiInflationRate: 0.025, healthcareInflationRate: 0.05 },
+        annualLivingExpenses: 80000,
+        annualRothConversion: 50000,
+        simulationStartYear: 2026,
+        rothConversionStartYear: 2026,
+        rothConversionEndYear: 2032,
+        rothConversionStrategy: 'fill-to-target',
+        rothConversionTargetValue: 215000,
+        monteCarloSettings: { mode: 'monte-carlo', trials: 10 },
+        isConfigured: true,
+        isSingleFiler: false,
+      });
+
+      const inputs = getMockInputs();
+      const results = runRetirementSimulation(inputs);
+      const row2026 = results.find(r => r.year === 2026);
+      expect(row2026).toBeDefined();
+
+      // Total AGI in 2026 must be kept at or below the target limit ($215,000)
+      expect(row2026!.magi).toBeLessThanOrEqual(216000);
+    });
   });
 });
