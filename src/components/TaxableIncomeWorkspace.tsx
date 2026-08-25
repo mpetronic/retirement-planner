@@ -1,10 +1,9 @@
 import React, { useMemo, useState, useRef } from 'react';
 import { Chart } from 'react-chartjs-2';
 import { Chart as ChartJS, registerables } from 'chart.js';
-import { SimulationResultRow, AppStateInputs, LockedReturnSequence } from '../types';
+import { SimulationResultRow, AppStateInputs, LockedReturnSequence, getSimulationStartYear } from '../types';
 import {
   Calculator,
-  Target,
   Sliders,
   TrendingUp,
   ShieldAlert,
@@ -31,6 +30,7 @@ interface TaxableIncomeWorkspaceProps {
   ) => void;
   onUpdateStrategy: (strategy: 'flat' | 'fill-to-target') => void;
   onUpdateTargetValue: (val: number | null) => void;
+  onInputsChange?: (newInputs: AppStateInputs) => void;
   selectedQuickFill: number | null;
   setSelectedQuickFill: (val: number | null) => void;
 }
@@ -43,15 +43,25 @@ export const TaxableIncomeWorkspace: React.FC<TaxableIncomeWorkspaceProps> = ({
   onApplyOptimization,
   onUpdateStrategy,
   onUpdateTargetValue,
+  onInputsChange,
   selectedQuickFill,
   setSelectedQuickFill,
 }) => {
   const chartRef = useRef<any>(null);
+  const simStartYear = getSimulationStartYear(inputs);
 
   // Selected benchmark state (defaults to 12% Fed Tax Bracket if none set)
   const activeTarget = useMemo(() => {
     return selectedQuickFill || inputs.rothConversionTargetValue || 133000;
   }, [selectedQuickFill, inputs.rothConversionTargetValue]);
+
+  // Ensure a default benchmark (12% Fed Bracket - 133,000) is active in fill-to-target mode
+  React.useEffect(() => {
+    if (inputs.rothConversionStrategy === 'fill-to-target' && !inputs.rothConversionTargetValue && !selectedQuickFill) {
+      onUpdateTargetValue(133000);
+      setSelectedQuickFill(133000);
+    }
+  }, [inputs.rothConversionStrategy, inputs.rothConversionTargetValue, selectedQuickFill, onUpdateTargetValue, setSelectedQuickFill]);
 
   // Optimizer modal visual state
   const [showOptimizerModal, setShowOptimizerModal] = useState(false);
@@ -65,6 +75,29 @@ export const TaxableIncomeWorkspace: React.FC<TaxableIncomeWorkspaceProps> = ({
       maximumFractionDigits: 0,
       minimumFractionDigits: 0,
     }).format(Math.round(val || 0));
+  };
+
+  const formatYearOption = (yr: number) => {
+    const row = ledger.find((r) => r.year === yr);
+    let yourAge: number;
+    let wifeAge: number;
+
+    if (row) {
+      yourAge = row.yourAge;
+      wifeAge = row.wifeAge;
+    } else {
+      const delta = yr - simStartYear;
+      const yourBirthYear = parseInt(inputs.you.birthDate?.split('-')[0] || '1960', 10);
+      const wifeBirthYear = parseInt(inputs.wife?.birthDate?.split('-')[0] || '1964', 10);
+      yourAge = yr - yourBirthYear || (65 + delta);
+      wifeAge = yr - wifeBirthYear || (63 + delta);
+    }
+
+    if (inputs.isSingleFiler) {
+      return `${yr} (${yourAge})`;
+    }
+
+    return `${yr} (${yourAge}/${wifeAge})`;
   };
 
   const years = useMemo(() => ledger.map((r) => r.year), [ledger]);
@@ -411,262 +444,340 @@ export const TaxableIncomeWorkspace: React.FC<TaxableIncomeWorkspaceProps> = ({
   };
 
   return (
-    <div className="space-y-6">
-      {/* Top Header Card */}
-      <div className="glass-panel p-6 rounded-2xl border border-slate-800 bg-slate-900/60 shadow-xl space-y-4">
-        <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
-          <div className="space-y-1">
-            <div className="flex items-center gap-2">
-              <div className="p-2 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-emerald-400">
-                <Calculator className="w-5 h-5" />
-              </div>
-              <h2 className="text-xl font-black text-slate-100 tracking-tight">
-                Taxable Income & Roth Conversions Planner
-              </h2>
+    <div className="space-y-3">
+      {/* Streamlined Top Control Card (~52px height) */}
+      <div className="glass-panel p-3.5 rounded-2xl border border-slate-800 bg-slate-900/80 shadow-md space-y-3">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          {/* Title & Info */}
+          <div className="flex items-center gap-2">
+            <div className="p-1.5 rounded-lg bg-emerald-500/10 border border-emerald-500/20 text-emerald-400">
+              <Calculator className="w-4 h-4" />
             </div>
-            <p className="text-xs text-slate-400">
-              Stack non-conversion taxable income (AGI after standard deduction) with Roth conversions to stay cleanly under Federal Tax Brackets or Medicare IRMAA limits.
-            </p>
+            <h2 className="text-base font-black text-slate-100 tracking-tight whitespace-nowrap">
+              Taxable Income & Roth Conversions Planner
+            </h2>
+            <div 
+              className="group relative cursor-help text-slate-400 hover:text-slate-200"
+              title="Stack non-conversion taxable income (AGI after standard deduction) with Roth conversions to stay cleanly under Federal Tax Brackets or Medicare IRMAA limits."
+            >
+              <Info className="w-3.5 h-3.5" />
+            </div>
           </div>
 
-          {/* Action Buttons */}
-          <div className="flex flex-wrap items-center gap-3">
-            <div className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-slate-950 border border-slate-800 text-xs font-mono">
-              <span className="text-slate-400 font-sans">Active Strategy:</span>
-              <span className={`font-bold ${inputs.rothConversionStrategy === 'fill-to-target' ? 'text-emerald-400' : 'text-amber-400'}`}>
-                {inputs.rothConversionStrategy === 'fill-to-target' ? 'Fill-to-Target' : `Flat (${formatCurrency(inputs.annualRothConversion)}/yr)`}
-              </span>
+          {/* Controls: Strategy, Window Years & Auto-Fill */}
+          <div className="flex flex-wrap items-center gap-2 shrink-0">
+            {/* Strategy Mode Toggle */}
+            <div className="flex items-center bg-slate-950 p-0.5 rounded-xl border border-slate-800">
+              <button
+                type="button"
+                onClick={() => {
+                  onUpdateStrategy('fill-to-target');
+                  if (!inputs.rothConversionTargetValue) {
+                    onUpdateTargetValue(133000);
+                    setSelectedQuickFill(133000);
+                  }
+                }}
+                className={`text-[10px] px-2.5 py-1 rounded-lg font-bold transition-all cursor-pointer ${
+                  inputs.rothConversionStrategy === 'fill-to-target'
+                    ? 'bg-emerald-500 text-slate-950 shadow'
+                    : 'text-slate-400 hover:text-slate-200'
+                }`}
+              >
+                Fill-to-Target
+              </button>
+              <button
+                type="button"
+                onClick={() => onUpdateStrategy('flat')}
+                className={`text-[10px] px-2.5 py-1 rounded-lg font-bold transition-all cursor-pointer ${
+                  inputs.rothConversionStrategy === 'flat'
+                    ? 'bg-amber-500 text-slate-950 shadow'
+                    : 'text-slate-400 hover:text-slate-200'
+                }`}
+              >
+                Flat Target
+              </button>
+            </div>
+
+            {/* Conversion Window Controls */}
+            <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-xl bg-slate-950 border border-slate-800 text-[11px] font-mono text-slate-300">
+              <span className="text-[10px] font-sans text-slate-400">Window:</span>
+              <select
+                value={inputs.rothConversionStartYear !== undefined ? inputs.rothConversionStartYear : (simStartYear + 1)}
+                onChange={(e) => {
+                  const val = Number(e.target.value);
+                  if (onInputsChange) {
+                    onInputsChange({ ...inputs, rothConversionStartYear: val });
+                  }
+                }}
+                className="bg-slate-900 border border-slate-800 rounded px-1 py-0.5 text-[11px] text-emerald-400 font-bold font-mono focus:outline-none cursor-pointer"
+                title="Roth Conversion Start Year"
+              >
+                {Array.from({ length: 25 }, (_, i) => simStartYear + i).map((yr) => (
+                  <option key={yr} value={yr}>
+                    {formatYearOption(yr)}
+                  </option>
+                ))}
+              </select>
+              <span className="text-slate-500">–</span>
+              <select
+                value={inputs.rothConversionEndYear !== undefined ? inputs.rothConversionEndYear : (simStartYear + 8)}
+                onChange={(e) => {
+                  const val = Number(e.target.value);
+                  if (onInputsChange) {
+                    onInputsChange({ ...inputs, rothConversionEndYear: val });
+                  }
+                }}
+                className="bg-slate-900 border border-slate-800 rounded px-1 py-0.5 text-[11px] text-emerald-400 font-bold font-mono focus:outline-none cursor-pointer"
+                title="Roth Conversion End Year"
+              >
+                {Array.from({ length: 35 }, (_, i) => simStartYear + i).map((yr) => (
+                  <option key={yr} value={yr}>
+                    {formatYearOption(yr)}
+                  </option>
+                ))}
+              </select>
             </div>
 
             <button
               type="button"
               onClick={handleRunOptimizer}
-              className="flex items-center gap-2 px-4 py-2 bg-emerald-500 hover:bg-emerald-400 text-slate-950 rounded-xl text-xs font-bold transition-all shadow-lg shadow-emerald-950/50 cursor-pointer active:scale-95"
+              className="flex items-center gap-1.5 px-3 py-1.5 bg-emerald-500 hover:bg-emerald-400 text-slate-950 rounded-xl text-xs font-bold transition-all shadow-md shadow-emerald-950/50 cursor-pointer active:scale-95 shrink-0"
+              title="Run algorithmic scan across all tax brackets and conversion years to maximize ending estate"
             >
-              <Sparkles className="w-4 h-4 fill-slate-950" />
-              <span>Auto-Fill Headroom to Target</span>
+              <Sparkles className="w-3.5 h-3.5 fill-slate-950" />
+              <span>Run Strategy Optimizer</span>
             </button>
           </div>
         </div>
 
-        {/* Flat Strategy Warning Banner */}
-        {inputs.rothConversionStrategy === 'flat' && (
-          <div className="p-3.5 rounded-xl bg-amber-950/30 border border-amber-500/40 text-amber-300 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs">
-            <div className="flex items-start gap-2.5">
-              <AlertCircle className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
-              <div className="space-y-0.5">
-                <span className="font-bold block">Flat Strategy Notice (Fixed Conversion Amount)</span>
-                <p className="text-[11px] text-amber-200/80 leading-relaxed">
-                  Your strategy is set to a fixed annual conversion of {formatCurrency(inputs.annualRothConversion)}. Flat conversions stack on top of active salary (causing 2026 to exceed target limits) and leave unfilled headroom in retirement years. Switch to <strong>Fill-to-Target</strong> to dynamically adjust conversions each year.
-                </p>
+        {/* Row 2: Strategy Configuration (Benchmark Pills for Fill-to-Target OR Slider for Flat Amount) */}
+        <div className="flex flex-wrap items-center justify-between gap-2 pt-2 border-t border-slate-800/60 min-h-[36px]">
+          {inputs.rothConversionStrategy === 'fill-to-target' ? (
+            <>
+              <div className="flex flex-wrap items-center gap-2 overflow-x-auto custom-scrollbar">
+                {/* Federal Brackets */}
+                <div className="flex items-center gap-1 bg-slate-950/80 p-1 rounded-xl border border-slate-800">
+                  <span className="text-[9px] font-bold text-slate-400 px-1.5 uppercase font-mono">Fed:</span>
+                  <button
+                    type="button"
+                    onClick={() => handleSelectPreset(57000)}
+                    className={`text-[10px] px-2 py-0.5 rounded-lg font-bold transition-all border ${
+                      activeTarget === 57000
+                        ? 'bg-rose-500/20 text-rose-300 border-rose-500/60 font-black'
+                        : 'bg-slate-900/60 text-slate-400 hover:text-slate-200 border-slate-800'
+                    }`}
+                  >
+                    10% ($23.2k)
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleSelectPreset(133000)}
+                    className={`text-[10px] px-2 py-0.5 rounded-lg font-bold transition-all border ${
+                      activeTarget === 133000
+                        ? 'bg-rose-500/20 text-rose-300 border-rose-500/60 font-black'
+                        : 'bg-slate-900/60 text-slate-400 hover:text-slate-200 border-slate-800'
+                    }`}
+                  >
+                    12% ($94.3k)
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleSelectPreset(243600)}
+                    className={`text-[10px] px-2 py-0.5 rounded-lg font-bold transition-all border ${
+                      activeTarget === 243600
+                        ? 'bg-amber-500/20 text-amber-300 border-amber-500/60 font-black'
+                        : 'bg-slate-900/60 text-slate-400 hover:text-slate-200 border-slate-800'
+                    }`}
+                  >
+                    22% ($201k)
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleSelectPreset(435750)}
+                    className={`text-[10px] px-2 py-0.5 rounded-lg font-bold transition-all border ${
+                      activeTarget === 435750
+                        ? 'bg-pink-500/20 text-pink-300 border-pink-500/60 font-black'
+                        : 'bg-slate-900/60 text-slate-400 hover:text-slate-200 border-slate-800'
+                    }`}
+                  >
+                    24% ($383.9k)
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleSelectPreset(544650)}
+                    className={`text-[10px] px-2 py-0.5 rounded-lg font-bold transition-all border ${
+                      activeTarget === 544650
+                        ? 'bg-purple-500/20 text-purple-300 border-purple-500/60 font-black'
+                        : 'bg-slate-900/60 text-slate-400 hover:text-slate-200 border-slate-800'
+                    }`}
+                  >
+                    32% ($487.5k)
+                  </button>
+                </div>
+
+                {/* IRMAA Tiers */}
+                <div className="flex items-center gap-1 bg-slate-950/80 p-1 rounded-xl border border-slate-800">
+                  <span className="text-[9px] font-bold text-slate-400 px-1.5 uppercase font-mono">IRMAA:</span>
+                  <button
+                    type="button"
+                    onClick={() => handleSelectPreset(218000)}
+                    className={`text-[10px] px-2 py-0.5 rounded-lg font-bold transition-all border ${
+                      activeTarget === 218000 || activeTarget === 217999
+                        ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/60 font-black'
+                        : 'bg-slate-900/60 text-slate-400 hover:text-slate-200 border-slate-800'
+                    }`}
+                  >
+                    Tier 1 ($218k)
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleSelectPreset(274000)}
+                    className={`text-[10px] px-2 py-0.5 rounded-lg font-bold transition-all border ${
+                      activeTarget === 274000 || activeTarget === 273999
+                        ? 'bg-amber-500/20 text-amber-300 border-amber-500/60 font-black'
+                        : 'bg-slate-900/60 text-slate-400 hover:text-slate-200 border-slate-800'
+                    }`}
+                  >
+                    Tier 2 ($274k)
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleSelectPreset(342000)}
+                    className={`text-[10px] px-2 py-0.5 rounded-lg font-bold transition-all border ${
+                      activeTarget === 342000 || activeTarget === 341999
+                        ? 'bg-blue-500/20 text-blue-300 border-blue-500/60 font-black'
+                        : 'bg-slate-900/60 text-slate-400 hover:text-slate-200 border-slate-800'
+                    }`}
+                  >
+                    Tier 3 ($342k)
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleSelectPreset(410000)}
+                    className={`text-[10px] px-2 py-0.5 rounded-lg font-bold transition-all border ${
+                      activeTarget === 410000 || activeTarget === 409999
+                        ? 'bg-pink-500/20 text-pink-300 border-pink-500/60 font-black'
+                        : 'bg-slate-900/60 text-slate-400 hover:text-slate-200 border-slate-800'
+                    }`}
+                  >
+                    Tier 4 ($410k)
+                  </button>
+                </div>
               </div>
-            </div>
-            <button
-              type="button"
-              onClick={() => onUpdateStrategy('fill-to-target')}
-              className="px-3 py-1.5 bg-amber-500 hover:bg-amber-400 text-slate-950 rounded-lg font-bold text-[11px] shrink-0 self-start sm:self-center transition-all cursor-pointer"
-            >
-              Switch to Fill-to-Target
-            </button>
-          </div>
-        )}
 
-        {/* Benchmark Picklist Buttons Grid */}
-        <div className="space-y-2 pt-2 border-t border-slate-800/80">
-          <div className="flex items-center justify-between">
-            <span className="text-[11px] font-bold text-slate-300 uppercase tracking-wider flex items-center gap-1.5">
-              <Target className="w-3.5 h-3.5 text-indigo-400" />
-              Select Target Upper Limit Line:
-            </span>
-            {activeTarget && (
-              <span className="text-[10px] font-mono text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 px-2 py-0.5 rounded-md">
-                Active Benchmark: {benchmarkLineData.label}
+              {/* Active Line Badge */}
+              {activeTarget && (
+                <span className="text-[10px] font-mono text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 px-2 py-0.5 rounded-md shrink-0">
+                  Active: {benchmarkLineData.label}
+                </span>
+              )}
+            </>
+          ) : (
+            <div className="flex items-center justify-between w-full">
+              <div className="flex items-center gap-3 bg-slate-950/80 px-3 py-1.5 rounded-xl border border-slate-800 text-[11px] font-mono text-slate-300">
+                <span className="text-[10px] font-sans text-slate-400 font-bold uppercase tracking-wider">Annual Flat Amount:</span>
+                <span className="text-amber-400 font-black font-mono text-xs">{formatCurrency(inputs.annualRothConversion)}/yr</span>
+                <input
+                  type="range"
+                  min="0"
+                  max="500000"
+                  step="5000"
+                  value={inputs.annualRothConversion}
+                  onChange={(e) => {
+                    const val = Number(e.target.value);
+                    if (onInputsChange) {
+                      onInputsChange({ ...inputs, annualRothConversion: val });
+                    }
+                  }}
+                  className="w-48 h-1.5 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-amber-500"
+                  title="Annual Flat Conversion Amount"
+                />
+              </div>
+              <span className="text-[10px] text-slate-500 font-mono">
+                Converts a fixed dollar amount each year regardless of bracket headroom
               </span>
-            )}
-          </div>
-
-          <div className="flex flex-wrap gap-2">
-            {/* Federal Tax Brackets Group */}
-            <div className="flex flex-wrap items-center gap-1.5 bg-slate-950/80 p-1.5 rounded-xl border border-slate-800">
-              <span className="text-[10px] font-bold text-slate-400 px-2 uppercase font-mono">Fed Brackets:</span>
-              <button
-                type="button"
-                onClick={() => handleSelectPreset(57000)}
-                className={`text-[10px] px-2.5 py-1 rounded-lg font-bold transition-all border ${
-                  activeTarget === 57000
-                    ? 'bg-rose-500/20 text-rose-300 border-rose-500/60 ring-1 ring-rose-500/30 font-black'
-                    : 'bg-slate-900/60 text-slate-400 hover:text-slate-200 border-slate-800'
-                }`}
-              >
-                10% ($23.2k)
-              </button>
-              <button
-                type="button"
-                onClick={() => handleSelectPreset(133000)}
-                className={`text-[10px] px-2.5 py-1 rounded-lg font-bold transition-all border ${
-                  activeTarget === 133000
-                    ? 'bg-rose-500/20 text-rose-300 border-rose-500/60 ring-1 ring-rose-500/30 font-black'
-                    : 'bg-slate-900/60 text-slate-400 hover:text-slate-200 border-slate-800'
-                }`}
-              >
-                12% ($94.3k)
-              </button>
-              <button
-                type="button"
-                onClick={() => handleSelectPreset(243600)}
-                className={`text-[10px] px-2.5 py-1 rounded-lg font-bold transition-all border ${
-                  activeTarget === 243600
-                    ? 'bg-amber-500/20 text-amber-300 border-amber-500/60 ring-1 ring-amber-500/30 font-black'
-                    : 'bg-slate-900/60 text-slate-400 hover:text-slate-200 border-slate-800'
-                }`}
-              >
-                22% ($201k)
-              </button>
-              <button
-                type="button"
-                onClick={() => handleSelectPreset(435750)}
-                className={`text-[10px] px-2.5 py-1 rounded-lg font-bold transition-all border ${
-                  activeTarget === 435750
-                    ? 'bg-pink-500/20 text-pink-300 border-pink-500/60 ring-1 ring-pink-500/30 font-black'
-                    : 'bg-slate-900/60 text-slate-400 hover:text-slate-200 border-slate-800'
-                }`}
-              >
-                24% ($383.9k)
-              </button>
-              <button
-                type="button"
-                onClick={() => handleSelectPreset(544650)}
-                className={`text-[10px] px-2.5 py-1 rounded-lg font-bold transition-all border ${
-                  activeTarget === 544650
-                    ? 'bg-purple-500/20 text-purple-300 border-purple-500/60 ring-1 ring-purple-500/30 font-black'
-                    : 'bg-slate-900/60 text-slate-400 hover:text-slate-200 border-slate-800'
-                }`}
-              >
-                32% ($487.5k)
-              </button>
             </div>
-
-            {/* IRMAA Cliffs Group */}
-            <div className="flex flex-wrap items-center gap-1.5 bg-slate-950/80 p-1.5 rounded-xl border border-slate-800">
-              <span className="text-[10px] font-bold text-slate-400 px-2 uppercase font-mono">IRMAA Tiers:</span>
-              <button
-                type="button"
-                onClick={() => handleSelectPreset(218000)}
-                className={`text-[10px] px-2.5 py-1 rounded-lg font-bold transition-all border ${
-                  activeTarget === 218000 || activeTarget === 217999
-                    ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/60 ring-1 ring-emerald-500/30 font-black'
-                    : 'bg-slate-900/60 text-slate-400 hover:text-slate-200 border-slate-800'
-                }`}
-              >
-                IRMAA Tier 1 ($218k MAGI)
-              </button>
-              <button
-                type="button"
-                onClick={() => handleSelectPreset(274000)}
-                className={`text-[10px] px-2.5 py-1 rounded-lg font-bold transition-all border ${
-                  activeTarget === 274000 || activeTarget === 273999
-                    ? 'bg-amber-500/20 text-amber-300 border-amber-500/60 ring-1 ring-amber-500/30 font-black'
-                    : 'bg-slate-900/60 text-slate-400 hover:text-slate-200 border-slate-800'
-                }`}
-              >
-                Tier 2 ($274k)
-              </button>
-              <button
-                type="button"
-                onClick={() => handleSelectPreset(342000)}
-                className={`text-[10px] px-2.5 py-1 rounded-lg font-bold transition-all border ${
-                  activeTarget === 342000 || activeTarget === 341999
-                    ? 'bg-blue-500/20 text-blue-300 border-blue-500/60 ring-1 ring-blue-500/30 font-black'
-                    : 'bg-slate-900/60 text-slate-400 hover:text-slate-200 border-slate-800'
-                }`}
-              >
-                Tier 3 ($342k)
-              </button>
-              <button
-                type="button"
-                onClick={() => handleSelectPreset(410000)}
-                className={`text-[10px] px-2.5 py-1 rounded-lg font-bold transition-all border ${
-                  activeTarget === 410000 || activeTarget === 409999
-                    ? 'bg-pink-500/20 text-pink-300 border-pink-500/60 ring-1 ring-pink-500/30 font-black'
-                    : 'bg-slate-900/60 text-slate-400 hover:text-slate-200 border-slate-800'
-                }`}
-              >
-                Tier 4 ($410k)
-              </button>
-            </div>
-          </div>
+          )}
         </div>
       </div>
 
-      {/* 4 Summary Metric Cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+      {/* 4 Summary Metric Cards - Compact Single Row */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2.5">
         {/* Card 1: Conversion Window */}
-        <div className="glass-panel rounded-2xl p-4 flex items-center justify-between border-l-4 border-l-emerald-500">
-          <div className="space-y-1">
-            <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider block">
+        <div className="glass-panel rounded-xl px-3 py-2 flex items-center justify-between border-l-4 border-l-emerald-500 bg-slate-900/60">
+          <div className="min-w-0">
+            <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider block truncate">
               Roth Conversion Window
             </span>
-            <span className="text-xl font-black text-emerald-400 font-mono block">
-              {kpiStats.convStart} – {kpiStats.convEnd}
-            </span>
-            <span className="text-[9px] text-slate-500 font-mono block">
-              Total Converted: {formatCurrency(kpiStats.totalConversions)}
-            </span>
+            <div className="flex items-baseline gap-1.5 mt-0.5">
+              <span className="text-base font-black text-emerald-400 font-mono">
+                {kpiStats.convStart} – {kpiStats.convEnd}
+              </span>
+              <span className="text-[9px] text-slate-500 font-mono truncate">
+                ({formatCurrency(kpiStats.totalConversions)})
+              </span>
+            </div>
           </div>
-          <Sliders className="w-8 h-8 text-emerald-500/50" />
+          <Sliders className="w-5 h-5 text-emerald-500/50 shrink-0 ml-2" />
         </div>
 
         {/* Card 2: Peak Taxable Income */}
-        <div className="glass-panel rounded-2xl p-4 flex items-center justify-between border-l-4 border-l-blue-500">
-          <div className="space-y-1">
-            <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider block">
+        <div className="glass-panel rounded-xl px-3 py-2 flex items-center justify-between border-l-4 border-l-blue-500 bg-slate-900/60">
+          <div className="min-w-0">
+            <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider block truncate">
               Peak Taxable Income
             </span>
-            <span className="text-xl font-black text-blue-400 font-mono block">
-              {formatCurrency(kpiStats.maxTaxable)}
-            </span>
-            <span className="text-[9px] text-slate-500 font-mono block">
-              During conversion window
-            </span>
+            <div className="flex items-baseline gap-1.5 mt-0.5">
+              <span className="text-base font-black text-blue-400 font-mono">
+                {formatCurrency(kpiStats.maxTaxable)}
+              </span>
+              <span className="text-[9px] text-slate-500 font-mono truncate">
+                in window
+              </span>
+            </div>
           </div>
-          <TrendingUp className="w-8 h-8 text-blue-500/50" />
+          <TrendingUp className="w-5 h-5 text-blue-500/50 shrink-0 ml-2" />
         </div>
 
         {/* Card 3: Average Headroom */}
-        <div className="glass-panel rounded-2xl p-4 flex items-center justify-between border-l-4 border-l-amber-500">
-          <div className="space-y-1">
-            <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider block">
+        <div className="glass-panel rounded-xl px-3 py-2 flex items-center justify-between border-l-4 border-l-amber-500 bg-slate-900/60">
+          <div className="min-w-0">
+            <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider block truncate">
               Avg Headroom to Limit
             </span>
-            <span className={`text-xl font-black font-mono block ${kpiStats.avgHeadroom >= 0 ? 'text-amber-400' : 'text-rose-400'}`}>
-              {formatCurrency(kpiStats.avgHeadroom)}
-            </span>
-            <span className="text-[9px] text-slate-500 font-mono block">
-              Room under target benchmark
-            </span>
+            <div className="flex items-baseline gap-1.5 mt-0.5">
+              <span className={`text-base font-black font-mono ${kpiStats.avgHeadroom >= 0 ? 'text-amber-400' : 'text-rose-400'}`}>
+                {formatCurrency(kpiStats.avgHeadroom)}
+              </span>
+              <span className="text-[9px] text-slate-500 font-mono truncate">
+                under target
+              </span>
+            </div>
           </div>
-          <ShieldAlert className="w-8 h-8 text-amber-500/50" />
+          <ShieldAlert className="w-5 h-5 text-amber-500/50 shrink-0 ml-2" />
         </div>
 
         {/* Card 4: Limit Breaches */}
-        <div className="glass-panel rounded-2xl p-4 flex items-center justify-between border-l-4 border-l-purple-500">
-          <div className="space-y-1">
-            <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider block">
+        <div className="glass-panel rounded-xl px-3 py-2 flex items-center justify-between border-l-4 border-l-purple-500 bg-slate-900/60">
+          <div className="min-w-0">
+            <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider block truncate">
               Limit Overages
             </span>
-            <span className={`text-xl font-black font-mono block ${kpiStats.breachedYears === 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
-              {kpiStats.breachedYears} {kpiStats.breachedYears === 1 ? 'Year' : 'Years'}
-            </span>
-            <span className="text-[9px] text-slate-500 font-mono block">
-              Years exceeding benchmark line
-            </span>
+            <div className="flex items-baseline gap-1.5 mt-0.5">
+              <span className={`text-base font-black font-mono ${kpiStats.breachedYears === 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
+                {kpiStats.breachedYears} {kpiStats.breachedYears === 1 ? 'Yr' : 'Yrs'}
+              </span>
+              <span className="text-[9px] text-slate-500 font-mono truncate">
+                exceeding line
+              </span>
+            </div>
           </div>
-          <AlertCircle className="w-8 h-8 text-purple-500/50" />
+          <AlertCircle className="w-5 h-5 text-purple-500/50 shrink-0 ml-2" />
         </div>
       </div>
 
       {/* Main Stacked Bar Chart */}
-      <div className="glass-panel p-6 rounded-2xl border border-slate-800 bg-slate-900/40 shadow-xl space-y-4">
+      <div className="glass-panel p-3.5 rounded-2xl border border-slate-800 bg-slate-900/40 shadow-xl space-y-2">
         <div className="flex items-center justify-between">
           <h3 className="text-sm font-bold text-slate-200 uppercase tracking-wider flex items-center gap-2">
             <Calculator className="w-4 h-4 text-emerald-400" />
@@ -688,13 +799,13 @@ export const TaxableIncomeWorkspace: React.FC<TaxableIncomeWorkspaceProps> = ({
           </div>
         </div>
 
-        <div className="h-[420px] w-full">
+        <div className="h-[540px] w-full">
           <Chart ref={chartRef} type="bar" data={chartData} options={chartOptions} />
         </div>
       </div>
 
       {/* Detailed Audit Table */}
-      <div className="glass-panel p-6 rounded-2xl border border-slate-800 bg-slate-900/40 shadow-xl space-y-4">
+      <div className="glass-panel p-3.5 rounded-2xl border border-slate-800 bg-slate-900/40 shadow-xl space-y-2">
         <div className="flex items-center justify-between">
           <h3 className="text-sm font-bold text-slate-200 uppercase tracking-wider flex items-center gap-2">
             <Info className="w-4 h-4 text-indigo-400" />

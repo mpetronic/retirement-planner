@@ -19,7 +19,6 @@ import {
   Upload,
   FileText,
   FileSpreadsheet,
-  BookOpen,
   X
 } from 'lucide-react';
 import { DetailedExpensesDialog } from './DetailedExpensesDialog';
@@ -40,6 +39,8 @@ const getBirthMonth = (dateStr: string | undefined): number => {
 };
 
 interface InputControlSidebarProps {
+  isOpen?: boolean;
+  onClose?: () => void;
   inputs: AppStateInputs;
   onChange: (newInputs: AppStateInputs) => void;
   onReset: () => void;
@@ -56,6 +57,8 @@ interface InputControlSidebarProps {
 }
 
 export const InputControlSidebar: React.FC<InputControlSidebarProps> = ({
+  isOpen = true,
+  onClose,
   inputs,
   onChange,
   onReset,
@@ -70,6 +73,7 @@ export const InputControlSidebar: React.FC<InputControlSidebarProps> = ({
   onNavigateTab,
   onOpenDocumentation,
 }) => {
+  const [activeTab, setActiveTab] = useState<'profiles' | 'portfolio' | 'assumptions' | 'expenses'>('profiles');
   const [isEditingYou, setIsEditingYou] = useState(false);
   const [isEditingWife, setIsEditingWife] = useState(false);
   const [showExpensesDialog, setShowExpensesDialog] = useState(false);
@@ -202,314 +206,502 @@ export const InputControlSidebar: React.FC<InputControlSidebarProps> = ({
     return `${(val * 100).toFixed(1)}%`;
   };
 
+  React.useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && isOpen && onClose) {
+        onClose();
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isOpen, onClose]);
+
+  if (!isOpen) return null;
+
   return (
-    <aside className="w-full lg:w-96 bg-slate-900 border-r border-slate-800 flex flex-col h-full overflow-y-auto custom-scrollbar">
-      {/* Sidebar Header */}
-      <div className="p-6 border-b border-slate-800 bg-slate-900/60 sticky top-0 backdrop-blur-md z-10 flex items-center justify-between">
-        <div className="flex items-center gap-3">
-          <Flame className="w-7 h-7 text-emerald-500 animate-pulse" />
-          <div>
-            <h1 className="text-xl font-bold bg-gradient-to-r from-slate-100 to-slate-400 bg-clip-text text-transparent">
-              Scenario Planner
-            </h1>
-            <p className="text-xs text-slate-400">Configure parameters in real-time</p>
-          </div>
-        </div>
+    <div className="fixed inset-0 z-50 flex justify-end">
+      {/* Backdrop */}
+      <div 
+        className="fixed inset-0 bg-slate-950/80 backdrop-blur-sm transition-opacity"
+        onClick={onClose}
+      />
 
-        {/* Header Action Buttons */}
-        <div className="flex items-center gap-1.5">
-          <button
-            type="button"
-            onClick={() => {
-              if (onOpenDocumentation) {
-                onOpenDocumentation('overview');
-              } else {
-                setShowDocumentation(true);
-              }
-            }}
-            className="p-2 bg-slate-950/60 hover:bg-slate-800/80 text-slate-400 hover:text-indigo-400 border border-slate-800 hover:border-slate-700/60 rounded-xl transition-all cursor-pointer flex items-center justify-center group"
-            title="User Guide & Application Documentation"
-          >
-            <BookOpen className="w-4 h-4 text-slate-400 group-hover:text-indigo-400" />
-          </button>
-          <button
-            type="button"
-            onClick={() => setShowAboutDialog(true)}
-            className="p-2 bg-slate-950/60 hover:bg-slate-800/80 text-slate-400 hover:text-emerald-400 border border-slate-800 hover:border-slate-700/60 rounded-xl transition-all cursor-pointer flex items-center justify-center group"
-            title={`About Retirement Planner (${versionInfo.displayVersion})`}
-          >
-            <Info className="w-4 h-4 text-slate-400 group-hover:text-emerald-400" />
-          </button>
-          <button
-            type="button"
-            onClick={() => setShowDisplaySettings(true)}
-            className="p-2 bg-slate-950/60 hover:bg-slate-800/80 text-slate-400 hover:text-slate-100 border border-slate-800 hover:border-slate-700/60 rounded-xl transition-all cursor-pointer flex items-center justify-center"
-            title="Display & Font Size Settings"
-          >
-            <Settings className="w-4 h-4" />
-          </button>
-        </div>
-      </div>
+      {/* Slide-over Drawer Panel */}
+      <aside className="relative z-50 w-full max-w-md bg-slate-900 border-l border-slate-800 flex flex-col h-full overflow-y-auto custom-scrollbar shadow-2xl animate-in slide-in-from-right duration-300">
+        {/* Sidebar Sticky Header & Tab Strip */}
+        <div className="border-b border-slate-800 bg-slate-900/90 sticky top-0 backdrop-blur-md z-10">
+          <div className="p-4 flex items-center justify-between">
+            <div className="flex items-center gap-2.5">
+              <Flame className="w-5 h-5 text-emerald-500 animate-pulse shrink-0" />
+              <div>
+                <h1 className="text-base font-bold bg-gradient-to-r from-slate-100 to-slate-400 bg-clip-text text-transparent">
+                  Scenario Planner
+                </h1>
+                <p className="text-[10px] text-slate-400">Configure parameters in real-time</p>
+              </div>
+            </div>
 
-      <div className="p-4 space-y-6 flex-1">
-        {/* Global Valuation Toggle */}
-        <div className="space-y-3">
-          <div className="flex items-center gap-2 text-emerald-400 font-semibold border-b border-slate-800 pb-2">
-            <DollarSign className="w-5 h-5" />
-            <h2>Currency Valuation</h2>
-          </div>
-          <div className="p-4 bg-slate-950/60 rounded-xl border border-slate-800 space-y-3">
-            <div className="flex bg-slate-900 p-0.5 rounded-xl border border-slate-800">
+            {/* Header Action Buttons */}
+            <div className="flex items-center gap-1.5">
               <button
                 type="button"
-                onClick={() => setUseTodayDollars(false)}
-                className={`flex-1 text-[10px] py-2 rounded-lg font-bold transition-all ${
-                  !useTodayDollars
-                    ? 'bg-emerald-500 text-slate-950 shadow'
-                    : 'text-slate-400 hover:text-slate-200'
-                }`}
+                onClick={() => setShowAboutDialog(true)}
+                className="p-1.5 bg-slate-950/60 hover:bg-slate-800/80 text-slate-400 hover:text-emerald-400 border border-slate-800 hover:border-slate-700/60 rounded-xl transition-all cursor-pointer flex items-center justify-center group"
+                title={`About Retirement Planner (${versionInfo.displayVersion})`}
               >
-                Future Dollars (Nominal)
+                <Info className="w-4 h-4 text-slate-400 group-hover:text-emerald-400" />
               </button>
               <button
                 type="button"
-                onClick={() => setUseTodayDollars(true)}
-                className={`flex-1 text-[10px] py-2 rounded-lg font-bold transition-all ${
-                  useTodayDollars
-                    ? 'bg-emerald-500 text-slate-950 shadow'
-                    : 'text-slate-400 hover:text-slate-200'
+                onClick={() => setShowDisplaySettings(true)}
+                className="p-1.5 bg-slate-950/60 hover:bg-slate-800/80 text-slate-400 hover:text-slate-100 border border-slate-800 hover:border-slate-700/60 rounded-xl transition-all cursor-pointer flex items-center justify-center"
+                title="Display & Font Size Settings"
+              >
+                <Settings className="w-4 h-4" />
+              </button>
+              {onClose && (
+                <button
+                  type="button"
+                  onClick={onClose}
+                  className="p-1.5 bg-slate-950/60 hover:bg-slate-800 hover:text-white text-slate-400 border border-slate-800 hover:border-slate-700 rounded-xl transition-all cursor-pointer flex items-center justify-center"
+                  title="Close parameters drawer (Esc or P)"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              )}
+            </div>
+          </div>
+
+          {/* Category Tabs Strip */}
+          <div className="px-3 pb-3">
+            <div className="flex items-center gap-1 bg-slate-950 p-1 rounded-xl border border-slate-800">
+              <button
+                type="button"
+                onClick={() => setActiveTab('profiles')}
+                className={`flex-1 flex items-center justify-center gap-1 text-[10px] py-1.5 px-1 rounded-lg font-bold transition-all border ${
+                  activeTab === 'profiles'
+                    ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/60 shadow-sm'
+                    : 'bg-transparent text-slate-400 hover:text-slate-200 border-transparent'
                 }`}
               >
-                Today's Dollars (Real)
+                <User className="w-3.5 h-3.5" />
+                <span>Profiles</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setActiveTab('portfolio')}
+                className={`flex-1 flex items-center justify-center gap-1 text-[10px] py-1.5 px-1 rounded-lg font-bold transition-all border ${
+                  activeTab === 'portfolio'
+                    ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/60 shadow-sm'
+                    : 'bg-transparent text-slate-400 hover:text-slate-200 border-transparent'
+                }`}
+              >
+                <Coins className="w-3.5 h-3.5" />
+                <span>Accounts</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setActiveTab('assumptions')}
+                className={`flex-1 flex items-center justify-center gap-1 text-[10px] py-1.5 px-1 rounded-lg font-bold transition-all border ${
+                  activeTab === 'assumptions'
+                    ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/60 shadow-sm'
+                    : 'bg-transparent text-slate-400 hover:text-slate-200 border-transparent'
+                }`}
+              >
+                <TrendingUp className="w-3.5 h-3.5" />
+                <span>Assumptions</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setActiveTab('expenses')}
+                className={`flex-1 flex items-center justify-center gap-1 text-[10px] py-1.5 px-1 rounded-lg font-bold transition-all border ${
+                  activeTab === 'expenses'
+                    ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/60 shadow-sm'
+                    : 'bg-transparent text-slate-400 hover:text-slate-200 border-transparent'
+                }`}
+              >
+                <Flame className="w-3.5 h-3.5" />
+                <span>Expenses</span>
               </button>
             </div>
-            <p className="text-[10px] text-slate-400 leading-normal flex items-start gap-1.5">
-              <Info className="w-4 h-4 text-emerald-500/80 flex-shrink-0 mt-0.5" />
-              <span>
-                {!useTodayDollars
-                  ? "Displaying actual nominal dollar amounts including standard CPI adjustments and compounding growth."
-                  : "Discounting all future balances and expenses back by the CPI inflation factor to reflect today's real purchasing power."}
-              </span>
-            </p>
           </div>
         </div>
 
-        {/* Section: Plan Timeline & Simulation Start Year */}
-        <div className="space-y-3">
-          <div className="flex items-center gap-2 text-emerald-400 font-semibold border-b border-slate-800 pb-2">
-            <Calendar className="w-5 h-5" />
-            <h2>Plan Timeline & Start Year</h2>
-          </div>
-          <div className="p-4 bg-slate-950/60 rounded-xl border border-slate-800 space-y-3">
-            <div className="space-y-1">
-              <div className="flex items-center justify-between">
-                <label className="text-xs text-slate-400 font-medium">Simulation Start Year</label>
-                {simStartYear !== new Date().getFullYear() && (
+      <div className="p-4 space-y-5 flex-1">
+        {/* TAB 1: PROFILES */}
+        {activeTab === 'profiles' && (
+          <div className="space-y-4 animate-in fade-in duration-150">
+            <div className="space-y-3">
+              <div className="flex items-center gap-2 text-emerald-400 font-semibold border-b border-slate-800 pb-2">
+                <User className="w-5 h-5" />
+                <h2>Spouse Profiles</h2>
+              </div>
+
+              {/* Primary User (You) */}
+              <div className="p-4 bg-slate-950/60 rounded-xl border border-slate-800 space-y-3">
+                {isEditingYou ? (
+                  <div className="flex justify-between items-center gap-2">
+                    <div className="flex items-center gap-1.5 flex-1">
+                      <span className="text-xs text-slate-400 font-bold uppercase whitespace-nowrap">Primary User:</span>
+                      <input
+                        type="text"
+                        value={inputs.you.name || ''}
+                        onChange={(e) => updateNestedState('you', 'name', e.target.value)}
+                        onBlur={() => setIsEditingYou(false)}
+                        onKeyDown={(e) => { if (e.key === 'Enter') setIsEditingYou(false); }}
+                        placeholder="Enter name"
+                        autoFocus
+                        className="bg-slate-900 border border-emerald-500/50 rounded px-2 py-0.5 text-xs text-slate-100 font-semibold focus:outline-none w-full focus:ring-1 focus:ring-emerald-500"
+                      />
+                    </div>
+                    <button
+                      onClick={() => setIsEditingYou(false)}
+                      className="text-emerald-400 hover:text-emerald-300 p-0.5 hover:bg-slate-800 rounded transition-colors"
+                      title="Save name"
+                    >
+                      <Check className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                ) : (
+                  <div className="flex justify-between items-center">
+                    <div className="flex items-center gap-2 group cursor-pointer" onClick={() => setIsEditingYou(true)}>
+                      <span className="text-sm font-semibold text-slate-200 hover:text-emerald-400 transition-colors">
+                        Primary User ({inputs.you.name || 'You'})
+                      </span>
+                      <Pencil className="w-3.5 h-3.5 text-slate-500 group-hover:text-emerald-400 opacity-0 group-hover:opacity-100 transition-all cursor-pointer" />
+                    </div>
+                    <span className="text-xs bg-slate-800 px-2 py-0.5 rounded text-emerald-400 font-mono">{yourBirthYear}</span>
+                  </div>
+                )}
+                
+                <div className="space-y-1">
+                  <label className="text-xs text-slate-400">Estimated SS Monthly PIA (at Age 67)</label>
+                  <div className="relative">
+                    <span className="absolute left-3 top-1 text-slate-500 text-xs font-semibold">$</span>
+                    <input
+                      type="number"
+                      value={inputs.you.estimatedPIA === null ? '' : inputs.you.estimatedPIA}
+                      onChange={(e) => updateNestedState('you', 'estimatedPIA', e.target.value === '' ? null : Number(e.target.value))}
+                      placeholder="e.g. 3000"
+                      className="w-full bg-slate-900 border border-slate-800 rounded-lg pl-6 pr-2.5 py-1 text-xs text-slate-100 font-mono focus:outline-none focus:border-emerald-500"
+                    />
+                  </div>
+                </div>
+
+                <div className="space-y-1">
+                  <label className="text-xs text-slate-400 flex justify-between">
+                    <span>Target Social Security Claiming Age</span>
+                    <span className="text-emerald-400 font-bold font-mono">Age {inputs.you.targetSSClaimingAge ?? 67}</span>
+                  </label>
+                  <input
+                    type="range"
+                    min="62"
+                    max="70"
+                    step="1"
+                    value={inputs.you.targetSSClaimingAge ?? 67}
+                    onChange={(e) => updateNestedState('you', 'targetSSClaimingAge', Number(e.target.value))}
+                    className="w-full h-1.5 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-emerald-500"
+                  />
+                  <div className="flex justify-between text-[10px] text-slate-500 font-mono px-1">
+                    <span>62 (Reduced)</span>
+                    <span>67 (FRA)</span>
+                    <span>70 (Max)</span>
+                  </div>
+                </div>
+
+                {/* Planned Retirement — single slider stepping by month */}
+                <div className="space-y-2 pt-1 border-t border-slate-800/30">
+                  <div className="space-y-1">
+                    {(() => {
+                      const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+                      const age = inputs.you.plannedRetirementAge ?? 67;
+                      const mon = inputs.you.plannedRetirementMonth ?? getBirthMonth(inputs.you.birthDate);
+                      const sliderVal = (age - 55) * 12 + (mon - 1);
+                      return (
+                        <>
+                          <label className="text-[10px] text-slate-400 font-bold uppercase tracking-wider flex justify-between">
+                            <span>Retire Age</span>
+                            <span className="text-emerald-400 font-mono font-semibold">
+                              Age {age} · {MONTHS[mon - 1]}
+                            </span>
+                          </label>
+                          <input
+                            type="range"
+                            min="0"
+                            max="239"
+                            step="1"
+                            value={sliderVal}
+                            onChange={(e) => {
+                              const v = Number(e.target.value);
+                              const newAge = 55 + Math.floor(v / 12);
+                              const newMon = (v % 12) + 1;
+                              const next = { ...inputs, you: { ...inputs.you, plannedRetirementAge: newAge, plannedRetirementMonth: newMon } };
+                              onChange(next);
+                            }}
+                            className="w-full h-1 bg-slate-800 rounded appearance-none cursor-pointer accent-emerald-500"
+                          />
+                          <div className="flex justify-between text-[10px] text-slate-500 font-mono px-0.5">
+                            <span>55</span>
+                            <span>60</span>
+                            <span>65</span>
+                            <span>70</span>
+                            <span>75</span>
+                          </div>
+                        </>
+                      );
+                    })()}
+                  </div>
+                  <div className="space-y-1">
+                    <label className="text-[10px] text-slate-400 font-bold uppercase tracking-wider block">Salary</label>
+                    <div className="relative">
+                      <span className="absolute left-3 top-1 text-slate-500 text-xs font-semibold">$</span>
+                      <input
+                        type="number"
+                        value={inputs.you.activeSalary === null ? '' : inputs.you.activeSalary}
+                        onChange={(e) => updateNestedState('you', 'activeSalary', e.target.value === '' ? null : Number(e.target.value))}
+                        placeholder="e.g. 150000"
+                        className="w-full bg-slate-900 border border-slate-800 rounded-lg pl-6 pr-2.5 py-1 text-xs text-slate-100 font-mono focus:outline-none focus:border-emerald-500"
+                      />
+                    </div>
+                  </div>
+                  <div className="space-y-1 pt-1.5 border-t border-slate-800/30">
+                    <label className="text-[10px] text-slate-400 font-bold uppercase tracking-wider flex justify-between">
+                      <span>Longevity Age</span>
+                      <span className="text-emerald-400 font-mono font-semibold">Age {inputs.you.longevityAge ?? 85}</span>
+                    </label>
+                    <input
+                      type="range"
+                      min="50"
+                      max="110"
+                      step="1"
+                      value={inputs.you.longevityAge ?? 85}
+                      onChange={(e) => updateNestedState('you', 'longevityAge', Number(e.target.value))}
+                      className="w-full h-1.5 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-emerald-500"
+                    />
+                    <div className="flex justify-between text-[10px] text-slate-500 font-mono px-0.5">
+                      <span>50</span>
+                      <span>80</span>
+                      <span>95</span>
+                      <span>110</span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Healthcare Planning Dialog Trigger */}
+                <div className="pt-2 border-t border-slate-800/30">
                   <button
                     type="button"
-                    onClick={() => updateNestedState('simulationStartYear', '', new Date().getFullYear())}
-                    className="text-[10px] text-emerald-400 hover:text-emerald-300 underline cursor-pointer"
+                    onClick={() => setEditingHealthcarePerson('you')}
+                    className="w-full flex items-center justify-center gap-2 px-3 py-1.5 bg-slate-900 hover:bg-slate-850 border border-slate-800 hover:border-slate-700 text-slate-300 hover:text-slate-100 rounded-lg text-xs font-bold transition-all cursor-pointer"
                   >
-                    Reset to {new Date().getFullYear()}
+                    <Heart className="w-3.5 h-3.5 text-emerald-500" />
+                    <span>Configure Health Expenses</span>
                   </button>
-                )}
-              </div>
-              <input
-                type="number"
-                min="1990"
-                max="2100"
-                value={inputs.simulationStartYear ?? simStartYear}
-                onChange={(e) => {
-                  const val = e.target.value === '' ? null : Number(e.target.value);
-                  updateNestedState('simulationStartYear', '', val);
-                }}
-                className="w-full bg-slate-900 border border-slate-800 rounded-lg px-3 py-1.5 text-xs text-slate-100 font-mono font-bold focus:outline-none focus:border-emerald-500"
-              />
-            </div>
-            <p className="text-[10px] text-slate-400 leading-normal flex items-start gap-1.5">
-              <Info className="w-4 h-4 text-emerald-500/80 flex-shrink-0 mt-0.5" />
-              <span>
-                Timeline anchor for starting balances, returns, and cash flows. Stored with the plan so it stays constant over time.
-              </span>
-            </p>
-          </div>
-        </div>
-
-        {/* Section 1: Spouses Profiles */}
-        <div className="space-y-3">
-          <div className="flex items-center gap-2 text-emerald-400 font-semibold border-b border-slate-800 pb-2">
-            <User className="w-5 h-5" />
-            <h2>Spouse Profiles</h2>
-          </div>
-
-          {/* Primary User (You) */}
-          <div className="p-4 bg-slate-950/60 rounded-xl border border-slate-800 space-y-3">
-            {isEditingYou ? (
-              <div className="flex justify-between items-center gap-2">
-                <div className="flex items-center gap-1.5 flex-1">
-                  <span className="text-xs text-slate-400 font-bold uppercase whitespace-nowrap">Primary User:</span>
-                  <input
-                    type="text"
-                    value={inputs.you.name || ''}
-                    onChange={(e) => updateNestedState('you', 'name', e.target.value)}
-                    onBlur={() => setIsEditingYou(false)}
-                    onKeyDown={(e) => { if (e.key === 'Enter') setIsEditingYou(false); }}
-                    placeholder="Enter name"
-                    autoFocus
-                    className="bg-slate-900 border border-emerald-500/50 rounded px-2 py-0.5 text-xs text-slate-100 font-semibold focus:outline-none w-full focus:ring-1 focus:ring-emerald-500"
-                  />
                 </div>
-                <button
-                  onClick={() => setIsEditingYou(false)}
-                  className="text-emerald-400 hover:text-emerald-300 p-0.5 hover:bg-slate-800 rounded transition-colors"
-                  title="Save name"
-                >
-                  <Check className="w-3.5 h-3.5" />
-                </button>
               </div>
-            ) : (
-              <div className="flex justify-between items-center">
-                <div className="flex items-center gap-2 group cursor-pointer" onClick={() => setIsEditingYou(true)}>
-                  <span className="text-sm font-semibold text-slate-200 hover:text-emerald-400 transition-colors">
-                    Primary User ({inputs.you.name || 'You'})
-                  </span>
-                  <Pencil className="w-3.5 h-3.5 text-slate-500 group-hover:text-emerald-400 opacity-0 group-hover:opacity-100 transition-all cursor-pointer" />
-                </div>
-                <span className="text-xs bg-slate-800 px-2 py-0.5 rounded text-emerald-400 font-mono">{yourBirthYear}</span>
-              </div>
-            )}
-            
-            <div className="space-y-1">
-              <label className="text-xs text-slate-400">Estimated SS Monthly PIA (at Age 67)</label>
-              <div className="relative">
-                <span className="absolute left-3 top-1 text-slate-500 text-xs font-semibold">$</span>
-                <input
-                  type="number"
-                  value={inputs.you.estimatedPIA === null ? '' : inputs.you.estimatedPIA}
-                  onChange={(e) => updateNestedState('you', 'estimatedPIA', e.target.value === '' ? null : Number(e.target.value))}
-                  placeholder="e.g. 3000"
-                  className="w-full bg-slate-900 border border-slate-800 rounded-lg pl-6 pr-2.5 py-1 text-xs text-slate-100 font-mono focus:outline-none focus:border-emerald-500"
-                />
-              </div>
-            </div>
 
-            <div className="space-y-1">
-              <label className="text-xs text-slate-400 flex justify-between">
-                <span>Target Social Security Claiming Age</span>
-                <span className="text-emerald-400 font-bold font-mono">Age {inputs.you.targetSSClaimingAge ?? 67}</span>
-              </label>
-              <input
-                type="range"
-                min="62"
-                max="70"
-                step="1"
-                value={inputs.you.targetSSClaimingAge ?? 67}
-                onChange={(e) => updateNestedState('you', 'targetSSClaimingAge', Number(e.target.value))}
-                className="w-full h-1.5 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-emerald-500"
-              />
-              <div className="flex justify-between text-[10px] text-slate-500 font-mono px-1">
-                <span>62 (Reduced)</span>
-                <span>67 (FRA)</span>
-                <span>70 (Max)</span>
-              </div>
-            </div>
-
-            {/* Planned Retirement — single slider stepping by month */}
-            <div className="space-y-2 pt-1 border-t border-slate-800/30">
-              <div className="space-y-1">
-                {(() => {
-                  const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
-                  const age = inputs.you.plannedRetirementAge ?? 67;
-                  const mon = inputs.you.plannedRetirementMonth ?? getBirthMonth(inputs.you.birthDate);
-                  const sliderVal = (age - 55) * 12 + (mon - 1);
-                  return (
-                    <>
-                      <label className="text-[10px] text-slate-400 font-bold uppercase tracking-wider flex justify-between">
-                        <span>Retire Age</span>
-                        <span className="text-emerald-400 font-mono font-semibold">
-                          Age {age} · {MONTHS[mon - 1]}
+              {/* Spouse Profile */}
+              {!inputs.isSingleFiler && (
+                <div className="p-4 bg-slate-950/60 rounded-xl border border-slate-800 space-y-3">
+                  {isEditingWife ? (
+                    <div className="flex justify-between items-center gap-2">
+                      <div className="flex items-center gap-1.5 flex-1">
+                        <span className="text-xs text-slate-400 font-bold uppercase whitespace-nowrap">Spouse:</span>
+                        <input
+                          type="text"
+                          value={inputs.wife.name || ''}
+                          onChange={(e) => updateNestedState('wife', 'name', e.target.value)}
+                          onBlur={() => setIsEditingWife(false)}
+                          onKeyDown={(e) => { if (e.key === 'Enter') setIsEditingWife(false); }}
+                          placeholder="Enter name"
+                          autoFocus
+                          className="bg-slate-900 border border-emerald-500/50 rounded px-2 py-0.5 text-xs text-slate-100 font-semibold focus:outline-none w-full focus:ring-1 focus:ring-emerald-500"
+                        />
+                      </div>
+                      <button
+                        onClick={() => setIsEditingWife(false)}
+                        className="text-emerald-400 hover:text-emerald-300 p-0.5 hover:bg-slate-800 rounded transition-colors"
+                        title="Save name"
+                      >
+                        <Check className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  ) : (
+                    <div className="flex justify-between items-center">
+                      <div className="flex items-center gap-2 group cursor-pointer" onClick={() => setIsEditingWife(true)}>
+                        <span className="text-sm font-semibold text-slate-200 hover:text-emerald-400 transition-colors">
+                          Spouse ({inputs.wife.name || 'Spouse'})
                         </span>
+                        <Pencil className="w-3.5 h-3.5 text-slate-500 group-hover:text-emerald-400 opacity-0 group-hover:opacity-100 transition-all cursor-pointer" />
+                      </div>
+                      <span className="text-xs bg-slate-800 px-2 py-0.5 rounded text-emerald-400 font-mono">{wifeBirthYear}</span>
+                    </div>
+                  )}
+                  
+                  <div className="space-y-1">
+                    <label className="text-xs text-slate-400">Estimated SS Monthly PIA (at Age 67)</label>
+                    <div className="relative">
+                      <span className="absolute left-3 top-1 text-slate-500 text-xs font-semibold">$</span>
+                      <input
+                        type="number"
+                        value={inputs.wife.estimatedPIA === null ? '' : inputs.wife.estimatedPIA}
+                        onChange={(e) => updateNestedState('wife', 'estimatedPIA', e.target.value === '' ? null : Number(e.target.value))}
+                        placeholder="e.g. 2800"
+                        className="w-full bg-slate-900 border border-slate-800 rounded-lg pl-6 pr-2.5 py-1 text-xs text-slate-100 font-mono focus:outline-none focus:border-emerald-500"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="space-y-1">
+                    <label className="text-xs text-slate-400 flex justify-between">
+                      <span>Target Social Security Claiming Age</span>
+                      <span className="text-emerald-400 font-bold font-mono">Age {inputs.wife.targetSSClaimingAge ?? 67}</span>
+                    </label>
+                    <input
+                      type="range"
+                      min="62"
+                      max="70"
+                      step="1"
+                      value={inputs.wife.targetSSClaimingAge ?? 67}
+                      onChange={(e) => updateNestedState('wife', 'targetSSClaimingAge', Number(e.target.value))}
+                      className="w-full h-1.5 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-emerald-500"
+                    />
+                    <div className="flex justify-between text-[10px] text-slate-500 font-mono px-1">
+                      <span>62 (Reduced)</span>
+                      <span>67 (FRA)</span>
+                      <span>70 (Max)</span>
+                    </div>
+                  </div>
+
+                  {/* Planned Retirement — single slider stepping by month */}
+                  <div className="space-y-2 pt-1 border-t border-slate-800/30">
+                    <div className="space-y-1">
+                      {(() => {
+                        const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+                        const age = inputs.wife.plannedRetirementAge ?? 65;
+                        const mon = inputs.wife.plannedRetirementMonth ?? getBirthMonth(inputs.wife.birthDate);
+                        const sliderVal = (age - 55) * 12 + (mon - 1);
+                        return (
+                          <>
+                            <label className="text-[10px] text-slate-400 font-bold uppercase tracking-wider flex justify-between">
+                              <span>Retire Age</span>
+                              <span className="text-emerald-400 font-mono font-semibold">
+                                Age {age} · {MONTHS[mon - 1]}
+                              </span>
+                            </label>
+                            <input
+                              type="range"
+                              min="0"
+                              max="239"
+                              step="1"
+                              value={sliderVal}
+                              onChange={(e) => {
+                                const v = Number(e.target.value);
+                                const newAge = 55 + Math.floor(v / 12);
+                                const newMon = (v % 12) + 1;
+                                const next = { ...inputs, wife: { ...inputs.wife, plannedRetirementAge: newAge, plannedRetirementMonth: newMon } };
+                                onChange(next);
+                              }}
+                              className="w-full h-1 bg-slate-800 rounded appearance-none cursor-pointer accent-emerald-500"
+                            />
+                            <div className="flex justify-between text-[10px] text-slate-500 font-mono px-0.5">
+                              <span>55</span>
+                              <span>60</span>
+                              <span>65</span>
+                              <span>70</span>
+                              <span>75</span>
+                            </div>
+                          </>
+                        );
+                      })()}
+                    </div>
+                    <div className="space-y-1">
+                      <label className="text-[10px] text-slate-400 font-bold uppercase tracking-wider block">Salary</label>
+                      <div className="relative">
+                        <span className="absolute left-3 top-1 text-slate-500 text-xs font-semibold">$</span>
+                        <input
+                          type="number"
+                          value={inputs.wife.activeSalary === null ? '' : inputs.wife.activeSalary}
+                          onChange={(e) => updateNestedState('wife', 'activeSalary', e.target.value === '' ? null : Number(e.target.value))}
+                          placeholder="e.g. 100000"
+                          className="w-full bg-slate-900 border border-slate-800 rounded-lg pl-6 pr-2.5 py-1 text-xs text-slate-100 font-mono focus:outline-none focus:border-emerald-500"
+                        />
+                      </div>
+                    </div>
+                    <div className="space-y-1 pt-1.5 border-t border-slate-800/30">
+                      <label className="text-[10px] text-slate-400 font-bold uppercase tracking-wider flex justify-between">
+                        <span>Longevity Age</span>
+                        <span className="text-emerald-400 font-mono font-semibold">Age {inputs.wife.longevityAge ?? 95}</span>
                       </label>
                       <input
                         type="range"
-                        min="0"
-                        max="239"
+                        min="50"
+                        max="110"
                         step="1"
-                        value={sliderVal}
-                        onChange={(e) => {
-                          const v = Number(e.target.value);
-                          const newAge = 55 + Math.floor(v / 12);
-                          const newMon = (v % 12) + 1;
-                          const next = { ...inputs, you: { ...inputs.you, plannedRetirementAge: newAge, plannedRetirementMonth: newMon } };
-                          onChange(next);
-                        }}
-                        className="w-full h-1 bg-slate-800 rounded appearance-none cursor-pointer accent-emerald-500"
+                        value={inputs.wife.longevityAge ?? 95}
+                        onChange={(e) => updateNestedState('wife', 'longevityAge', Number(e.target.value))}
+                        className="w-full h-1.5 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-emerald-500"
                       />
                       <div className="flex justify-between text-[10px] text-slate-500 font-mono px-0.5">
-                        <span>55</span>
-                        <span>60</span>
-                        <span>65</span>
-                        <span>70</span>
-                        <span>75</span>
+                        <span>50</span>
+                        <span>80</span>
+                        <span>95</span>
+                        <span>110</span>
                       </div>
-                    </>
-                  );
-                })()}
-              </div>
-              <div className="space-y-1">
-                <label className="text-[10px] text-slate-400 font-bold uppercase tracking-wider block">Salary</label>
-                <div className="relative">
-                  <span className="absolute left-3 top-1 text-slate-500 text-xs font-semibold">$</span>
-                  <input
-                    type="number"
-                    value={inputs.you.activeSalary === null ? '' : inputs.you.activeSalary}
-                    onChange={(e) => updateNestedState('you', 'activeSalary', e.target.value === '' ? null : Number(e.target.value))}
-                    placeholder="e.g. 150000"
-                    className="w-full bg-slate-900 border border-slate-800 rounded-lg pl-6 pr-2.5 py-1 text-xs text-slate-100 font-mono focus:outline-none focus:border-emerald-500"
-                  />
+                    </div>
+                  </div>
+
+                  {/* Healthcare Planning Dialog Trigger */}
+                  <div className="pt-2 border-t border-slate-800/30">
+                    <button
+                      type="button"
+                      onClick={() => setEditingHealthcarePerson('wife')}
+                      className="w-full flex items-center justify-center gap-2 px-3 py-1.5 bg-slate-900 hover:bg-slate-850 border border-slate-800 hover:border-slate-700 text-slate-300 hover:text-slate-100 rounded-lg text-xs font-bold transition-all cursor-pointer"
+                    >
+                      <Heart className="w-3.5 h-3.5 text-emerald-500" />
+                      <span>Configure Health Expenses</span>
+                    </button>
+                  </div>
                 </div>
-              </div>
-              <div className="space-y-1 pt-1.5 border-t border-slate-800/30">
-                <label className="text-[10px] text-slate-400 font-bold uppercase tracking-wider flex justify-between">
-                  <span>Longevity Age</span>
-                  <span className="text-emerald-400 font-mono font-semibold">Age {inputs.you.longevityAge ?? 85}</span>
-                </label>
+              )}
+            </div>
+
+            {/* Survivor simulation mode toggle switch */}
+            {!inputs.isSingleFiler && (
+              <div className="p-4 bg-slate-950/60 rounded-xl border border-slate-800 flex items-center justify-between">
+                <div className="space-y-0.5 pr-2">
+                  <label htmlFor="simulateSurvivorToggle" className="text-xs font-semibold text-slate-200 cursor-pointer block">
+                    Simulate Survivor View
+                  </label>
+                  <span className="text-[10px] text-slate-500 block leading-normal font-sans">
+                    Model compressed tax brackets and Medicare surcharges when one spouse passes away.
+                  </span>
+                </div>
                 <input
-                  type="range"
-                  min="50"
-                  max="110"
-                  step="1"
-                  value={inputs.you.longevityAge ?? 85}
-                  onChange={(e) => updateNestedState('you', 'longevityAge', Number(e.target.value))}
-                  className="w-full h-1.5 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-emerald-500"
+                  type="checkbox"
+                  id="simulateSurvivorToggle"
+                  checked={simulateSurvivor}
+                  onChange={(e) => setSimulateSurvivor(e.target.checked)}
+                  className="w-4 h-4 bg-slate-900 rounded border-slate-800 text-emerald-500 focus:ring-emerald-500 accent-emerald-500 cursor-pointer flex-shrink-0"
                 />
-                <div className="flex justify-between text-[10px] text-slate-500 font-mono px-0.5">
-                  <span>50</span>
-                  <span>80</span>
-                  <span>95</span>
-                  <span>110</span>
-                </div>
               </div>
+            )}
+          </div>
+        )}
+
+        {/* TAB 2: ACCOUNTS & PORTFOLIO */}
+        {activeTab === 'portfolio' && (
+          <div className="space-y-4 animate-in fade-in duration-150">
+            <div className="flex items-center gap-2 text-emerald-400 font-semibold border-b border-slate-800 pb-2">
+              <Coins className="w-5 h-5" />
+              <h2>Starting Account Balances ({simStartYear})</h2>
             </div>
 
-            {/* Healthcare Planning Dialog Trigger */}
-            <div className="pt-2 border-t border-slate-800/30">
-              <button
-                type="button"
-                onClick={() => setEditingHealthcarePerson('you')}
-                className="w-full flex items-center justify-center gap-2 px-3 py-1.5 bg-slate-900 hover:bg-slate-850 border border-slate-800 hover:border-slate-700 text-slate-300 hover:text-slate-100 rounded-lg text-xs font-bold transition-all cursor-pointer"
-              >
-                <Heart className="w-3.5 h-3.5 text-emerald-500" />
-                <span>Configure Health Expenses</span>
-              </button>
-            </div>
-
-            {/* Starting Portfolio Balances */}
-            <div className="space-y-2 pt-2 border-t border-slate-800/30">
-              <div className="flex items-center gap-1.5">
-                <Coins className="w-3.5 h-3.5 text-emerald-500" />
-                <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">Starting Balances ({simStartYear})</span>
-              </div>
+            {/* Primary User Starting Balances */}
+            <div className="p-4 bg-slate-950/60 rounded-xl border border-slate-800 space-y-3">
+              <span className="text-xs font-bold text-slate-200 block border-b border-slate-800/40 pb-1">
+                Primary User ({inputs.you.name || 'You'})
+              </span>
               
               <div className="grid grid-cols-2 gap-2">
                 <div className="space-y-1">
@@ -565,178 +757,13 @@ export const InputControlSidebar: React.FC<InputControlSidebarProps> = ({
                 </div>
               </div>
             </div>
-          </div>
 
-          {/* Wife Profile */}
-          {!inputs.isSingleFiler && (
-            <div className="p-4 bg-slate-950/60 rounded-xl border border-slate-800 space-y-3">
-              {isEditingWife ? (
-                <div className="flex justify-between items-center gap-2">
-                  <div className="flex items-center gap-1.5 flex-1">
-                    <span className="text-xs text-slate-400 font-bold uppercase whitespace-nowrap">Spouse:</span>
-                    <input
-                      type="text"
-                      value={inputs.wife.name || ''}
-                      onChange={(e) => updateNestedState('wife', 'name', e.target.value)}
-                      onBlur={() => setIsEditingWife(false)}
-                      onKeyDown={(e) => { if (e.key === 'Enter') setIsEditingWife(false); }}
-                      placeholder="Enter name"
-                      autoFocus
-                      className="bg-slate-900 border border-emerald-500/50 rounded px-2 py-0.5 text-xs text-slate-100 font-semibold focus:outline-none w-full focus:ring-1 focus:ring-emerald-500"
-                    />
-                  </div>
-                  <button
-                    onClick={() => setIsEditingWife(false)}
-                    className="text-emerald-400 hover:text-emerald-300 p-0.5 hover:bg-slate-800 rounded transition-colors"
-                    title="Save name"
-                  >
-                    <Check className="w-3.5 h-3.5" />
-                  </button>
-                </div>
-              ) : (
-                <div className="flex justify-between items-center">
-                  <div className="flex items-center gap-2 group cursor-pointer" onClick={() => setIsEditingWife(true)}>
-                    <span className="text-sm font-semibold text-slate-200 hover:text-emerald-400 transition-colors">
-                      Spouse ({inputs.wife.name || 'Spouse'})
-                    </span>
-                    <Pencil className="w-3.5 h-3.5 text-slate-500 group-hover:text-emerald-400 opacity-0 group-hover:opacity-100 transition-all cursor-pointer" />
-                  </div>
-                  <span className="text-xs bg-slate-800 px-2 py-0.5 rounded text-emerald-400 font-mono">{wifeBirthYear}</span>
-                </div>
-              )}
-              
-              <div className="space-y-1">
-                <label className="text-xs text-slate-400">Estimated SS Monthly PIA (at Age 67)</label>
-                <div className="relative">
-                  <span className="absolute left-3 top-1 text-slate-500 text-xs font-semibold">$</span>
-                  <input
-                    type="number"
-                    value={inputs.wife.estimatedPIA === null ? '' : inputs.wife.estimatedPIA}
-                    onChange={(e) => updateNestedState('wife', 'estimatedPIA', e.target.value === '' ? null : Number(e.target.value))}
-                    placeholder="e.g. 2800"
-                    className="w-full bg-slate-900 border border-slate-800 rounded-lg pl-6 pr-2.5 py-1 text-xs text-slate-100 font-mono focus:outline-none focus:border-emerald-500"
-                  />
-                </div>
-              </div>
-
-              <div className="space-y-1">
-                <label className="text-xs text-slate-400 flex justify-between">
-                  <span>Target Social Security Claiming Age</span>
-                  <span className="text-emerald-400 font-bold font-mono">Age {inputs.wife.targetSSClaimingAge ?? 67}</span>
-                </label>
-                <input
-                  type="range"
-                  min="62"
-                  max="70"
-                  step="1"
-                  value={inputs.wife.targetSSClaimingAge ?? 67}
-                  onChange={(e) => updateNestedState('wife', 'targetSSClaimingAge', Number(e.target.value))}
-                  className="w-full h-1.5 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-emerald-500"
-                />
-                <div className="flex justify-between text-[10px] text-slate-500 font-mono px-1">
-                  <span>62 (Reduced)</span>
-                  <span>67 (FRA)</span>
-                  <span>70 (Max)</span>
-                </div>
-              </div>
-
-              {/* Planned Retirement — single slider stepping by month */}
-              <div className="space-y-2 pt-1 border-t border-slate-800/30">
-                <div className="space-y-1">
-                  {(() => {
-                    const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
-                    const age = inputs.wife.plannedRetirementAge ?? 65;
-                    const mon = inputs.wife.plannedRetirementMonth ?? getBirthMonth(inputs.wife.birthDate);
-                    const sliderVal = (age - 55) * 12 + (mon - 1);
-                    return (
-                      <>
-                        <label className="text-[10px] text-slate-400 font-bold uppercase tracking-wider flex justify-between">
-                          <span>Retire Age</span>
-                          <span className="text-emerald-400 font-mono font-semibold">
-                            Age {age} · {MONTHS[mon - 1]}
-                          </span>
-                        </label>
-                        <input
-                          type="range"
-                          min="0"
-                          max="239"
-                          step="1"
-                          value={sliderVal}
-                          onChange={(e) => {
-                            const v = Number(e.target.value);
-                            const newAge = 55 + Math.floor(v / 12);
-                            const newMon = (v % 12) + 1;
-                            const next = { ...inputs, wife: { ...inputs.wife, plannedRetirementAge: newAge, plannedRetirementMonth: newMon } };
-                            onChange(next);
-                          }}
-                          className="w-full h-1 bg-slate-800 rounded appearance-none cursor-pointer accent-emerald-500"
-                        />
-                        <div className="flex justify-between text-[10px] text-slate-500 font-mono px-0.5">
-                          <span>55</span>
-                          <span>60</span>
-                          <span>65</span>
-                          <span>70</span>
-                          <span>75</span>
-                        </div>
-                      </>
-                    );
-                  })()}
-                </div>
-                <div className="space-y-1">
-                  <label className="text-[10px] text-slate-400 font-bold uppercase tracking-wider block">Salary</label>
-                  <div className="relative">
-                    <span className="absolute left-3 top-1 text-slate-500 text-xs font-semibold">$</span>
-                    <input
-                      type="number"
-                      value={inputs.wife.activeSalary === null ? '' : inputs.wife.activeSalary}
-                      onChange={(e) => updateNestedState('wife', 'activeSalary', e.target.value === '' ? null : Number(e.target.value))}
-                      placeholder="e.g. 100000"
-                      className="w-full bg-slate-900 border border-slate-800 rounded-lg pl-6 pr-2.5 py-1 text-xs text-slate-100 font-mono focus:outline-none focus:border-emerald-500"
-                    />
-                  </div>
-                </div>
-                <div className="space-y-1 pt-1.5 border-t border-slate-800/30">
-                  <label className="text-[10px] text-slate-400 font-bold uppercase tracking-wider flex justify-between">
-                    <span>Longevity Age</span>
-                    <span className="text-emerald-400 font-mono font-semibold">Age {inputs.wife.longevityAge ?? 95}</span>
-                  </label>
-                  <input
-                    type="range"
-                    min="50"
-                    max="110"
-                    step="1"
-                    value={inputs.wife.longevityAge ?? 95}
-                    onChange={(e) => updateNestedState('wife', 'longevityAge', Number(e.target.value))}
-                    className="w-full h-1.5 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-emerald-500"
-                  />
-                  <div className="flex justify-between text-[10px] text-slate-500 font-mono px-0.5">
-                    <span>50</span>
-                    <span>80</span>
-                    <span>95</span>
-                    <span>110</span>
-                  </div>
-                </div>
-              </div>
-
-              {/* Healthcare Planning Dialog Trigger */}
-              <div className="pt-2 border-t border-slate-800/30">
-                <button
-                  type="button"
-                  onClick={() => setEditingHealthcarePerson('wife')}
-                  className="w-full flex items-center justify-center gap-2 px-3 py-1.5 bg-slate-900 hover:bg-slate-850 border border-slate-800 hover:border-slate-700 text-slate-300 hover:text-slate-100 rounded-lg text-xs font-bold transition-all cursor-pointer"
-                >
-                  <Heart className="w-3.5 h-3.5 text-emerald-500" />
-                  <span>Configure Health Expenses</span>
-                </button>
-              </div>
-
-              {/* Starting Portfolio Balances */}
-              <div className="space-y-2 pt-2 border-t border-slate-800/30">
-                <div className="flex items-center gap-1.5">
-                  <Coins className="w-3.5 h-3.5 text-emerald-500" />
-                  <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">Starting Balances ({simStartYear})</span>
-                </div>
-                
+            {/* Spouse Starting Balances */}
+            {!inputs.isSingleFiler && (
+              <div className="p-4 bg-slate-950/60 rounded-xl border border-slate-800 space-y-3">
+                <span className="text-xs font-bold text-slate-200 block border-b border-slate-800/40 pb-1">
+                  Spouse ({inputs.wife.name || 'Spouse'})
+                </span>
                 <div className="grid grid-cols-2 gap-2">
                   <div className="space-y-1">
                     <label className="text-[10px] text-slate-400 block truncate" title="Traditional IRA">Traditional IRA</label>
@@ -791,458 +818,380 @@ export const InputControlSidebar: React.FC<InputControlSidebarProps> = ({
                   </div>
                 </div>
               </div>
-            </div>
-          )}
+            )}
 
-          {/* Survivor simulation mode toggle switch */}
-          {!inputs.isSingleFiler && (
-            <div className="p-4 bg-slate-950/60 rounded-xl border border-slate-800 flex items-center justify-between">
-              <div className="space-y-0.5 pr-2">
-                <label htmlFor="simulateSurvivorToggle" className="text-xs font-semibold text-slate-200 cursor-pointer block">
-                  Simulate Survivor View
-                </label>
-                <span className="text-[10px] text-slate-500 block leading-normal font-sans">
-                  Model compressed tax brackets and Medicare surcharges when one spouse passes away.
-                </span>
+            {/* Taxable Brokerage Yield & Interest settings */}
+            <div className="p-3 bg-slate-950/60 rounded-xl border border-slate-800 space-y-2">
+              <div className="flex items-center gap-1.5 border-b border-slate-800 pb-1">
+                <span className="text-xs font-bold text-slate-300 block">Taxable Assets Dividend Yield & Type</span>
+                <div className="relative group inline-block">
+                  <HelpCircle className="w-3.5 h-3.5 text-slate-500 hover:text-slate-300 transition-colors cursor-pointer" />
+                  <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 hidden group-hover:block w-64 bg-slate-950 text-slate-200 text-[10px] p-2.5 rounded-lg border border-slate-800 shadow-xl z-50 leading-normal pointer-events-none normal-case font-medium">
+                    <strong>Annual Yield (%)</strong>: The annual percentage of taxable brokerage assets paid out as dividends or interest. Taxed in the year received.<br /><br />
+                    <strong>Non-Qualified (%)</strong>: The portion of the yield taxed at ordinary income rates (e.g., bond interest/non-qualified dividends) vs. preferential capital gains rates.
+                  </div>
+                </div>
               </div>
-              <input
-                type="checkbox"
-                id="simulateSurvivorToggle"
-                checked={simulateSurvivor}
-                onChange={(e) => setSimulateSurvivor(e.target.checked)}
-                className="w-4 h-4 bg-slate-900 rounded border-slate-800 text-emerald-500 focus:ring-emerald-500 accent-emerald-500 cursor-pointer flex-shrink-0"
-              />
-            </div>
-          )}
-        </div>
-
-        {/* Section 2: Jurisdictional Tax Logic */}
-        <div className="space-y-4">
-          <div className="flex items-center gap-2 text-emerald-400 font-semibold border-b border-slate-800 pb-2">
-            <MapPin className="w-5 h-5" />
-            <h2>Jurisdiction & Relocation</h2>
-          </div>
-
-          <div className="p-4 bg-slate-950/60 rounded-xl border border-slate-800 space-y-4">
-            <div className="grid grid-cols-2 gap-2">
-              <div>
-                <label className="text-xs text-slate-400 block mb-1">Current State</label>
-                <select
-                  value={inputs.jurisdiction.currentState}
-                  onChange={(e) => updateNestedState('jurisdiction', 'currentState', e.target.value)}
-                  className="w-full bg-slate-900 border border-slate-800 rounded-lg px-3 py-1.5 text-sm text-slate-100 focus:outline-none focus:border-emerald-500"
-                >
-                  <option value="MD">Maryland (MD)</option>
-                  <option value="FL">Florida (FL)</option>
-                </select>
-              </div>
-              <div>
-                <label className="text-xs text-slate-400 block mb-1">Target State</label>
-                <select
-                  value={inputs.jurisdiction.targetState}
-                  onChange={(e) => updateNestedState('jurisdiction', 'targetState', e.target.value)}
-                  className="w-full bg-slate-900 border border-slate-800 rounded-lg px-3 py-1.5 text-sm text-slate-100 focus:outline-none focus:border-emerald-500"
-                >
-                  <option value="FL">Florida (FL)</option>
-                  <option value="MD">Maryland (MD)</option>
-                </select>
-              </div>
-            </div>
-
-            <div className="space-y-1">
-              <label className="text-xs text-slate-400 flex justify-between">
-                <span>Relocation Year</span>
-                <span className="text-emerald-400 font-bold font-mono">
-                  {inputs.jurisdiction.relocationYear ? inputs.jurisdiction.relocationYear : 'Never Relocate'}
-                </span>
-              </label>
-              <div className="flex items-center gap-3">
-                <input
-                  type="range"
-                  min={simStartYear}
-                  max={simStartYear + 34}
-                  step="1"
-                  disabled={inputs.jurisdiction.relocationYear === null}
-                  value={inputs.jurisdiction.relocationYear ?? lastRelocationYear.current}
-                  onChange={(e) => {
-                    const val = Number(e.target.value);
-                    lastRelocationYear.current = val;
-                    updateNestedState('jurisdiction', 'relocationYear', val);
-                  }}
-                  className="w-full h-1.5 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-emerald-500 disabled:opacity-30"
-                />
-                <button
-                  onClick={() => {
-                    const nextVal = inputs.jurisdiction.relocationYear === null
-                      ? lastRelocationYear.current  // restore the last year the slider was on
-                      : null;
-                    if (inputs.jurisdiction.relocationYear !== null) {
-                      // Remember current year before clearing it
-                      lastRelocationYear.current = inputs.jurisdiction.relocationYear;
-                    }
-                    updateNestedState('jurisdiction', 'relocationYear', nextVal);
-                  }}
-                  className={`text-xs px-2 py-1 rounded transition-colors font-semibold ${
-                    inputs.jurisdiction.relocationYear === null
-                      ? 'bg-emerald-600/20 text-emerald-400 border border-emerald-500/30'
-                      : 'bg-slate-800 text-slate-400 hover:bg-slate-700'
-                  }`}
-                >
-                  {inputs.jurisdiction.relocationYear === null ? 'Enable' : 'Disable'}
-                </button>
-              </div>
-            </div>
-            
-            <p className="text-[10px] text-slate-400 bg-slate-900/60 p-2 rounded border border-slate-800/40 leading-relaxed">
-              {inputs.jurisdiction.relocationYear 
-                ? `Modeling relocation from ${inputs.jurisdiction.currentState} to ${inputs.jurisdiction.targetState} in calendar year ${inputs.jurisdiction.relocationYear}.`
-                : `Active residency in ${inputs.jurisdiction.currentState} remains unchanged for the entire 35-year timeline.`}
-            </p>
-          </div>
-        </div>
-
-        {/* Section 3: Model Assumptions & Allocations Summary */}
-        <div className="space-y-3">
-          <div className="flex items-center justify-between text-emerald-400 font-semibold border-b border-slate-800 pb-2">
-            <div className="flex items-center gap-2">
-              <TrendingUp className="w-5 h-5" />
-              <h2>Model Assumptions</h2>
-              <span className="text-[9px] font-mono font-bold px-1.5 py-0.5 rounded bg-slate-900 text-emerald-400 border border-slate-800 uppercase">
-                {globalScenario}
-              </span>
-            </div>
-            <button
-              type="button"
-              onClick={() => onNavigateTab?.(2)}
-              className="p-1 text-slate-400 hover:text-emerald-400 hover:bg-slate-900 rounded-lg transition-colors cursor-pointer"
-              title="Configure Model Assumptions & Allocations in Workspace 3"
-            >
-              <Settings className="w-4 h-4" />
-            </button>
-          </div>
-
-          <div className="p-3.5 bg-slate-950/60 rounded-xl border border-slate-800 space-y-2.5 text-xs">
-            <div className="grid grid-cols-2 gap-2 text-[11px]">
-              <div className="p-2 bg-slate-900/60 rounded-lg border border-slate-800/60">
-                <span className="text-[10px] text-slate-400 block font-semibold">Stocks (Mean)</span>
-                <span className="font-mono font-bold text-slate-200">{formatPercent(inputs.growthAssumptions.equityReturnRate)}</span>
-              </div>
-              <div className="p-2 bg-slate-900/60 rounded-lg border border-slate-800/60">
-                <span className="text-[10px] text-slate-400 block font-semibold">Bonds (Mean)</span>
-                <span className="font-mono font-bold text-slate-200">{formatPercent(inputs.growthAssumptions.fixedIncomeReturnRate)}</span>
-              </div>
-              <div className="p-2 bg-slate-900/60 rounded-lg border border-slate-800/60">
-                <span className="text-[10px] text-slate-400 block font-semibold">CPI Inflation</span>
-                <span className="font-mono font-bold text-slate-200">{formatPercent(inputs.growthAssumptions.cpiInflationRate)}</span>
-              </div>
-              <div className="p-2 bg-slate-900/60 rounded-lg border border-slate-800/60">
-                <span className="text-[10px] text-slate-400 block font-semibold">Healthcare Infl.</span>
-                <span className="font-mono font-bold text-slate-200">{formatPercent(inputs.growthAssumptions.healthcareInflationRate)}</span>
-              </div>
-            </div>
-
-            <div className="pt-2 border-t border-slate-800/40 text-[10px] text-slate-400 flex justify-between items-center">
-              <span>Account Allocations:</span>
-              <span className="font-mono text-slate-300 font-semibold">
-                Pre-Tax {Math.round((inputs.growthAssumptions.preTaxEquityPortion ?? 0.50) * 100)}/{Math.round((1 - (inputs.growthAssumptions.preTaxEquityPortion ?? 0.50)) * 100)} · Taxable {Math.round((inputs.growthAssumptions.taxableEquityPortion ?? 0.60) * 100)}/{Math.round((1 - (inputs.growthAssumptions.taxableEquityPortion ?? 0.60)) * 100)} · Roth {Math.round((inputs.growthAssumptions.rothEquityPortion ?? 1.00) * 100)}%
-              </span>
-            </div>
-          </div>
-
-          {/* Taxable Brokerage Yield & Interest settings */}
-          <div className="p-3 bg-slate-950/60 rounded-xl border border-slate-800 space-y-2">
-            <div className="flex items-center gap-1.5 border-b border-slate-800 pb-1">
-              <span className="text-xs font-bold text-slate-300 block">Taxable Assets Dividend Yield & Type</span>
-              <div className="relative group inline-block">
-                <HelpCircle className="w-3.5 h-3.5 text-slate-500 hover:text-slate-300 transition-colors cursor-pointer" />
-                <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 hidden group-hover:block w-64 bg-slate-950 text-slate-200 text-[10px] p-2.5 rounded-lg border border-slate-800 shadow-xl z-50 leading-normal pointer-events-none normal-case font-medium">
-                  <strong>Annual Yield (%)</strong>: The annual percentage of taxable brokerage assets paid out as dividends or interest. Taxed in the year received.<br /><br />
-                  <strong>Non-Qualified (%)</strong>: The portion of the yield taxed at ordinary income rates (e.g., bond interest/non-qualified dividends) vs. preferential capital gains rates.
+              <div className="grid grid-cols-2 gap-2">
+                <div className="space-y-1">
+                  <label className="text-[10px] text-slate-400 block truncate" title="Annual Dividend/Interest Yield">Annual Yield (%)</label>
+                  <input
+                    type="number"
+                    step="0.1"
+                    min="0"
+                    max="20"
+                    value={inputs.portfolio.taxableDividendYield !== null && inputs.portfolio.taxableDividendYield !== undefined ? inputs.portfolio.taxableDividendYield * 100 : ''}
+                    onChange={(e) => updateNestedState('portfolio', 'taxableDividendYield', e.target.value === '' ? null : Number(e.target.value) / 100)}
+                    placeholder="2.0"
+                    className="w-full bg-slate-900 border border-slate-800 rounded-lg px-2.5 py-1 text-xs text-slate-100 font-mono focus:outline-none focus:border-emerald-500"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <label className="text-[10px] text-slate-400 block truncate" title="Portion of yield taxed at ordinary income rate">Non-Qualified (%)</label>
+                  <input
+                    type="number"
+                    step="1"
+                    min="0"
+                    max="100"
+                    value={inputs.portfolio.taxableNonQualifiedPortion !== null && inputs.portfolio.taxableNonQualifiedPortion !== undefined ? inputs.portfolio.taxableNonQualifiedPortion * 100 : ''}
+                    onChange={(e) => updateNestedState('portfolio', 'taxableNonQualifiedPortion', e.target.value === '' ? null : Number(e.target.value) / 100)}
+                    placeholder="30"
+                    className="w-full bg-slate-900 border border-slate-800 rounded-lg px-2.5 py-1 text-xs text-slate-100 font-mono focus:outline-none focus:border-emerald-500"
+                  />
                 </div>
               </div>
             </div>
-            <div className="grid grid-cols-2 gap-2">
-              <div className="space-y-1">
-                <label className="text-[10px] text-slate-400 block truncate" title="Annual Dividend/Interest Yield">Annual Yield (%)</label>
-                <input
-                  type="number"
-                  step="0.1"
-                  min="0"
-                  max="20"
-                  value={inputs.portfolio.taxableDividendYield !== null && inputs.portfolio.taxableDividendYield !== undefined ? inputs.portfolio.taxableDividendYield * 100 : ''}
-                  onChange={(e) => updateNestedState('portfolio', 'taxableDividendYield', e.target.value === '' ? null : Number(e.target.value) / 100)}
-                  placeholder="2.0"
-                  className="w-full bg-slate-900 border border-slate-800 rounded-lg px-2.5 py-1 text-xs text-slate-100 font-mono focus:outline-none focus:border-emerald-500"
-                />
-              </div>
-              <div className="space-y-1">
-                <label className="text-[10px] text-slate-400 block truncate" title="Portion of yield taxed at ordinary income rate (e.g. interest, non-qualified dividends)">Non-Qualified (%)</label>
-                <input
-                  type="number"
-                  step="1"
-                  min="0"
-                  max="100"
-                  value={inputs.portfolio.taxableNonQualifiedPortion !== null && inputs.portfolio.taxableNonQualifiedPortion !== undefined ? inputs.portfolio.taxableNonQualifiedPortion * 100 : ''}
-                  onChange={(e) => updateNestedState('portfolio', 'taxableNonQualifiedPortion', e.target.value === '' ? null : Number(e.target.value) / 100)}
-                  placeholder="30"
-                  className="w-full bg-slate-900 border border-slate-800 rounded-lg px-2.5 py-1 text-xs text-slate-100 font-mono focus:outline-none focus:border-emerald-500"
-                />
-              </div>
-            </div>
           </div>
-        </div>
+        )}
 
-        {/* Section 4: Expenses */}
-        <div className="space-y-4">
-          <div className="flex items-center gap-2 text-emerald-400 font-semibold border-b border-slate-800 pb-2">
-            <DollarSign className="w-5 h-5" />
-            <h2>Expenses Worksheet</h2>
-          </div>
-
-          <div className="p-4 bg-slate-950/60 rounded-xl border border-slate-800 space-y-4">
-            {/* Toggle choice */}
-            <div className="space-y-1.5">
-              <label className="text-[10px] text-slate-400 font-bold uppercase tracking-wider block">Calculation Method</label>
-              <div className="flex bg-slate-900 p-0.5 rounded-xl border border-slate-800">
-                <button
-                  type="button"
-                  onClick={() => updateNestedState('useDetailedExpenses', '', false)}
-                  className={`flex-1 py-1.5 rounded-lg text-xs font-semibold transition-all ${
-                    !inputs.useDetailedExpenses
-                      ? 'bg-emerald-500 text-slate-950 shadow-sm'
-                      : 'text-slate-400 hover:text-slate-200'
-                  }`}
-                >
-                  Simple Aggregate
-                </button>
-                <button
-                  type="button"
-                  onClick={() => updateNestedState('useDetailedExpenses', '', true)}
-                  className={`flex-1 py-1.5 rounded-lg text-xs font-semibold transition-all ${
-                    inputs.useDetailedExpenses
-                      ? 'bg-emerald-500 text-slate-950 shadow-sm'
-                      : 'text-slate-400 hover:text-slate-200'
-                  }`}
-                >
-                  Itemized Expenses
-                </button>
+        {/* TAB 3: ASSUMPTIONS */}
+        {activeTab === 'assumptions' && (
+          <div className="space-y-4 animate-in fade-in duration-150">
+            {/* Global Valuation Toggle */}
+            <div className="space-y-3">
+              <div className="flex items-center gap-2 text-emerald-400 font-semibold border-b border-slate-800 pb-2">
+                <DollarSign className="w-5 h-5" />
+                <h2>Currency Valuation</h2>
               </div>
-            </div>
-
-            {inputs.useDetailedExpenses ? (
-              <div className="space-y-3">
-                <button
-                  type="button"
-                  onClick={() => setShowExpensesDialog(true)}
-                  className="w-full flex items-center justify-center gap-2 px-3 py-2 bg-slate-900 hover:bg-slate-850 border border-slate-800 hover:border-slate-700 text-emerald-400 hover:text-emerald-300 rounded-xl text-xs font-bold transition-all"
-                >
-                  <Settings className="w-4 h-4 text-emerald-400" />
-                  <span>Configure Detailed Expenses</span>
-                </button>
-                
-                <div className="p-3 bg-slate-900/60 border border-slate-800/80 rounded-xl space-y-2 text-[10px] text-slate-400 leading-normal">
-                  <div className="flex justify-between border-b border-slate-800 pb-1">
-                    <span className="font-semibold">Maryland (MD) Cost:</span>
-                    <span className="text-slate-200 font-mono font-bold">{formatCurrency(mdMonthlySum * 12)}/yr</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="font-semibold">Florida (FL) Cost:</span>
-                    <span className="text-slate-200 font-mono font-bold">{formatCurrency(flMonthlySum * 12)}/yr</span>
-                  </div>
+              <div className="p-4 bg-slate-950/60 rounded-xl border border-slate-800 space-y-3">
+                <div className="flex bg-slate-900 p-0.5 rounded-xl border border-slate-800">
+                  <button
+                    type="button"
+                    onClick={() => setUseTodayDollars(false)}
+                    className={`flex-1 text-[10px] py-2 rounded-lg font-bold transition-all ${
+                      !useTodayDollars
+                        ? 'bg-emerald-500 text-slate-950 shadow'
+                        : 'text-slate-400 hover:text-slate-200'
+                    }`}
+                  >
+                    Future Dollars (Nominal)
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setUseTodayDollars(true)}
+                    className={`flex-1 text-[10px] py-2 rounded-lg font-bold transition-all ${
+                      useTodayDollars
+                        ? 'bg-emerald-500 text-slate-950 shadow'
+                        : 'text-slate-400 hover:text-slate-200'
+                    }`}
+                  >
+                    Today's Dollars (Real)
+                  </button>
                 </div>
-                <p className="text-[10px] text-slate-400 leading-normal">
-                  Annual living expenses are calculated as the sum of all itemized recurring expenses for the active state in any simulated year, inflated using CPI.
+                <p className="text-[10px] text-slate-400 leading-normal flex items-start gap-1.5">
+                  <Info className="w-4 h-4 text-emerald-500/80 flex-shrink-0 mt-0.5" />
+                  <span>
+                    {!useTodayDollars
+                      ? "Displaying actual nominal dollar amounts including standard CPI adjustments and compounding growth."
+                      : "Discounting all future balances and expenses back by the CPI inflation factor to reflect today's real purchasing power."}
+                  </span>
                 </p>
               </div>
-            ) : (
-              <div className="space-y-3">
+            </div>
+
+            {/* Section: Plan Timeline & Simulation Start Year */}
+            <div className="space-y-3">
+              <div className="flex items-center gap-2 text-emerald-400 font-semibold border-b border-slate-800 pb-2">
+                <Calendar className="w-5 h-5" />
+                <h2>Plan Timeline & Start Year</h2>
+              </div>
+              <div className="p-4 bg-slate-950/60 rounded-xl border border-slate-800 space-y-3">
+                <div className="space-y-1">
+                  <div className="flex items-center justify-between">
+                    <label className="text-xs text-slate-400 font-medium">Simulation Start Year</label>
+                    {simStartYear !== new Date().getFullYear() && (
+                      <button
+                        type="button"
+                        onClick={() => updateNestedState('simulationStartYear', '', new Date().getFullYear())}
+                        className="text-[10px] text-emerald-400 hover:text-emerald-300 underline cursor-pointer"
+                      >
+                        Reset to {new Date().getFullYear()}
+                      </button>
+                    )}
+                  </div>
+                  <input
+                    type="number"
+                    min="1990"
+                    max="2100"
+                    value={inputs.simulationStartYear ?? simStartYear}
+                    onChange={(e) => {
+                      const val = e.target.value === '' ? null : Number(e.target.value);
+                      updateNestedState('simulationStartYear', '', val);
+                    }}
+                    className="w-full bg-slate-900 border border-slate-800 rounded-lg px-3 py-1.5 text-xs text-slate-100 font-mono font-bold focus:outline-none focus:border-emerald-500"
+                  />
+                </div>
+                <p className="text-[10px] text-slate-400 leading-normal flex items-start gap-1.5">
+                  <Info className="w-4 h-4 text-emerald-500/80 flex-shrink-0 mt-0.5" />
+                  <span>
+                    Timeline anchor for starting balances, returns, and cash flows. Stored with the plan so it stays constant over time.
+                  </span>
+                </p>
+              </div>
+            </div>
+
+            {/* Model Assumptions Summary */}
+            <div className="space-y-3">
+              <div className="flex items-center justify-between text-emerald-400 font-semibold border-b border-slate-800 pb-2">
+                <div className="flex items-center gap-2">
+                  <TrendingUp className="w-5 h-5" />
+                  <h2>Model Growth Assumptions</h2>
+                  <span className="text-[9px] font-mono font-bold px-1.5 py-0.5 rounded bg-slate-900 text-emerald-400 border border-slate-800 uppercase">
+                    {globalScenario}
+                  </span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => onNavigateTab?.(2)}
+                  className="p-1 text-slate-400 hover:text-emerald-400 hover:bg-slate-900 rounded-lg transition-colors cursor-pointer"
+                  title="Configure Model Assumptions & Allocations in Workspace 3"
+                >
+                  <Settings className="w-4 h-4" />
+                </button>
+              </div>
+
+              <div className="p-3.5 bg-slate-950/60 rounded-xl border border-slate-800 space-y-2.5 text-xs">
+                <div className="grid grid-cols-2 gap-2 text-[11px]">
+                  <div className="p-2 bg-slate-900/60 rounded-lg border border-slate-800/60">
+                    <span className="text-[10px] text-slate-400 block font-semibold">Stocks (Mean)</span>
+                    <span className="font-mono font-bold text-slate-200">{formatPercent(inputs.growthAssumptions.equityReturnRate)}</span>
+                  </div>
+                  <div className="p-2 bg-slate-900/60 rounded-lg border border-slate-800/60">
+                    <span className="text-[10px] text-slate-400 block font-semibold">Bonds (Mean)</span>
+                    <span className="font-mono font-bold text-slate-200">{formatPercent(inputs.growthAssumptions.fixedIncomeReturnRate)}</span>
+                  </div>
+                  <div className="p-2 bg-slate-900/60 rounded-lg border border-slate-800/60">
+                    <span className="text-[10px] text-slate-400 block font-semibold">CPI Inflation</span>
+                    <span className="font-mono font-bold text-slate-200">{formatPercent(inputs.growthAssumptions.cpiInflationRate)}</span>
+                  </div>
+                  <div className="p-2 bg-slate-900/60 rounded-lg border border-slate-800/60">
+                    <span className="text-[10px] text-slate-400 block font-semibold">Healthcare Infl.</span>
+                    <span className="font-mono font-bold text-slate-200">{formatPercent(inputs.growthAssumptions.healthcareInflationRate)}</span>
+                  </div>
+                </div>
+
+                <div className="pt-2 border-t border-slate-800/40 text-[10px] text-slate-400 flex justify-between items-center">
+                  <span>Account Allocations:</span>
+                  <span className="font-mono text-slate-300 font-semibold">
+                    Pre-Tax {Math.round((inputs.growthAssumptions.preTaxEquityPortion ?? 0.50) * 100)}/{Math.round((1 - (inputs.growthAssumptions.preTaxEquityPortion ?? 0.50)) * 100)} · Taxable {Math.round((inputs.growthAssumptions.taxableEquityPortion ?? 0.60) * 100)}/{Math.round((1 - (inputs.growthAssumptions.taxableEquityPortion ?? 0.60)) * 100)} · Roth {Math.round((inputs.growthAssumptions.rothEquityPortion ?? 1.00) * 100)}%
+                  </span>
+                </div>
+              </div>
+            </div>
+
+            {/* Jurisdiction & Relocation */}
+            <div className="space-y-4">
+              <div className="flex items-center gap-2 text-emerald-400 font-semibold border-b border-slate-800 pb-2">
+                <MapPin className="w-5 h-5" />
+                <h2>Jurisdiction & Relocation</h2>
+              </div>
+
+              <div className="p-4 bg-slate-950/60 rounded-xl border border-slate-800 space-y-4">
+                <div className="grid grid-cols-2 gap-2">
+                  <div>
+                    <label className="text-xs text-slate-400 block mb-1">Current State</label>
+                    <select
+                      value={inputs.jurisdiction.currentState}
+                      onChange={(e) => updateNestedState('jurisdiction', 'currentState', e.target.value)}
+                      className="w-full bg-slate-900 border border-slate-800 rounded-lg px-3 py-1.5 text-sm text-slate-100 focus:outline-none focus:border-emerald-500"
+                    >
+                      <option value="MD">Maryland (MD)</option>
+                      <option value="FL">Florida (FL)</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="text-xs text-slate-400 block mb-1">Target State</label>
+                    <select
+                      value={inputs.jurisdiction.targetState}
+                      onChange={(e) => updateNestedState('jurisdiction', 'targetState', e.target.value)}
+                      className="w-full bg-slate-900 border border-slate-800 rounded-lg px-3 py-1.5 text-sm text-slate-100 focus:outline-none focus:border-emerald-500"
+                    >
+                      <option value="FL">Florida (FL)</option>
+                      <option value="MD">Maryland (MD)</option>
+                    </select>
+                  </div>
+                </div>
+
                 <div className="space-y-1">
                   <label className="text-xs text-slate-400 flex justify-between">
-                    <span>Expenses (Today's Dollars)</span>
-                    <span className="text-emerald-400 font-bold font-mono">{formatCurrency(inputs.annualLivingExpenses)}</span>
+                    <span>Relocation Year</span>
+                    <span className="text-emerald-400 font-bold font-mono">
+                      {inputs.jurisdiction.relocationYear ? inputs.jurisdiction.relocationYear : 'Never Relocate'}
+                    </span>
                   </label>
-                  <input
-                    type="range"
-                    min="40000"
-                    max="300000"
-                    step="5000"
-                    value={inputs.annualLivingExpenses ?? 120000}
-                    onChange={(e) => updateNestedState('annualLivingExpenses', '', Number(e.target.value))}
-                    className="w-full h-1.5 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-emerald-500"
-                  />
-                  <div className="flex justify-between text-[10px] text-slate-500 font-mono px-1">
-                    <span>$40k</span>
-                    <span>$150k</span>
-                    <span>$300k</span>
+                  <div className="flex items-center gap-3">
+                    <input
+                      type="range"
+                      min={simStartYear}
+                      max={simStartYear + 34}
+                      step="1"
+                      disabled={inputs.jurisdiction.relocationYear === null}
+                      value={inputs.jurisdiction.relocationYear ?? lastRelocationYear.current}
+                      onChange={(e) => {
+                        const val = Number(e.target.value);
+                        lastRelocationYear.current = val;
+                        updateNestedState('jurisdiction', 'relocationYear', val);
+                      }}
+                      className="w-full h-1.5 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-emerald-500 disabled:opacity-30"
+                    />
+                    <button
+                      onClick={() => {
+                        const nextVal = inputs.jurisdiction.relocationYear === null
+                          ? lastRelocationYear.current
+                          : null;
+                        if (inputs.jurisdiction.relocationYear !== null) {
+                          lastRelocationYear.current = inputs.jurisdiction.relocationYear;
+                        }
+                        updateNestedState('jurisdiction', 'relocationYear', nextVal);
+                      }}
+                      className={`text-xs px-2 py-1 rounded transition-colors font-semibold ${
+                        inputs.jurisdiction.relocationYear === null
+                          ? 'bg-emerald-600/20 text-emerald-400 border border-emerald-500/30'
+                          : 'bg-slate-800 text-slate-400 hover:bg-slate-700'
+                      }`}
+                    >
+                      {inputs.jurisdiction.relocationYear === null ? 'Enable' : 'Disable'}
+                    </button>
                   </div>
                 </div>
-                <p className="text-[10px] text-slate-400 leading-normal">
-                  This represents your base annual living budget, which will inflate by CPI annually. Portfolio drawdowns dynamically scale to fund this amount.
+                
+                <p className="text-[10px] text-slate-400 bg-slate-900/60 p-2 rounded border border-slate-800/40 leading-relaxed">
+                  {inputs.jurisdiction.relocationYear 
+                    ? `Modeling relocation from ${inputs.jurisdiction.currentState} to ${inputs.jurisdiction.targetState} in calendar year ${inputs.jurisdiction.relocationYear}.`
+                    : `Active residency in ${inputs.jurisdiction.currentState} remains unchanged for the entire 35-year timeline.`}
                 </p>
               </div>
-            )}
+            </div>
           </div>
-        </div>
+        )}
 
-        {/* Section 5: Roth Conversion Planning */}
-        <div className="space-y-4">
-          <div className="flex items-center gap-2 text-emerald-400 font-semibold border-b border-slate-800 pb-2">
-            <RefreshCw className="w-5 h-5" />
-            <h2>Roth Conversion Planning</h2>
-          </div>
-
-          <div className="p-4 bg-slate-950/60 rounded-xl border border-slate-800 space-y-4">
-            
-            {/* Strategy Selector */}
-            <div className="space-y-2">
-              <label className="text-xs font-semibold text-slate-300 block">Conversion Strategy</label>
-              <div className="flex bg-slate-900 p-0.5 rounded-xl border border-slate-800">
-                <button
-                  type="button"
-                  onClick={() => {
-                    const updated = {
-                      ...inputs,
-                      rothConversionStrategy: 'flat' as const,
-                      rothConversionTargetValue: null,
-                    };
-                    onChange(updated);
-                  }}
-                  className={`flex-1 text-[10px] py-1.5 rounded-lg font-bold transition-all ${
-                     inputs.rothConversionStrategy === 'flat'
-                      ? 'bg-emerald-500 text-slate-950 shadow'
-                      : 'text-slate-400 hover:text-slate-200'
-                  }`}
-                >
-                  Flat Target
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    const updated = {
-                      ...inputs,
-                      rothConversionStrategy: 'fill-to-target' as const,
-                      rothConversionTargetValue: inputs.rothConversionTargetValue || 133000,
-                    };
-                    onChange(updated);
-                  }}
-                  className={`flex-1 text-[10px] py-1.5 rounded-lg font-bold transition-all ${
-                    inputs.rothConversionStrategy === 'fill-to-target'
-                      ? 'bg-emerald-500 text-slate-950 shadow'
-                      : 'text-slate-400 hover:text-slate-200'
-                  }`}
-                >
-                  Fill-to-Target
-                </button>
+        {/* TAB 4: EXPENSES */}
+        {activeTab === 'expenses' && (
+          <div className="space-y-4 animate-in fade-in duration-150">
+            {/* Section 4: Expenses */}
+            <div className="space-y-4">
+              <div className="flex items-center gap-2 text-emerald-400 font-semibold border-b border-slate-800 pb-2">
+                <DollarSign className="w-5 h-5" />
+                <h2>Expenses Worksheet</h2>
               </div>
-            </div>
 
-            {/* Start Year Slider */}
-            <div className="space-y-1">
-              <label className="text-xs text-slate-400 flex justify-between">
-                <span>Start Year</span>
-                <span className="text-emerald-400 font-bold font-mono">
-                  {inputs.rothConversionStartYear !== undefined ? inputs.rothConversionStartYear : (simStartYear + 1)}
-                </span>
-              </label>
-              <input
-                type="range"
-                min={simStartYear}
-                max={simStartYear + 24}
-                step="1"
-                value={inputs.rothConversionStartYear !== undefined ? inputs.rothConversionStartYear : (simStartYear + 1)}
-                onChange={(e) => updateNestedState('rothConversionStartYear', '', Number(e.target.value))}
-                className="w-full h-1.5 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-emerald-500"
-              />
-            </div>
-
-            {/* End Year Slider */}
-            <div className="space-y-1">
-              <label className="text-xs text-slate-400 flex justify-between">
-                <span>End Year</span>
-                <span className="text-emerald-400 font-bold font-mono">
-                  {inputs.rothConversionEndYear !== undefined ? inputs.rothConversionEndYear : (simStartYear + 8)}
-                </span>
-              </label>
-              <input
-                type="range"
-                min={simStartYear}
-                max={simStartYear + 34}
-                step="1"
-                value={inputs.rothConversionEndYear !== undefined ? inputs.rothConversionEndYear : (simStartYear + 8)}
-                onChange={(e) => updateNestedState('rothConversionEndYear', '', Number(e.target.value))}
-                className="w-full h-1.5 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-emerald-500"
-              />
-            </div>
-
-            {/* Strategy Dependent slider */}
-            {inputs.rothConversionStrategy === 'flat' ? (
-              <div className="space-y-1">
-                <label className="text-xs text-slate-400 flex justify-between">
-                  <span>Annual Flat Amount</span>
-                  <span className="text-emerald-400 font-bold font-mono">
-                    {formatCurrency(inputs.annualRothConversion)}
-                  </span>
-                </label>
-                <input
-                  type="range"
-                  min="0"
-                  max="500000"
-                  step="5000"
-                  value={inputs.annualRothConversion}
-                  onChange={(e) => updateNestedState('annualRothConversion', '', Number(e.target.value))}
-                  className="w-full h-1.5 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-emerald-500"
-                />
-                <div className="flex justify-between text-[9px] text-slate-500 font-mono px-1">
-                  <span>$0</span>
-                  <span>$250k</span>
-                  <span>$500k</span>
+              <div className="p-4 bg-slate-950/60 rounded-xl border border-slate-800 space-y-4">
+                {/* Toggle choice */}
+                <div className="space-y-1.5">
+                  <label className="text-[10px] text-slate-400 font-bold uppercase tracking-wider block">Calculation Method</label>
+                  <div className="flex bg-slate-900 p-0.5 rounded-xl border border-slate-800">
+                    <button
+                      type="button"
+                      onClick={() => updateNestedState('useDetailedExpenses', '', false)}
+                      className={`flex-1 py-1.5 rounded-lg text-xs font-semibold transition-all ${
+                        !inputs.useDetailedExpenses
+                          ? 'bg-emerald-500 text-slate-950 shadow-sm'
+                          : 'text-slate-400 hover:text-slate-200'
+                      }`}
+                    >
+                      Simple Aggregate
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => updateNestedState('useDetailedExpenses', '', true)}
+                      className={`flex-1 py-1.5 rounded-lg text-xs font-semibold transition-all ${
+                        inputs.useDetailedExpenses
+                          ? 'bg-emerald-500 text-slate-950 shadow-sm'
+                          : 'text-slate-400 hover:text-slate-200'
+                      }`}
+                    >
+                      Itemized Expenses
+                    </button>
+                  </div>
                 </div>
-              </div>
-            ) : (
-              <div className="space-y-1">
-                <label className="text-xs text-slate-400 flex justify-between items-center">
-                  <div className="flex items-center gap-1.5">
-                    <span>Target MAGI Ceiling</span>
-                    <div className="relative group inline-block">
-                      <HelpCircle className="w-3.5 h-3.5 text-slate-500 hover:text-slate-300 transition-colors cursor-pointer" />
-                      <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 hidden group-hover:block w-64 bg-slate-950 text-slate-200 text-[10px] p-2.5 rounded-lg border border-slate-800 shadow-xl z-50 leading-normal pointer-events-none normal-case font-medium">
-                        Sets the total annual MAGI ceiling for Roth conversions. This is synchronized with the <strong>Quick Fills</strong> dropdown presets in the Bracket Map chart, and can be adjusted here to override presets with custom ceilings.
+
+                {inputs.useDetailedExpenses ? (
+                  <div className="space-y-3">
+                    <button
+                      type="button"
+                      onClick={() => setShowExpensesDialog(true)}
+                      className="w-full flex items-center justify-center gap-2 px-3 py-2 bg-slate-900 hover:bg-slate-850 border border-slate-800 hover:border-slate-700 text-emerald-400 hover:text-emerald-300 rounded-xl text-xs font-bold transition-all"
+                    >
+                      <Settings className="w-4 h-4 text-emerald-400" />
+                      <span>Configure Detailed Expenses</span>
+                    </button>
+                    
+                    <div className="p-3 bg-slate-900/60 border border-slate-800/80 rounded-xl space-y-2 text-[10px] text-slate-400 leading-normal">
+                      <div className="flex justify-between border-b border-slate-800 pb-1">
+                        <span className="font-semibold">Maryland (MD) Cost:</span>
+                        <span className="text-slate-200 font-mono font-bold">{formatCurrency(mdMonthlySum * 12)}/yr</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="font-semibold">Florida (FL) Cost:</span>
+                        <span className="text-slate-200 font-mono font-bold">{formatCurrency(flMonthlySum * 12)}/yr</span>
                       </div>
                     </div>
+                    <p className="text-[10px] text-slate-400 leading-normal">
+                      Annual living expenses are calculated as the sum of all itemized recurring expenses for the active state in any simulated year, inflated using CPI.
+                    </p>
                   </div>
-                  <span className="text-emerald-400 font-bold font-mono">
-                    {formatCurrency(inputs.rothConversionTargetValue || 0)}
-                  </span>
-                </label>
-                <input
-                  type="range"
-                  min="0"
-                  max="500000"
-                  step="5000"
-                  value={inputs.rothConversionTargetValue || 0}
-                  onChange={(e) => updateNestedState('rothConversionTargetValue', '', Number(e.target.value))}
-                  className="w-full h-1.5 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-emerald-500"
-                />
-                <div className="flex justify-between text-[9px] text-slate-500 font-mono px-1">
-                  <span>$0</span>
-                  <span>$250k</span>
-                  <span>$500k</span>
-                </div>
+                ) : (
+                  <div className="space-y-3">
+                    <div className="space-y-1">
+                      <label className="text-xs text-slate-400 flex justify-between">
+                        <span>Expenses (Today's Dollars)</span>
+                        <span className="text-emerald-400 font-bold font-mono">{formatCurrency(inputs.annualLivingExpenses)}</span>
+                      </label>
+                      <input
+                        type="range"
+                        min="40000"
+                        max="300000"
+                        step="5000"
+                        value={inputs.annualLivingExpenses ?? 120000}
+                        onChange={(e) => updateNestedState('annualLivingExpenses', '', Number(e.target.value))}
+                        className="w-full h-1.5 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-emerald-500"
+                      />
+                      <div className="flex justify-between text-[10px] text-slate-500 font-mono px-1">
+                        <span>$40k</span>
+                        <span>$150k</span>
+                        <span>$300k</span>
+                      </div>
+                    </div>
+                    <p className="text-[10px] text-slate-400 leading-normal">
+                      This represents your base annual living budget, which will inflate by CPI annually. Portfolio drawdowns dynamically scale to fund this amount.
+                    </p>
+                  </div>
+                )}
               </div>
-            )}
-          </div>
-        </div>
+            </div>
 
-        {/* Section 6: Charitable Giving & Tithe Engine */}
-        <div className="space-y-3 pt-2">
-          <CharityControlPanel
-            settings={inputs.charitySettings}
-            onChange={(newSettings) => onChange({ ...inputs, charitySettings: newSettings })}
-            yourAge={new Date().getFullYear() - (parseInt(inputs.you.birthDate?.split('-')[0] || '1960', 10))}
-            wifeAge={new Date().getFullYear() - (parseInt(inputs.wife.birthDate?.split('-')[0] || '1964', 10))}
-            isSingleFiler={inputs.isSingleFiler}
-          />
-        </div>
+            {/* Charitable Giving & Tithe Engine */}
+            <div className="space-y-3 pt-2">
+              <CharityControlPanel
+                settings={inputs.charitySettings}
+                onChange={(newSettings) => onChange({ ...inputs, charitySettings: newSettings })}
+                yourAge={new Date().getFullYear() - (parseInt(inputs.you.birthDate?.split('-')[0] || '1960', 10))}
+                wifeAge={new Date().getFullYear() - (parseInt(inputs.wife.birthDate?.split('-')[0] || '1964', 10))}
+                isSingleFiler={inputs.isSingleFiler}
+              />
+            </div>
+          </div>
+        )}
 
         {/* Section 7: Backup & Portability */}
         <div className="space-y-3 pt-4 border-t border-slate-800">
@@ -1491,6 +1440,7 @@ export const InputControlSidebar: React.FC<InputControlSidebarProps> = ({
           onNavigateTab={onNavigateTab}
         />
       )}
-    </aside>
+      </aside>
+    </div>
   );
 };

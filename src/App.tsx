@@ -192,6 +192,7 @@ function App() {
   const [useTodayDollars, setUseTodayDollars] = useLocalStorage<boolean>('retirement_planner_use_today_dollars', false);
   const [showDocumentation, setShowDocumentation] = useState<boolean>(false);
   const [documentationSectionId, setDocumentationSectionId] = useState<string>('overview');
+  const [isParamDrawerOpen, setIsParamDrawerOpen] = useState<boolean>(false);
 
   const handleOpenDocumentation = (sectionId?: string) => {
     setDocumentationSectionId(sectionId || 'overview');
@@ -216,7 +217,9 @@ function App() {
     }
   };
 
-  // Global keyboard shortcut ('?' or 'Shift + /') to summon Documentation & User Guide
+  // Global keyboard shortcuts:
+  // - '?' or 'Shift + /' to summon Documentation & User Guide
+  // - 'P' or 'p' to toggle Scenario Parameters side drawer
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       const target = e.target as HTMLElement | null;
@@ -231,6 +234,9 @@ function App() {
       if (e.key === '?' || (e.shiftKey && e.key === '/')) {
         e.preventDefault();
         setShowDocumentation((prev) => !prev);
+      } else if (e.key === 'p' || e.key === 'P') {
+        e.preventDefault();
+        setIsParamDrawerOpen((prev) => !prev);
       }
     };
     window.addEventListener('keydown', handleKeyDown);
@@ -464,13 +470,15 @@ function App() {
   }, []);
 
   return (
-    <div className="flex flex-col lg:flex-row h-screen w-screen overflow-hidden bg-slate-950 text-slate-100 antialiased font-sans">
+    <div className="flex flex-col h-screen w-screen overflow-hidden bg-slate-950 text-slate-100 antialiased font-sans">
       {!inputs.isConfigured && (
         <OnboardingWizard onComplete={handleInputsChange} />
       )}
 
-      {/* Sidebar Parameter Controls */}
+      {/* Slide-Over Parameter Controls Drawer */}
       <InputControlSidebar 
+        isOpen={isParamDrawerOpen}
+        onClose={() => setIsParamDrawerOpen(false)}
         inputs={inputs} 
         onChange={handleInputsChange} 
         onReset={() => handleInputsChange(DEFAULT_INPUTS)} 
@@ -498,6 +506,7 @@ function App() {
         setGlobalScenario={setGlobalScenario}
         isSimulating={isSimulating}
         onOpenDocumentation={handleOpenDocumentation}
+        onOpenParamDrawer={() => setIsParamDrawerOpen(true)}
       >
         {activeTab === 0 && (
           <BracketMapChart
@@ -521,6 +530,7 @@ function App() {
             onApplyOptimization={handleApplyOptimization}
             onUpdateStrategy={handleUpdateStrategy}
             onUpdateTargetValue={handleUpdateTargetValue}
+            onInputsChange={handleInputsChange}
             selectedQuickFill={selectedQuickFill}
             setSelectedQuickFill={setSelectedQuickFill}
           />

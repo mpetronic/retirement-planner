@@ -6,11 +6,9 @@ import {
   ShieldAlert,
   ArrowRightLeft,
   Coins,
-  MapPin,
   Sliders,
   AlertTriangle,
   BookOpen,
-  HeartHandshake,
   Calculator
 } from 'lucide-react';
 
@@ -30,6 +28,7 @@ interface DashboardLayoutProps {
   setGlobalScenario: (val: 'flat' | 'p10' | 'p50' | 'p90') => void;
   isSimulating?: boolean;
   onOpenDocumentation?: (sectionId?: string) => void;
+  onOpenParamDrawer?: () => void;
   children: React.ReactNode;
 }
 
@@ -44,8 +43,10 @@ export const DashboardLayout: React.FC<DashboardLayoutProps> = ({
   setGlobalScenario,
   isSimulating = false,
   onOpenDocumentation,
+  onOpenParamDrawer,
   children,
 }) => {
+  const [showKpiSummary, setShowKpiSummary] = React.useState(false);
   const formatCurrency = (val: number) => {
     return new Intl.NumberFormat('en-US', {
       style: 'currency',
@@ -84,270 +85,265 @@ export const DashboardLayout: React.FC<DashboardLayoutProps> = ({
     };
   }, [ledger, parallelLedgers]);
 
-  const stateTaxContext = useMemo(() => {
-    const current = inputs.jurisdiction.currentState;
-    const target = inputs.jurisdiction.targetState;
-    const relocYear = inputs.jurisdiction.relocationYear;
-    if (relocYear) {
-      return `Move to ${target} in ${relocYear}`;
-    }
-    return `Residency in ${current}`;
-  }, [inputs]);
+
 
   return (
     <div className="flex-1 flex flex-col h-full overflow-hidden bg-slate-950">
-      {/* Top Banner Stats Grid */}
-      <header className="p-6 border-b border-slate-800 bg-slate-900/40 backdrop-blur-md z-10 space-y-6">
-        <div className="flex flex-col md:flex-row md:justify-between md:items-center gap-4">
-          <div>
-            <h2 className="text-2xl font-black text-slate-100 tracking-tight">
+      {/* Streamlined Single-Row Top Navigation Bar (~48px height) */}
+      <header className="px-4 py-2 border-b border-slate-800 bg-slate-900/80 backdrop-blur-md z-10 flex flex-wrap items-center justify-between gap-3 shrink-0">
+        {/* Left Section: Branding & Tab Navigation */}
+        <div className="flex items-center gap-3 overflow-x-auto custom-scrollbar">
+          <div className="flex items-center gap-2 pr-3 border-r border-slate-800/80 shrink-0">
+            <Sliders className="w-5 h-5 text-emerald-400" />
+            <h1 className="text-sm font-black text-slate-100 tracking-tight whitespace-nowrap">
               Retirement Planner
-            </h2>
-            <p className="text-xs text-slate-400">
-              Interactive 35-year tax, Medicare IRMAA, and Social Security modeling
-            </p>
-            <div className="flex flex-wrap items-center gap-2.5 mt-2.5 text-[10px] font-semibold text-slate-400 font-mono">
-              <span className="flex items-center gap-1.5 bg-slate-900/60 px-2 py-1 rounded-lg border border-slate-800/80">
-                <Coins className="w-3 h-3 text-emerald-500/95" />
-                Claim Combo ({inputs.you.name || 'You'} / {inputs.wife.name || 'Spouse'}): {inputs.you.targetSSClaimingAge} / {inputs.wife.targetSSClaimingAge}
-              </span>
-              <span className="flex items-center gap-1.5 bg-slate-900/60 px-2 py-1 rounded-lg border border-slate-800/80">
-                <MapPin className="w-3 h-3 text-blue-500/95" />
-                {stateTaxContext}
-              </span>
-              {inputs.charitySettings?.enabled && (
-                <span className="flex items-center gap-1.5 bg-rose-950/40 px-2 py-1 rounded-lg border border-rose-800/60 text-rose-300">
-                  <HeartHandshake className="w-3 h-3 text-rose-400" />
-                  Tithe: {formatCurrency(stats.active.totalTithe)} ({(((inputs.charitySettings.growthPercentage ?? 0.10) * 100)).toFixed(0)}% Growth)
-                  {stats.active.totalQCD > 0 && ` | QCDs: ${formatCurrency(stats.active.totalQCD)} (Tax Saved: +${formatCurrency(stats.active.totalQcdTaxSaved)})`}
-                </span>
-              )}
-            </div>
+            </h1>
           </div>
-          
-          <div className="flex flex-wrap items-center gap-3 text-xs font-semibold text-slate-300">
-            {/* Obvious Warning Indicator when Stress Test is Enabled */}
-            {isStressTestActive && (
-              <button
-                type="button"
-                onClick={() => setActiveTab(3)}
-                className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/60 shadow-lg shadow-amber-950/50 transition-all cursor-pointer group animate-pulse hover:animate-none"
-                title={`Stress testing is actively overriding returns for ${stressTestOverridesCount} year${stressTestOverridesCount > 1 ? 's' : ''}. Click to view or customize in Monte Carlo Analysis.`}
-              >
-                <AlertTriangle className="w-4 h-4 text-amber-400 group-hover:scale-110 transition-transform shrink-0" />
-                <span className="text-[11px] font-black uppercase tracking-wider">
-                  Stress Test Active ({stressTestOverridesCount} yr{stressTestOverridesCount > 1 ? 's' : ''})
-                </span>
-              </button>
-            )}
 
-            {/* Global Scenario Switcher */}
-            <div className={`flex items-center gap-1 bg-slate-950/60 p-1 border rounded-xl transition-all ${
-              isStressTestActive ? 'border-amber-500/50 ring-1 ring-amber-500/20' : 'border-slate-800'
-            }`}>
-              <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider px-2 flex items-center gap-1.5">
-                {isStressTestActive && <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-ping" />}
-                Global Outlook:
-              </span>
-              <button
-                type="button"
-                onClick={() => setGlobalScenario('flat')}
-                className={`text-[10px] px-2.5 py-1 rounded-lg font-bold transition-all border ${
-                  globalScenario === 'flat'
-                    ? 'bg-slate-800 text-slate-100 border-slate-700/60 font-black'
-                    : 'bg-transparent text-slate-400 hover:text-slate-200 border-transparent'
-                }`}
-                title="Deterministic static path: Applies your configured baseline mean return and inflation rates directly without random market volatility."
-              >
-                Flat
-              </button>
-              <button
-                type="button"
-                onClick={() => setGlobalScenario('p10')}
-                className={`text-[10px] px-2.5 py-1 rounded-lg font-bold transition-all border ${
-                  globalScenario === 'p10'
-                    ? 'bg-rose-500/10 text-rose-400 border-rose-500/20 font-black'
-                    : 'bg-transparent text-slate-400 hover:text-slate-200 border-transparent'
-                }`}
-                title="Pessimistic: 10th percentile outcome from 1,000 randomized Monte Carlo trials centered around your configured baseline means."
-              >
-                Worst (P10)
-              </button>
-              <button
-                type="button"
-                onClick={() => setGlobalScenario('p50')}
-                className={`text-[10px] px-2.5 py-1 rounded-lg font-bold transition-all border ${
-                  globalScenario === 'p50'
-                    ? 'bg-indigo-500/10 text-indigo-400 border-indigo-500/20 font-black'
-                    : 'bg-transparent text-slate-400 hover:text-slate-200 border-transparent'
-                }`}
-                title="Median: 50th percentile outcome from 1,000 randomized Monte Carlo trials centered around your configured baseline means."
-              >
-                Median (P50)
-              </button>
-              <button
-                type="button"
-                onClick={() => setGlobalScenario('p90')}
-                className={`text-[10px] px-2.5 py-1 rounded-lg font-bold transition-all border ${
-                  globalScenario === 'p90'
-                    ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20 font-black'
-                    : 'bg-transparent text-slate-400 hover:text-slate-200 border-transparent'
-                }`}
-                title="Optimistic: 90th percentile outcome from 1,000 randomized Monte Carlo trials centered around your configured baseline means."
-              >
-                Best (P90)
-              </button>
-            </div>
+          {/* Nav Tabs */}
+          <nav className="flex items-center gap-1">
+            <button
+              onClick={() => setActiveTab(0)}
+              className={`px-3 py-1.5 text-xs font-bold rounded-xl transition-all flex items-center gap-1.5 cursor-pointer ${
+                activeTab === 0
+                  ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 shadow-sm'
+                  : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/50'
+              }`}
+            >
+              <Coins className="w-3.5 h-3.5" />
+              Overview
+            </button>
+            <button
+              onClick={() => setActiveTab(1)}
+              className={`px-3 py-1.5 text-xs font-bold rounded-xl transition-all flex items-center gap-1.5 cursor-pointer ${
+                activeTab === 1
+                  ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 shadow-sm'
+                  : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/50'
+              }`}
+            >
+              <Calculator className="w-3.5 h-3.5" />
+              Taxable Income Planner
+            </button>
+            <button
+              onClick={() => setActiveTab(2)}
+              className={`px-3 py-1.5 text-xs font-bold rounded-xl transition-all flex items-center gap-1.5 cursor-pointer ${
+                activeTab === 2
+                  ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 shadow-sm'
+                  : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/50'
+              }`}
+            >
+              <ShieldAlert className="w-3.5 h-3.5" />
+              Lookback Ledger
+            </button>
+            <button
+              onClick={() => setActiveTab(3)}
+              className={`px-3 py-1.5 text-xs font-bold rounded-xl transition-all flex items-center gap-1.5 cursor-pointer ${
+                activeTab === 3
+                  ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 shadow-sm'
+                  : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/50'
+              }`}
+            >
+              <TrendingUp className="w-3.5 h-3.5" />
+              Monte Carlo
+            </button>
+            <button
+              onClick={() => setActiveTab(4)}
+              className={`px-3 py-1.5 text-xs font-bold rounded-xl transition-all flex items-center gap-1.5 cursor-pointer ${
+                activeTab === 4
+                  ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 shadow-sm'
+                  : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/50'
+              }`}
+            >
+              <ArrowRightLeft className="w-3.5 h-3.5" />
+              Compare
+            </button>
+          </nav>
+        </div>
 
-            {/* Prominent User Guide / Docs Header Button */}
+        {/* Right Section: Action Controls */}
+        <div className="flex items-center gap-2 shrink-0">
+          {/* Edit Parameters Drawer Trigger Button */}
+          {onOpenParamDrawer && (
             <button
               type="button"
-              onClick={() => {
-                const sectionMap: Record<number, string> = {
-                  0: 'overview',
-                  1: 'taxable-income',
-                  2: 'workspace-2',
-                  3: 'workspace-3',
-                  4: 'workspace-4',
-                };
-                onOpenDocumentation?.(sectionMap[activeTab] || 'overview');
-              }}
-              className="flex items-center gap-2 px-3 py-1.5 bg-slate-900/80 hover:bg-slate-850 hover:bg-slate-800 border border-slate-700/60 hover:border-slate-600 text-slate-200 hover:text-white rounded-xl text-xs font-semibold transition-all cursor-pointer shadow-sm group active:scale-98"
-              title="Open User Guide & Documentation (Shortcut: ?)"
+              onClick={onOpenParamDrawer}
+              className="flex items-center gap-1.5 px-3 py-1.5 bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 rounded-xl text-xs font-bold transition-all cursor-pointer shadow-sm active:scale-98"
+              title="Open Parameters & Scenario Assumptions Drawer (Press 'P')"
             >
-              <BookOpen className="w-3.5 h-3.5 text-indigo-400 group-hover:scale-110 transition-transform" />
-              <span>User Guide</span>
-              <kbd className="hidden sm:inline-block px-1.5 py-0.2 text-[10px] font-mono bg-slate-950/80 border border-slate-800 rounded text-slate-400 group-hover:text-slate-300">
-                ?
+              <Sliders className="w-3.5 h-3.5 text-emerald-400" />
+              <span>Edit Parameters</span>
+              <kbd className="hidden sm:inline-block ml-0.5 px-1.5 py-0.2 bg-slate-900/60 border border-emerald-500/30 rounded text-[9px] font-mono text-emerald-400 font-normal">
+                P
               </kbd>
             </button>
-          </div>
-        </div>
+          )}
 
-        {/* 4 Stat Cards */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-          {/* Card 1: Ending Net Estate */}
-          <div className="glass-panel rounded-2xl p-4 flex items-center justify-between border-l-4 border-l-emerald-500 hover:scale-102 transition-transform duration-300">
-            <div className="space-y-1">
-              <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider flex items-center gap-1.5">
-                Ending Net Estate (Age {stats.active.endingAge})
-              </span>
-              <span className="text-xl font-black text-emerald-400 font-mono block">
-                {formatCurrency(stats.active.endingEstate)}
-              </span>
-              <span className="text-[9px] text-slate-500 font-mono block">
-                Range: {formatCurrency(stats.p10.endingEstate)} to {formatCurrency(stats.p90.endingEstate)}
-              </span>
-            </div>
-            <TrendingUp className="w-8 h-8 text-emerald-500/50" />
-          </div>
-
-          {/* Card 2: Lifetime Taxes */}
-          <div className="glass-panel rounded-2xl p-4 flex items-center justify-between border-l-4 border-l-rose-500 hover:scale-102 transition-transform duration-300">
-            <div className="space-y-1">
-              <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider block">Lifetime Income Taxes</span>
-              <span className="text-xl font-black text-rose-400 font-mono block">
-                {formatCurrency(stats.active.totalTaxes)}
-              </span>
-              <span className="text-[9px] text-slate-500 font-mono block">
-                Range: {formatCurrency(stats.p10.totalTaxes)} to {formatCurrency(stats.p90.totalTaxes)}
-              </span>
-            </div>
-            <DollarSign className="w-8 h-8 text-rose-500/50" />
-          </div>
-
-          {/* Card 3: Medicare Surcharges */}
-          <div className="glass-panel rounded-2xl p-4 flex items-center justify-between border-l-4 border-l-amber-500 hover:scale-102 transition-transform duration-300">
-            <div className="space-y-1">
-              <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider block">Lifetime IRMAA Surcharges</span>
-              <span className="text-xl font-black text-amber-400 font-mono block">
-                {formatCurrency(stats.active.totalSurcharges)}
-              </span>
-              <span className="text-[9px] text-slate-500 font-mono block">
-                Range: {formatCurrency(stats.p10.totalSurcharges)} to {formatCurrency(stats.p90.totalSurcharges)}
-              </span>
-            </div>
-            <ShieldAlert className="w-8 h-8 text-amber-500/50" />
-          </div>
-
-          {/* Card 4: Plan Success Rate */}
-          <div className="glass-panel rounded-2xl p-4 flex items-center justify-between border-l-4 border-l-blue-500 hover:scale-102 transition-transform duration-300">
-            <div className="space-y-1">
-              <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider block">Plan Success Rate</span>
-              <span className="text-xl font-black text-blue-400 font-mono block">
-                {(successRate * 100).toFixed(1)}%
-              </span>
-              <span className="text-[9px] text-slate-500 font-mono block">
-                Across {inputs.monteCarloSettings.trials} stress test trials
-              </span>
-            </div>
-            <ArrowRightLeft className="w-8 h-8 text-blue-500/50" />
-          </div>
-        </div>
-
-        {/* Dashboard Tabs Selector */}
-        <div className="flex border-b border-slate-800 overflow-x-auto custom-scrollbar whitespace-nowrap">
+          {/* Summary KPIs Toggle Button */}
           <button
-            onClick={() => setActiveTab(0)}
-            className={`py-3 px-6 text-sm font-bold border-b-2 transition-all flex items-center gap-2 ${
-              activeTab === 0
-                ? 'border-emerald-500 text-emerald-400 bg-slate-900/40 rounded-t-xl'
-                : 'border-transparent text-slate-400 hover:text-slate-200 hover:bg-slate-900/10'
+            type="button"
+            onClick={() => setShowKpiSummary(!showKpiSummary)}
+            className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl text-xs font-semibold border transition-all cursor-pointer ${
+              showKpiSummary
+                ? 'bg-slate-800 text-slate-100 border-slate-700'
+                : 'bg-slate-900/80 text-slate-400 hover:text-slate-200 border-slate-800'
             }`}
+            title="Toggle Plan KPI Summary Grid"
           >
-            <Coins className="w-4 h-4" />
-            Overview
+            <TrendingUp className="w-3.5 h-3.5 text-emerald-400" />
+            <span className="hidden md:inline font-bold">KPIs</span>
+            <span className="font-mono text-[10px] text-emerald-400 font-bold">
+              {formatCurrency(stats.active.endingEstate)}
+            </span>
           </button>
+
+          {/* Stress Test Warning Indicator if Active */}
+          {isStressTestActive && (
+            <button
+              type="button"
+              onClick={() => setActiveTab(3)}
+              className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/60 transition-all cursor-pointer animate-pulse"
+              title={`Stress testing active for ${stressTestOverridesCount} years. Click to customize in Monte Carlo Analysis.`}
+            >
+              <AlertTriangle className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+              <span className="text-[10px] font-bold uppercase hidden lg:inline">Stress Test</span>
+            </button>
+          )}
+
+          {/* Global Scenario Switcher */}
+          <div className="flex items-center gap-1 bg-slate-950/80 p-0.5 border border-slate-800 rounded-xl">
+            <button
+              type="button"
+              onClick={() => setGlobalScenario('flat')}
+              className={`text-[10px] px-2 py-0.5 rounded-lg font-bold transition-all cursor-pointer ${
+                globalScenario === 'flat' ? 'bg-slate-800 text-slate-100' : 'text-slate-400 hover:text-slate-200'
+              }`}
+              title="Static baseline scenario"
+            >
+              Flat
+            </button>
+            <button
+              type="button"
+              onClick={() => setGlobalScenario('p10')}
+              className={`text-[10px] px-2 py-0.5 rounded-lg font-bold transition-all cursor-pointer ${
+                globalScenario === 'p10' ? 'bg-rose-500/20 text-rose-300' : 'text-slate-400 hover:text-slate-200'
+              }`}
+              title="10th percentile worst market scenario"
+            >
+              P10
+            </button>
+            <button
+              type="button"
+              onClick={() => setGlobalScenario('p50')}
+              className={`text-[10px] px-2 py-0.5 rounded-lg font-bold transition-all cursor-pointer ${
+                globalScenario === 'p50' ? 'bg-indigo-500/20 text-indigo-300' : 'text-slate-400 hover:text-slate-200'
+              }`}
+              title="50th percentile median market scenario"
+            >
+              P50
+            </button>
+            <button
+              type="button"
+              onClick={() => setGlobalScenario('p90')}
+              className={`text-[10px] px-2 py-0.5 rounded-lg font-bold transition-all cursor-pointer ${
+                globalScenario === 'p90' ? 'bg-emerald-500/20 text-emerald-300' : 'text-slate-400 hover:text-slate-200'
+              }`}
+              title="90th percentile best market scenario"
+            >
+              P90
+            </button>
+          </div>
+
+          {/* User Guide Button */}
           <button
-            onClick={() => setActiveTab(1)}
-            className={`py-3 px-6 text-sm font-bold border-b-2 transition-all flex items-center gap-2 ${
-              activeTab === 1
-                ? 'border-emerald-500 text-emerald-400 bg-slate-900/40 rounded-t-xl'
-                : 'border-transparent text-slate-400 hover:text-slate-200 hover:bg-slate-900/10'
-            }`}
+            type="button"
+            onClick={() => {
+              const sectionMap: Record<number, string> = {
+                0: 'overview',
+                1: 'taxable-income',
+                2: 'workspace-2',
+                3: 'workspace-3',
+                4: 'workspace-4',
+              };
+              onOpenDocumentation?.(sectionMap[activeTab] || 'overview');
+            }}
+            className="p-1.5 bg-slate-900/80 hover:bg-slate-800 border border-slate-800 text-slate-400 hover:text-slate-200 rounded-xl text-xs font-semibold transition-all cursor-pointer"
+            title="User Guide & Documentation (?)"
           >
-            <Calculator className="w-4 h-4" />
-            Taxable Income Planner
-          </button>
-          <button
-            onClick={() => setActiveTab(2)}
-            className={`py-3 px-6 text-sm font-bold border-b-2 transition-all flex items-center gap-2 ${
-              activeTab === 2
-                ? 'border-emerald-500 text-emerald-400 bg-slate-900/40 rounded-t-xl'
-                : 'border-transparent text-slate-400 hover:text-slate-200 hover:bg-slate-900/10'
-            }`}
-          >
-            <ShieldAlert className="w-4 h-4" />
-            Lookback Ledger
-          </button>
-          <button
-            onClick={() => setActiveTab(3)}
-            className={`py-3 px-6 text-sm font-bold border-b-2 transition-all flex items-center gap-2 ${
-              activeTab === 3
-                ? 'border-emerald-500 text-emerald-400 bg-slate-900/40 rounded-t-xl'
-                : 'border-transparent text-slate-400 hover:text-slate-200 hover:bg-slate-900/10'
-            }`}
-          >
-            <Sliders className="w-4 h-4" />
-            Monte Carlo Analysis
-          </button>
-          <button
-            onClick={() => setActiveTab(4)}
-            className={`py-3 px-6 text-sm font-bold border-b-2 transition-all flex items-center gap-2 ${
-              activeTab === 4
-                ? 'border-emerald-500 text-emerald-400 bg-slate-900/40 rounded-t-xl'
-                : 'border-transparent text-slate-400 hover:text-slate-200 hover:bg-slate-900/10'
-            }`}
-          >
-            <ArrowRightLeft className="w-4 h-4" />
-            Plan Comparison
+            <BookOpen className="w-3.5 h-3.5 text-indigo-400" />
           </button>
         </div>
       </header>
 
+      {/* Collapsible KPI Summary Panel */}
+      {showKpiSummary && (
+        <div className="px-4 py-2 border-b border-slate-800 bg-slate-900/90 backdrop-blur-md grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2.5 animate-in slide-in-from-top-2 duration-200 shrink-0 z-10">
+          <div className="glass-panel rounded-lg px-3 py-1.5 flex items-center justify-between border-l-4 border-l-emerald-500 bg-slate-900/60">
+            <div className="min-w-0">
+              <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider block truncate">
+                Ending Net Estate (Age {stats.active.endingAge})
+              </span>
+              <div className="flex items-baseline gap-1.5 mt-0.5">
+                <span className="text-base font-black text-emerald-400 font-mono">
+                  {formatCurrency(stats.active.endingEstate)}
+                </span>
+                <span className="text-[9px] text-slate-500 font-mono truncate">
+                  ({formatCurrency(stats.p10.endingEstate)}–{formatCurrency(stats.p90.endingEstate)})
+                </span>
+              </div>
+            </div>
+            <TrendingUp className="w-4 h-4 text-emerald-500/50 shrink-0 ml-2" />
+          </div>
+
+          <div className="glass-panel rounded-lg px-3 py-1.5 flex items-center justify-between border-l-4 border-l-rose-500 bg-slate-900/60">
+            <div className="min-w-0">
+              <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider block truncate">Lifetime Income Taxes</span>
+              <div className="flex items-baseline gap-1.5 mt-0.5">
+                <span className="text-base font-black text-rose-400 font-mono">
+                  {formatCurrency(stats.active.totalTaxes)}
+                </span>
+                <span className="text-[9px] text-slate-500 font-mono truncate">
+                  ({formatCurrency(stats.p10.totalTaxes)}–{formatCurrency(stats.p90.totalTaxes)})
+                </span>
+              </div>
+            </div>
+            <DollarSign className="w-4 h-4 text-rose-500/50 shrink-0 ml-2" />
+          </div>
+
+          <div className="glass-panel rounded-lg px-3 py-1.5 flex items-center justify-between border-l-4 border-l-amber-500 bg-slate-900/60">
+            <div className="min-w-0">
+              <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider block truncate">Lifetime IRMAA Surcharges</span>
+              <div className="flex items-baseline gap-1.5 mt-0.5">
+                <span className="text-base font-black text-amber-400 font-mono">
+                  {formatCurrency(stats.active.totalSurcharges)}
+                </span>
+                <span className="text-[9px] text-slate-500 font-mono truncate">
+                  ({formatCurrency(stats.p10.totalSurcharges)}–{formatCurrency(stats.p90.totalSurcharges)})
+                </span>
+              </div>
+            </div>
+            <ShieldAlert className="w-4 h-4 text-amber-500/50 shrink-0 ml-2" />
+          </div>
+
+          <div className="glass-panel rounded-lg px-3 py-1.5 flex items-center justify-between border-l-4 border-l-blue-500 bg-slate-900/60">
+            <div className="min-w-0">
+              <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider block truncate">Plan Success Rate</span>
+              <div className="flex items-baseline gap-1.5 mt-0.5">
+                <span className="text-base font-black text-blue-400 font-mono">
+                  {(successRate * 100).toFixed(1)}%
+                </span>
+                <span className="text-[9px] text-slate-500 font-mono truncate">
+                  ({inputs.monteCarloSettings.trials} trials)
+                </span>
+              </div>
+            </div>
+            <ArrowRightLeft className="w-4 h-4 text-blue-500/50 shrink-0 ml-2" />
+          </div>
+        </div>
+      )}
+
       {/* Main Tab Panels viewport scrollable */}
-      <main className="flex-1 overflow-y-auto p-6 space-y-6 custom-scrollbar bg-slate-950">
-        <div className={`w-full space-y-6 transition-opacity duration-150 ${isSimulating ? 'opacity-75' : 'opacity-100'}`}>
+      <main className="flex-1 overflow-y-auto p-3 space-y-3 custom-scrollbar bg-slate-950">
+        <div className={`w-full space-y-3 transition-opacity duration-150 ${isSimulating ? 'opacity-75' : 'opacity-100'}`}>
           {children}
         </div>
       </main>
