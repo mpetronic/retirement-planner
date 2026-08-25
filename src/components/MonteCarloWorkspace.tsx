@@ -296,9 +296,9 @@ export const MonteCarloWorkspace: React.FC<MonteCarloWorkspaceProps> = ({
   };
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-3">
       {/* Top Title Section */}
-      <div className="bg-slate-900/30 p-5 rounded-2xl border border-slate-800/60">
+      <div className="bg-slate-900/30 px-4 py-2.5 rounded-2xl border border-slate-800/60">
         <div>
           <h3 className="text-lg font-bold text-slate-100 flex items-center gap-2">
             <Sliders className="w-5 h-5 text-emerald-400" />
@@ -311,10 +311,10 @@ export const MonteCarloWorkspace: React.FC<MonteCarloWorkspaceProps> = ({
       </div>
 
       {/* Main Grid: Statistics Gauge & Parameter Configuration Sidebar */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-3">
         
         {/* Left Column: Premium Circular Gauge and Stats */}
-        <div className="lg:col-span-1 glass-panel rounded-2xl p-6 flex flex-col justify-between border border-slate-800 bg-slate-900/20 relative overflow-hidden">
+        <div className="lg:col-span-1 glass-panel rounded-2xl p-3.5 flex flex-col justify-between border border-slate-800 bg-slate-900/20 relative overflow-hidden">
           <div className="space-y-4">
             <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider block">Plan Health Summary</span>
             
@@ -381,7 +381,7 @@ export const MonteCarloWorkspace: React.FC<MonteCarloWorkspaceProps> = ({
         </div>
 
         {/* Right Column: Dedicated Model Estimation Configuration Panel */}
-        <div className="lg:col-span-2 glass-panel rounded-2xl p-6 border border-slate-800 bg-slate-900/20 space-y-6">
+        <div className="lg:col-span-2 glass-panel rounded-2xl p-3.5 border border-slate-800 bg-slate-900/20 space-y-3">
           <div className="flex items-center justify-between border-b border-slate-800 pb-3">
             <div className="flex items-center gap-2">
               <Sliders className="w-4 h-4 text-emerald-400" />
@@ -1000,7 +1000,7 @@ export const MonteCarloWorkspace: React.FC<MonteCarloWorkspaceProps> = ({
       <StressTestControlPanel inputs={inputs} onChangeInputs={onChangeInputs} />
 
       {/* Percentile Trajectory Line Chart */}
-      <div className="glass-panel rounded-2xl p-6 border border-slate-800 bg-slate-900/20 space-y-4">
+      <div className="glass-panel rounded-2xl p-3.5 border border-slate-800 bg-slate-900/20 space-y-2">
         <div>
           <h4 className="text-xs font-bold text-slate-200 uppercase tracking-wider">Ending Portfolio Estate Percentile Trajectories</h4>
           <p className="text-[10px] text-slate-400">View final estate value outcomes across the 35-year retirement horizon.</p>
@@ -1012,7 +1012,7 @@ export const MonteCarloWorkspace: React.FC<MonteCarloWorkspaceProps> = ({
       </div>
 
       {/* Annual Selected Return Rates Bar Chart */}
-      <div className="glass-panel rounded-2xl p-6 border border-slate-800 bg-slate-900/20 space-y-4">
+      <div className="glass-panel rounded-2xl p-3.5 border border-slate-800 bg-slate-900/20 space-y-2">
         <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-4">
           <div>
             <h4 className="text-xs font-bold text-slate-200 uppercase tracking-wider">

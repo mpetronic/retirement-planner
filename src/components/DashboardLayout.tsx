@@ -273,66 +273,74 @@ export const DashboardLayout: React.FC<DashboardLayoutProps> = ({
 
       {/* Collapsible KPI Summary Panel */}
       {showKpiSummary && (
-        <div className="p-4 border-b border-slate-800 bg-slate-900/90 backdrop-blur-md grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 animate-in slide-in-from-top-2 duration-200 shrink-0 z-10">
-          <div className="glass-panel rounded-xl p-3 flex items-center justify-between border-l-4 border-l-emerald-500">
-            <div className="space-y-0.5">
-              <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider block">
+        <div className="px-4 py-2 border-b border-slate-800 bg-slate-900/90 backdrop-blur-md grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2.5 animate-in slide-in-from-top-2 duration-200 shrink-0 z-10">
+          <div className="glass-panel rounded-lg px-3 py-1.5 flex items-center justify-between border-l-4 border-l-emerald-500 bg-slate-900/60">
+            <div className="min-w-0">
+              <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider block truncate">
                 Ending Net Estate (Age {stats.active.endingAge})
               </span>
-              <span className="text-lg font-black text-emerald-400 font-mono block">
-                {formatCurrency(stats.active.endingEstate)}
-              </span>
-              <span className="text-[9px] text-slate-500 font-mono block">
-                Range: {formatCurrency(stats.p10.endingEstate)} to {formatCurrency(stats.p90.endingEstate)}
-              </span>
+              <div className="flex items-baseline gap-1.5 mt-0.5">
+                <span className="text-base font-black text-emerald-400 font-mono">
+                  {formatCurrency(stats.active.endingEstate)}
+                </span>
+                <span className="text-[9px] text-slate-500 font-mono truncate">
+                  ({formatCurrency(stats.p10.endingEstate)}–{formatCurrency(stats.p90.endingEstate)})
+                </span>
+              </div>
             </div>
-            <TrendingUp className="w-6 h-6 text-emerald-500/50" />
+            <TrendingUp className="w-4 h-4 text-emerald-500/50 shrink-0 ml-2" />
           </div>
 
-          <div className="glass-panel rounded-xl p-3 flex items-center justify-between border-l-4 border-l-rose-500">
-            <div className="space-y-0.5">
-              <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider block">Lifetime Income Taxes</span>
-              <span className="text-lg font-black text-rose-400 font-mono block">
-                {formatCurrency(stats.active.totalTaxes)}
-              </span>
-              <span className="text-[9px] text-slate-500 font-mono block">
-                Range: {formatCurrency(stats.p10.totalTaxes)} to {formatCurrency(stats.p90.totalTaxes)}
-              </span>
+          <div className="glass-panel rounded-lg px-3 py-1.5 flex items-center justify-between border-l-4 border-l-rose-500 bg-slate-900/60">
+            <div className="min-w-0">
+              <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider block truncate">Lifetime Income Taxes</span>
+              <div className="flex items-baseline gap-1.5 mt-0.5">
+                <span className="text-base font-black text-rose-400 font-mono">
+                  {formatCurrency(stats.active.totalTaxes)}
+                </span>
+                <span className="text-[9px] text-slate-500 font-mono truncate">
+                  ({formatCurrency(stats.p10.totalTaxes)}–{formatCurrency(stats.p90.totalTaxes)})
+                </span>
+              </div>
             </div>
-            <DollarSign className="w-6 h-6 text-rose-500/50" />
+            <DollarSign className="w-4 h-4 text-rose-500/50 shrink-0 ml-2" />
           </div>
 
-          <div className="glass-panel rounded-xl p-3 flex items-center justify-between border-l-4 border-l-amber-500">
-            <div className="space-y-0.5">
-              <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider block">Lifetime IRMAA Surcharges</span>
-              <span className="text-lg font-black text-amber-400 font-mono block">
-                {formatCurrency(stats.active.totalSurcharges)}
-              </span>
-              <span className="text-[9px] text-slate-500 font-mono block">
-                Range: {formatCurrency(stats.p10.totalSurcharges)} to {formatCurrency(stats.p90.totalSurcharges)}
-              </span>
+          <div className="glass-panel rounded-lg px-3 py-1.5 flex items-center justify-between border-l-4 border-l-amber-500 bg-slate-900/60">
+            <div className="min-w-0">
+              <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider block truncate">Lifetime IRMAA Surcharges</span>
+              <div className="flex items-baseline gap-1.5 mt-0.5">
+                <span className="text-base font-black text-amber-400 font-mono">
+                  {formatCurrency(stats.active.totalSurcharges)}
+                </span>
+                <span className="text-[9px] text-slate-500 font-mono truncate">
+                  ({formatCurrency(stats.p10.totalSurcharges)}–{formatCurrency(stats.p90.totalSurcharges)})
+                </span>
+              </div>
             </div>
-            <ShieldAlert className="w-6 h-6 text-amber-500/50" />
+            <ShieldAlert className="w-4 h-4 text-amber-500/50 shrink-0 ml-2" />
           </div>
 
-          <div className="glass-panel rounded-xl p-3 flex items-center justify-between border-l-4 border-l-blue-500">
-            <div className="space-y-0.5">
-              <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider block">Plan Success Rate</span>
-              <span className="text-lg font-black text-blue-400 font-mono block">
-                {(successRate * 100).toFixed(1)}%
-              </span>
-              <span className="text-[9px] text-slate-500 font-mono block">
-                Across {inputs.monteCarloSettings.trials} stress test trials
-              </span>
+          <div className="glass-panel rounded-lg px-3 py-1.5 flex items-center justify-between border-l-4 border-l-blue-500 bg-slate-900/60">
+            <div className="min-w-0">
+              <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider block truncate">Plan Success Rate</span>
+              <div className="flex items-baseline gap-1.5 mt-0.5">
+                <span className="text-base font-black text-blue-400 font-mono">
+                  {(successRate * 100).toFixed(1)}%
+                </span>
+                <span className="text-[9px] text-slate-500 font-mono truncate">
+                  ({inputs.monteCarloSettings.trials} trials)
+                </span>
+              </div>
             </div>
-            <ArrowRightLeft className="w-6 h-6 text-blue-500/50" />
+            <ArrowRightLeft className="w-4 h-4 text-blue-500/50 shrink-0 ml-2" />
           </div>
         </div>
       )}
 
       {/* Main Tab Panels viewport scrollable */}
-      <main className="flex-1 overflow-y-auto p-6 space-y-6 custom-scrollbar bg-slate-950">
-        <div className={`w-full space-y-6 transition-opacity duration-150 ${isSimulating ? 'opacity-75' : 'opacity-100'}`}>
+      <main className="flex-1 overflow-y-auto p-3 space-y-3 custom-scrollbar bg-slate-950">
+        <div className={`w-full space-y-3 transition-opacity duration-150 ${isSimulating ? 'opacity-75' : 'opacity-100'}`}>
           {children}
         </div>
       </main>

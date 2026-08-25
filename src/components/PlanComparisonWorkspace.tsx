@@ -329,7 +329,7 @@ export const PlanComparisonWorkspace: React.FC<PlanComparisonWorkspaceProps> = (
   }, [statsA, statsB, planA, planB, selectedPlanAId, selectedPlanBId]);
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-3">
       {/* Notifications bar */}
       {notification && (
         <div className={`fixed top-4 right-4 z-50 flex items-center gap-2 px-4 py-3 rounded-xl border shadow-lg backdrop-blur-md transition-all duration-300 animate-slide-in ${
@@ -355,12 +355,12 @@ export const PlanComparisonWorkspace: React.FC<PlanComparisonWorkspaceProps> = (
         </p>
       </div>
 
-      <div className="grid grid-cols-1 xl:grid-cols-12 gap-6 items-start">
+      <div className="grid grid-cols-1 xl:grid-cols-12 gap-3 items-start">
         {/* Left Side: Save & Plan Management Panel (Col span 4) */}
-        <div className="xl:col-span-4 space-y-6">
+        <div className="xl:col-span-4 space-y-3">
           
           {/* Save Active Scenario Card */}
-          <div className="glass-panel rounded-2xl p-5 border border-slate-800 space-y-4">
+          <div className="glass-panel rounded-2xl p-3.5 border border-slate-800 space-y-2">
             <h4 className="text-sm font-bold text-slate-200 flex items-center gap-2">
               <Plus className="w-4 h-4 text-emerald-400" />
               Save Active Workspace Scenario
@@ -388,7 +388,7 @@ export const PlanComparisonWorkspace: React.FC<PlanComparisonWorkspaceProps> = (
           </div>
 
           {/* Saved Plans List */}
-          <div className="glass-panel rounded-2xl p-5 border border-slate-800 space-y-4">
+          <div className="glass-panel rounded-2xl p-3.5 border border-slate-800 space-y-2">
             <div className="flex justify-between items-center">
               <h4 className="text-sm font-bold text-slate-200">
                 Saved Scenarios ({savedPlans.length})
@@ -534,8 +534,8 @@ export const PlanComparisonWorkspace: React.FC<PlanComparisonWorkspaceProps> = (
         </div>
 
         {/* Right Side: Lifetime Scenario Comparison Dashboard (Col span 8) */}
-        <div className="xl:col-span-8 space-y-6">
-          <div className="glass-panel rounded-2xl p-6 border border-slate-800 space-y-6">
+        <div className="xl:col-span-8 space-y-3">
+          <div className="glass-panel rounded-2xl p-3.5 border border-slate-800 space-y-3">
             
             {/* Header Dropdown Selectors */}
             <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 p-4 rounded-2xl bg-slate-950/40 border border-slate-800">

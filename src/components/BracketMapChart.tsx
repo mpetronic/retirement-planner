@@ -713,7 +713,7 @@ export const BracketMapChart: React.FC<BracketMapChartProps> = ({
   };
 
   return (
-    <div className="glass-panel rounded-2xl p-6 space-y-6">
+    <div className="glass-panel rounded-2xl p-3.5 space-y-3">
       {/* Header Info */}
       <div className="flex flex-col md:flex-row md:justify-between md:items-center gap-4">
         <div>

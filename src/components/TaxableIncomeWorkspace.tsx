@@ -444,7 +444,7 @@ export const TaxableIncomeWorkspace: React.FC<TaxableIncomeWorkspaceProps> = ({
   };
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-3">
       {/* Streamlined Top Control Card (~52px height) */}
       <div className="glass-panel p-3.5 rounded-2xl border border-slate-800 bg-slate-900/80 shadow-md space-y-3">
         <div className="flex flex-wrap items-center justify-between gap-3">
@@ -701,75 +701,83 @@ export const TaxableIncomeWorkspace: React.FC<TaxableIncomeWorkspaceProps> = ({
         </div>
       </div>
 
-      {/* 4 Summary Metric Cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+      {/* 4 Summary Metric Cards - Compact Single Row */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2.5">
         {/* Card 1: Conversion Window */}
-        <div className="glass-panel rounded-2xl p-4 flex items-center justify-between border-l-4 border-l-emerald-500">
-          <div className="space-y-1">
-            <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider block">
+        <div className="glass-panel rounded-xl px-3 py-2 flex items-center justify-between border-l-4 border-l-emerald-500 bg-slate-900/60">
+          <div className="min-w-0">
+            <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider block truncate">
               Roth Conversion Window
             </span>
-            <span className="text-xl font-black text-emerald-400 font-mono block">
-              {kpiStats.convStart} – {kpiStats.convEnd}
-            </span>
-            <span className="text-[9px] text-slate-500 font-mono block">
-              Total Converted: {formatCurrency(kpiStats.totalConversions)}
-            </span>
+            <div className="flex items-baseline gap-1.5 mt-0.5">
+              <span className="text-base font-black text-emerald-400 font-mono">
+                {kpiStats.convStart} – {kpiStats.convEnd}
+              </span>
+              <span className="text-[9px] text-slate-500 font-mono truncate">
+                ({formatCurrency(kpiStats.totalConversions)})
+              </span>
+            </div>
           </div>
-          <Sliders className="w-8 h-8 text-emerald-500/50" />
+          <Sliders className="w-5 h-5 text-emerald-500/50 shrink-0 ml-2" />
         </div>
 
         {/* Card 2: Peak Taxable Income */}
-        <div className="glass-panel rounded-2xl p-4 flex items-center justify-between border-l-4 border-l-blue-500">
-          <div className="space-y-1">
-            <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider block">
+        <div className="glass-panel rounded-xl px-3 py-2 flex items-center justify-between border-l-4 border-l-blue-500 bg-slate-900/60">
+          <div className="min-w-0">
+            <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider block truncate">
               Peak Taxable Income
             </span>
-            <span className="text-xl font-black text-blue-400 font-mono block">
-              {formatCurrency(kpiStats.maxTaxable)}
-            </span>
-            <span className="text-[9px] text-slate-500 font-mono block">
-              During conversion window
-            </span>
+            <div className="flex items-baseline gap-1.5 mt-0.5">
+              <span className="text-base font-black text-blue-400 font-mono">
+                {formatCurrency(kpiStats.maxTaxable)}
+              </span>
+              <span className="text-[9px] text-slate-500 font-mono truncate">
+                in window
+              </span>
+            </div>
           </div>
-          <TrendingUp className="w-8 h-8 text-blue-500/50" />
+          <TrendingUp className="w-5 h-5 text-blue-500/50 shrink-0 ml-2" />
         </div>
 
         {/* Card 3: Average Headroom */}
-        <div className="glass-panel rounded-2xl p-4 flex items-center justify-between border-l-4 border-l-amber-500">
-          <div className="space-y-1">
-            <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider block">
+        <div className="glass-panel rounded-xl px-3 py-2 flex items-center justify-between border-l-4 border-l-amber-500 bg-slate-900/60">
+          <div className="min-w-0">
+            <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider block truncate">
               Avg Headroom to Limit
             </span>
-            <span className={`text-xl font-black font-mono block ${kpiStats.avgHeadroom >= 0 ? 'text-amber-400' : 'text-rose-400'}`}>
-              {formatCurrency(kpiStats.avgHeadroom)}
-            </span>
-            <span className="text-[9px] text-slate-500 font-mono block">
-              Room under target benchmark
-            </span>
+            <div className="flex items-baseline gap-1.5 mt-0.5">
+              <span className={`text-base font-black font-mono ${kpiStats.avgHeadroom >= 0 ? 'text-amber-400' : 'text-rose-400'}`}>
+                {formatCurrency(kpiStats.avgHeadroom)}
+              </span>
+              <span className="text-[9px] text-slate-500 font-mono truncate">
+                under target
+              </span>
+            </div>
           </div>
-          <ShieldAlert className="w-8 h-8 text-amber-500/50" />
+          <ShieldAlert className="w-5 h-5 text-amber-500/50 shrink-0 ml-2" />
         </div>
 
         {/* Card 4: Limit Breaches */}
-        <div className="glass-panel rounded-2xl p-4 flex items-center justify-between border-l-4 border-l-purple-500">
-          <div className="space-y-1">
-            <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider block">
+        <div className="glass-panel rounded-xl px-3 py-2 flex items-center justify-between border-l-4 border-l-purple-500 bg-slate-900/60">
+          <div className="min-w-0">
+            <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider block truncate">
               Limit Overages
             </span>
-            <span className={`text-xl font-black font-mono block ${kpiStats.breachedYears === 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
-              {kpiStats.breachedYears} {kpiStats.breachedYears === 1 ? 'Year' : 'Years'}
-            </span>
-            <span className="text-[9px] text-slate-500 font-mono block">
-              Years exceeding benchmark line
-            </span>
+            <div className="flex items-baseline gap-1.5 mt-0.5">
+              <span className={`text-base font-black font-mono ${kpiStats.breachedYears === 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
+                {kpiStats.breachedYears} {kpiStats.breachedYears === 1 ? 'Yr' : 'Yrs'}
+              </span>
+              <span className="text-[9px] text-slate-500 font-mono truncate">
+                exceeding line
+              </span>
+            </div>
           </div>
-          <AlertCircle className="w-8 h-8 text-purple-500/50" />
+          <AlertCircle className="w-5 h-5 text-purple-500/50 shrink-0 ml-2" />
         </div>
       </div>
 
       {/* Main Stacked Bar Chart */}
-      <div className="glass-panel p-6 rounded-2xl border border-slate-800 bg-slate-900/40 shadow-xl space-y-4">
+      <div className="glass-panel p-3.5 rounded-2xl border border-slate-800 bg-slate-900/40 shadow-xl space-y-2">
         <div className="flex items-center justify-between">
           <h3 className="text-sm font-bold text-slate-200 uppercase tracking-wider flex items-center gap-2">
             <Calculator className="w-4 h-4 text-emerald-400" />
@@ -797,7 +805,7 @@ export const TaxableIncomeWorkspace: React.FC<TaxableIncomeWorkspaceProps> = ({
       </div>
 
       {/* Detailed Audit Table */}
-      <div className="glass-panel p-6 rounded-2xl border border-slate-800 bg-slate-900/40 shadow-xl space-y-4">
+      <div className="glass-panel p-3.5 rounded-2xl border border-slate-800 bg-slate-900/40 shadow-xl space-y-2">
         <div className="flex items-center justify-between">
           <h3 className="text-sm font-bold text-slate-200 uppercase tracking-wider flex items-center gap-2">
             <Info className="w-4 h-4 text-indigo-400" />
