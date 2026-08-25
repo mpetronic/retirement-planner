@@ -168,10 +168,13 @@ export const DashboardLayout: React.FC<DashboardLayoutProps> = ({
               type="button"
               onClick={onOpenParamDrawer}
               className="flex items-center gap-1.5 px-3 py-1.5 bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 rounded-xl text-xs font-bold transition-all cursor-pointer shadow-sm active:scale-98"
-              title="Open Parameters & Scenario Assumptions Drawer"
+              title="Open Parameters & Scenario Assumptions Drawer (Press 'P')"
             >
               <Sliders className="w-3.5 h-3.5 text-emerald-400" />
               <span>Edit Parameters</span>
+              <kbd className="hidden sm:inline-block ml-0.5 px-1.5 py-0.2 bg-slate-900/60 border border-emerald-500/30 rounded text-[9px] font-mono text-emerald-400 font-normal">
+                P
+              </kbd>
             </button>
           )}
 

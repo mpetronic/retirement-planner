@@ -217,7 +217,9 @@ function App() {
     }
   };
 
-  // Global keyboard shortcut ('?' or 'Shift + /') to summon Documentation & User Guide
+  // Global keyboard shortcuts:
+  // - '?' or 'Shift + /' to summon Documentation & User Guide
+  // - 'P' or 'p' to toggle Scenario Parameters side drawer
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       const target = e.target as HTMLElement | null;
@@ -232,6 +234,9 @@ function App() {
       if (e.key === '?' || (e.shiftKey && e.key === '/')) {
         e.preventDefault();
         setShowDocumentation((prev) => !prev);
+      } else if (e.key === 'p' || e.key === 'P') {
+        e.preventDefault();
+        setIsParamDrawerOpen((prev) => !prev);
       }
     };
     window.addEventListener('keydown', handleKeyDown);
