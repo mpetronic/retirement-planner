@@ -247,7 +247,7 @@ export const LookbackLedgerTable: React.FC<LookbackLedgerTableProps> = ({
               // Brokerage assets roll-forward
               const startBrokerage = prevRow
                 ? prevRow.endYourTaxableBrokerage + prevRow.endWifeTaxableBrokerage
-                : inputs.portfolio.yourTaxableBrokerage + (inputs.wife ? inputs.portfolio.wifeTaxableBrokerage : 0);
+                : (inputs.portfolio.yourTaxableBrokerage || 0) + (!inputs.isSingleFiler ? (inputs.portfolio.wifeTaxableBrokerage || 0) : 0);
               const endBrokerage = r.endYourTaxableBrokerage + r.endWifeTaxableBrokerage;
               const surplusReinvested = r.reinvestedSurplus || 0;
               const drawsBrokerage = r.drawdownTaxable || 0;
@@ -256,7 +256,7 @@ export const LookbackLedgerTable: React.FC<LookbackLedgerTableProps> = ({
               // Cash assets roll-forward
               const startCash = prevRow
                 ? prevRow.endYourCash + prevRow.endWifeCash
-                : inputs.portfolio.yourCash + (inputs.wife ? inputs.portfolio.wifeCash : 0);
+                : (inputs.portfolio.yourCash || 0) + (!inputs.isSingleFiler ? (inputs.portfolio.wifeCash || 0) : 0);
               const endCash = r.endYourCash + r.endWifeCash;
               const drawsCash = r.drawdownCash || 0;
               const cashInterest = endCash + drawsCash - startCash;
@@ -264,7 +264,7 @@ export const LookbackLedgerTable: React.FC<LookbackLedgerTableProps> = ({
               // Traditional IRA roll-forward
               const startPreTax = prevRow
                 ? prevRow.endYourPreTaxIRA + prevRow.endWifePreTaxIRA
-                : inputs.portfolio.yourPreTaxIRA + (inputs.wife ? inputs.portfolio.wifePreTaxIRA : 0);
+                : (inputs.portfolio.yourPreTaxIRA || 0) + (!inputs.isSingleFiler ? (inputs.portfolio.wifePreTaxIRA || 0) : 0);
               const endPreTax = r.endYourPreTaxIRA + r.endWifePreTaxIRA;
               const totalRMDs = (r.yourRMD || 0) + (r.wifeRMD || 0);
               const pretaxDraws = r.drawdownPreTax || 0;
@@ -277,7 +277,7 @@ export const LookbackLedgerTable: React.FC<LookbackLedgerTableProps> = ({
               // Roth IRA roll-forward
               const startRoth = prevRow
                 ? prevRow.endYourRothIRA + prevRow.endWifeRothIRA
-                : inputs.portfolio.yourRothIRA + (inputs.wife ? inputs.portfolio.wifeRothIRA : 0);
+                : (inputs.portfolio.yourRothIRA || 0) + (!inputs.isSingleFiler ? (inputs.portfolio.wifeRothIRA || 0) : 0);
               const endRoth = r.endYourRothIRA + r.endWifeRothIRA;
               const drawsRoth = r.drawdownRoth || 0;
               const rothGrowth = endRoth + drawsRoth - rothConversions - startRoth;

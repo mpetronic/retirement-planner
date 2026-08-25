@@ -27,7 +27,6 @@ interface AboutDialogProps {
 export const AboutDialog: React.FC<AboutDialogProps> = ({
   isOpen,
   onClose,
-  onOpenDocumentation,
 }) => {
   const [copied, setCopied] = useState(false);
   const versionInfo = getVersionInfo();

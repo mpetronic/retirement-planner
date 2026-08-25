@@ -525,6 +525,7 @@ function App() {
             onApplyOptimization={handleApplyOptimization}
             onUpdateStrategy={handleUpdateStrategy}
             onUpdateTargetValue={handleUpdateTargetValue}
+            onInputsChange={handleInputsChange}
             selectedQuickFill={selectedQuickFill}
             setSelectedQuickFill={setSelectedQuickFill}
           />

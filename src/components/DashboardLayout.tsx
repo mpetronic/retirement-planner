@@ -6,11 +6,9 @@ import {
   ShieldAlert,
   ArrowRightLeft,
   Coins,
-  MapPin,
   Sliders,
   AlertTriangle,
   BookOpen,
-  HeartHandshake,
   Calculator
 } from 'lucide-react';
 
@@ -87,15 +85,7 @@ export const DashboardLayout: React.FC<DashboardLayoutProps> = ({
     };
   }, [ledger, parallelLedgers]);
 
-  const stateTaxContext = useMemo(() => {
-    const current = inputs.jurisdiction.currentState;
-    const target = inputs.jurisdiction.targetState;
-    const relocYear = inputs.jurisdiction.relocationYear;
-    if (relocYear) {
-      return `Move to ${target} in ${relocYear}`;
-    }
-    return `Residency in ${current}`;
-  }, [inputs]);
+
 
   return (
     <div className="flex-1 flex flex-col h-full overflow-hidden bg-slate-950">
