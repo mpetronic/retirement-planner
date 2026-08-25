@@ -15,7 +15,6 @@ import {
   ShieldCheck,
   Calendar,
   Sparkles,
-  BookOpen,
 } from 'lucide-react';
 import { getVersionInfo } from '../utils/version';
 
@@ -277,18 +276,6 @@ export const AboutDialog: React.FC<AboutDialogProps> = ({
               )}
             </button>
 
-            <button
-              type="button"
-              onClick={() => {
-                onClose();
-                onOpenDocumentation?.();
-              }}
-              className="flex items-center gap-2 px-3.5 py-2 bg-indigo-600/20 hover:bg-indigo-600/30 border border-indigo-500/40 hover:border-indigo-500/60 text-indigo-300 hover:text-white rounded-xl text-xs font-semibold transition-all cursor-pointer active:scale-98"
-              title="Open Application User Guide & Documentation"
-            >
-              <BookOpen className="w-3.5 h-3.5 text-indigo-400" />
-              <span>Documentation</span>
-            </button>
           </div>
 
           <button

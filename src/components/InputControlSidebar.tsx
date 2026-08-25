@@ -40,6 +40,8 @@ const getBirthMonth = (dateStr: string | undefined): number => {
 };
 
 interface InputControlSidebarProps {
+  isOpen?: boolean;
+  onClose?: () => void;
   inputs: AppStateInputs;
   onChange: (newInputs: AppStateInputs) => void;
   onReset: () => void;
@@ -56,6 +58,8 @@ interface InputControlSidebarProps {
 }
 
 export const InputControlSidebar: React.FC<InputControlSidebarProps> = ({
+  isOpen = true,
+  onClose,
   inputs,
   onChange,
   onReset,
@@ -202,54 +206,70 @@ export const InputControlSidebar: React.FC<InputControlSidebarProps> = ({
     return `${(val * 100).toFixed(1)}%`;
   };
 
+  React.useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && isOpen && onClose) {
+        onClose();
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isOpen, onClose]);
+
+  if (!isOpen) return null;
+
   return (
-    <aside className="w-full lg:w-96 bg-slate-900 border-r border-slate-800 flex flex-col h-full overflow-y-auto custom-scrollbar">
-      {/* Sidebar Header */}
-      <div className="p-6 border-b border-slate-800 bg-slate-900/60 sticky top-0 backdrop-blur-md z-10 flex items-center justify-between">
-        <div className="flex items-center gap-3">
-          <Flame className="w-7 h-7 text-emerald-500 animate-pulse" />
-          <div>
-            <h1 className="text-xl font-bold bg-gradient-to-r from-slate-100 to-slate-400 bg-clip-text text-transparent">
-              Scenario Planner
-            </h1>
-            <p className="text-xs text-slate-400">Configure parameters in real-time</p>
+    <div className="fixed inset-0 z-50 flex justify-end">
+      {/* Backdrop */}
+      <div 
+        className="fixed inset-0 bg-slate-950/80 backdrop-blur-sm transition-opacity"
+        onClick={onClose}
+      />
+
+      {/* Slide-over Drawer Panel */}
+      <aside className="relative z-50 w-full max-w-md bg-slate-900 border-l border-slate-800 flex flex-col h-full overflow-y-auto custom-scrollbar shadow-2xl animate-in slide-in-from-right duration-300">
+        {/* Sidebar Header */}
+        <div className="p-5 border-b border-slate-800 bg-slate-900/90 sticky top-0 backdrop-blur-md z-10 flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <Flame className="w-6 h-6 text-emerald-500 animate-pulse shrink-0" />
+            <div>
+              <h1 className="text-lg font-bold bg-gradient-to-r from-slate-100 to-slate-400 bg-clip-text text-transparent">
+                Scenario Planner
+              </h1>
+              <p className="text-[11px] text-slate-400">Configure parameters in real-time</p>
+            </div>
+          </div>
+
+          {/* Header Action Buttons */}
+          <div className="flex items-center gap-1.5">
+            <button
+              type="button"
+              onClick={() => setShowAboutDialog(true)}
+              className="p-1.5 bg-slate-950/60 hover:bg-slate-800/80 text-slate-400 hover:text-emerald-400 border border-slate-800 hover:border-slate-700/60 rounded-xl transition-all cursor-pointer flex items-center justify-center group"
+              title={`About Retirement Planner (${versionInfo.displayVersion})`}
+            >
+              <Info className="w-4 h-4 text-slate-400 group-hover:text-emerald-400" />
+            </button>
+            <button
+              type="button"
+              onClick={() => setShowDisplaySettings(true)}
+              className="p-1.5 bg-slate-950/60 hover:bg-slate-800/80 text-slate-400 hover:text-slate-100 border border-slate-800 hover:border-slate-700/60 rounded-xl transition-all cursor-pointer flex items-center justify-center"
+              title="Display & Font Size Settings"
+            >
+              <Settings className="w-4 h-4" />
+            </button>
+            {onClose && (
+              <button
+                type="button"
+                onClick={onClose}
+                className="p-1.5 bg-slate-950/60 hover:bg-slate-800 hover:text-white text-slate-400 border border-slate-800 hover:border-slate-700 rounded-xl transition-all cursor-pointer flex items-center justify-center"
+                title="Close parameters drawer (Esc)"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            )}
           </div>
         </div>
-
-        {/* Header Action Buttons */}
-        <div className="flex items-center gap-1.5">
-          <button
-            type="button"
-            onClick={() => {
-              if (onOpenDocumentation) {
-                onOpenDocumentation('overview');
-              } else {
-                setShowDocumentation(true);
-              }
-            }}
-            className="p-2 bg-slate-950/60 hover:bg-slate-800/80 text-slate-400 hover:text-indigo-400 border border-slate-800 hover:border-slate-700/60 rounded-xl transition-all cursor-pointer flex items-center justify-center group"
-            title="User Guide & Application Documentation"
-          >
-            <BookOpen className="w-4 h-4 text-slate-400 group-hover:text-indigo-400" />
-          </button>
-          <button
-            type="button"
-            onClick={() => setShowAboutDialog(true)}
-            className="p-2 bg-slate-950/60 hover:bg-slate-800/80 text-slate-400 hover:text-emerald-400 border border-slate-800 hover:border-slate-700/60 rounded-xl transition-all cursor-pointer flex items-center justify-center group"
-            title={`About Retirement Planner (${versionInfo.displayVersion})`}
-          >
-            <Info className="w-4 h-4 text-slate-400 group-hover:text-emerald-400" />
-          </button>
-          <button
-            type="button"
-            onClick={() => setShowDisplaySettings(true)}
-            className="p-2 bg-slate-950/60 hover:bg-slate-800/80 text-slate-400 hover:text-slate-100 border border-slate-800 hover:border-slate-700/60 rounded-xl transition-all cursor-pointer flex items-center justify-center"
-            title="Display & Font Size Settings"
-          >
-            <Settings className="w-4 h-4" />
-          </button>
-        </div>
-      </div>
 
       <div className="p-4 space-y-6 flex-1">
         {/* Global Valuation Toggle */}
@@ -1491,6 +1511,7 @@ export const InputControlSidebar: React.FC<InputControlSidebarProps> = ({
           onNavigateTab={onNavigateTab}
         />
       )}
-    </aside>
+      </aside>
+    </div>
   );
 };

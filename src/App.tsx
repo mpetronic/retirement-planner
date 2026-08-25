@@ -192,6 +192,7 @@ function App() {
   const [useTodayDollars, setUseTodayDollars] = useLocalStorage<boolean>('retirement_planner_use_today_dollars', false);
   const [showDocumentation, setShowDocumentation] = useState<boolean>(false);
   const [documentationSectionId, setDocumentationSectionId] = useState<string>('overview');
+  const [isParamDrawerOpen, setIsParamDrawerOpen] = useState<boolean>(false);
 
   const handleOpenDocumentation = (sectionId?: string) => {
     setDocumentationSectionId(sectionId || 'overview');
@@ -464,13 +465,15 @@ function App() {
   }, []);
 
   return (
-    <div className="flex flex-col lg:flex-row h-screen w-screen overflow-hidden bg-slate-950 text-slate-100 antialiased font-sans">
+    <div className="flex flex-col h-screen w-screen overflow-hidden bg-slate-950 text-slate-100 antialiased font-sans">
       {!inputs.isConfigured && (
         <OnboardingWizard onComplete={handleInputsChange} />
       )}
 
-      {/* Sidebar Parameter Controls */}
+      {/* Slide-Over Parameter Controls Drawer */}
       <InputControlSidebar 
+        isOpen={isParamDrawerOpen}
+        onClose={() => setIsParamDrawerOpen(false)}
         inputs={inputs} 
         onChange={handleInputsChange} 
         onReset={() => handleInputsChange(DEFAULT_INPUTS)} 
@@ -498,6 +501,7 @@ function App() {
         setGlobalScenario={setGlobalScenario}
         isSimulating={isSimulating}
         onOpenDocumentation={handleOpenDocumentation}
+        onOpenParamDrawer={() => setIsParamDrawerOpen(true)}
       >
         {activeTab === 0 && (
           <BracketMapChart
