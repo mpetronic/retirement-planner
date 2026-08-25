@@ -6,7 +6,9 @@ An interactive, premium, 35-year financial planning web application. This tool e
 
 ## 📋 Table of Contents
 
+- [Overview & Core Features](#overview--core-features)
 - [Workspace Structure](#workspace-structure)
+- [Control Center & Keyboard Shortcuts](#control-center--keyboard-shortcuts)
 - [🛠️ Development & Environment Setup](#️-development--environment-setup)
   - [System Requirements](#system-requirements)
   - [🐧 Linux & WSL Setup](#-linux--wsl-setup)
@@ -14,20 +16,55 @@ An interactive, premium, 35-year financial planning web application. This tool e
   - [🪟 Windows Setup (Native PowerShell/CMD)](#-windows-setup-native-powershellcmd)
     - [Option A: With Administrator Access](#option-a-with-administrator-access)
     - [Option B: Without Administrator Access (Non-Admin)](#option-b-without-administrator-access-non-admin)
-- [🛠️ Verification & Build Commands](#️-verification--build-commands)
-  - [Type Check the Codebase](#type-check-the-codebase)
-  - [Production Bundle Packager](#production-bundle-packager)
+- [🛠️ Verification, Testing & Build Commands](#️-verification-testing--build-commands)
+  - [Unit Test Suite](#unit-test-suite)
+  - [Type Check & Production Build](#type-check--production-build)
+  - [🐳 Docker Container Deployment](#-docker-container-deployment)
 - [💻 Recommended Developer Tools](#-recommended-developer-tools)
+- [📄 License & Disclaimer](#-license--disclaimer)
+
+---
+
+## Overview & Core Features
+
+- **35-Year Spousal Timeline Engine**: Tracks annual income, Social Security claiming ages, active salaries, asset growth, and account drawdowns.
+- **Tax & Jurisdiction Engine**: Models Federal ordinary income, preferential capital gains, and state tax brackets (Maryland MD with county tax vs. Florida FL zero-income tax) with custom relocation year support.
+- **Medicare IRMAA & SSA-44 Modeling**: Models 2-year MAGI lookback Medicare IRMAA surcharge tiers (Part B & Part D) and Form SSA-44 life-changing event income reductions.
+- **Charitable QCD & Tithe Engine**: Configures Qualified Charitable Distributions (QCDs) directly from Pre-Tax IRAs starting at age 70½ to satisfy RMDs tax-free.
+- **Itemized vs. Aggregate Expenses**: Supports both simple annual living budgets and itemized state-specific recurring expenses.
+- **Stochastic Monte Carlo Stress Testing**: Runs 1,000 parallel randomized trials to calculate success probabilities, sequence-of-returns risks, and percentile portfolio paths ($P_{10}$, $P_{50}$, $P_{90}$).
+- **Accessibility & Typography Scaling**: Global font size control ($12\text{px} - 24\text{px}$) with dynamic root `rem` scaling.
 
 ---
 
 ## Workspace Structure
 
 The planner is organized into four dedicated, highly interactive workspaces:
-1. **Workspace 1: Bracket Map Chart**: Visual tax bracket planning and Roth conversion modeling with real-time expected return and scenario optimizations.
-2. **Workspace 2: Lookback Ledger**: Detailed annual spousal cashflow tables tracking income sources, tax margins, standard deductions, deficits, accounts drawdowns, and Medicare IRMAA cliffs.
-3. **Workspace 3: Monte Carlo Analysis**: Long-term market stress testing across 1,000 parallel randomized trials with seedable reproducibility.
-4. **Workspace 4: Plan Comparison**: A dynamic scenario-management workspace to save active workspace parameters, load them, and run side-by-side lifetime delta comparisons.
+
+1. **Workspace 1: Bracket Map Chart**:
+   Visual tax bracket planning and Roth conversion modeling with real-time expected return and scenario optimizations. Includes quick-fill target buttons and interactive bracket margin inspection.
+2. **Workspace 2: Lookback Ledger**:
+   Detailed annual spousal cashflow tables tracking income sources, tax margins, standard deductions, deficits, account drawdowns, and Medicare IRMAA cliffs with single-row compact KPI summary banners.
+3. **Workspace 3: Monte Carlo Analysis**:
+   Long-term market stress testing across 1,000 parallel randomized trials with seedable reproducibility, asset return overrides, and sequence risk analysis.
+4. **Workspace 4: Plan Comparison**:
+   A dynamic scenario-management workspace to save active workspace parameters, load saved plans, export/import JSON configurations, and run side-by-side lifetime delta comparisons.
+
+---
+
+## Control Center & Keyboard Shortcuts
+
+### Tabbed Scenario Planner Drawer
+Press **`P`** anywhere in the app to toggle the slide-over Scenario Planner parameter drawer, organized into 4 intuitive category tabs:
+- 👤 **Profiles**: Primary user & spouse birth dates, Social Security PIA estimates, target SS claiming ages, planned retirement ages/months, salaries, longevity ages, healthcare expense config, and Survivor view simulation mode toggle switch.
+- 💰 **Accounts**: Starting account balances (Traditional Pre-Tax IRA, Roth IRA, Taxable Brokerage, Cost Basis, Cash Assets) for both spouses, plus taxable brokerage dividend yield and non-qualified interest percentages.
+- 📈 **Assumptions**: Valuation currency mode toggle (Nominal Future Dollars vs. Today's Real Purchasing Power Dollars), simulation start year, model return/inflation assumptions, and Maryland (MD) to Florida (FL) relocation year.
+- 🧾 **Expenses**: Calculation method choice (Simple Aggregate vs. Itemized Expenses), base living budget slider, itemized expense dialog, and Charitable QCD & Tithe engine.
+
+### Global Keyboard Shortcuts
+- **`P`**: Toggle Scenario Planner side drawer open/closed.
+- **`?`** (or **`Shift`** + **`/`**): Open interactive Documentation & User Guide modal.
+- **`Esc`**: Close active side drawer, settings modal, or user guide.
 
 ---
 
@@ -297,20 +334,30 @@ Once started, open your web browser and go to `http://localhost:5173` to interac
 
 ---
 
-## 🛠️ Verification & Build Commands
+## 🛠️ Verification, Testing & Build Commands
 
-Before submitting code, run these commands to verify type safety, clean code patterns, and production bundle packaging.
+Before committing or deploying code, run these commands to verify test coverage, type safety, and production assets.
 
-### Type Check the Codebase
-Ensures all TypeScript interfaces, component props, and calculations map correctly:
+### Unit Test Suite
+Run the Vitest unit test suite to execute 100+ simulation engine, optimizer, and export utility tests:
 ```bash
-npx tsc --noEmit
+npm run test:run
 ```
 
-### Production Bundle Packager
-Builds optimized, compressed static assets in the `/dist` directory for static hosting:
+### Type Check & Production Build
+Compiles TypeScript strictly (`tsc -b`) and packages optimized static distribution files in `/dist`:
 ```bash
 npm run build
+```
+
+### 🐳 Docker Container Deployment
+Build and run the application as a lightweight containerized Nginx application:
+```bash
+# Build Docker image
+npm run docker:build
+
+# Run Docker container on port 8080
+npm run docker:run
 ```
 
 ---
@@ -319,5 +366,40 @@ npm run build
 
 To get the most out of editing and pair programming in this repository, we recommend using **Visual Studio Code** along with these extension assets:
 * **ESLint** (`dbaeumer.vscode-eslint`): Auto-detects stylistic and syntax violations.
-* **Prettier** (`esbenp.prettier-vscode`): Enforces consistent formatting rules.
-* **TypeScript Vue Plugin / Volar** (if modifying vue layouts) or standard TS tooling.
+* **Prettier** (`esbenp.prettier-vscode`): Enforces consistent code formatting.
+* **Tailwind CSS IntelliSense** (`bradlc.vscode-tailwindcss`): Autocompletes custom utility classes.
+
+---
+
+## 📄 License & Disclaimer
+
+### MIT License
+This project is licensed under the terms of the **[MIT License](LICENSE)**.
+
+```text
+Copyright (c) 2026 Mark Petronic
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+```
+
+### Legal & Financial Disclaimer
+**This application is provided strictly for educational, informational, and personal modeling purposes only.**
+- The outputs, projections, tax estimations, and Monte Carlo probabilities generated by this tool do not constitute professional financial, investment, tax, legal, or accounting advice.
+- Financial tax rules (including IRS ordinary income brackets, capital gains thresholds, standard deductions, RMD calculations, and Medicare IRMAA surcharges) are subject to legislative changes and annual inflation adjustments.
+- The author(s) and copyright holder(s) assume **no liability or responsibility** for any financial decisions, tax filings, investment strategies, losses, or damages resulting from the use of this software. Always consult a qualified Certified Financial Planner (CFP), CPA, or tax professional before making financial decisions.
