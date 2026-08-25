@@ -442,7 +442,7 @@ export const ConfigurationPDF: React.FC<PDFProps> = ({ inputs }) => {
                     </View>
                     <View style={styles.row}>
                       <Text style={styles.rowLabel}>Planned Retirement Age / Month:</Text>
-                      <Text style={styles.rowValue}>{inputs.wife.plannedRetirementAge ?? 65} / {formatMonth(inputs.wife.plannedRetirementMonth)}</Text>
+                      <Text style={styles.rowValue}>{inputs.wife.plannedRetirementAge ?? 67} / {formatMonth(inputs.wife.plannedRetirementMonth)}</Text>
                     </View>
                     <View style={styles.row}>
                       <Text style={styles.rowLabel}>Projected Longevity Age:</Text>
@@ -591,6 +591,10 @@ export const ConfigurationPDF: React.FC<PDFProps> = ({ inputs }) => {
                 <View style={styles.row}>
                   <Text style={styles.rowLabel}>Cash Savings Yield:</Text>
                   <Text style={styles.rowValue}>{formatPercent(inputs.growthAssumptions.cashYieldRate ?? inputs.growthAssumptions.fixedIncomeReturnRate)}</Text>
+                </View>
+                <View style={styles.row}>
+                  <Text style={styles.rowLabel}>Min Cash Reserve Floor:</Text>
+                  <Text style={styles.rowValue}>{formatCurrency(inputs.growthAssumptions.minCashReserveDollars ?? 100000)} (CPI-Indexed)</Text>
                 </View>
               </View>
             </View>

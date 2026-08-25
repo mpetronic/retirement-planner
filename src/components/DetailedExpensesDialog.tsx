@@ -94,8 +94,6 @@ export const DetailedExpensesDialog: React.FC<DetailedExpensesDialogProps> = ({
   const [deleteCategoryTarget, setDeleteCategoryTarget] = useState<string | null>(null);
   const [reassignCategoryTarget, setReassignCategoryTarget] = useState<string>('');
 
-  if (!isOpen) return null;
-
   const stateA = currentState || 'MD';
   const stateB = targetState || 'FL';
 
@@ -433,6 +431,8 @@ export const DetailedExpensesDialog: React.FC<DetailedExpensesDialogProps> = ({
     };
   }, [costs, stateB, recurringItems, oneTimeItems, frequencies]);
 
+  if (!isOpen) return null;
+
   return createPortal(
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-md transition-all duration-300">
       <div className="w-full max-w-5xl bg-slate-900/95 border border-slate-800 rounded-2xl shadow-2xl overflow-hidden glass-panel backdrop-blur-xl transition-all duration-300 transform scale-100 flex flex-col max-h-[92vh]">
@@ -542,7 +542,25 @@ export const DetailedExpensesDialog: React.FC<DetailedExpensesDialogProps> = ({
               </div>
 
               {/* Recurring Categories Groups */}
-              {catalog.categories.map((catName) => {
+              {catalog.items.length === 0 ? (
+                <div className="p-8 text-center bg-slate-950/40 rounded-xl border border-slate-800/80 space-y-3 my-4">
+                  <div className="w-12 h-12 rounded-full bg-slate-800/80 text-emerald-400 flex items-center justify-center mx-auto border border-slate-700/50">
+                    <Plus className="w-6 h-6" />
+                  </div>
+                  <h4 className="text-sm font-bold text-slate-200">No Expense Line Items Configured</h4>
+                  <p className="text-xs text-slate-400 max-w-md mx-auto">
+                    Start from a clean slate by adding recurring living expenses or one-time outlays tailored to your retirement plan.
+                  </p>
+                  <button
+                    onClick={() => handleOpenItemModal()}
+                    className="px-4 py-2 text-xs font-bold text-slate-950 bg-emerald-400 hover:bg-emerald-300 rounded-lg transition-all inline-flex items-center gap-1.5 cursor-pointer shadow-sm shadow-emerald-500/20 mt-2"
+                  >
+                    <Plus className="w-4 h-4" />
+                    Add Your First Line Item
+                  </button>
+                </div>
+              ) : (
+                catalog.categories.map((catName) => {
                 const catItems = recurringItems.filter((i) => i.category === catName);
                 if (catItems.length === 0) return null;
 
@@ -691,7 +709,7 @@ export const DetailedExpensesDialog: React.FC<DetailedExpensesDialogProps> = ({
                     </div>
                   </div>
                 );
-              })}
+              }))}
 
               {/* One-Time Setup Costs Section */}
               <div className="space-y-2 bg-amber-950/20 p-4 rounded-xl border border-amber-500/30">
@@ -917,67 +935,85 @@ export const DetailedExpensesDialog: React.FC<DetailedExpensesDialogProps> = ({
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-800/30 text-xs">
-                      {catalog.items
-                        .filter((item) => {
-                          if (searchFilter) {
-                            const q = searchFilter.toLowerCase();
-                            const matchName = item.name.toLowerCase().includes(q);
-                            const matchDesc = item.description?.toLowerCase().includes(q);
-                            if (!matchName && !matchDesc) return false;
-                          }
-                          if (selectedCategoryFilter === 'ONE_TIME') return !!item.isOneTime;
-                          if (selectedCategoryFilter !== 'ALL') return item.category === selectedCategoryFilter;
-                          return true;
-                        })
-                        .map((item) => (
-                          <tr key={item.id} className="hover:bg-slate-900/40 transition-colors">
-                            <td className="py-2.5 px-4">
-                              <div className="font-semibold text-slate-200">{item.name}</div>
-                              {item.description && (
-                                <div className="text-[11px] text-slate-400 truncate max-w-md">
-                                  {item.description}
+                      {catalog.items.filter((item) => {
+                        if (searchFilter) {
+                          const q = searchFilter.toLowerCase();
+                          const matchName = item.name.toLowerCase().includes(q);
+                          const matchDesc = item.description?.toLowerCase().includes(q);
+                          if (!matchName && !matchDesc) return false;
+                        }
+                        if (selectedCategoryFilter === 'ONE_TIME') return !!item.isOneTime;
+                        if (selectedCategoryFilter !== 'ALL') return item.category === selectedCategoryFilter;
+                        return true;
+                      }).length === 0 ? (
+                        <tr>
+                          <td colSpan={5} className="py-8 text-center text-slate-400 text-xs">
+                            No items in catalog. Click "Add Expense Item" above to create one.
+                          </td>
+                        </tr>
+                      ) : (
+                        catalog.items
+                          .filter((item) => {
+                            if (searchFilter) {
+                              const q = searchFilter.toLowerCase();
+                              const matchName = item.name.toLowerCase().includes(q);
+                              const matchDesc = item.description?.toLowerCase().includes(q);
+                              if (!matchName && !matchDesc) return false;
+                            }
+                            if (selectedCategoryFilter === 'ONE_TIME') return !!item.isOneTime;
+                            if (selectedCategoryFilter !== 'ALL') return item.category === selectedCategoryFilter;
+                            return true;
+                          })
+                          .map((item) => (
+                            <tr key={item.id} className="hover:bg-slate-900/40 transition-colors">
+                              <td className="py-2.5 px-4">
+                                <div className="font-semibold text-slate-200">{item.name}</div>
+                                {item.description && (
+                                  <div className="text-[11px] text-slate-400 truncate max-w-md">
+                                    {item.description}
+                                  </div>
+                                )}
+                              </td>
+                              <td className="py-2.5 px-3">
+                                <span className="px-2 py-0.5 rounded bg-slate-800 text-slate-300 text-[11px]">
+                                  {item.category}
+                                </span>
+                              </td>
+                              <td className="py-2.5 px-3 text-center font-mono text-slate-400">
+                                {item.isOneTime ? '1x (Lump sum)' : `${item.defaultFrequency}x / year`}
+                              </td>
+                              <td className="py-2.5 px-3">
+                                {item.isOneTime ? (
+                                  <span className="px-2 py-0.5 rounded bg-amber-500/10 text-amber-400 border border-amber-500/30 text-[10px] font-bold uppercase">
+                                    One-Time
+                                  </span>
+                                ) : (
+                                  <span className="px-2 py-0.5 rounded bg-emerald-500/10 text-emerald-400 border border-emerald-500/30 text-[10px] font-bold uppercase">
+                                    Recurring
+                                  </span>
+                                )}
+                              </td>
+                              <td className="py-2.5 px-4 text-right">
+                                <div className="flex items-center justify-end gap-2">
+                                  <button
+                                    onClick={() => handleOpenItemModal(item)}
+                                    className="p-1.5 text-slate-400 hover:text-slate-100 bg-slate-800/40 hover:bg-slate-800 rounded border border-slate-700/40 transition-colors cursor-pointer"
+                                    title="Edit item"
+                                  >
+                                    <Edit2 className="w-3.5 h-3.5" />
+                                  </button>
+                                  <button
+                                    onClick={() => handleDeleteItem(item.id)}
+                                    className="p-1.5 text-slate-400 hover:text-rose-400 bg-slate-800/40 hover:bg-slate-800 rounded border border-slate-700/40 transition-colors cursor-pointer"
+                                    title="Delete item"
+                                  >
+                                    <Trash2 className="w-3.5 h-3.5" />
+                                  </button>
                                 </div>
-                              )}
-                            </td>
-                            <td className="py-2.5 px-3">
-                              <span className="px-2 py-0.5 rounded bg-slate-800 text-slate-300 text-[11px]">
-                                {item.category}
-                              </span>
-                            </td>
-                            <td className="py-2.5 px-3 text-center font-mono text-slate-400">
-                              {item.isOneTime ? '1x (Lump sum)' : `${item.defaultFrequency}x / year`}
-                            </td>
-                            <td className="py-2.5 px-3">
-                              {item.isOneTime ? (
-                                <span className="px-2 py-0.5 rounded bg-amber-500/10 text-amber-400 border border-amber-500/30 text-[10px] font-bold uppercase">
-                                  One-Time
-                                </span>
-                              ) : (
-                                <span className="px-2 py-0.5 rounded bg-emerald-500/10 text-emerald-400 border border-emerald-500/30 text-[10px] font-bold uppercase">
-                                  Recurring
-                                </span>
-                              )}
-                            </td>
-                            <td className="py-2.5 px-4 text-right">
-                              <div className="flex items-center justify-end gap-2">
-                                <button
-                                  onClick={() => handleOpenItemModal(item)}
-                                  className="p-1.5 text-slate-400 hover:text-slate-100 bg-slate-800/40 hover:bg-slate-800 rounded border border-slate-700/40 transition-colors cursor-pointer"
-                                  title="Edit item"
-                                >
-                                  <Edit2 className="w-3.5 h-3.5" />
-                                </button>
-                                <button
-                                  onClick={() => handleDeleteItem(item.id)}
-                                  className="p-1.5 text-slate-400 hover:text-rose-400 bg-slate-800/40 hover:bg-slate-800 rounded border border-slate-700/40 transition-colors cursor-pointer"
-                                  title="Delete item"
-                                >
-                                  <Trash2 className="w-3.5 h-3.5" />
-                                </button>
-                              </div>
-                            </td>
-                          </tr>
-                        ))}
+                              </td>
+                            </tr>
+                          ))
+                      )}
                     </tbody>
                   </table>
                 </div>

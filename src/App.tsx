@@ -40,7 +40,7 @@ const DEFAULT_INPUTS: AppStateInputs = {
   wife: {
     name: 'Spouse',
     birthDate: '1964-01-01',
-    plannedRetirementAge: 65,
+    plannedRetirementAge: 67,
     targetSSClaimingAge: 67,
     estimatedPIA: 1500,
     activeSalary: 0,
@@ -63,7 +63,7 @@ const DEFAULT_INPUTS: AppStateInputs = {
   jurisdiction: {
     currentState: 'MD',
     targetState: 'FL',
-    relocationYear: 2032,
+    relocationYear: null,
   },
   growthAssumptions: {
     equityReturnRate: 0.07,
@@ -74,9 +74,10 @@ const DEFAULT_INPUTS: AppStateInputs = {
     taxableEquityPortion: 0.80,
     rothEquityPortion: 1.00,
     cashYieldRate: 0.035,
+    minCashReserveDollars: 100000,
   },
-  annualLivingExpenses: 120000,
-  annualRothConversion: 50000,
+  annualLivingExpenses: 100000,
+  annualRothConversion: 0,
   simulationStartYear: 2026,
   rothConversionStartYear: 2027,
   rothConversionEndYear: 2032,

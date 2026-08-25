@@ -142,75 +142,7 @@ export const DEFAULT_EXPENSE_CATEGORIES: string[] = [
   'Charities'
 ];
 
-export const DEFAULT_EXPENSE_ITEMS: ExpenseItemDefinition[] = [
-  // Housing / Utilities
-  { id: 'amenityFee', name: 'Amenity Fee', category: 'Housing', defaultFrequency: 12 },
-  { id: 'water', name: 'Water', category: 'Housing', defaultFrequency: 12 },
-  { id: 'sewer', name: 'Sewer', category: 'Housing', defaultFrequency: 12 },
-  { id: 'trash', name: 'Trash', category: 'Housing', defaultFrequency: 12 },
-  { id: 'electric', name: 'Electric', category: 'Housing', defaultFrequency: 12 },
-  { id: 'gas', name: 'Gas', category: 'Housing', defaultFrequency: 12 },
-  { id: 'internet', name: 'Internet', category: 'Housing', defaultFrequency: 12 },
-  { id: 'cableTV', name: 'Cable TV', category: 'Housing', defaultFrequency: 12 },
-  { id: 'propertyTaxes', name: 'Property Taxes', category: 'Housing', defaultFrequency: 1 },
-  { id: 'cddBond', name: 'CDD Bond', category: 'Housing', defaultFrequency: 1 },
-  { id: 'fireService', name: 'Fire Service', category: 'Housing', defaultFrequency: 1 },
-  { id: 'hoa', name: 'HOA', category: 'Housing', defaultFrequency: 12 },
-  { id: 'lawnCare', name: 'Lawn Care', category: 'Housing', defaultFrequency: 12 },
-  { id: 'pestControl', name: 'Pest Control', category: 'Housing', defaultFrequency: 12 },
-  { id: 'irrigation', name: 'Irrigation', category: 'Housing', defaultFrequency: 12 },
-  { id: 'termiteBond', name: 'Termite Bond', category: 'Housing', defaultFrequency: 1 },
-  { id: 'trailFees', name: 'Trail Fees', category: 'Housing', defaultFrequency: 12 },
-  { id: 'cellPhone', name: 'Cell Phone', category: 'Housing', defaultFrequency: 12 },
-
-  // Transportation
-  { id: 'autoGas', name: 'Auto gas', category: 'Transportation', defaultFrequency: 12 },
-  { id: 'autoOilChanges', name: 'Auto oil changes', category: 'Transportation', defaultFrequency: 1 },
-  { id: 'autoTires', name: 'Auto tires', category: 'Transportation', defaultFrequency: 1 },
-  { id: 'autoMaintenance', name: 'Auto maintenance', category: 'Transportation', defaultFrequency: 1 },
-  { id: 'autoInsurance', name: 'Auto Insurance', category: 'Transportation', defaultFrequency: 12 },
-  { id: 'golfCartGas', name: 'Golf cart gas', category: 'Transportation', defaultFrequency: 12 },
-  { id: 'golfCartOilChanges', name: 'Golf cart oil changes', category: 'Transportation', defaultFrequency: 1 },
-  { id: 'golfCartTires', name: 'Golf cart tires', category: 'Transportation', defaultFrequency: 1 },
-  { id: 'golfCartMaintenance', name: 'Golf cart maintenance', category: 'Transportation', defaultFrequency: 1 },
-  { id: 'golfCartInsurance', name: 'Golf cart insurance', category: 'Transportation', defaultFrequency: 12 },
-
-  // Living
-  { id: 'consumables', name: 'Consumables', category: 'Living', defaultFrequency: 12 },
-  { id: 'clothing', name: 'Clothing', category: 'Living', defaultFrequency: 12 },
-
-  // Insurance
-  { id: 'homeInsurance', name: 'Home Insurance', category: 'Insurance', defaultFrequency: 12 },
-  { id: 'homeMaintenance', name: 'Home Maintenance', category: 'Insurance', defaultFrequency: 12 },
-  { id: 'umbrellaInsurance', name: 'Umbrella Insurance', category: 'Insurance', defaultFrequency: 12 },
-
-  // Leisure
-  { id: 'diningOut', name: 'Dining Out', category: 'Leisure', defaultFrequency: 12 },
-  { id: 'amazonPrime', name: 'Amazon Prime', category: 'Leisure', defaultFrequency: 1 },
-  { id: 'golf', name: 'Golf', category: 'Leisure', defaultFrequency: 12 },
-  { id: 'theVillagesNetwork', name: 'The Villages Network', category: 'Leisure', defaultFrequency: 12 },
-  { id: 'travel', name: 'Travel', category: 'Leisure', defaultFrequency: 1 },
-  { id: 'woodshopMembership', name: 'Woodshop Membership', category: 'Leisure', defaultFrequency: 1 },
-
-  // Charities
-  { id: 'woundedWarrior', name: 'Wounded Warrior', category: 'Charities', defaultFrequency: 12 },
-  { id: 'tunnelsToTowers', name: 'Tunnels to Towers', category: 'Charities', defaultFrequency: 12 },
-  { id: 'stJude', name: 'St. Jude', category: 'Charities', defaultFrequency: 12 },
-  { id: 'tithe', name: 'Tithe', category: 'Charities', defaultFrequency: 12 },
-
-  // One-Time Setup Costs
-  { id: 'masterBedFurniture', name: 'Master bedroom furniture', category: 'One-Time Setup Costs', defaultFrequency: 1, isOneTime: true },
-  { id: 'masterBedCloset', name: 'Master bedroom closet organization system', category: 'One-Time Setup Costs', defaultFrequency: 1, isOneTime: true },
-  { id: 'livingRoomFurniture', name: 'Living room furniture', category: 'One-Time Setup Costs', defaultFrequency: 1, isOneTime: true },
-  { id: 'windowTreatments', name: 'Window treatments', category: 'One-Time Setup Costs', defaultFrequency: 1, isOneTime: true },
-  { id: 'areaRugs', name: 'Area rugs', category: 'One-Time Setup Costs', defaultFrequency: 1, isOneTime: true },
-  { id: 'lanaiFurnishings', name: 'Lanai furnishings', category: 'One-Time Setup Costs', defaultFrequency: 1, isOneTime: true },
-  { id: 'shippingExpenses', name: 'Shipping Expenses', category: 'One-Time Setup Costs', defaultFrequency: 1, isOneTime: true },
-  { id: 'storageExpenses', name: 'Storage Expenses', category: 'One-Time Setup Costs', defaultFrequency: 1, isOneTime: true },
-  { id: 'washer', name: 'Washer', category: 'One-Time Setup Costs', defaultFrequency: 1, isOneTime: true },
-  { id: 'dryer', name: 'Dryer', category: 'One-Time Setup Costs', defaultFrequency: 1, isOneTime: true },
-  { id: 'golfCartPurchase', name: 'Golf cart purchase', category: 'One-Time Setup Costs', defaultFrequency: 1, isOneTime: true }
-];
+export const DEFAULT_EXPENSE_ITEMS: ExpenseItemDefinition[] = [];
 
 export const DEFAULT_EXPENSE_CATALOG: ExpenseCatalog = {
   categories: [...DEFAULT_EXPENSE_CATEGORIES],
@@ -253,15 +185,15 @@ export const DEFAULT_DETAILED_EXPENSES: Record<string, number> = DEFAULT_EXPENSE
 export const DEFAULT_DETAILED_EXPENSES_STATE: DetailedExpensesState = {
   catalog: {
     categories: [...DEFAULT_EXPENSE_CATEGORIES],
-    items: [...DEFAULT_EXPENSE_ITEMS]
+    items: []
   },
   costs: {
-    MD: { ...DEFAULT_DETAILED_EXPENSES },
-    FL: { ...DEFAULT_DETAILED_EXPENSES }
+    MD: {},
+    FL: {}
   },
-  frequencies: { ...DEFAULT_EXPENSE_FREQUENCIES },
-  MD: { ...DEFAULT_DETAILED_EXPENSES },
-  FL: { ...DEFAULT_DETAILED_EXPENSES }
+  frequencies: {},
+  MD: {},
+  FL: {}
 };
 
 /**
@@ -279,18 +211,17 @@ export function normalizeDetailedExpenses(raw?: any): DetailedExpensesState {
     if (raw.FL && !costs.FL) costs.FL = { ...raw.FL };
     
     // Ensure both MD and FL objects exist
-    if (!costs.MD) costs.MD = { ...DEFAULT_DETAILED_EXPENSES };
-    if (!costs.FL) costs.FL = { ...DEFAULT_DETAILED_EXPENSES };
+    if (!costs.MD) costs.MD = {};
+    if (!costs.FL) costs.FL = {};
 
     const frequencies: Record<string, number> = {
-      ...DEFAULT_EXPENSE_FREQUENCIES,
       ...(raw.frequencies || {})
     };
 
     return {
       catalog: {
         categories: raw.catalog.categories.length > 0 ? [...raw.catalog.categories] : [...DEFAULT_EXPENSE_CATEGORIES],
-        items: raw.catalog.items.length > 0 ? [...raw.catalog.items] : [...DEFAULT_EXPENSE_ITEMS]
+        items: [...raw.catalog.items]
       },
       costs,
       frequencies,
@@ -304,20 +235,46 @@ export function normalizeDetailedExpenses(raw?: any): DetailedExpensesState {
   const legacyFL = raw.FL || {};
   const legacyFreqs = raw.frequencies || {};
 
+  const knownOneTimeKeys = new Set([
+    'masterBedFurniture', 'masterBedCloset', 'livingRoomFurniture', 'windowTreatments',
+    'areaRugs', 'lanaiFurnishings', 'shippingExpenses', 'storageExpenses', 'washer',
+    'dryer', 'golfCartPurchase'
+  ]);
+
+  const healthcareKeys = new Set([
+    'pre65MedicalPremium', 'pre65MedicalOOP', 'pre65DentalPremium', 'pre65DentalOOP',
+    'pre65VisionPremium', 'pre65VisionOOP', 'medicarePartBPremium', 'medicarePartDPremium',
+    'medicarePartDDeductibleCopays', 'supplementPremium', 'supplementOOP', 'post65HearingCare',
+    'post65DentalPremium', 'post65DentalOOP', 'post65VisionPremium', 'post65VisionOOP'
+  ]);
+
+  // Infer legacy items if legacy keys exist in raw.MD or raw.FL (excluding healthcare keys)
+  const legacyKeys = Array.from(new Set([...Object.keys(legacyMD), ...Object.keys(legacyFL)]))
+    .filter((key) => !healthcareKeys.has(key));
+  const legacyItems: ExpenseItemDefinition[] = legacyKeys.map((key) => {
+    const isOneTime = knownOneTimeKeys.has(key);
+    return {
+      id: key,
+      name: key.charAt(0).toUpperCase() + key.slice(1).replace(/([A-Z])/g, ' $1'),
+      category: isOneTime ? 'One-Time Setup Costs' : 'Living',
+      defaultFrequency: legacyFreqs[key] ?? 12,
+      isOneTime
+    };
+  });
+
   const costs: Record<string, Record<string, number>> = {
-    MD: { ...DEFAULT_DETAILED_EXPENSES, ...legacyMD },
-    FL: { ...DEFAULT_DETAILED_EXPENSES, ...legacyFL }
+    MD: { ...legacyMD },
+    FL: { ...legacyFL }
   };
 
   const frequencies: Record<string, number> = {
-    ...DEFAULT_EXPENSE_FREQUENCIES,
     ...legacyFreqs
   };
 
   return {
     catalog: {
       categories: [...DEFAULT_EXPENSE_CATEGORIES],
-      items: [...DEFAULT_EXPENSE_ITEMS]
+      items: legacyItems
     },
     costs,
     frequencies,
@@ -335,6 +292,7 @@ export interface GrowthAssumptions {
   taxableEquityPortion?: number;
   rothEquityPortion?: number;
   cashYieldRate?: number | null;
+  minCashReserveDollars?: number;
 }
 
 export interface CharitySettings {

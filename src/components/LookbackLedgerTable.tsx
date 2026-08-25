@@ -57,7 +57,7 @@ export const LookbackLedgerTable: React.FC<LookbackLedgerTableProps> = ({
       let currentTierIdx = 0;
       for (let i = tiers.length - 1; i >= 0; i--) {
         const prevTier = tiers[i - 1];
-        let prevLimit = prevTier ? (prevTier.limit === Infinity ? Infinity : prevTier.limit * cpiFactor) : 0;
+        const prevLimit = prevTier ? (prevTier.limit === Infinity ? Infinity : prevTier.limit * cpiFactor) : 0;
         if (magi > prevLimit) {
           currentTierIdx = i;
           break;
@@ -143,13 +143,13 @@ export const LookbackLedgerTable: React.FC<LookbackLedgerTableProps> = ({
               <th className="px-2.5 py-3">Traditional<br /><span className="text-[10px] text-slate-500 font-normal normal-case">IRA</span></th>
               <th className="px-2.5 py-3">Roth<br /><span className="text-[10px] text-slate-500 font-normal normal-case">(Tax-Free)</span></th>
               <th className="px-2.5 py-3">Total<br /><span className="text-[10px] text-slate-500 font-normal normal-case">Net Worth</span></th>
-              <th className="px-2.5 py-3">IRMAA Tier<br /><span className="text-[10px] text-slate-500 font-normal normal-case">(t+2 Lookback)</span></th>
+              <th className="px-2.5 py-3">IRMAA Tier<br /><span className="text-[10px] text-slate-500 font-normal normal-case">(t-2 Lookback)</span></th>
               <th className="px-2.5 py-3 text-right">Medicare<br /><span className="text-[10px] text-slate-500 font-normal normal-case">Surcharge</span></th>
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-800/40">
             {ledger.map((r, idx) => {
-              const affectedYear = r.year + 2;
+              const lookbackYear = r.year - 2;
               
               // Determine if this row is highlighted for crossing a cliff by < $5,000
               const isWarningRow = warnings.some((w) => w.year === r.year);
@@ -704,7 +704,7 @@ export const LookbackLedgerTable: React.FC<LookbackLedgerTableProps> = ({
                     >
                       Tier {r.surchargeTier}
                     </span>
-                    <span className="ml-1.5 font-mono text-[11px] text-slate-400">({affectedYear})</span>
+                    <span className="ml-1.5 font-mono text-[11px] text-slate-400">({lookbackYear} MAGI)</span>
 
                     {/* IRMAA Tier Reference Popup */}
                     {(() => {
@@ -756,7 +756,7 @@ export const LookbackLedgerTable: React.FC<LookbackLedgerTableProps> = ({
                             })}
                           </div>
                           <p className="text-[9px] text-slate-500 leading-relaxed border-t border-slate-800/40 pt-1.5 mt-2">
-                            MAGI limits inflated by CPI. Surcharges inflated by healthcare rate. Applied in {affectedYear} based on {r.year} MAGI.
+                            MAGI limits inflated by CPI. Surcharges inflated by healthcare rate. Applied in {r.year} based on {lookbackYear} MAGI ({formatCurrency(r.magiTwoYearsAgo)}{r.isSSA44Applied ? ' via SSA-44 reset' : ''}).
                           </p>
                         </div>
                       );

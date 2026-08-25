@@ -254,57 +254,69 @@ export const TaxableIncomeWorkspace: React.FC<TaxableIncomeWorkspaceProps> = ({
 
   // Chart datasets configuration
   const chartData = useMemo(() => {
+    const isDataPresent = (data: number[]) => data.some((v) => Math.abs(v) > 0.01);
+
+    const ssData = processedRows.map((r) => r.netSS);
+    const salaryData = processedRows.map((r) => r.netSalary);
+    const rmdsData = processedRows.map((r) => r.netRMDsDraws);
+    const investmentData = processedRows.map((r) => r.netInvestment);
+    const rothConvData = processedRows.map((r) => r.taxableRothConv);
+
+    const rawDatasets = [
+      isDataPresent(ssData) && {
+        label: 'Taxable Social Security',
+        data: ssData,
+        backgroundColor: 'rgba(59, 130, 246, 0.75)', // blue-500
+        stack: 'taxable',
+        order: 2,
+      },
+      isDataPresent(salaryData) && {
+        label: 'Taxable Active Salaries',
+        data: salaryData,
+        backgroundColor: 'rgba(139, 92, 246, 0.75)', // violet-500
+        stack: 'taxable',
+        order: 3,
+      },
+      isDataPresent(rmdsData) && {
+        label: 'Forced RMDs & Pre-Tax Draws',
+        data: rmdsData,
+        backgroundColor: 'rgba(245, 158, 11, 0.75)', // amber-500
+        stack: 'taxable',
+        order: 4,
+      },
+      isDataPresent(investmentData) && {
+        label: 'Taxable Dividends & Capital Gains',
+        data: investmentData,
+        backgroundColor: 'rgba(236, 72, 153, 0.75)', // pink-500
+        stack: 'taxable',
+        order: 5,
+      },
+      isDataPresent(rothConvData) && {
+        label: 'Intentional Roth Conversions',
+        data: rothConvData,
+        backgroundColor: 'rgba(16, 185, 129, 0.9)', // emerald-500
+        stack: 'taxable',
+        order: 6,
+      },
+      {
+        type: 'line' as const,
+        label: benchmarkLineData.label,
+        data: benchmarkLineData.data,
+        borderColor: benchmarkLineData.color,
+        borderWidth: 2.5,
+        borderDash: [6, 4],
+        fill: false,
+        pointRadius: 2,
+        pointHoverRadius: 5,
+        order: 1,
+      },
+    ];
+
+    const datasets = rawDatasets.filter(Boolean) as any[];
+
     return {
       labels: years,
-      datasets: [
-        {
-          label: 'Taxable Social Security',
-          data: processedRows.map((r) => r.netSS),
-          backgroundColor: 'rgba(59, 130, 246, 0.75)', // blue-500
-          stack: 'taxable',
-          order: 2,
-        },
-        {
-          label: 'Taxable Active Salaries',
-          data: processedRows.map((r) => r.netSalary),
-          backgroundColor: 'rgba(139, 92, 246, 0.75)', // violet-500
-          stack: 'taxable',
-          order: 3,
-        },
-        {
-          label: 'Forced RMDs & Pre-Tax Draws',
-          data: processedRows.map((r) => r.netRMDsDraws),
-          backgroundColor: 'rgba(245, 158, 11, 0.75)', // amber-500
-          stack: 'taxable',
-          order: 4,
-        },
-        {
-          label: 'Taxable Dividends & Capital Gains',
-          data: processedRows.map((r) => r.netInvestment),
-          backgroundColor: 'rgba(236, 72, 153, 0.75)', // pink-500
-          stack: 'taxable',
-          order: 5,
-        },
-        {
-          label: 'Intentional Roth Conversions',
-          data: processedRows.map((r) => r.taxableRothConv),
-          backgroundColor: 'rgba(16, 185, 129, 0.9)', // emerald-500
-          stack: 'taxable',
-          order: 6,
-        },
-        {
-          type: 'line' as const,
-          label: benchmarkLineData.label,
-          data: benchmarkLineData.data,
-          borderColor: benchmarkLineData.color,
-          borderWidth: 2.5,
-          borderDash: [6, 4],
-          fill: false,
-          pointRadius: 2,
-          pointHoverRadius: 5,
-          order: 1,
-        },
-      ],
+      datasets,
     };
   }, [years, processedRows, benchmarkLineData]);
 
@@ -676,7 +688,6 @@ export const TaxableIncomeWorkspace: React.FC<TaxableIncomeWorkspaceProps> = ({
             <div className="flex items-center justify-between w-full">
               <div className="flex items-center gap-3 bg-slate-950/80 px-3 py-1.5 rounded-xl border border-slate-800 text-[11px] font-mono text-slate-300">
                 <span className="text-[10px] font-sans text-slate-400 font-bold uppercase tracking-wider">Annual Flat Amount:</span>
-                <span className="text-amber-400 font-black font-mono text-xs">{formatCurrency(inputs.annualRothConversion)}/yr</span>
                 <input
                   type="range"
                   min="0"
@@ -692,6 +703,9 @@ export const TaxableIncomeWorkspace: React.FC<TaxableIncomeWorkspaceProps> = ({
                   className="w-48 h-1.5 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-amber-500"
                   title="Annual Flat Conversion Amount"
                 />
+                <span className="text-amber-400 font-black font-mono text-xs inline-block min-w-[90px] text-right">
+                  {formatCurrency(inputs.annualRothConversion)}/yr
+                </span>
               </div>
               <span className="text-[10px] text-slate-500 font-mono">
                 Converts a fixed dollar amount each year regardless of bracket headroom

@@ -673,6 +673,7 @@ describe('runRetirementSimulation', () => {
 
   it('should draw from Cash Assets first and grow remaining cash at the fixed income rate', () => {
     const inputs = getMockInputs();
+    inputs.growthAssumptions.minCashReserveDollars = 0; // Disable min cash reserve floor for legacy full drawdown test
     inputs.isSingleFiler = true;
     inputs.you.birthDate = '1960-01-01';
     inputs.you.plannedRetirementAge = 60; // retired
@@ -694,6 +695,30 @@ describe('runRetirementSimulation', () => {
     expect(row2026!.endYourCash).toBe(0);
 
     // Remaining deficit is drawn from Taxable Brokerage.
+    expect(row2026!.drawdownTaxable).toBeGreaterThan(0);
+  });
+
+  it('should protect minimum cash reserve floor based on configured minCashReserveDollars', () => {
+    const inputs = getMockInputs();
+    inputs.growthAssumptions.minCashReserveDollars = 100000; // $100,000 cash reserve floor in today's dollars
+    inputs.isSingleFiler = true;
+    inputs.you.birthDate = '1960-01-01';
+    inputs.you.plannedRetirementAge = 60;
+    inputs.annualLivingExpenses = 100000;
+
+    // Set starting balances
+    inputs.portfolio.yourCash = 100000;
+    inputs.portfolio.yourTaxableBrokerage = 200000;
+    inputs.portfolio.yourTaxableBasis = 150000;
+    inputs.portfolio.yourPreTaxIRA = 0;
+    inputs.portfolio.yourRothIRA = 0;
+
+    const results = runRetirementSimulation(inputs);
+    const row2026 = results.find(r => r.year === 2026);
+    expect(row2026).toBeDefined();
+
+    // Cash reserve floor (100k) is protected: end cash remains at or above the 100k target floor
+    expect(row2026!.endYourCash).toBeGreaterThanOrEqual(100000);
     expect(row2026!.drawdownTaxable).toBeGreaterThan(0);
   });
 });

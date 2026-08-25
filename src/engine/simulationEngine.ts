@@ -1,4 +1,4 @@
-import { AppStateInputs, SimulationResultRow, LockedReturnSequence, DEFAULT_EXPENSE_ITEMS, getSimulationStartYear, BASE_QCD_LIMIT } from '../types';
+import { AppStateInputs, SimulationResultRow, LockedReturnSequence, getSimulationStartYear, BASE_QCD_LIMIT, normalizeDetailedExpenses } from '../types';
 import {
   BASE_MEDICARE_PART_B,
   BASE_MEDICARE_PART_D,
@@ -374,7 +374,7 @@ export function runRetirementSimulation(
     const yourAge = year - yourBirthYear;
     const wifeAge = year - wifeBirthYear;
     const youRetireAge = inputs.you.plannedRetirementAge ?? 67;
-    const wifeRetireAge = inputs.isSingleFiler ? 0 : (inputs.wife.plannedRetirementAge ?? 65);
+    const wifeRetireAge = inputs.isSingleFiler ? 0 : (inputs.wife.plannedRetirementAge ?? 67);
 
     // Event month indexes relative to 2026 start
     // If plannedRetirementMonth is set (1-12), use it as the within-year month offset (0-indexed).
@@ -575,13 +575,13 @@ export function runRetirementSimulation(
       }
     }
 
-    let baseLivingExpensesAnnual = inputs.annualLivingExpenses ?? 120000;
+    let baseLivingExpensesAnnual = inputs.annualLivingExpenses ?? 100000;
     if (inputs.useDetailedExpenses && inputs.detailedExpenses) {
+      const de = normalizeDetailedExpenses(inputs.detailedExpenses);
+      const items = de.catalog?.items ?? [];
       let detailedSum = 0;
-      const de = inputs.detailedExpenses;
-      const stateCosts = de.costs?.[activeState] ?? (de as any)[activeState];
+      const stateCosts = de.costs?.[activeState];
       const freqs = de.frequencies || {};
-      const items = de.catalog?.items ?? DEFAULT_EXPENSE_ITEMS;
       if (stateCosts) {
         for (const item of items) {
           if (item.isOneTime) continue;
@@ -592,6 +592,9 @@ export function runRetirementSimulation(
       }
       baseLivingExpensesAnnual = detailedSum;
     }
+
+    const baseMinCashDollars = inputs.growthAssumptions.minCashReserveDollars ?? inputs.annualLivingExpenses ?? 100000;
+    const minCashReserveTarget = Math.max(0, baseMinCashDollars * cpiFactor);
 
     // Declaring yearly loop scope variables
     let targetConversion = 0;
@@ -638,7 +641,7 @@ export function runRetirementSimulation(
     // of available funds — which prevents over-converting in years with heavy drawdowns.
     if (targetConversion > 0) {
       const totalTaxableBrokerage = yourTaxable + (wifeDeceased ? 0 : wifeTaxable);
-      let estLiving = baseLivingExpensesAnnual * cpiFactor;
+      const estLiving = baseLivingExpensesAnnual * cpiFactor;
       const totalTaxableLeft = Math.max(0, totalTaxableBrokerage - estLiving);
       const maxSafeConversion = totalTaxableLeft * 4;
       targetConversion = Math.min(targetConversion, maxSafeConversion);
@@ -731,11 +734,11 @@ export function runRetirementSimulation(
 
     let oneTimeCosts = 0;
     if (inputs.useDetailedExpenses && inputs.detailedExpenses) {
-      const de = inputs.detailedExpenses;
-      const items = de.catalog?.items ?? DEFAULT_EXPENSE_ITEMS;
+      const de = normalizeDetailedExpenses(inputs.detailedExpenses);
+      const items = de.catalog?.items ?? [];
       const oneTimeItems = items.filter((i) => i.isOneTime);
-      const curCosts = de.costs?.[inputs.jurisdiction.currentState] ?? (de as any)[inputs.jurisdiction.currentState];
-      const tgtCosts = de.costs?.[inputs.jurisdiction.targetState] ?? (de as any)[inputs.jurisdiction.targetState];
+      const curCosts = de.costs?.[inputs.jurisdiction.currentState];
+      const tgtCosts = de.costs?.[inputs.jurisdiction.targetState];
 
       if (year === simStartYear && inputs.jurisdiction.relocationYear !== simStartYear) {
         if (curCosts) {
@@ -934,19 +937,25 @@ export function runRetirementSimulation(
           deficit -= bufferDraw;
         }
 
-        // Step 1: Draw from pre-existing Cash savings only if annual buffer is exhausted
+        // Step 1: Draw from pre-existing Cash savings above the configured minimum cash reserve target floor
         if (deficit > 0) {
-          if (!youDeceased && yourCash > 0) {
-            const draw = Math.min(deficit, yourCash);
-            annualDrawdownCash += draw;
-            deficit -= draw;
-            yourCash -= draw;
-          }
-          if (deficit > 0 && wifeCash > 0) {
-            const draw = Math.min(deficit, wifeCash);
-            annualDrawdownCash += draw;
-            deficit -= draw;
-            wifeCash -= draw;
+          const currentTotalCash = (youDeceased ? 0 : yourCash) + (wifeDeceased || inputs.isSingleFiler ? 0 : wifeCash);
+          const availableCashForDraw = Math.max(0, currentTotalCash - minCashReserveTarget);
+
+          if (availableCashForDraw > 0) {
+            if (!youDeceased && yourCash > 0) {
+              const draw = Math.min(deficit, availableCashForDraw, yourCash);
+              annualDrawdownCash += draw;
+              deficit -= draw;
+              yourCash -= draw;
+            }
+            if (deficit > 0 && !wifeDeceased && wifeCash > 0) {
+              const remAvail = Math.max(0, (yourCash + wifeCash) - minCashReserveTarget);
+              const draw = Math.min(deficit, remAvail, wifeCash);
+              annualDrawdownCash += draw;
+              deficit -= draw;
+              wifeCash -= draw;
+            }
           }
         }
 
@@ -1003,6 +1012,22 @@ export function runRetirementSimulation(
             annualDrawdownRoth += draw;
             deficit -= draw;
             wifeRoth -= draw;
+          }
+        }
+
+        // Step 5: Emergency Cash Fallback (if Brokerage, Pre-Tax, and Roth are exhausted, draw remaining core cash reserve)
+        if (deficit > 0) {
+          if (!youDeceased && yourCash > 0) {
+            const draw = Math.min(deficit, yourCash);
+            annualDrawdownCash += draw;
+            deficit -= draw;
+            yourCash -= draw;
+          }
+          if (deficit > 0 && wifeCash > 0) {
+            const draw = Math.min(deficit, wifeCash);
+            annualDrawdownCash += draw;
+            deficit -= draw;
+            wifeCash -= draw;
           }
         }
       }
@@ -1341,7 +1366,7 @@ export function runRetirementSimulation(
       const decOutflows = decLiving + nonQcdTithe + decPreMed + decMed + (decMonthIdx >= yourMedicareMonthIdx && !isYouWorkingDec ? yourPartBSurcharge + yourPartDSurcharge : 0) + (!wifeDeceased && decMonthIdx >= wifeMedicareMonthIdx && !isWifeWorkingDec ? wifePartBSurcharge + wifePartDSurcharge : 0) + netDecTaxDue;
       const decInflows = (isYouWorkingDec ? monthlyYourNetSalary : 0) + (isWifeWorkingDec ? monthlyWifeNetSalary : 0) + monthlyYourSSDec + monthlyWifeSSDec + decDistributeYourRMD + decDistributeWifeRMD + monthlyYourDividendsDec + monthlyWifeDividendsDec;
 
-      let decNetCash = decInflows - decOutflows;
+      const decNetCash = decInflows - decOutflows;
       let decBuffer = annualCashBuffer;
 
       if (decNetCash > 0) {
@@ -1356,19 +1381,25 @@ export function runRetirementSimulation(
           decDeficit -= bufferDraw;
         }
 
-        // Step 1: Cash second
+        // Step 1: Cash second (above minCashReserveTarget floor)
         if (decDeficit > 0) {
-          if (!youDeceased && decYourCash > 0) {
-            const draw = Math.min(decDeficit, decYourCash);
-            drawdownCashDec += draw;
-            decDeficit -= draw;
-            decYourCash -= draw;
-          }
-          if (decDeficit > 0 && decWifeCash > 0) {
-            const draw = Math.min(decDeficit, decWifeCash);
-            drawdownCashDec += draw;
-            decDeficit -= draw;
-            decWifeCash -= draw;
+          const decCurrentTotalCash = (youDeceased ? 0 : decYourCash) + (wifeDeceased || inputs.isSingleFiler ? 0 : decWifeCash);
+          const decAvailableCashForDraw = Math.max(0, decCurrentTotalCash - minCashReserveTarget);
+
+          if (decAvailableCashForDraw > 0) {
+            if (!youDeceased && decYourCash > 0) {
+              const draw = Math.min(decDeficit, decAvailableCashForDraw, decYourCash);
+              drawdownCashDec += draw;
+              decDeficit -= draw;
+              decYourCash -= draw;
+            }
+            if (decDeficit > 0 && !wifeDeceased && decWifeCash > 0) {
+              const remAvail = Math.max(0, (decYourCash + decWifeCash) - minCashReserveTarget);
+              const draw = Math.min(decDeficit, remAvail, decWifeCash);
+              drawdownCashDec += draw;
+              decDeficit -= draw;
+              decWifeCash -= draw;
+            }
           }
         }
 
@@ -1425,6 +1456,22 @@ export function runRetirementSimulation(
             drawdownRothDec += draw;
             decDeficit -= draw;
             decWifeRoth -= draw;
+          }
+        }
+
+        // Step 5: Emergency Cash Fallback in December
+        if (decDeficit > 0) {
+          if (!youDeceased && decYourCash > 0) {
+            const draw = Math.min(decDeficit, decYourCash);
+            drawdownCashDec += draw;
+            decDeficit -= draw;
+            decYourCash -= draw;
+          }
+          if (decDeficit > 0 && decWifeCash > 0) {
+            const draw = Math.min(decDeficit, decWifeCash);
+            drawdownCashDec += draw;
+            decDeficit -= draw;
+            decWifeCash -= draw;
           }
         }
       }

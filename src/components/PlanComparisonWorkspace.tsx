@@ -11,7 +11,14 @@ import {
   TrendingDown, 
   Sparkles, 
   ArrowRightLeft, 
-  Info
+  Info,
+  X,
+  Shield,
+  DollarSign,
+  FileText,
+  MapPin,
+  Calendar,
+  Zap
 } from 'lucide-react';
 
 interface PlanComparisonWorkspaceProps {
@@ -42,6 +49,7 @@ export const PlanComparisonWorkspace: React.FC<PlanComparisonWorkspaceProps> = (
   const [newPlanName, setNewPlanName] = useState('');
   const [notification, setNotification] = useState<{ message: string; type: 'success' | 'info' | 'error' } | null>(null);
   const [showClearConfirm, setShowClearConfirm] = useState(false);
+  const [inspectingPlan, setInspectingPlan] = useState<SavedPlan | null>(null);
   const simStartYear = getSimulationStartYear(inputs);
 
   const endingAge = useMemo(() => {
@@ -70,6 +78,210 @@ export const PlanComparisonWorkspace: React.FC<PlanComparisonWorkspaceProps> = (
     if (isNaN(val) || !isFinite(val)) return '0.0%';
     const sign = val > 0 ? '+' : '';
     return `${sign}${(val * 100).toFixed(1)}%`;
+  };
+
+  const renderInspectModal = () => {
+    if (!inspectingPlan) return null;
+    const pInputs = inspectingPlan.inputs;
+    const pYou = pInputs.you;
+    const pWife = pInputs.wife;
+    const pPort = pInputs.portfolio;
+    const pGrowth = pInputs.growthAssumptions;
+    const pJuris = pInputs.jurisdiction;
+
+    const totalStartingPortfolio = 
+      (pPort.yourPreTaxIRA || 0) +
+      (pPort.yourRothIRA || 0) +
+      (pPort.yourTaxableBrokerage || 0) +
+      (pPort.yourCash || 0) +
+      (pInputs.isSingleFiler ? 0 : (
+        (pPort.wifePreTaxIRA || 0) +
+        (pPort.wifeRothIRA || 0) +
+        (pPort.wifeTaxableBrokerage || 0) +
+        (pPort.wifeCash || 0)
+      ));
+
+    const rothStrategyText = pInputs.rothConversionStrategy === 'fill-to-target'
+      ? `Fill-to-Target Bracket (${formatCurrency(pInputs.rothConversionTargetValue ?? 0)})`
+      : pInputs.annualRothConversion > 0
+        ? `Flat Annual Conversion (${formatCurrency(pInputs.annualRothConversion)}/yr)`
+        : `No Conversion ($0/yr)`;
+
+    const relocationText = pJuris.relocationYear
+      ? `Relocating from ${pJuris.currentState} to ${pJuris.targetState} in ${pJuris.relocationYear}`
+      : `Staying in ${pJuris.currentState} (No Relocation)`;
+
+    return (
+      <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-md transition-all">
+        <div className="w-full max-w-3xl bg-slate-900 border border-slate-800 rounded-2xl shadow-2xl overflow-hidden glass-panel flex flex-col max-h-[90vh]">
+          {/* Modal Header */}
+          <div className="p-5 border-b border-slate-800 flex justify-between items-center bg-slate-900/80">
+            <div>
+              <div className="flex items-center gap-2">
+                <FileText className="w-5 h-5 text-emerald-400" />
+                <h3 className="text-base font-bold text-slate-100">{inspectingPlan.name}</h3>
+                <span className="px-2 py-0.5 text-[10px] font-bold rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 uppercase">
+                  Scenario Details
+                </span>
+              </div>
+              <p className="text-xs text-slate-400 mt-0.5">
+                Saved on {inspectingPlan.createdAt}
+              </p>
+            </div>
+            <button
+              onClick={() => setInspectingPlan(null)}
+              className="p-1.5 rounded-lg bg-slate-800/80 text-slate-400 hover:text-slate-200 hover:bg-slate-700 transition-colors cursor-pointer"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+
+          {/* Modal Body - Scrollable content */}
+          <div className="p-6 space-y-6 overflow-y-auto custom-scrollbar text-xs">
+            {/* Section 1: Demographics & Retirement Timelines */}
+            <div className="space-y-2">
+              <h4 className="font-bold text-slate-300 uppercase tracking-wider text-[11px] flex items-center gap-1.5">
+                <Calendar className="w-3.5 h-3.5 text-blue-400" /> Demographics & Timelines
+              </h4>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 bg-slate-950/50 border border-slate-800/60 p-3.5 rounded-xl">
+                <div>
+                  <span className="font-bold text-slate-200 block">{pYou.name || 'Primary Filer'}</span>
+                  <span className="text-slate-400 block mt-0.5">
+                    Birth: <strong className="text-slate-300">{pYou.birthDate || 'N/A'}</strong> | Retire: <strong className="text-emerald-400">Age {pYou.plannedRetirementAge ?? 67}</strong>
+                  </span>
+                  <span className="text-slate-400 block mt-0.5">
+                    SS Claiming: <strong className="text-slate-300">Age {pYou.targetSSClaimingAge ?? 67}</strong> (${formatCurrency(pYou.estimatedPIA ?? 0)}/mo PIA)
+                  </span>
+                  <span className="text-slate-400 block mt-0.5">
+                    Active Salary: <strong className="text-slate-300">{formatCurrency(pYou.activeSalary ?? 0)}/yr</strong>
+                  </span>
+                </div>
+                {!pInputs.isSingleFiler ? (
+                  <div>
+                    <span className="font-bold text-slate-200 block">{pWife.name || 'Spouse'}</span>
+                    <span className="text-slate-400 block mt-0.5">
+                      Birth: <strong className="text-slate-300">{pWife.birthDate || 'N/A'}</strong> | Retire: <strong className="text-emerald-400">Age {pWife.plannedRetirementAge ?? 67}</strong>
+                    </span>
+                    <span className="text-slate-400 block mt-0.5">
+                      SS Claiming: <strong className="text-slate-300">Age {pWife.targetSSClaimingAge ?? 67}</strong> (${formatCurrency(pWife.estimatedPIA ?? 0)}/mo PIA)
+                    </span>
+                    <span className="text-slate-400 block mt-0.5">
+                      Active Salary: <strong className="text-slate-300">{formatCurrency(pWife.activeSalary ?? 0)}/yr</strong>
+                    </span>
+                  </div>
+                ) : (
+                  <div className="flex items-center text-slate-500 italic">
+                    Single Filing Status
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Section 2: Portfolio Assets */}
+            <div className="space-y-2">
+              <h4 className="font-bold text-slate-300 uppercase tracking-wider text-[11px] flex items-center gap-1.5">
+                <DollarSign className="w-3.5 h-3.5 text-emerald-400" /> Starting Portfolio Balances ({formatCurrency(totalStartingPortfolio)})
+              </h4>
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
+                <div className="bg-slate-950/50 border border-slate-800/60 p-2.5 rounded-xl space-y-1">
+                  <span className="text-[10px] text-slate-400 font-semibold block">Pre-Tax IRA/401(k)</span>
+                  <span className="font-mono font-bold text-amber-400 block">{formatCurrency((pPort.yourPreTaxIRA || 0) + (pInputs.isSingleFiler ? 0 : (pPort.wifePreTaxIRA || 0)))}</span>
+                </div>
+                <div className="bg-slate-950/50 border border-slate-800/60 p-2.5 rounded-xl space-y-1">
+                  <span className="text-[10px] text-slate-400 font-semibold block">Roth IRA</span>
+                  <span className="font-mono font-bold text-emerald-400 block">{formatCurrency((pPort.yourRothIRA || 0) + (pInputs.isSingleFiler ? 0 : (pPort.wifeRothIRA || 0)))}</span>
+                </div>
+                <div className="bg-slate-950/50 border border-slate-800/60 p-2.5 rounded-xl space-y-1">
+                  <span className="text-[10px] text-slate-400 font-semibold block">Taxable Brokerage</span>
+                  <span className="font-mono font-bold text-sky-400 block">{formatCurrency((pPort.yourTaxableBrokerage || 0) + (pInputs.isSingleFiler ? 0 : (pPort.wifeTaxableBrokerage || 0)))}</span>
+                </div>
+                <div className="bg-slate-950/50 border border-slate-800/60 p-2.5 rounded-xl space-y-1">
+                  <span className="text-[10px] text-slate-400 font-semibold block">Cash Reserves</span>
+                  <span className="font-mono font-bold text-violet-400 block">{formatCurrency((pPort.yourCash || 0) + (pInputs.isSingleFiler ? 0 : (pPort.wifeCash || 0)))}</span>
+                </div>
+              </div>
+            </div>
+
+            {/* Section 3: Roth Conversion Strategy & Jurisdiction */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div className="space-y-2">
+                <h4 className="font-bold text-slate-300 uppercase tracking-wider text-[11px] flex items-center gap-1.5">
+                  <Zap className="w-3.5 h-3.5 text-amber-400" /> Roth Conversion Strategy
+                </h4>
+                <div className="bg-slate-950/50 border border-slate-800/60 p-3 rounded-xl space-y-1">
+                  <span className="font-bold text-slate-200 block">{rothStrategyText}</span>
+                  <span className="text-slate-400 block text-[11px]">
+                    Conversion Window: <strong className="text-slate-300">{pInputs.rothConversionStartYear} – {pInputs.rothConversionEndYear}</strong>
+                  </span>
+                </div>
+              </div>
+
+              <div className="space-y-2">
+                <h4 className="font-bold text-slate-300 uppercase tracking-wider text-[11px] flex items-center gap-1.5">
+                  <MapPin className="w-3.5 h-3.5 text-rose-400" /> Living Expenses & State
+                </h4>
+                <div className="bg-slate-950/50 border border-slate-800/60 p-3 rounded-xl space-y-1">
+                  <span className="font-bold text-slate-200 block">
+                    Budget: {formatCurrency(pInputs.annualLivingExpenses ?? 100000)}/yr {pInputs.useDetailedExpenses ? '(Detailed Catalog Active)' : '(Flat Budget)'}
+                  </span>
+                  <span className="text-slate-400 block text-[11px]">{relocationText}</span>
+                </div>
+              </div>
+            </div>
+
+            {/* Section 4: Economic Assumptions */}
+            <div className="space-y-2">
+              <h4 className="font-bold text-slate-300 uppercase tracking-wider text-[11px] flex items-center gap-1.5">
+                <Shield className="w-3.5 h-3.5 text-sky-400" /> Economic & Investment Assumptions
+              </h4>
+              <div className="grid grid-cols-2 sm:grid-cols-5 gap-2 bg-slate-950/50 border border-slate-800/60 p-3 rounded-xl text-[11px]">
+                <div>
+                  <span className="text-slate-400 block">Equity Return:</span>
+                  <strong className="text-emerald-400 font-mono">{(pGrowth.equityReturnRate * 100).toFixed(1)}%</strong>
+                </div>
+                <div>
+                  <span className="text-slate-400 block">Fixed Income:</span>
+                  <strong className="text-sky-400 font-mono">{(pGrowth.fixedIncomeReturnRate * 100).toFixed(1)}%</strong>
+                </div>
+                <div>
+                  <span className="text-slate-400 block">CPI Inflation:</span>
+                  <strong className="text-amber-400 font-mono">{(pGrowth.cpiInflationRate * 100).toFixed(1)}%</strong>
+                </div>
+                <div>
+                  <span className="text-slate-400 block">Healthcare Infl:</span>
+                  <strong className="text-rose-400 font-mono">{(pGrowth.healthcareInflationRate * 100).toFixed(1)}%</strong>
+                </div>
+                <div>
+                  <span className="text-slate-400 block">Min Cash Reserve:</span>
+                  <strong className="text-emerald-400 font-mono">{formatCurrency(pGrowth.minCashReserveDollars ?? 100000)}</strong>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Modal Footer */}
+          <div className="p-4 border-t border-slate-800 flex justify-between items-center bg-slate-900/80">
+            <button
+              onClick={() => setInspectingPlan(null)}
+              className="px-4 py-2 text-xs font-semibold text-slate-400 hover:text-slate-200 bg-slate-800/60 hover:bg-slate-800 rounded-xl transition-all cursor-pointer"
+            >
+              Close
+            </button>
+
+            <button
+              onClick={() => {
+                handleLoadPlan(inspectingPlan);
+                setInspectingPlan(null);
+              }}
+              className="px-5 py-2 text-xs font-bold text-slate-950 bg-emerald-400 hover:bg-emerald-300 rounded-xl transition-all shadow cursor-pointer flex items-center gap-1.5"
+            >
+              <Play className="w-3.5 h-3.5 fill-current" />
+              Load Scenario Into Workspace
+            </button>
+          </div>
+        </div>
+      </div>
+    );
   };
 
   // 1. Plan Saving Action
@@ -330,6 +542,7 @@ export const PlanComparisonWorkspace: React.FC<PlanComparisonWorkspaceProps> = (
 
   return (
     <div className="space-y-3">
+      {renderInspectModal()}
       {/* Notifications bar */}
       {notification && (
         <div className={`fixed top-4 right-4 z-50 flex items-center gap-2 px-4 py-3 rounded-xl border shadow-lg backdrop-blur-md transition-all duration-300 animate-slide-in ${
@@ -445,10 +658,12 @@ export const PlanComparisonWorkspace: React.FC<PlanComparisonWorkspaceProps> = (
                   const isB = selectedPlanBId === plan.id;
                   
                   // Compute details
-                  const cStrategy = plan.inputs.rothConversionStrategy === 'fill-to-target' ? 'Fill' : 'Flat';
-                  const cAmount = plan.inputs.rothConversionStrategy === 'fill-to-target'
-                    ? formatCurrency(plan.inputs.rothConversionTargetValue ?? 0)
-                    : formatCurrency(plan.inputs.annualRothConversion);
+                  const rothSummaryBadge = plan.inputs.rothConversionStrategy === 'fill-to-target'
+                    ? `Roth Conv: Fill (${formatCurrency(plan.inputs.rothConversionTargetValue ?? 0)})`
+                    : plan.inputs.annualRothConversion > 0
+                      ? `Roth Conv: Flat (${formatCurrency(plan.inputs.annualRothConversion)})`
+                      : `Roth Conv: None ($0)`;
+
                   const isFL = plan.inputs.jurisdiction.relocationYear 
                     ? `Move to FL (${plan.inputs.jurisdiction.relocationYear})` 
                     : `${plan.inputs.jurisdiction.currentState}`;
@@ -472,6 +687,13 @@ export const PlanComparisonWorkspace: React.FC<PlanComparisonWorkspaceProps> = (
                         
                         <div className="flex items-center gap-1 opacity-80 group-hover:opacity-100 transition-opacity">
                           <button
+                            onClick={() => setInspectingPlan(plan)}
+                            title="View full scenario ingredients & config details"
+                            className="p-1 rounded bg-slate-800/80 hover:bg-slate-700 text-slate-300 hover:text-slate-100 transition-colors"
+                          >
+                            <Info className="w-3.5 h-3.5" />
+                          </button>
+                          <button
                             onClick={() => handleLoadPlan(plan)}
                             title="Load these inputs into sidebar"
                             className="p-1 rounded bg-slate-800/80 hover:bg-slate-700 text-slate-300 hover:text-slate-100 transition-colors"
@@ -494,7 +716,7 @@ export const PlanComparisonWorkspace: React.FC<PlanComparisonWorkspaceProps> = (
                           {isFL}
                         </span>
                         <span className="bg-slate-800/80 text-slate-300 px-2 py-0.5 rounded-md">
-                          {cStrategy}: {cAmount}
+                          {rothSummaryBadge}
                         </span>
                         <span className="bg-slate-800/80 text-slate-300 px-2 py-0.5 rounded-md">
                           Claim: {plan.inputs.you.targetSSClaimingAge}/{plan.inputs.wife.targetSSClaimingAge}
@@ -615,7 +837,7 @@ export const PlanComparisonWorkspace: React.FC<PlanComparisonWorkspaceProps> = (
                         // Favorable vs Unfavorable Logic
                         // Favorable: Taxes decrease OR ending net estate increases.
                         let isFavorable = false;
-                        let isZero = Math.abs(delta) < 0.01;
+                        const isZero = Math.abs(delta) < 0.01;
                         
                         if (!isZero) {
                           if (row.lowerIsBetter) {

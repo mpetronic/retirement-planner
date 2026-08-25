@@ -135,66 +135,73 @@ export const BracketMapChart: React.FC<BracketMapChartProps> = ({
   }, [selectedQuickFill, ledger, simulateSurvivor, inputs]);
 
   const chartData = useMemo(() => {
-    const datasets: any[] = [
-      {
-        label: 'Social Security',
-        data: ssIncomes,
-        backgroundColor: 'rgba(59, 130, 246, 0.65)', // blue-500 @ 65% opacity
-        stack: 'income',
-        order: 1,
-        pointStyle: 'rect',
-      },
-      {
-        label: 'Active Salaries',
-        data: activeSalaries,
-        backgroundColor: 'rgba(139, 92, 246, 0.65)', // violet-500 @ 65% opacity
-        stack: 'income',
-        order: 2,
-        pointStyle: 'rect',
-      },
-      {
-        label: 'Forced RMDs',
-        data: rmds,
-        backgroundColor: 'rgba(245, 158, 11, 0.65)', // amber-500 @ 65% opacity
-        stack: 'income',
-        order: 3,
-        pointStyle: 'rect',
-      },
-      {
-        label: 'Taxable Draws',
-        data: ledger.map((r) => r.drawdownTaxable),
-        backgroundColor: 'rgba(239, 68, 68, 0.7)', // red-500 representing taxable brokerage liquidations
-        stack: 'income',
-        order: 4,
-        pointStyle: 'rect',
-      },
-      {
-        label: 'Pre-Tax Draws',
-        data: ledger.map((r) => r.drawdownPreTax),
-        backgroundColor: 'rgba(217, 70, 239, 0.7)', // fuchsia-500 representing IRA ordinary income liquidations
-        stack: 'income',
-        order: 5,
-        pointStyle: 'rect',
-      },
-      {
-        label: 'Roth Draws (Tax-Free)',
-        data: ledger.map((r) => r.drawdownRoth),
-        backgroundColor: 'rgba(52, 211, 153, 0.75)', // emerald-400 representing tax-free Roth draws
-        stack: 'income', // stacked with all other cash flows in a single bar
-        order: 6,
-        pointStyle: 'rect',
-      },
-      {
+    const isDataPresent = (data: number[]) => data.some((v) => Math.abs(v) > 0.01);
+
+    const taxableDraws = ledger.map((r) => r.drawdownTaxable);
+    const preTaxDraws = ledger.map((r) => r.drawdownPreTax);
+    const rothDraws = ledger.map((r) => r.drawdownRoth);
+    const cashDraws = ledger.map((r) => r.drawdownCash);
+
+    const rawDatasets = [
+      isDataPresent(rothConversions) && {
         label: 'Roth Conversions',
         data: rothConversions,
         backgroundColor: 'rgba(6, 95, 70, 0.95)', // deeper dark emerald green (emerald-800)
         stack: 'income',
+        order: 1,
+        pointStyle: 'rect',
+      },
+      isDataPresent(ssIncomes) && {
+        label: 'Social Security',
+        data: ssIncomes,
+        backgroundColor: 'rgba(59, 130, 246, 0.65)', // blue-500 @ 65% opacity
+        stack: 'income',
+        order: 2,
+        pointStyle: 'rect',
+      },
+      isDataPresent(activeSalaries) && {
+        label: 'Active Salaries',
+        data: activeSalaries,
+        backgroundColor: 'rgba(139, 92, 246, 0.65)', // violet-500 @ 65% opacity
+        stack: 'income',
+        order: 3,
+        pointStyle: 'rect',
+      },
+      isDataPresent(rmds) && {
+        label: 'Forced RMDs',
+        data: rmds,
+        backgroundColor: 'rgba(245, 158, 11, 0.65)', // amber-500 @ 65% opacity
+        stack: 'income',
+        order: 4,
+        pointStyle: 'rect',
+      },
+      isDataPresent(taxableDraws) && {
+        label: 'Taxable Draws',
+        data: taxableDraws,
+        backgroundColor: 'rgba(185, 28, 28, 0.95)', // deeper dark red (red-700 @ 95% opacity)
+        stack: 'income',
+        order: 5,
+        pointStyle: 'rect',
+      },
+      isDataPresent(preTaxDraws) && {
+        label: 'Pre-Tax Draws',
+        data: preTaxDraws,
+        backgroundColor: 'rgba(217, 70, 239, 0.7)', // fuchsia-500 representing IRA ordinary income liquidations
+        stack: 'income',
+        order: 6,
+        pointStyle: 'rect',
+      },
+      isDataPresent(rothDraws) && {
+        label: 'Roth Draws (Tax-Free)',
+        data: rothDraws,
+        backgroundColor: 'rgba(52, 211, 153, 0.75)', // emerald-400 representing tax-free Roth draws
+        stack: 'income', // stacked with all other cash flows in a single bar
         order: 7,
         pointStyle: 'rect',
       },
-      {
+      isDataPresent(cashDraws) && {
         label: 'Cash Draws',
-        data: ledger.map((r) => r.drawdownCash),
+        data: cashDraws,
         backgroundColor: 'rgba(194, 65, 12, 0.85)', // dark orange (orange-700)
         stack: 'income',
         order: 8,
@@ -231,6 +238,8 @@ export const BracketMapChart: React.FC<BracketMapChartProps> = ({
         stack: 'line-expenses',
       }
     ];
+
+    const datasets: any[] = rawDatasets.filter(Boolean) as any[];
 
     // If a quick-fill is selected, show only the line related to it
     if (quickFillLineData) {
@@ -463,7 +472,7 @@ export const BracketMapChart: React.FC<BracketMapChartProps> = ({
         }
       },
     };
-  }, [ssIncomes, rmds, activeSalaries, ledger, inputs]);
+  }, [ledger, inputs]);
 
   // Optimizer metrics and helper functions
   const currentEndingEstate = ledger[ledger.length - 1]?.totalPortfolioValue || 0;

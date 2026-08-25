@@ -77,7 +77,7 @@ export const OnboardingWizard: React.FC<OnboardingWizardProps> = ({ onComplete }
 
   const [wifeName, setWifeName] = useState('Spouse');
   const [wifeBirthDate, setWifeBirthDate] = useState('1960-01-01');
-  const [wifeRetireAge, setWifeRetireAge] = useState<number>(65);
+  const [wifeRetireAge, setWifeRetireAge] = useState<number>(67);
   const [wifeRetireMonth, setWifeRetireMonth] = useState<number | null>(null);
   const [wifeSalary, setWifeSalary] = useState<number | null>(0);
   // Default spouse not retired
@@ -98,11 +98,11 @@ export const OnboardingWizard: React.FC<OnboardingWizardProps> = ({ onComplete }
   const [wifeCash, setWifeCash] = useState<number | null>(0);
 
   const currentYear = new Date().getFullYear();
-  const [livingExpenses, setLivingExpenses] = useState<number>(120000);
+  const [livingExpenses, setLivingExpenses] = useState<number>(100000);
   const [currentState, setCurrentState] = useState<'MD' | 'FL'>('MD');
   const [targetState, setTargetState] = useState<'MD' | 'FL'>('FL');
   const [relocationYear, setRelocationYear] = useState<number | null>(currentYear + 6);
-  const [enableRelocation, setEnableRelocation] = useState(true);
+  const [enableRelocation, setEnableRelocation] = useState(false);
 
   // Field validation helper
   const [error, setError] = useState<string | null>(null);
@@ -194,7 +194,7 @@ export const OnboardingWizard: React.FC<OnboardingWizardProps> = ({ onComplete }
         birthDate: youBirthDate,
         estimatedPIA: youPIA,
         targetSSClaimingAge: youClaimAge,
-        plannedRetirementAge: youIsRetired ? 65 : youRetireAge,
+        plannedRetirementAge: youIsRetired ? 67 : youRetireAge,
         plannedRetirementMonth: youIsRetired ? null : youRetireMonth,
         activeSalary: youIsRetired ? 0 : youSalary,
         preMedicareMonthlyPremium: null,
@@ -204,7 +204,7 @@ export const OnboardingWizard: React.FC<OnboardingWizardProps> = ({ onComplete }
         birthDate: isSingleFiler ? '' : wifeBirthDate,
         estimatedPIA: isSingleFiler ? 0 : wifePIA,
         targetSSClaimingAge: isSingleFiler ? 67 : wifeClaimAge,
-        plannedRetirementAge: isSingleFiler ? 65 : (wifeIsRetired ? 61 : wifeRetireAge),
+        plannedRetirementAge: isSingleFiler ? 67 : (wifeIsRetired ? 67 : wifeRetireAge),
         plannedRetirementMonth: isSingleFiler ? null : (wifeIsRetired ? null : wifeRetireMonth),
         activeSalary: isSingleFiler ? 0 : (wifeIsRetired ? 0 : wifeSalary),
         preMedicareMonthlyPremium: null,
@@ -233,10 +233,11 @@ export const OnboardingWizard: React.FC<OnboardingWizardProps> = ({ onComplete }
         fixedIncomeReturnRate: 0.04,
         cpiInflationRate: 0.03, // Defaulting to realistic 3% CPI
         healthcareInflationRate: 0.05,
+        minCashReserveDollars: 100000,
       },
       simulationStartYear: currentYear,
       annualLivingExpenses: livingExpenses,
-      annualRothConversion: 50000,
+      annualRothConversion: 0,
       rothConversionStartYear: currentYear + 1,
       rothConversionEndYear: currentYear + 8,
       rothConversionStrategy: 'flat',

@@ -578,7 +578,7 @@ export const InputControlSidebar: React.FC<InputControlSidebarProps> = ({
                     <div className="space-y-1">
                       {(() => {
                         const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
-                        const age = inputs.wife.plannedRetirementAge ?? 65;
+                        const age = inputs.wife.plannedRetirementAge ?? 67;
                         const mon = inputs.wife.plannedRetirementMonth ?? getBirthMonth(inputs.wife.birthDate);
                         const sliderVal = (age - 55) * 12 + (mon - 1);
                         return (
@@ -996,6 +996,13 @@ export const InputControlSidebar: React.FC<InputControlSidebarProps> = ({
                     Pre-Tax {Math.round((inputs.growthAssumptions.preTaxEquityPortion ?? 0.50) * 100)}/{Math.round((1 - (inputs.growthAssumptions.preTaxEquityPortion ?? 0.50)) * 100)} · Taxable {Math.round((inputs.growthAssumptions.taxableEquityPortion ?? 0.60) * 100)}/{Math.round((1 - (inputs.growthAssumptions.taxableEquityPortion ?? 0.60)) * 100)} · Roth {Math.round((inputs.growthAssumptions.rothEquityPortion ?? 1.00) * 100)}%
                   </span>
                 </div>
+
+                <div className="pt-1 text-[10px] text-slate-400 flex justify-between items-center">
+                  <span>Min Cash Reserve Floor:</span>
+                  <span className="font-mono text-emerald-400 font-bold">
+                    {formatCurrency(inputs.growthAssumptions.minCashReserveDollars ?? 100000)} (CPI-Indexed)
+                  </span>
+                </div>
               </div>
             </div>
 
@@ -1162,7 +1169,7 @@ export const InputControlSidebar: React.FC<InputControlSidebarProps> = ({
                         min="40000"
                         max="300000"
                         step="5000"
-                        value={inputs.annualLivingExpenses ?? 120000}
+                        value={inputs.annualLivingExpenses ?? 100000}
                         onChange={(e) => updateNestedState('annualLivingExpenses', '', Number(e.target.value))}
                         className="w-full h-1.5 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-emerald-500"
                       />

@@ -596,6 +596,45 @@ export const MonteCarloWorkspace: React.FC<MonteCarloWorkspaceProps> = ({
                   className="w-full h-1.5 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-emerald-500"
                 />
               </div>
+
+              {/* Minimum Cash Reserve Level Target */}
+              <div className="p-3 bg-slate-950/60 rounded-xl border border-slate-800 space-y-2 col-span-1 sm:col-span-2">
+                <div className="flex justify-between items-center text-xs">
+                  <span className="font-semibold text-slate-200">Minimum Cash Reserve Floor ($)</span>
+                  <span className="text-[10px] font-mono font-bold px-1.5 py-0.5 rounded bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+                    {formatCurrency(inputs.growthAssumptions.minCashReserveDollars ?? 100000)} (CPI-Indexed)
+                  </span>
+                </div>
+                <div className="flex justify-between text-[10px] text-slate-400 font-mono">
+                  <span>Protects cash from drawdowns (in today's dollars, grows with inflation)</span>
+                  <span>
+                    {((inputs.annualLivingExpenses ?? 100000) > 0 
+                      ? (((inputs.growthAssumptions.minCashReserveDollars ?? 100000) / (inputs.annualLivingExpenses ?? 100000)) * 12).toFixed(1)
+                      : '12.0')} mo of expenses
+                  </span>
+                </div>
+                <div className="flex items-center gap-3">
+                  <input
+                    type="range"
+                    min="0"
+                    max="500000"
+                    step="5000"
+                    value={inputs.growthAssumptions.minCashReserveDollars ?? 100000}
+                    onChange={(e) => updateGrowthAssumptions('minCashReserveDollars', Number(e.target.value))}
+                    className="w-full h-1.5 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-emerald-500"
+                    title="Minimum Cash Reserve Floor ($ in today's dollars)"
+                  />
+                  <input
+                    type="number"
+                    min="0"
+                    max="1000000"
+                    step="5000"
+                    value={inputs.growthAssumptions.minCashReserveDollars ?? 100000}
+                    onChange={(e) => updateGrowthAssumptions('minCashReserveDollars', Number(e.target.value))}
+                    className="w-28 bg-slate-900 border border-slate-800 rounded-lg px-2 py-1 text-xs text-right font-mono text-emerald-400 font-bold focus:outline-none focus:border-emerald-500"
+                  />
+                </div>
+              </div>
             </div>
           </div>
 
