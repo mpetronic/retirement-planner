@@ -63,7 +63,8 @@ export const TaxableIncomeWorkspace: React.FC<TaxableIncomeWorkspaceProps> = ({
       style: 'currency',
       currency: 'USD',
       maximumFractionDigits: 0,
-    }).format(val);
+      minimumFractionDigits: 0,
+    }).format(Math.round(val || 0));
   };
 
   const years = useMemo(() => ledger.map((r) => r.year), [ledger]);
@@ -310,6 +311,11 @@ export const TaxableIncomeWorkspace: React.FC<TaxableIncomeWorkspaceProps> = ({
               const r = processedRows[idx];
               return `Year ${r.year} (Ages: You ${r.yourAge} / Spouse ${r.wifeAge})`;
             },
+            label: (context: any) => {
+              const label = context.dataset.label || '';
+              const rawVal = context.parsed.y ?? context.raw ?? 0;
+              return `${label}: ${formatCurrency(rawVal)}`;
+            },
             footer: (items: any[]) => {
               if (!items.length) return '';
               const idx = items[0].dataIndex;
@@ -391,8 +397,8 @@ export const TaxableIncomeWorkspace: React.FC<TaxableIncomeWorkspaceProps> = ({
       try {
         const result = optimizeRetirementScenario(
           inputs,
+          'max_portfolio',
           simulateSurvivor,
-          'max-estate',
           activeScenarioSequence
         );
         setOptimizationResult(result);
@@ -699,10 +705,10 @@ export const TaxableIncomeWorkspace: React.FC<TaxableIncomeWorkspaceProps> = ({
           </span>
         </div>
 
-        <div className="overflow-x-auto custom-scrollbar">
+        <div className="overflow-auto max-h-[600px] rounded-xl border border-slate-800 bg-slate-950/20 custom-scrollbar">
           <table className="w-full text-left text-xs font-mono border-collapse">
-            <thead>
-              <tr className="border-b border-slate-800 text-slate-400 uppercase text-[10px] tracking-wider">
+            <thead className="sticky top-0 z-10 bg-slate-900">
+              <tr className="bg-slate-900 border-b border-slate-800 text-slate-400 uppercase text-[10px] tracking-wider">
                 <th className="py-2.5 px-3">Year</th>
                 <th className="py-2.5 px-3">Ages</th>
                 <th className="py-2.5 px-3">Gross Non-Conv AGI</th>
@@ -786,7 +792,7 @@ export const TaxableIncomeWorkspace: React.FC<TaxableIncomeWorkspaceProps> = ({
                   <p className="text-xs text-slate-300">
                     Calculated optimal annual Roth conversion of{' '}
                     <span className="font-mono font-bold text-emerald-400">
-                      {formatCurrency(optimizationResult.optimalAnnualConversion)}
+                      {formatCurrency(optimizationResult.bestAnnualRothConversion)}
                     </span>{' '}
                     to fill headroom under {benchmarkLineData.label}.
                   </p>
@@ -796,13 +802,13 @@ export const TaxableIncomeWorkspace: React.FC<TaxableIncomeWorkspaceProps> = ({
                   <div className="p-3 rounded-xl bg-slate-950 border border-slate-800">
                     <span className="text-[10px] text-slate-400 uppercase font-sans">Projected Net Estate:</span>
                     <span className="text-base font-bold text-emerald-400 block mt-1">
-                      {formatCurrency(optimizationResult.projectedEstate)}
+                      {formatCurrency(optimizationResult.details.endingEstate)}
                     </span>
                   </div>
                   <div className="p-3 rounded-xl bg-slate-950 border border-slate-800">
                     <span className="text-[10px] text-slate-400 uppercase font-sans">Lifetime Taxes Paid:</span>
                     <span className="text-base font-bold text-rose-400 block mt-1">
-                      {formatCurrency(optimizationResult.projectedTaxes)}
+                      {formatCurrency(optimizationResult.details.lifetimeTaxes)}
                     </span>
                   </div>
                 </div>
@@ -819,11 +825,11 @@ export const TaxableIncomeWorkspace: React.FC<TaxableIncomeWorkspaceProps> = ({
                     type="button"
                     onClick={() => {
                       onApplyOptimization(
-                        optimizationResult.optimalAnnualConversion,
-                        activeTarget,
-                        optimizationResult.optimalYourAge,
-                        optimizationResult.optimalWifeAge,
-                        'fill-to-target'
+                        optimizationResult.bestAnnualRothConversion,
+                        optimizationResult.bestTargetValue ?? activeTarget,
+                        optimizationResult.bestYourSSAge,
+                        optimizationResult.bestWifeSSAge,
+                        optimizationResult.bestStrategy
                       );
                       setShowOptimizerModal(false);
                     }}

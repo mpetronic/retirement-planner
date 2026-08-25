@@ -3,6 +3,12 @@
 export const BASE_MEDICARE_PART_B = 202.90;
 export const BASE_MEDICARE_PART_D = 34.50;
 
+/**
+ * Maryland Maximum Pension Exclusion Baseline Cap ($34,300 per eligible individual age 65+)
+ * Statutory cap set by Comptroller of Maryland equal to the max annual Social Security benefit at Full Retirement Age.
+ */
+export const MD_PENSION_EXCLUSION_BASE_CAP = 34300;
+
 export interface TaxBracket {
   rate: number;
   limit: number; // upper limit of this bracket (Infinity for the top bracket)

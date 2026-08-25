@@ -14,6 +14,7 @@ import {
   MD_PIGGYBACK_RATE,
   FED_LTCG_BRACKETS_SINGLE,
   FED_LTCG_BRACKETS_MFJ,
+  MD_PENSION_EXCLUSION_BASE_CAP,
 } from './taxRates2026';
 
 const BASE_401K_LIMIT = 23500;
@@ -1266,7 +1267,7 @@ export function runRetirementSimulation(
       }
       const standardDeductionTotal = stdDeductionBase + ageAddition;
 
-      const capExcl = 34300 * cpiFactor;
+      const capExcl = MD_PENSION_EXCLUSION_BASE_CAP * cpiFactor;
       const exclusionCapJohn = Math.max(0, capExcl - annualYourSS);
       const exclusionCapWife = Math.max(0, capExcl - annualWifeSS);
       const exclJohn = (!youDeceased && yourAge >= 65) ? Math.min(taxableYourRMD + annualYourTradDraw + decYourTradDraw, exclusionCapJohn) : 0;

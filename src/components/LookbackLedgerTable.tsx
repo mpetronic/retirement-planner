@@ -2,7 +2,7 @@ import React, { useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { SimulationResultRow, AppStateInputs, getSimulationStartYear } from '../types';
 import { ShieldAlert, Info, AlertTriangle, X } from 'lucide-react';
-import { IRMAA_TIERS_MFJ, IRMAA_TIERS_SINGLE } from '../engine/taxRates2026';
+import { IRMAA_TIERS_MFJ, IRMAA_TIERS_SINGLE, MD_PENSION_EXCLUSION_BASE_CAP } from '../engine/taxRates2026';
 import { calculateFedTaxWithLTCG, calculateTaxableSS, calculateMDStateTax } from '../engine/simulationEngine';
 import { RowInspectionDialog } from './RowInspectionDialog';
 
@@ -216,7 +216,7 @@ export const LookbackLedgerTable: React.FC<LookbackLedgerTableProps> = ({
                 const cpiFactor = r.cpiFactor;
                 
                 // MD pension exclusion (doesn't change without conversion)
-                const capExcl = 34300 * cpiFactor;
+                const capExcl = MD_PENSION_EXCLUSION_BASE_CAP * cpiFactor;
                 const mdPensionExclusion = (() => {
                   if (isSingle) {
                     const age = inputs.isSingleFiler ? r.yourAge : r.wifeAge;
@@ -241,6 +241,46 @@ export const LookbackLedgerTable: React.FC<LookbackLedgerTableProps> = ({
               })();
 
               const isTopRow = idx < 4;
+
+              const prevRow = idx > 0 ? ledger[idx - 1] : null;
+
+              // Brokerage assets roll-forward
+              const startBrokerage = prevRow
+                ? prevRow.endYourTaxableBrokerage + prevRow.endWifeTaxableBrokerage
+                : inputs.portfolio.yourTaxableBrokerage + (inputs.wife ? inputs.portfolio.wifeTaxableBrokerage : 0);
+              const endBrokerage = r.endYourTaxableBrokerage + r.endWifeTaxableBrokerage;
+              const surplusReinvested = r.reinvestedSurplus || 0;
+              const drawsBrokerage = r.drawdownTaxable || 0;
+              const brokerageGrowth = endBrokerage + drawsBrokerage - surplusReinvested - startBrokerage;
+
+              // Cash assets roll-forward
+              const startCash = prevRow
+                ? prevRow.endYourCash + prevRow.endWifeCash
+                : inputs.portfolio.yourCash + (inputs.wife ? inputs.portfolio.wifeCash : 0);
+              const endCash = r.endYourCash + r.endWifeCash;
+              const drawsCash = r.drawdownCash || 0;
+              const cashInterest = endCash + drawsCash - startCash;
+
+              // Traditional IRA roll-forward
+              const startPreTax = prevRow
+                ? prevRow.endYourPreTaxIRA + prevRow.endWifePreTaxIRA
+                : inputs.portfolio.yourPreTaxIRA + (inputs.wife ? inputs.portfolio.wifePreTaxIRA : 0);
+              const endPreTax = r.endYourPreTaxIRA + r.endWifePreTaxIRA;
+              const totalRMDs = (r.yourRMD || 0) + (r.wifeRMD || 0);
+              const pretaxDraws = r.drawdownPreTax || 0;
+              const rothConversions = r.intentionalRothConversion || 0;
+              const qcd = r.qcdAmount || 0;
+              const contributions401k = r.employee401kContribution || 0;
+              const totalPreTaxOutflows = totalRMDs + pretaxDraws + rothConversions + qcd;
+              const preTaxGrowth = endPreTax + totalPreTaxOutflows - contributions401k - startPreTax;
+
+              // Roth IRA roll-forward
+              const startRoth = prevRow
+                ? prevRow.endYourRothIRA + prevRow.endWifeRothIRA
+                : inputs.portfolio.yourRothIRA + (inputs.wife ? inputs.portfolio.wifeRothIRA : 0);
+              const endRoth = r.endYourRothIRA + r.endWifeRothIRA;
+              const drawsRoth = r.drawdownRoth || 0;
+              const rothGrowth = endRoth + drawsRoth - rothConversions - startRoth;
 
               return (
                  <tr
@@ -488,10 +528,171 @@ export const LookbackLedgerTable: React.FC<LookbackLedgerTableProps> = ({
                       </div>
                     </div>
                   </td>
-                  <td className="px-2.5 py-2.5 font-mono text-slate-300">{formatCurrency(r.endYourTaxableBrokerage + r.endWifeTaxableBrokerage)}</td>
-                  <td className="px-2.5 py-2.5 font-mono text-slate-300">{formatCurrency(r.endYourCash + r.endWifeCash)}</td>
-                  <td className="px-2.5 py-2.5 font-mono text-slate-300">{formatCurrency(r.endYourPreTaxIRA + r.endWifePreTaxIRA)}</td>
-                  <td className="px-2.5 py-2.5 font-mono text-emerald-400/90">{formatCurrency(r.endYourRothIRA + r.endWifeRothIRA)}</td>
+                  {/* Brokerage Assets Cell */}
+                  <td className="px-2.5 py-2.5 font-mono text-slate-300 relative group cursor-help">
+                    <span>{formatCurrency(endBrokerage)}</span>
+                    <div className={`absolute left-1/2 -translate-x-1/2 w-64 bg-slate-950/95 backdrop-blur-md border border-slate-800 rounded-2xl p-4 shadow-2xl opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 z-50 text-xs text-slate-300 pointer-events-none space-y-2 font-sans normal-case ${
+                      isTopRow ? 'top-full mt-2' : 'bottom-full mb-2'
+                    }`}>
+                      <div className="flex items-center justify-between border-b border-slate-800/80 pb-1.5 mb-1">
+                        <span className="font-bold text-slate-200 uppercase tracking-wider text-[9px]">Brokerage Asset Roll-Forward</span>
+                        <span className="font-bold text-emerald-400 font-mono text-[10px]">{formatCurrency(endBrokerage)}</span>
+                      </div>
+                      <div className="flex justify-between items-center text-[11px]">
+                        <span className="text-slate-400">Start Balance:</span>
+                        <span className="font-mono text-slate-200 font-medium">{formatCurrency(startBrokerage)}</span>
+                      </div>
+                      {brokerageGrowth > 0 && (
+                        <div className="flex justify-between items-center text-[11px]">
+                          <span className="text-slate-400">Investment Growth:</span>
+                          <span className="font-mono text-emerald-400 font-medium">+{formatCurrency(brokerageGrowth)}</span>
+                        </div>
+                      )}
+                      {surplusReinvested > 0 && (
+                        <div className="flex justify-between items-center text-[11px]">
+                          <span className="text-slate-400">Reinvested Surplus:</span>
+                          <span className="font-mono text-emerald-400 font-medium">+{formatCurrency(surplusReinvested)}</span>
+                        </div>
+                      )}
+                      {drawsBrokerage > 0 && (
+                        <div className="flex justify-between items-center text-[11px]">
+                          <span className="text-slate-400">Brokerage Drawdown:</span>
+                          <span className="font-mono text-rose-400 font-medium">-{formatCurrency(drawsBrokerage)}</span>
+                        </div>
+                      )}
+                      <div className="flex justify-between items-center border-t border-slate-800/80 pt-2 mt-1 text-[11px] font-bold">
+                        <span className="text-slate-200">Ending Balance:</span>
+                        <span className="font-mono text-slate-100">{formatCurrency(endBrokerage)}</span>
+                      </div>
+                    </div>
+                  </td>
+
+                  {/* Cash Assets Cell */}
+                  <td className="px-2.5 py-2.5 font-mono text-slate-300 relative group cursor-help">
+                    <span>{formatCurrency(endCash)}</span>
+                    <div className={`absolute left-1/2 -translate-x-1/2 w-64 bg-slate-950/95 backdrop-blur-md border border-slate-800 rounded-2xl p-4 shadow-2xl opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 z-50 text-xs text-slate-300 pointer-events-none space-y-2 font-sans normal-case ${
+                      isTopRow ? 'top-full mt-2' : 'bottom-full mb-2'
+                    }`}>
+                      <div className="flex items-center justify-between border-b border-slate-800/80 pb-1.5 mb-1">
+                        <span className="font-bold text-slate-200 uppercase tracking-wider text-[9px]">Cash Asset Roll-Forward</span>
+                        <span className="font-bold text-emerald-400 font-mono text-[10px]">{formatCurrency(endCash)}</span>
+                      </div>
+                      <div className="flex justify-between items-center text-[11px]">
+                        <span className="text-slate-400">Start Balance:</span>
+                        <span className="font-mono text-slate-200 font-medium">{formatCurrency(startCash)}</span>
+                      </div>
+                      {cashInterest > 0 && (
+                        <div className="flex justify-between items-center text-[11px]">
+                          <span className="text-slate-400">Interest Earned:</span>
+                          <span className="font-mono text-emerald-400 font-medium">+{formatCurrency(cashInterest)}</span>
+                        </div>
+                      )}
+                      {drawsCash > 0 && (
+                        <div className="flex justify-between items-center text-[11px]">
+                          <span className="text-slate-400">Cash Drawdown:</span>
+                          <span className="font-mono text-rose-400 font-medium">-{formatCurrency(drawsCash)}</span>
+                        </div>
+                      )}
+                      <div className="flex justify-between items-center border-t border-slate-800/80 pt-2 mt-1 text-[11px] font-bold">
+                        <span className="text-slate-200">Ending Balance:</span>
+                        <span className="font-mono text-slate-100">{formatCurrency(endCash)}</span>
+                      </div>
+                    </div>
+                  </td>
+                  {/* Traditional IRA Cell */}
+                  <td className="px-2.5 py-2.5 font-mono text-slate-300 relative group cursor-help">
+                    <span>{formatCurrency(endPreTax)}</span>
+                    <div className={`absolute left-1/2 -translate-x-1/2 w-64 bg-slate-950/95 backdrop-blur-md border border-slate-800 rounded-2xl p-4 shadow-2xl opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 z-50 text-xs text-slate-300 pointer-events-none space-y-2 font-sans normal-case ${
+                      isTopRow ? 'top-full mt-2' : 'bottom-full mb-2'
+                    }`}>
+                      <div className="flex items-center justify-between border-b border-slate-800/80 pb-1.5 mb-1">
+                        <span className="font-bold text-slate-200 uppercase tracking-wider text-[9px]">Traditional IRA Roll-Forward</span>
+                        <span className="font-bold text-emerald-400 font-mono text-[10px]">{formatCurrency(endPreTax)}</span>
+                      </div>
+                      <div className="flex justify-between items-center text-[11px]">
+                        <span className="text-slate-400">Start Balance:</span>
+                        <span className="font-mono text-slate-200 font-medium">{formatCurrency(startPreTax)}</span>
+                      </div>
+                      {preTaxGrowth > 0 && (
+                        <div className="flex justify-between items-center text-[11px]">
+                          <span className="text-slate-400">Investment Growth:</span>
+                          <span className="font-mono text-emerald-400 font-medium">+{formatCurrency(preTaxGrowth)}</span>
+                        </div>
+                      )}
+                      {contributions401k > 0 && (
+                        <div className="flex justify-between items-center text-[11px]">
+                          <span className="text-slate-400">Pre-Tax 401(k) Contrib.:</span>
+                          <span className="font-mono text-emerald-400 font-medium">+{formatCurrency(contributions401k)}</span>
+                        </div>
+                      )}
+                      {totalRMDs > 0 && (
+                        <div className="flex justify-between items-center text-[11px]">
+                          <span className="text-slate-400">Forced RMDs:</span>
+                          <span className="font-mono text-rose-400 font-medium">-{formatCurrency(totalRMDs)}</span>
+                        </div>
+                      )}
+                      {pretaxDraws > 0 && (
+                        <div className="flex justify-between items-center text-[11px]">
+                          <span className="text-slate-400">Extra Pre-Tax Drawdowns:</span>
+                          <span className="font-mono text-rose-400 font-medium">-{formatCurrency(pretaxDraws)}</span>
+                        </div>
+                      )}
+                      {rothConversions > 0 && (
+                        <div className="flex justify-between items-center text-[11px]">
+                          <span className="text-slate-400">Roth Conversions:</span>
+                          <span className="font-mono text-rose-400 font-medium">-{formatCurrency(rothConversions)}</span>
+                        </div>
+                      )}
+                      {qcd > 0 && (
+                        <div className="flex justify-between items-center text-[11px]">
+                          <span className="text-slate-400">QCD Charitable Tithe:</span>
+                          <span className="font-mono text-rose-400 font-medium">-{formatCurrency(qcd)}</span>
+                        </div>
+                      )}
+                      <div className="flex justify-between items-center border-t border-slate-800/80 pt-2 mt-1 text-[11px] font-bold">
+                        <span className="text-slate-200">Ending Balance:</span>
+                        <span className="font-mono text-slate-100">{formatCurrency(endPreTax)}</span>
+                      </div>
+                    </div>
+                  </td>
+                  {/* Roth (Tax-Free) Cell */}
+                  <td className="px-2.5 py-2.5 font-mono text-emerald-400/90 relative group cursor-help">
+                    <span>{formatCurrency(endRoth)}</span>
+                    <div className={`absolute left-1/2 -translate-x-1/2 w-64 bg-slate-950/95 backdrop-blur-md border border-slate-800 rounded-2xl p-4 shadow-2xl opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 z-50 text-xs text-slate-300 pointer-events-none space-y-2 font-sans normal-case ${
+                      isTopRow ? 'top-full mt-2' : 'bottom-full mb-2'
+                    }`}>
+                      <div className="flex items-center justify-between border-b border-slate-800/80 pb-1.5 mb-1">
+                        <span className="font-bold text-slate-200 uppercase tracking-wider text-[9px]">Roth IRA Roll-Forward</span>
+                        <span className="font-bold text-emerald-400 font-mono text-[10px]">{formatCurrency(endRoth)}</span>
+                      </div>
+                      <div className="flex justify-between items-center text-[11px]">
+                        <span className="text-slate-400">Start Balance:</span>
+                        <span className="font-mono text-slate-200 font-medium">{formatCurrency(startRoth)}</span>
+                      </div>
+                      {rothGrowth > 0 && (
+                        <div className="flex justify-between items-center text-[11px]">
+                          <span className="text-slate-400">Tax-Free Growth:</span>
+                          <span className="font-mono text-emerald-400 font-medium">+{formatCurrency(rothGrowth)}</span>
+                        </div>
+                      )}
+                      {rothConversions > 0 && (
+                        <div className="flex justify-between items-center text-[11px]">
+                          <span className="text-slate-400">Roth Conversion Inflow:</span>
+                          <span className="font-mono text-emerald-400 font-medium">+{formatCurrency(rothConversions)}</span>
+                        </div>
+                      )}
+                      {drawsRoth > 0 && (
+                        <div className="flex justify-between items-center text-[11px]">
+                          <span className="text-slate-400">Tax-Free Drawdown:</span>
+                          <span className="font-mono text-rose-400 font-medium">-{formatCurrency(drawsRoth)}</span>
+                        </div>
+                      )}
+                      <div className="flex justify-between items-center border-t border-slate-800/80 pt-2 mt-1 text-[11px] font-bold">
+                        <span className="text-slate-200">Ending Balance:</span>
+                        <span className="font-mono text-slate-100">{formatCurrency(endRoth)}</span>
+                      </div>
+                    </div>
+                  </td>
                   <td className="px-2.5 py-2.5 font-mono font-bold text-slate-100">{formatCurrency(r.totalPortfolioValue)}</td>
                   <td className="px-2.5 py-2.5 whitespace-nowrap relative group cursor-help">
                     <span
