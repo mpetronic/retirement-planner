@@ -8,7 +8,15 @@ An interactive, premium, 35-year financial planning web application. This tool e
 
 - [Overview & Core Features](#overview--core-features)
 - [Workspace Structure](#workspace-structure)
-- [Control Center & Keyboard Shortcuts](#control-center--keyboard-shortcuts)
+  - [1. Overview (Bracket Map Chart)](#1-overview-bracket-map-chart)
+  - [2. Taxable Income Planner](#2-taxable-income-planner)
+  - [3. Lookback Ledger](#3-lookback-ledger)
+  - [4. Monte Carlo Analysis](#4-monte-carlo-analysis)
+  - [5. Plan Comparison](#5-plan-comparison)
+- [Interactive Controls & Scenario Planning Drawer](#interactive-controls--scenario-planning-drawer)
+  - [Scenario Planner Drawer](#scenario-planner-drawer)
+  - [Global Keyboard Shortcuts](#global-keyboard-shortcuts)
+- [Advanced Optimization & Analytics Engine](#advanced-optimization--analytics-engine)
 - [🛠️ Development & Environment Setup](#️-development--environment-setup)
   - [System Requirements](#system-requirements)
   - [🐧 Linux & WSL Setup](#-linux--wsl-setup)
@@ -27,44 +35,85 @@ An interactive, premium, 35-year financial planning web application. This tool e
 
 ## Overview & Core Features
 
-- **35-Year Spousal Timeline Engine**: Tracks annual income, Social Security claiming ages, active salaries, asset growth, and account drawdowns.
-- **Tax & Jurisdiction Engine**: Models Federal ordinary income, preferential capital gains, and state tax brackets (Maryland MD with county tax vs. Florida FL zero-income tax) with custom relocation year support.
-- **Medicare IRMAA & SSA-44 Modeling**: Models 2-year MAGI lookback Medicare IRMAA surcharge tiers (Part B & Part D) and Form SSA-44 life-changing event income reductions.
-- **Charitable QCD & Tithe Engine**: Configures Qualified Charitable Distributions (QCDs) directly from Pre-Tax IRAs starting at age 70½ to satisfy RMDs tax-free.
-- **Itemized vs. Aggregate Expenses**: Supports both simple annual living budgets and itemized state-specific recurring expenses.
-- **Stochastic Monte Carlo Stress Testing**: Runs 1,000 parallel randomized trials to calculate success probabilities, sequence-of-returns risks, and percentile portfolio paths ($P_{10}$, $P_{50}$, $P_{90}$).
-- **Accessibility & Typography Scaling**: Global font size control ($12\text{px} - 24\text{px}$) with dynamic root `rem` scaling.
+- **Interactive Onboarding Wizard**: Guided 4-step setup flow for first-time users to configure personal profiles, retirement timing, initial portfolio balances, and return assumptions.
+- **35-Year Spousal Timeline Engine**: Tracks annual income, Social Security claiming ages (62-70), active employment salaries, 401(k) contributions, asset compounding, and priority-based drawdown waterfalls.
+- **Federal & State Tax Engine**: Models Federal ordinary income brackets (10% to 37%), standard deductions with age 65+ senior bumps, preferential long-term capital gains rates (0%, 15%, 20%), and state income tax systems (Maryland MD with county piggyback rates vs. Florida FL zero-income tax) with custom relocation year support.
+- **Medicare IRMAA & Form SSA-44 Modeling**: Simulates 2-year MAGI lookback Medicare IRMAA surcharge tiers (Part B & Part D) with Form SSA-44 life-changing event income adjustments upon retirement.
+- **Multi-Strategy Roth Conversion Planner**: Models flat annual conversions or dynamic "Fill-to-Bracket / Fill-to-IRMAA" strategies with customizable conversion start and end year windows.
+- **Automated Scenario Optimizer**: Algorithms to identify optimal Social Security claiming ages and Roth conversion schedules to maximize ending estate, minimize lifetime tax, or minimize IRMAA surcharges.
+- **Charitable QCD & Tithe Engine**: Models Qualified Charitable Distributions (QCDs) directly from Pre-Tax IRAs starting at age 70½ to satisfy Required Minimum Distributions (RMDs) tax-free, alongside annual cash tithe contributions.
+- **Itemized vs. Simple Aggregate Expenses**: Supports both simple inflation-adjusted annual living budgets and granular itemized expense categories (housing, medical, lifestyle, discretionary, and future one-off expenses).
+- **Stochastic Monte Carlo Stress Testing**: Simulates 1,000+ parallel trials with seedable pseudo-random generation (Mulberry32 PRNG), sequence-of-returns risk analysis, regime switching, historical bootstrapping (1928-present data), and market crash override stress tests.
+- **Dual Valuation Mode**: Toggle instantly between Nominal Future Dollars and Real Today's Purchasing Power Dollars across all charts, ledgers, and summary metrics.
+- **Sankey Flow Diagram**: Interactive visual cashflow diagrams illustrating the flow of gross income, tax liabilities, living expenses, and portfolio reinvestment/drawdown balances.
+- **Plan Exporting & PDF Reports**: Save plans locally, export/import JSON configurations, and generate PDF executive summary reports.
+- **Accessibility & Typography Scaling**: Global root font scaling (12px to 24px) for responsive sizing across all displays and full keyboard navigation shortcuts.
 
 ---
 
 ## Workspace Structure
 
-The planner is organized into four dedicated, highly interactive workspaces:
+The application is structured into five dedicated, synchronized workspaces:
 
-1. **Workspace 1: Bracket Map Chart**:
-   Visual tax bracket planning and Roth conversion modeling with real-time expected return and scenario optimizations. Includes quick-fill target buttons and interactive bracket margin inspection.
-2. **Workspace 2: Lookback Ledger**:
-   Detailed annual spousal cashflow tables tracking income sources, tax margins, standard deductions, deficits, account drawdowns, and Medicare IRMAA cliffs with single-row compact KPI summary banners.
-3. **Workspace 3: Monte Carlo Analysis**:
-   Long-term market stress testing across 1,000 parallel randomized trials with seedable reproducibility, asset return overrides, and sequence risk analysis.
-4. **Workspace 4: Plan Comparison**:
-   A dynamic scenario-management workspace to save active workspace parameters, load saved plans, export/import JSON configurations, and run side-by-side lifetime delta comparisons.
+### 1. Overview (Bracket Map Chart)
+Visual tax bracket planning and Roth conversion modeling.
+- **Stacked Income Chart**: Visualizes Active Salary, Social Security, Pre-Tax Drawdowns/RMDs, and Roth Conversions against Federal income tax brackets (10%, 12%, 22%, 24%, 32%, 35%, 37%) and Medicare IRMAA cliff thresholds.
+- **Quick-Fill Target Presets**: One-click benchmark targets to test conversion strategies filling to the top of specific tax brackets or IRMAA tiers.
+- **Integrated Strategy Optimizer**: Built-in optimizer dialog to evaluate conversion schedules against portfolio longevity and estate outcomes.
+
+### 2. Taxable Income Planner
+Granular taxable income and deduction analysis.
+- **Stacked Taxable Base Visualization**: Displays Net Non-Conversion Taxable Income, Taxable Roth Conversions, and Standard Deductions alongside Federal Tax Bracket and IRMAA benchmark guidelines.
+- **Income Source Breakdown**: Component-level inspection of Social Security, Salaried Earnings, Traditional IRA distributions/RMDs, Net Investments & Capital Gains, and Other Taxable Income.
+- **In-Workspace Controls**: Direct controls for conversion year ranges, target thresholds, and real-time benchmark line adjustments.
+
+### 3. Lookback Ledger
+Comprehensive 35-year financial ledger.
+- **Full Cashflow Accounting**: Year-by-year columns tracking asset balances (Pre-tax, Roth, Taxable, Cash), Social Security benefits, RMDs, employee 401(k) contributions, standard deductions, tax brackets, effective tax rates, state taxes, Form SSA-44 lookback MAGI, Medicare base & IRMAA surcharges, charitable QCDs & tithes, and estate values.
+- **Row Inspection Drilldown**: Click any year row to open a detailed inspection modal breaking down that specific year's tax calculations, MAGI adjustments, and account movements.
+- **KPI Summary Banner**: Quick-toggle summary bar displaying ending estate, total lifetime taxes paid, Medicare surcharges, base premiums, and charitable contributions.
+
+### 4. Monte Carlo Analysis
+Long-term market stress testing and sequence-of-returns risk modeling.
+- **Parallel Stochastic Engine**: Runs 1,000+ randomized simulations displaying percentile paths (P10 worst-case, P25, P50 median, P75, P90 best-case).
+- **Customizable Simulation Parameters**: Adjust equity/bond return means, annual volatility, asset correlation, inflation randomness, and historical sampling strategies (hybrid, block, or random).
+- **Stress Test Control Panel**: Apply custom market shock overrides (e.g., severe initial market drop, elevated inflation) to evaluate sequence risk.
+- **Global Scenario Synchronization**: Switch the active global scenario between Flat Expected, P10, P50, and P90 returns to synchronize the entire application.
+
+### 5. Plan Comparison
+Multi-scenario comparison and plan management.
+- **Plan Repository**: Save active scenario configurations, load saved plans, clone scenarios, and export/import plan files via JSON.
+- **Side-by-Side Delta Analysis**: Select any two saved plans (Plan A vs. Plan B) to compare lifetime taxes, IRMAA surcharges, ending estate values, Monte Carlo success rates, and year-by-year drawdown differences.
+- **Comparative Charts & Diff Tables**: Visual portfolio trajectory comparisons and delta summary cards highlighting net financial advantages.
 
 ---
 
-## Control Center & Keyboard Shortcuts
+## Interactive Controls & Scenario Planning Drawer
 
-### Tabbed Scenario Planner Drawer
-Press **`P`** anywhere in the app to toggle the slide-over Scenario Planner parameter drawer, organized into 4 intuitive category tabs:
-- 👤 **Profiles**: Primary user & spouse birth dates, Social Security PIA estimates, target SS claiming ages, planned retirement ages/months, salaries, longevity ages, healthcare expense config, and Survivor view simulation mode toggle switch.
-- 💰 **Accounts**: Starting account balances (Traditional Pre-Tax IRA, Roth IRA, Taxable Brokerage, Cost Basis, Cash Assets) for both spouses, plus taxable brokerage dividend yield and non-qualified interest percentages.
-- 📈 **Assumptions**: Valuation currency mode toggle (Nominal Future Dollars vs. Today's Real Purchasing Power Dollars), simulation start year, model return/inflation assumptions, and Maryland (MD) to Florida (FL) relocation year.
-- 🧾 **Expenses**: Calculation method choice (Simple Aggregate vs. Itemized Expenses), base living budget slider, itemized expense dialog, and Charitable QCD & Tithe engine.
+### Scenario Planner Drawer
+Press **`P`** anywhere in the application or click **Edit Parameters** in the top navigation bar to open the slide-over parameter drawer, organized into four tabs:
+
+- 👤 **Profiles**: Primary user and spouse birth dates, Social Security PIA estimates, target claiming ages (62-70), retirement ages, active salaries, longevity ages, Pre-Medicare & Medicare healthcare expense configurations, and Survivor view simulation mode toggle switch.
+- 💰 **Accounts**: Starting account balances (Traditional Pre-Tax IRA, Roth IRA, Taxable Brokerage, Cost Basis, Cash Reserves) for both individuals, plus taxable dividend yields and non-qualified interest ratios.
+- 📈 **Assumptions**: Valuation currency toggle (Nominal Future Dollars vs. Today's Real Purchasing Power Dollars), simulation start year, asset allocation (equity portions by account type), expected asset returns, inflation rates (CPI & healthcare), cash yields, minimum cash reserves, and Maryland (MD) to Florida (FL) relocation year.
+- 🧾 **Expenses**: Calculation method selection (Simple Aggregate Budget vs. Detailed Itemized Expenses), base annual living budget, itemized expense management dialog, and Charitable QCD & Tithe configuration.
 
 ### Global Keyboard Shortcuts
 - **`P`**: Toggle Scenario Planner side drawer open/closed.
 - **`?`** (or **`Shift`** + **`/`**): Open interactive Documentation & User Guide modal.
-- **`Esc`**: Close active side drawer, settings modal, or user guide.
+- **`Esc`**: Close active drawer, modal dialog, or inspection view.
+
+---
+
+## Advanced Optimization & Analytics Engine
+
+The simulation engine incorporates specialized financial logic:
+
+1. **RMD Calculations**: Applies IRS Uniform Lifetime Tables (and Single Life Tables for survivors) to compute required minimum distributions starting at age 73/75.
+2. **Drawdown Hierarchy**: Preserves tax efficiency by prioritizing withdrawals: Required Minimum Distributions -> Cash Reserves -> Taxable Brokerage -> Traditional Pre-Tax IRA -> Roth IRA.
+3. **Medicare IRMAA Lookback**: Determines Part B and Part D surcharge tiers using MAGI from 2 years prior, with automatic Form SSA-44 income reduction adjustments for qualifying life-changing events (work reduction or retirement).
+4. **Survivor Transition**: Models transition to Single Filer status upon the primary or spouse passing, adjusting tax brackets, standard deductions, and Social Security survivor benefits (stepping up to the higher of the two benefits).
+5. **Charitable QCD Strategy**: Directs distributions from Pre-Tax IRAs to qualified charities starting at age 70½ to satisfy RMDs while avoiding inclusion in AGI.
 
 ---
 
@@ -73,17 +122,16 @@ Press **`P`** anywhere in the app to toggle the slide-over Scenario Planner para
 Follow these instructions to set up the Node.js toolchain, configure your local environment, install dependencies, and run the development server.
 
 ### System Requirements
-* **Node.js**: `v18.x` or `v20.x` (LTS versions highly recommended)
+* **Node.js**: `v18.x` or `v20.x` (LTS versions recommended)
 * **NPM**: `v9.x` or `v10.x` (comes bundled with Node.js)
 
 ---
 
 ### 🐧 Linux & WSL Setup
 
-For Linux (Ubuntu/Debian, Fedora, etc.) or Windows Subsystem for Linux (WSL), using **Node Version Manager (NVM)** is the industry best practice to prevent permissions conflicts.
+For Linux (Ubuntu/Debian, Fedora, etc.) or Windows Subsystem for Linux (WSL), using **Node Version Manager (NVM)** is recommended:
 
 #### 1. Install NVM & Node.js
-Open your terminal and execute:
 ```bash
 # Download and install NVM script
 curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.39.7/install.sh | bash
@@ -95,12 +143,11 @@ source ~/.bashrc
 nvm install 20
 
 # Verify installations
-node --version # Should output v20.x.x
-npm --version  # Should output v10.x.x
+node --version # Outputs v20.x.x
+npm --version  # Outputs v10.x.x
 ```
 
 #### 2. Clone Repository & Install Dependencies
-Create your local `~/repos` directory and clone the project:
 ```bash
 # Create and navigate to your repos directory
 mkdir -p ~/repos
@@ -116,7 +163,6 @@ npm install
 
 #### 3. Run Development Server
 ```bash
-# Start Vite development server
 npm run dev
 ```
 The application will launch locally at `http://localhost:5173`.
@@ -125,60 +171,33 @@ The application will launch locally at `http://localhost:5173`.
 
 ### 🍎 macOS Setup
 
-macOS developers can configure Node.js using **Homebrew** (recommended), **Node Version Manager (NVM)**, or the official installer.
-
 #### 1. Install Node.js
-Choose one of the following methods in your macOS Terminal:
+Choose one of the following methods in Terminal:
 
-* **Via Homebrew [Recommended & Fastest]**:
-  If you have [Homebrew](https://brew.sh/) installed:
+* **Via Homebrew [Recommended]**:
   ```zsh
-  # Install Node.js LTS v20
   brew install node@20
-
-  # Link node@20 so it is globally accessible in your PATH
   brew link --overwrite --force node@20
   ```
 
-* **Via NVM (Node Version Manager)**:
-  Ideal if you work with multiple Node versions:
+* **Via NVM**:
   ```zsh
-  # 1. Download and install NVM
   curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.39.7/install.sh | bash
-
-  # 2. Reload your zsh profile
   source ~/.zshrc
-
-  # 3. Install and activate Node.js LTS v20
   nvm install 20
   nvm use 20
   ```
 
-* **Via Official Installer (.pkg)**:
-  Download and run the official **macOS Installer (.pkg)** from the [Node.js Downloads Page](https://nodejs.org/en/download/).
+* **Via Official Installer**:
+  Download and run the **macOS Installer (.pkg)** from the [Node.js Downloads Page](https://nodejs.org/en/download/).
 
-#### 2. Verify Toolchain
-In your Terminal, verify that `node` and `npm` are available:
+#### 2. Clone Repository, Install & Run Dev Server
 ```zsh
-node -v   # Should output v20.x.x
-npm -v    # Should output v10.x.x
-```
-
-#### 3. Clone Repository, Install & Run Dev Server
-Create your local `~/repos` directory, clone the project, and launch the application:
-```zsh
-# Create and navigate to your repos directory
 mkdir -p ~/repos
 cd ~/repos
-
-# Clone the repository
 git clone git@github.com:mpetronic/retirement-planner.git
 cd retirement-planner
-
-# Install dependencies
 npm install
-
-# Start Vite dev server
 npm run dev
 ```
 Navigate your browser to `http://localhost:5173`.
@@ -189,169 +208,116 @@ Navigate your browser to `http://localhost:5173`.
 
 Choose the setup procedure that matches your Windows user permissions:
 * **[Option A: With Administrator Access](#option-a-with-administrator-access)**: For personal PCs or developer workstations with local admin rights.
-* **[Option B: Without Administrator Access (Non-Admin)](#option-b-without-administrator-access-non-admin)**: For enterprise laptops or restricted corporate environments without admin privileges.
+* **[Option B: Without Administrator Access (Non-Admin)](#option-b-without-administrator-access-non-admin)**: For restricted enterprise environments without admin privileges.
 
 ---
 
 #### Option A: With Administrator Access
 
 ##### 1. Install Node.js LTS & Git
-Open PowerShell and choose one of the following installation methods:
-* **Via Windows Package Manager (`winget`) [Fastest]**:
-  ```powershell
-  # Install Node.js LTS
-  winget install OpenJS.NodeJS.LTS
+Open PowerShell:
+```powershell
+# Install Node.js LTS via winget
+winget install OpenJS.NodeJS.LTS
 
-  # Install Git (if not already installed)
-  winget install Git.Git
-  ```
-* **Via Official Installers**:
-  - Download and run the **Node.js LTS Installer (.msi)** from the [Node.js Downloads Page](https://nodejs.org/en/download/). Ensure the **"Add to PATH"** checkbox is selected during setup.
-  - Download and run the **Git for Windows Installer** from [git-scm.com/download/win](https://git-scm.com/download/win).
-* **Alternative (Via NVM-Windows)**:
-  ```powershell
-  winget install CoreyButler.NVMforWindows
-  ```
-  *(Or download and run `nvm-setup.exe` from [nvm-windows releases](https://github.com/coreybutler/nvm-windows/releases)).*
+# Install Git
+winget install Git.Git
+```
 
 ##### 2. Configure PowerShell Execution Policy
-By default, PowerShell restricts running scripts. Enable script execution for your user account:
 ```powershell
 Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser -Force
 ```
 
-##### 3. Restart Terminal & Verify Toolchain
-**Close all existing PowerShell windows and open a new PowerShell window** so the updated `PATH` environment variables take effect:
+##### 3. Verify Toolchain
+Restart PowerShell and verify:
 ```powershell
-node -v   # Should output v20.x.x
-npm -v    # Should output v10.x.x
+node -v   # Outputs v20.x.x
+npm -v    # Outputs v10.x.x
 git --version
 ```
-*(If using NVM-Windows, run `nvm install 20.11.0` followed by `nvm use 20.11.0` before verifying).*
 
 ##### 4. Clone Repository, Install & Run Dev Server
-Create your local `$HOME\repos` directory, clone the project, and start the server:
 ```powershell
-# Create and navigate to your repos directory
 mkdir "$HOME\repos" -Force
 cd "$HOME\repos"
-
-# Clone the repository
 git clone git@github.com:mpetronic/retirement-planner.git
 cd retirement-planner
-
-# Install node packages
 npm install
-
-# Launch Vite dev server
 npm run dev
 ```
-Navigate your browser to `http://localhost:5173`.
+Open `http://localhost:5173` in your browser.
 
 ---
 
 #### Option B: Without Administrator Access (Non-Admin)
 
-Follow these step-by-step instructions to install and run the app entirely in your user folder without needing administrator privileges.
-
 ##### Step 1: Open PowerShell
-1. Press the **Windows Key** on your keyboard (or click the Start Menu).
-2. Type `PowerShell` and click **Windows PowerShell** to open a new terminal window.
+Press the **Windows Key**, type `PowerShell`, and open Windows PowerShell.
 
-##### Step 2: Create a Tools Folder and Move into It
-Create a dedicated `tools` folder in your user account directory and change into it:
+##### Step 2: Create a Tools Folder
 ```powershell
-# Create a "tools" folder inside your personal user profile
 mkdir "$HOME\tools" -Force
-
-# Navigate (change directory) into the newly created folder
 cd "$HOME\tools"
 ```
 
 ##### Step 3: Download & Extract Portable Node.js
-Run the following commands in PowerShell to download the official portable Node.js LTS archive and extract it:
 ```powershell
-# 1. Download the portable Node.js v20 zip archive
 Invoke-WebRequest -Uri "https://nodejs.org/dist/v20.18.0/node-v20.18.0-win-x64.zip" -OutFile "node.zip"
-
-# 2. Extract the archive into your tools folder
 Expand-Archive -Path "node.zip" -DestinationPath "$HOME\tools" -Force
-
-# 3. Rename the extracted folder to "nodejs" for easy access
 Rename-Item -Path "$HOME\tools\node-v20.18.0-win-x64" -NewName "nodejs"
 ```
-*(Alternative via Browser: If you prefer using your web browser, download the 64-bit `.zip` from the [Node.js Distributions Page](https://nodejs.org/dist/latest-v20.x/), right-click the downloaded file, select **Extract All...**, and choose `C:\Users\<YourUsername>\tools\nodejs` as the destination).*
 
 ##### Step 4: Configure User PATH & Enable Script Execution
-Tell Windows where to find `node` and allow PowerShell to run local scripts in your current session (no admin rights needed):
 ```powershell
-# 1. Permanently add Node to your User PATH (only needed once)
 [Environment]::SetEnvironmentVariable("Path", "$HOME\tools\nodejs;" + [Environment]::GetEnvironmentVariable("Path", "User"), "User")
-
-# 2. Load Node into your current PowerShell window immediately
 $env:Path = "$HOME\tools\nodejs;$env:Path"
-
-# 3. Allow PowerShell to run scripts in this session without admin permissions
 Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope Process
 ```
 
-##### Step 5: Verify Toolchain Installation
-Confirm that `node` and `npm` are recognized:
+##### Step 5: Verify Toolchain
 ```powershell
-node -v   # Should print v20.x.x
-npm -v    # Should print 10.x.x
+node -v
+npm -v
 ```
 
-##### Step 6: Download & Extract Project Code (No Git Required)
-You do not need Git installed. Download and extract the repository source code directly:
+##### Step 6: Download & Extract Project Code
 ```powershell
-# 1. Create your repos directory and move into it
 mkdir "$HOME\repos" -Force
 cd "$HOME\repos"
-
-# 2. Download the repository source code ZIP archive
 Invoke-WebRequest -Uri "https://github.com/mpetronic/retirement-planner/archive/refs/heads/main.zip" -OutFile "repo.zip"
-
-# 3. Extract the ZIP archive
 Expand-Archive -Path "repo.zip" -DestinationPath "$HOME\repos" -Force
-
-# 4. Rename the extracted folder to retirement-planner and move into it
 Rename-Item -Path "$HOME\repos\retirement-planner-main" -NewName "retirement-planner"
 cd "$HOME\repos\retirement-planner"
 ```
-*(Alternative via Browser: Visit [github.com/mpetronic/retirement-planner](https://github.com/mpetronic/retirement-planner), click **Code** -> **Download ZIP**, and extract the contents to `C:\Users\<YourUsername>\repos\retirement-planner`).*
 
-##### Step 7: Install Dependencies & Launch the App
-Run these commands within that same PowerShell window:
+##### Step 7: Install Dependencies & Launch
 ```powershell
-# 1. Install all project dependencies
 npm install
-
-# 2. Start the local development web server
 npm run dev
 ```
-Once started, open your web browser and go to `http://localhost:5173` to interact with the planner.
+Open `http://localhost:5173` in your browser.
 
 ---
 
 ## 🛠️ Verification, Testing & Build Commands
 
-Before committing or deploying code, run these commands to verify test coverage, type safety, and production assets.
+Before committing or deploying code, run these commands to verify test coverage, type safety, and production builds.
 
 ### Unit Test Suite
-Run the Vitest unit test suite to execute 100+ simulation engine, optimizer, and export utility tests:
+Run the Vitest unit test suite to execute simulation engine, optimizer, and utility tests:
 ```bash
 npm run test:run
 ```
 
 ### Type Check & Production Build
-Compiles TypeScript strictly (`tsc -b`) and packages optimized static distribution files in `/dist`:
+Compiles TypeScript strictly (`tsc -b`) and generates optimized static distribution files in `/dist`:
 ```bash
 npm run build
 ```
 
 ### 🐳 Docker Container Deployment
-Build and run the application as a lightweight containerized Nginx application:
+Build and run the application as a containerized Nginx application:
 ```bash
 # Build Docker image
 npm run docker:build
@@ -364,10 +330,10 @@ npm run docker:run
 
 ## 💻 Recommended Developer Tools
 
-To get the most out of editing and pair programming in this repository, we recommend using **Visual Studio Code** along with these extension assets:
-* **ESLint** (`dbaeumer.vscode-eslint`): Auto-detects stylistic and syntax violations.
+For local development and editing, recommended Visual Studio Code extensions:
+* **ESLint** (`dbaeumer.vscode-eslint`): Identifies stylistic and syntax issues.
 * **Prettier** (`esbenp.prettier-vscode`): Enforces consistent code formatting.
-* **Tailwind CSS IntelliSense** (`bradlc.vscode-tailwindcss`): Autocompletes custom utility classes.
+* **Tailwind CSS IntelliSense** (`bradlc.vscode-tailwindcss`): Autocompletes Tailwind CSS classes.
 
 ---
 
