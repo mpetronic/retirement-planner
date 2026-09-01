@@ -13,6 +13,7 @@ import {
   Info
 } from 'lucide-react';
 import { optimizeRetirementScenario, OptimizationResult } from '../engine/optimizer';
+import { getTargetPresetInfo } from '../engine/taxRates2026';
 
 ChartJS.register(...registerables);
 
@@ -52,14 +53,14 @@ export const TaxableIncomeWorkspace: React.FC<TaxableIncomeWorkspaceProps> = ({
 
   // Selected benchmark state (defaults to 12% Fed Tax Bracket if none set)
   const activeTarget = useMemo(() => {
-    return selectedQuickFill || inputs.rothConversionTargetValue || 133000;
+    return selectedQuickFill || inputs.rothConversionTargetValue || 100800;
   }, [selectedQuickFill, inputs.rothConversionTargetValue]);
 
-  // Ensure a default benchmark (12% Fed Bracket - 133,000) is active in fill-to-target mode
+  // Ensure a default benchmark (12% Fed Bracket - $100,800) is active in fill-to-target mode
   React.useEffect(() => {
     if (inputs.rothConversionStrategy === 'fill-to-target' && !inputs.rothConversionTargetValue && !selectedQuickFill) {
-      onUpdateTargetValue(133000);
-      setSelectedQuickFill(133000);
+      onUpdateTargetValue(100800);
+      setSelectedQuickFill(100800);
     }
   }, [inputs.rothConversionStrategy, inputs.rothConversionTargetValue, selectedQuickFill, onUpdateTargetValue, setSelectedQuickFill]);
 
@@ -67,6 +68,7 @@ export const TaxableIncomeWorkspace: React.FC<TaxableIncomeWorkspaceProps> = ({
   const [showOptimizerModal, setShowOptimizerModal] = useState(false);
   const [isOptimizingScan, setIsOptimizingScan] = useState(false);
   const [optimizationResult, setOptimizationResult] = useState<OptimizationResult | null>(null);
+  const [hasHiddenDatasets, setHasHiddenDatasets] = useState(false);
 
   const formatCurrency = (val: number) => {
     return new Intl.NumberFormat('en-US', {
@@ -173,70 +175,12 @@ export const TaxableIncomeWorkspace: React.FC<TaxableIncomeWorkspaceProps> = ({
 
   // Compute dynamic benchmark line data points (indexed to Taxable Income threshold)
   const benchmarkLineData = useMemo(() => {
-    let jointBase = 0;
-    let singleBase = 0;
-    let label = '';
-    let color = 'rgba(16, 185, 129, 0.9)'; // emerald
-    let isMAGIBased = false;
-
-    switch (activeTarget) {
-      case 57000:
-        // Top of 10% Fed Bracket: Taxable Income $23,200 MFJ / $11,600 Single (in 2026 dollars)
-        jointBase = 23200; singleBase = 11600; label = 'Top of 10% Fed Tax Bracket ($23,200 Taxable Income)'; color = 'rgba(244, 63, 94, 0.9)';
-        break;
-      case 133000:
-        // Top of 12% Fed Bracket: Taxable Income $94,300 MFJ / $47,150 Single
-        jointBase = 94300; singleBase = 47150; label = 'Top of 12% Fed Tax Bracket ($94,300 Taxable Income)'; color = 'rgba(244, 63, 94, 0.9)';
-        break;
-      case 243600:
-        // Top of 22% Fed Bracket: Taxable Income $201,050 MFJ / $100,525 Single
-        jointBase = 201050; singleBase = 100525; label = 'Top of 22% Fed Tax Bracket ($201,050 Taxable Income)'; color = 'rgba(249, 115, 22, 0.9)';
-        break;
-      case 435750:
-        // Top of 24% Fed Bracket: Taxable Income $383,900 MFJ / $191,950 Single
-        jointBase = 383900; singleBase = 191950; label = 'Top of 24% Fed Tax Bracket ($383,900 Taxable Income)'; color = 'rgba(236, 72, 153, 0.9)';
-        break;
-      case 544650:
-        // Top of 32% Fed Bracket: Taxable Income $487,450 MFJ / $243,725 Single
-        jointBase = 487450; singleBase = 243725; label = 'Top of 32% Fed Tax Bracket ($487,450 Taxable Income)'; color = 'rgba(168, 85, 247, 0.9)';
-        break;
-      case 800900:
-        // Top of 35% Fed Bracket: Taxable Income $731,200 MFJ / $365,600 Single
-        jointBase = 731200; singleBase = 365600; label = 'Top of 35% Fed Tax Bracket ($731,200 Taxable Income)'; color = 'rgba(239, 68, 68, 0.9)';
-        break;
-      case 217999:
-      case 218000:
-        // IRMAA Tier 1: $218,000 MAGI
-        jointBase = 218000; singleBase = 109000; label = 'IRMAA Tier 1 Cliff ($218,000 MAGI)'; color = 'rgba(16, 185, 129, 0.9)'; isMAGIBased = true;
-        break;
-      case 273999:
-      case 274000:
-        // IRMAA Tier 2: $274,000 MAGI
-        jointBase = 274000; singleBase = 137000; label = 'IRMAA Tier 2 Cliff ($274,000 MAGI)'; color = 'rgba(245, 158, 11, 0.9)'; isMAGIBased = true;
-        break;
-      case 341999:
-      case 342000:
-        // IRMAA Tier 3: $342,000 MAGI
-        jointBase = 342000; singleBase = 171000; label = 'IRMAA Tier 3 Cliff ($342,000 MAGI)'; color = 'rgba(59, 130, 246, 0.9)'; isMAGIBased = true;
-        break;
-      case 409999:
-      case 410000:
-        // IRMAA Tier 4: $410,000 MAGI
-        jointBase = 410000; singleBase = 205000; label = 'IRMAA Tier 4 Cliff ($410,000 MAGI)'; color = 'rgba(236, 72, 153, 0.9)'; isMAGIBased = true;
-        break;
-      case 749999:
-      case 750000:
-        // IRMAA Tier 5: $750,000 MAGI
-        jointBase = 750000; singleBase = 375000; label = 'IRMAA Tier 5 Cliff ($750,000 MAGI)'; color = 'rgba(239, 68, 68, 0.9)'; isMAGIBased = true;
-        break;
-      default:
-        jointBase = activeTarget;
-        singleBase = activeTarget / 2;
-        label = `Target MAGI Limit ($${activeTarget.toLocaleString()} MAGI)`;
-        color = 'rgba(14, 165, 233, 0.9)';
-        isMAGIBased = true;
-        break;
-    }
+    const preset = getTargetPresetInfo(activeTarget);
+    const isMAGIBased = preset?.type === 'irmaa' || !preset;
+    const jointBase = preset ? preset.jointBase : activeTarget;
+    const singleBase = preset ? preset.singleBase : activeTarget / 2;
+    const label = preset ? preset.description : `Target MAGI Limit ($${activeTarget.toLocaleString()} MAGI)`;
+    const color = preset ? preset.color : 'rgba(14, 165, 233, 0.9)';
 
     const dataPoints = processedRows.map((r) => {
       const baseVal = r.isSingle ? singleBase : jointBase;
@@ -249,7 +193,17 @@ export const TaxableIncomeWorkspace: React.FC<TaxableIncomeWorkspaceProps> = ({
       return inflatedBase;
     });
 
-    return { label, color, data: dataPoints, isMAGIBased };
+    return {
+      label,
+      color,
+      data: dataPoints,
+      borderColor: color,
+      borderWidth: 3,
+      borderDash: [6, 4],
+      pointRadius: 0,
+      pointHoverRadius: 5,
+      order: 1,
+    };
   }, [activeTarget, processedRows]);
 
   // Chart datasets configuration
@@ -292,7 +246,7 @@ export const TaxableIncomeWorkspace: React.FC<TaxableIncomeWorkspaceProps> = ({
         order: 5,
       },
       isDataPresent(rothConvData) && {
-        label: 'Intentional Roth Conversions',
+        label: 'Roth Conversion',
         data: rothConvData,
         backgroundColor: 'rgba(16, 185, 129, 0.9)', // emerald-500
         stack: 'taxable',
@@ -332,6 +286,52 @@ export const TaxableIncomeWorkspace: React.FC<TaxableIncomeWorkspaceProps> = ({
       plugins: {
         legend: {
           position: 'top',
+          onClick: (e: any, legendItem: any, legend: any) => {
+            const index = legendItem.datasetIndex;
+            const ci = legend.chart;
+            const hasModifier = e.native.ctrlKey || e.native.altKey || e.native.shiftKey || e.native.metaKey;
+            
+            if (hasModifier) {
+              // Modifier + Click: Solo / Isolate (or reset if already soloed)
+              let visibleCount = 0;
+              let isClickedVisible = false;
+              ci.data.datasets.forEach((_: any, i: number) => {
+                if (ci.isDatasetVisible(i)) {
+                  visibleCount++;
+                  if (i === index) {
+                    isClickedVisible = true;
+                  }
+                }
+              });
+              
+              if (visibleCount === 1 && isClickedVisible) {
+                // Already soloed: Show all
+                ci.data.datasets.forEach((_: any, i: number) => {
+                  ci.setDatasetVisibility(i, true);
+                });
+              } else {
+                // Solo this dataset
+                ci.data.datasets.forEach((_: any, i: number) => {
+                  ci.setDatasetVisibility(i, i === index);
+                });
+              }
+            } else {
+              // Standard Click: Toggle individually
+              const isVisible = ci.isDatasetVisible(index);
+              ci.setDatasetVisibility(index, !isVisible);
+            }
+            
+            ci.update();
+            
+            // Update hasHiddenDatasets state to conditionally render Reset Legend UI
+            let anyHidden = false;
+            ci.data.datasets.forEach((_: any, i: number) => {
+              if (!ci.isDatasetVisible(i)) {
+                anyHidden = true;
+              }
+            });
+            setHasHiddenDatasets(anyHidden);
+          },
           labels: {
             color: '#cbd5e1',
             font: { size: 11, weight: '600' },
@@ -572,58 +572,58 @@ export const TaxableIncomeWorkspace: React.FC<TaxableIncomeWorkspaceProps> = ({
                   <span className="text-[9px] font-bold text-slate-400 px-1.5 uppercase font-mono">Fed:</span>
                   <button
                     type="button"
-                    onClick={() => handleSelectPreset(57000)}
+                    onClick={() => handleSelectPreset(24800)}
                     className={`text-[10px] px-2 py-0.5 rounded-lg font-bold transition-all border ${
-                      activeTarget === 57000
+                      activeTarget === 24800 || activeTarget === 57000
                         ? 'bg-rose-500/20 text-rose-300 border-rose-500/60 font-black'
                         : 'bg-slate-900/60 text-slate-400 hover:text-slate-200 border-slate-800'
                     }`}
                   >
-                    10% ($23.2k)
+                    10% ($24.8k)
                   </button>
                   <button
                     type="button"
-                    onClick={() => handleSelectPreset(133000)}
+                    onClick={() => handleSelectPreset(100800)}
                     className={`text-[10px] px-2 py-0.5 rounded-lg font-bold transition-all border ${
-                      activeTarget === 133000
+                      activeTarget === 100800 || activeTarget === 133000
                         ? 'bg-rose-500/20 text-rose-300 border-rose-500/60 font-black'
                         : 'bg-slate-900/60 text-slate-400 hover:text-slate-200 border-slate-800'
                     }`}
                   >
-                    12% ($94.3k)
+                    12% ($100.8k)
                   </button>
                   <button
                     type="button"
-                    onClick={() => handleSelectPreset(243600)}
+                    onClick={() => handleSelectPreset(211400)}
                     className={`text-[10px] px-2 py-0.5 rounded-lg font-bold transition-all border ${
-                      activeTarget === 243600
+                      activeTarget === 211400 || activeTarget === 243600
                         ? 'bg-amber-500/20 text-amber-300 border-amber-500/60 font-black'
                         : 'bg-slate-900/60 text-slate-400 hover:text-slate-200 border-slate-800'
                     }`}
                   >
-                    22% ($201k)
+                    22% ($211.4k)
                   </button>
                   <button
                     type="button"
-                    onClick={() => handleSelectPreset(435750)}
+                    onClick={() => handleSelectPreset(403550)}
                     className={`text-[10px] px-2 py-0.5 rounded-lg font-bold transition-all border ${
-                      activeTarget === 435750
+                      activeTarget === 403550 || activeTarget === 435750
                         ? 'bg-pink-500/20 text-pink-300 border-pink-500/60 font-black'
                         : 'bg-slate-900/60 text-slate-400 hover:text-slate-200 border-slate-800'
                     }`}
                   >
-                    24% ($383.9k)
+                    24% ($403.6k)
                   </button>
                   <button
                     type="button"
-                    onClick={() => handleSelectPreset(544650)}
+                    onClick={() => handleSelectPreset(512450)}
                     className={`text-[10px] px-2 py-0.5 rounded-lg font-bold transition-all border ${
-                      activeTarget === 544650
+                      activeTarget === 512450 || activeTarget === 544650
                         ? 'bg-purple-500/20 text-purple-300 border-purple-500/60 font-black'
                         : 'bg-slate-900/60 text-slate-400 hover:text-slate-200 border-slate-800'
                     }`}
                   >
-                    32% ($487.5k)
+                    32% ($512.5k)
                   </button>
                 </div>
 
@@ -797,20 +797,24 @@ export const TaxableIncomeWorkspace: React.FC<TaxableIncomeWorkspaceProps> = ({
             <Calculator className="w-4 h-4 text-emerald-400" />
             Taxable Income & Roth Conversion Stack
           </h3>
-          <div className="flex items-center gap-2 text-[10px] text-slate-400 font-mono">
-            <span className="flex items-center gap-1">
-              <span className="w-2.5 h-2.5 rounded-sm bg-emerald-500 inline-block" />
-              Roth Conversion
-            </span>
-            <span className="flex items-center gap-1">
-              <span className="w-2.5 h-2.5 rounded-sm bg-amber-500 inline-block" />
-              Forced RMDs/Draws
-            </span>
-            <span className="flex items-center gap-1">
-              <span className="w-2.5 h-2.5 rounded-sm bg-blue-500 inline-block" />
-              Taxable SS
-            </span>
-          </div>
+          {hasHiddenDatasets && (
+            <button
+              onClick={() => {
+                if (chartRef.current) {
+                  const chart = chartRef.current?.chart || chartRef.current;
+                  chart.data.datasets.forEach((_: any, i: number) => {
+                    chart.setDatasetVisibility(i, true);
+                  });
+                  chart.update();
+                  setHasHiddenDatasets(false);
+                }
+              }}
+              className="text-xs font-semibold px-3 py-1.5 bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 hover:bg-emerald-500/20 rounded-xl transition-all cursor-pointer flex items-center gap-1.5"
+            >
+              <Check className="w-3.5 h-3.5" />
+              <span>Show All Categories</span>
+            </button>
+          )}
         </div>
 
         <div className="h-[540px] w-full">

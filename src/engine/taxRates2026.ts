@@ -21,6 +21,197 @@ export interface IRMAATier {
   partDSurcharge: number;
 }
 
+export interface ConversionTargetPreset {
+  id: string;
+  type: 'bracket' | 'irmaa';
+  rateLabel: string;
+  shortLabel: string;
+  description: string;
+  jointBase: number;  // Taxable income ceiling for brackets, MAGI ceiling for IRMAA
+  singleBase: number; // Single filer equivalent
+  targetValue: number; // Preset value passed to inputs.rothConversionTargetValue
+  color: string;
+}
+
+export const CONVERSION_TARGET_PRESETS: ConversionTargetPreset[] = [
+  // Federal Tax Brackets (Taxable Income ceilings)
+  {
+    id: 'bracket_10',
+    type: 'bracket',
+    rateLabel: '10%',
+    shortLabel: '10% ($24.8k)',
+    description: 'Top of 10% Fed Tax Bracket ($24,800 Taxable Income)',
+    jointBase: 24800,
+    singleBase: 12400,
+    targetValue: 24800,
+    color: 'rgba(244, 63, 94, 0.9)',
+  },
+  {
+    id: 'bracket_12',
+    type: 'bracket',
+    rateLabel: '12%',
+    shortLabel: '12% ($100.8k)',
+    description: 'Top of 12% Fed Tax Bracket ($100,800 Taxable Income)',
+    jointBase: 100800,
+    singleBase: 50400,
+    targetValue: 100800,
+    color: 'rgba(244, 63, 94, 0.9)',
+  },
+  {
+    id: 'bracket_22',
+    type: 'bracket',
+    rateLabel: '22%',
+    shortLabel: '22% ($211.4k)',
+    description: 'Top of 22% Fed Tax Bracket ($211,400 Taxable Income)',
+    jointBase: 211400,
+    singleBase: 105700,
+    targetValue: 211400,
+    color: 'rgba(249, 115, 22, 0.9)',
+  },
+  {
+    id: 'bracket_24',
+    type: 'bracket',
+    rateLabel: '24%',
+    shortLabel: '24% ($403.6k)',
+    description: 'Top of 24% Fed Tax Bracket ($403,550 Taxable Income)',
+    jointBase: 403550,
+    singleBase: 201775,
+    targetValue: 403550,
+    color: 'rgba(236, 72, 153, 0.9)',
+  },
+  {
+    id: 'bracket_32',
+    type: 'bracket',
+    rateLabel: '32%',
+    shortLabel: '32% ($512.5k)',
+    description: 'Top of 32% Fed Tax Bracket ($512,450 Taxable Income)',
+    jointBase: 512450,
+    singleBase: 256225,
+    targetValue: 512450,
+    color: 'rgba(168, 85, 247, 0.9)',
+  },
+  {
+    id: 'bracket_35',
+    type: 'bracket',
+    rateLabel: '35%',
+    shortLabel: '35% ($768.7k)',
+    description: 'Top of 35% Fed Tax Bracket ($768,700 Taxable Income)',
+    jointBase: 768700,
+    singleBase: 640600,
+    targetValue: 768700,
+    color: 'rgba(239, 68, 68, 0.9)',
+  },
+
+  // IRMAA Tiers (MAGI ceilings)
+  {
+    id: 'irmaa_1',
+    type: 'irmaa',
+    rateLabel: 'Tier 1',
+    shortLabel: 'Tier 1 ($218k)',
+    description: 'IRMAA Tier 1 Cliff ($218,000 MAGI)',
+    jointBase: 218000,
+    singleBase: 109000,
+    targetValue: 218000,
+    color: 'rgba(16, 185, 129, 0.9)',
+  },
+  {
+    id: 'irmaa_2',
+    type: 'irmaa',
+    rateLabel: 'Tier 2',
+    shortLabel: 'Tier 2 ($274k)',
+    description: 'IRMAA Tier 2 Cliff ($274,000 MAGI)',
+    jointBase: 274000,
+    singleBase: 137000,
+    targetValue: 274000,
+    color: 'rgba(245, 158, 11, 0.9)',
+  },
+  {
+    id: 'irmaa_3',
+    type: 'irmaa',
+    rateLabel: 'Tier 3',
+    shortLabel: 'Tier 3 ($342k)',
+    description: 'IRMAA Tier 3 Cliff ($342,000 MAGI)',
+    jointBase: 342000,
+    singleBase: 171000,
+    targetValue: 342000,
+    color: 'rgba(59, 130, 246, 0.9)',
+  },
+  {
+    id: 'irmaa_4',
+    type: 'irmaa',
+    rateLabel: 'Tier 4',
+    shortLabel: 'Tier 4 ($410k)',
+    description: 'IRMAA Tier 4 Cliff ($410,000 MAGI)',
+    jointBase: 410000,
+    singleBase: 205000,
+    targetValue: 410000,
+    color: 'rgba(236, 72, 153, 0.9)',
+  },
+  {
+    id: 'irmaa_5',
+    type: 'irmaa',
+    rateLabel: 'Tier 5',
+    shortLabel: 'Tier 5 ($750k)',
+    description: 'IRMAA Tier 5 Cliff ($750,000 MAGI)',
+    jointBase: 750000,
+    singleBase: 500000,
+    targetValue: 750000,
+    color: 'rgba(239, 68, 68, 0.9)',
+  },
+];
+
+export function getTargetPresetInfo(targetValue: number | null): ConversionTargetPreset | null {
+  if (targetValue === null || targetValue === undefined || targetValue <= 0) return null;
+
+  switch (targetValue) {
+    case 24800:
+    case 57000:
+      return CONVERSION_TARGET_PRESETS[0]; // 10%
+    case 100800:
+    case 133000:
+      return CONVERSION_TARGET_PRESETS[1]; // 12%
+    case 211400:
+    case 243600:
+      return CONVERSION_TARGET_PRESETS[2]; // 22%
+    case 403550:
+    case 435750:
+      return CONVERSION_TARGET_PRESETS[3]; // 24%
+    case 512450:
+    case 544650:
+      return CONVERSION_TARGET_PRESETS[4]; // 32%
+    case 768700:
+    case 800900:
+      return CONVERSION_TARGET_PRESETS[5]; // 35%
+    case 217999:
+    case 218000:
+      return CONVERSION_TARGET_PRESETS[6]; // IRMAA 1
+    case 273999:
+    case 274000:
+      return CONVERSION_TARGET_PRESETS[7]; // IRMAA 2
+    case 341999:
+    case 342000:
+      return CONVERSION_TARGET_PRESETS[8]; // IRMAA 3
+    case 409999:
+    case 410000:
+      return CONVERSION_TARGET_PRESETS[9]; // IRMAA 4
+    case 749999:
+    case 750000:
+      return CONVERSION_TARGET_PRESETS[10]; // IRMAA 5
+    default:
+      return {
+        id: `custom_${targetValue}`,
+        type: 'irmaa',
+        rateLabel: `$${targetValue.toLocaleString()}`,
+        shortLabel: `$${(targetValue / 1000).toFixed(0)}k`,
+        description: `Target MAGI Limit ($${targetValue.toLocaleString()} MAGI)`,
+        jointBase: targetValue,
+        singleBase: targetValue / 2,
+        targetValue: targetValue,
+        color: 'rgba(14, 165, 233, 0.9)',
+      };
+  }
+}
+
 // 2026 Federal Standard Deductions
 export const FED_STANDARD_DEDUCTION_MFJ = 32200;
 export const FED_STANDARD_DEDUCTION_SINGLE = 16100;

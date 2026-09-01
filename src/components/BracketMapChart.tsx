@@ -3,7 +3,8 @@ import { Chart } from 'react-chartjs-2';
 import { Chart as ChartJS, registerables } from 'chart.js';
 import { SimulationResultRow, AppStateInputs, LockedReturnSequence } from '../types';
 import { Award, Zap, Check, X, AlertCircle } from 'lucide-react';
-import { optimizeRetirementScenario, OptimizationResult, OptimizationGoal } from '../engine/optimizer';
+import { optimizeRetirementScenario, OptimizationResult } from '../engine/optimizer';
+import { getTargetPresetInfo } from '../engine/taxRates2026';
 
 ChartJS.register(...registerables);
 
@@ -57,58 +58,12 @@ export const BracketMapChart: React.FC<BracketMapChartProps> = ({
     const activeTarget = selectedQuickFill || (inputs.rothConversionStrategy === 'fill-to-target' ? inputs.rothConversionTargetValue : null);
     if (!activeTarget) return null;
 
-    let jointBase = 0;
-    let singleBase = 0;
-    let label = '';
-    let color = 'rgba(16, 185, 129, 0.9)'; // default emerald
-
-    switch (activeTarget) {
-      case 57000:
-        jointBase = 57000; singleBase = 28500; label = "Top of 10% Fed Bracket"; color = 'rgba(244, 63, 94, 0.9)';
-        break;
-      case 133000:
-        jointBase = 133000; singleBase = 66500; label = "Top of 12% Fed Bracket"; color = 'rgba(244, 63, 94, 0.9)';
-        break;
-      case 243600:
-        jointBase = 243600; singleBase = 121800; label = "Top of 22% Fed Bracket"; color = 'rgba(249, 115, 22, 0.9)';
-        break;
-      case 435750:
-        jointBase = 435750; singleBase = 217875; label = "Top of 24% Fed Bracket"; color = 'rgba(236, 72, 153, 0.9)';
-        break;
-      case 544650:
-        jointBase = 544650; singleBase = 272325; label = "Top of 32% Fed Bracket"; color = 'rgba(168, 85, 247, 0.9)';
-        break;
-      case 800900:
-        jointBase = 800900; singleBase = 656700; label = "Top of 35% Fed Bracket"; color = 'rgba(239, 68, 68, 0.9)';
-        break;
-      case 217999:
-      case 218000:
-        jointBase = 218000; singleBase = 109000; label = "IRMAA Tier 1 Cliff"; color = 'rgba(16, 185, 129, 0.9)';
-        break;
-      case 273999:
-      case 274000:
-        jointBase = 274000; singleBase = 137000; label = "IRMAA Tier 2 Cliff"; color = 'rgba(245, 158, 11, 0.9)';
-        break;
-      case 341999:
-      case 342000:
-        jointBase = 342000; singleBase = 171000; label = "IRMAA Tier 3 Cliff"; color = 'rgba(59, 130, 246, 0.9)';
-        break;
-      case 409999:
-      case 410000:
-        jointBase = 410000; singleBase = 205000; label = "IRMAA Tier 4 Cliff"; color = 'rgba(236, 72, 153, 0.9)';
-        break;
-      case 749999:
-      case 750000:
-        jointBase = 750000; singleBase = 375000; label = "IRMAA Tier 5 Cliff"; color = 'rgba(239, 68, 68, 0.9)';
-        break;
-      default:
-        // Draw custom guideline
-        jointBase = activeTarget;
-        singleBase = activeTarget / 2;
-        label = `Target MAGI Limit ($${activeTarget.toLocaleString()})`;
-        color = 'rgba(14, 165, 233, 0.9)'; // sky-500
-        break;
-    }
+    const preset = getTargetPresetInfo(activeTarget);
+    const isBracketTarget = preset?.type === 'bracket';
+    const label = preset ? preset.description : `Target Limit ($${activeTarget.toLocaleString()})`;
+    const color = preset ? preset.color : 'rgba(14, 165, 233, 0.9)';
+    const jointBase = preset ? preset.jointBase : activeTarget;
+    const singleBase = preset ? preset.singleBase : activeTarget / 2;
 
     const parseBirthYear = (dateStr: string | undefined, fallback: number): number => {
       if (!dateStr) return fallback;
@@ -128,6 +83,10 @@ export const BracketMapChart: React.FC<BracketMapChartProps> = ({
       const isSingle = simulateSurvivor && r.year >= deathYear;
       const baseVal = isSingle ? singleBase : jointBase;
       const cpiFactor = r.cpiFactor;
+      if (isBracketTarget) {
+        // Federal Bracket: plots Gross AGI equivalent = (Bracket Limit * CPI) + Standard Deduction
+        return (baseVal * cpiFactor) + (r.standardDeduction || 0);
+      }
       return baseVal * cpiFactor;
     });
 
@@ -778,19 +737,19 @@ export const BracketMapChart: React.FC<BracketMapChartProps> = ({
               <option value="opt-min_surcharges">Minimize Medicare IRMAA 🩺</option>
             </optgroup>
             <optgroup label="Federal Tax Brackets (MFJ)">
-              <option value={57000}>Fill to Top of 10% Bracket ($57,000)</option>
-              <option value={133000}>Fill to Top of 12% Bracket ($133,000)</option>
-              <option value={243600}>Fill to Top of 22% Bracket ($243,600)</option>
-              <option value={435750}>Fill to Top of 24% Bracket ($435,750)</option>
-              <option value={544650}>Fill to Top of 32% Bracket ($544,650)</option>
-              <option value={800900}>Fill to Top of 35% Bracket ($800,900)</option>
+              <option value={24800}>Fill to Top of 10% Bracket ($24,800 Taxable)</option>
+              <option value={100800}>Fill to Top of 12% Bracket ($100,800 Taxable)</option>
+              <option value={211400}>Fill to Top of 22% Bracket ($211,400 Taxable)</option>
+              <option value={403550}>Fill to Top of 24% Bracket ($403,550 Taxable)</option>
+              <option value={512450}>Fill to Top of 32% Bracket ($512,450 Taxable)</option>
+              <option value={768700}>Fill to Top of 35% Bracket ($768,700 Taxable)</option>
             </optgroup>
             <optgroup label="Medicare IRMAA Cliffs ($1 Below Cliff)">
-              <option value={217999}>Fill to $1 Below Tier 1 Cliff ($217,999)</option>
-              <option value={273999}>Fill to $1 Below Tier 2 Cliff ($273,999)</option>
-              <option value={341999}>Fill to $1 Below Tier 3 Cliff ($341,999)</option>
-              <option value={409999}>Fill to $1 Below Tier 4 Cliff ($409,999)</option>
-              <option value={749999}>Fill to $1 Below Tier 5 Cliff ($749,999)</option>
+              <option value={217999}>Fill to $1 Below Tier 1 Cliff ($217,999 MAGI)</option>
+              <option value={273999}>Fill to $1 Below Tier 2 Cliff ($273,999 MAGI)</option>
+              <option value={341999}>Fill to $1 Below Tier 3 Cliff ($341,999 MAGI)</option>
+              <option value={409999}>Fill to $1 Below Tier 4 Cliff ($409,999 MAGI)</option>
+              <option value={749999}>Fill to $1 Below Tier 5 Cliff ($749,999 MAGI)</option>
             </optgroup>
           </select>
           {hasHiddenDatasets && (

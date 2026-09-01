@@ -456,12 +456,7 @@ function App() {
     if (inputs.rothConversionStrategy !== 'fill-to-target' || inputs.rothConversionTargetValue === null) {
       setSelectedQuickFill(null);
     } else {
-      const validFills = [57000, 133000, 243600, 435750, 206000, 258000, 322000, 382000, 461000];
-      if (validFills.includes(inputs.rothConversionTargetValue)) {
-        setSelectedQuickFill(inputs.rothConversionTargetValue);
-      } else {
-        setSelectedQuickFill(null);
-      }
+      setSelectedQuickFill(inputs.rothConversionTargetValue);
     }
   }, [inputs.rothConversionStrategy, inputs.rothConversionTargetValue, setSelectedQuickFill]);
 

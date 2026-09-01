@@ -84,19 +84,17 @@ export function optimizeRetirementScenario(
     { strategy: 'flat', annualConversion: 300000, targetValue: null },
     { strategy: 'flat', annualConversion: 400000, targetValue: null },
 
-    // Target MAGI ceiling candidates: Federal Brackets and IRMAA cliffs
-    { strategy: 'fill-to-target', annualConversion: inputs.annualRothConversion, targetValue: 57000 },   // 10% Bracket
-    { strategy: 'fill-to-target', annualConversion: inputs.annualRothConversion, targetValue: 133000 },  // 12% Bracket
-    { strategy: 'fill-to-target', annualConversion: inputs.annualRothConversion, targetValue: 200000 },
+    // Target ceiling candidates: Federal Brackets (Taxable Income) and IRMAA cliffs (MAGI)
+    { strategy: 'fill-to-target', annualConversion: inputs.annualRothConversion, targetValue: 24800 },   // 10% Bracket ($24.8k)
+    { strategy: 'fill-to-target', annualConversion: inputs.annualRothConversion, targetValue: 100800 },  // 12% Bracket ($100.8k)
+    { strategy: 'fill-to-target', annualConversion: inputs.annualRothConversion, targetValue: 211400 },  // 22% Bracket ($211.4k)
     { strategy: 'fill-to-target', annualConversion: inputs.annualRothConversion, targetValue: 217999 },  // IRMAA Tier 1 ($1 below cliff)
-    { strategy: 'fill-to-target', annualConversion: inputs.annualRothConversion, targetValue: 243600 },  // 22% Bracket
     { strategy: 'fill-to-target', annualConversion: inputs.annualRothConversion, targetValue: 273999 },  // IRMAA Tier 2 ($1 below cliff)
-    { strategy: 'fill-to-target', annualConversion: inputs.annualRothConversion, targetValue: 300000 },
     { strategy: 'fill-to-target', annualConversion: inputs.annualRothConversion, targetValue: 341999 },  // IRMAA Tier 3 ($1 below cliff)
-    { strategy: 'fill-to-target', annualConversion: inputs.annualRothConversion, targetValue: 400000 },
+    { strategy: 'fill-to-target', annualConversion: inputs.annualRothConversion, targetValue: 403550 },  // 24% Bracket ($403.55k)
     { strategy: 'fill-to-target', annualConversion: inputs.annualRothConversion, targetValue: 409999 },  // IRMAA Tier 4 ($1 below cliff)
-    { strategy: 'fill-to-target', annualConversion: inputs.annualRothConversion, targetValue: 435750 },  // 24% Bracket
-    { strategy: 'fill-to-target', annualConversion: inputs.annualRothConversion, targetValue: 544650 },  // 32% Bracket
+    { strategy: 'fill-to-target', annualConversion: inputs.annualRothConversion, targetValue: 512450 },  // 32% Bracket ($512.45k)
+    { strategy: 'fill-to-target', annualConversion: inputs.annualRothConversion, targetValue: 749999 },  // IRMAA Tier 5 ($1 below cliff)
   ];
 
   // Also include the user's current settings if not already in candidate list

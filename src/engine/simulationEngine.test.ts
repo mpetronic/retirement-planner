@@ -3,6 +3,7 @@ import {
   calculateSSBenefit,
   calculateSpousalBenefit,
   calculateTaxableSS,
+  solveRothConversionForTargetAGI,
   calculateFedTax,
   calculateMDStateTax,
   runRetirementSimulation,
@@ -1467,7 +1468,93 @@ describe('runRetirementSimulation fixes', () => {
       expect(row2026).toBeDefined();
 
       // Total AGI in 2026 must be kept at or below the target limit ($215,000)
-      expect(row2026!.magi).toBeLessThanOrEqual(216000);
+      expect(row2026!.magi).toBeLessThanOrEqual(215000.5);
+    });
+
+    it('should fill exactly to 12% bracket taxable income ceiling without overshooting', () => {
+      const getMockInputs = (): any => ({
+        you: { birthDate: '1960-01-01', plannedRetirementAge: 65, activeSalary: 0, targetSSClaimingAge: 67, estimatedPIA: 3000 },
+        wife: { birthDate: '1964-01-01', plannedRetirementAge: 61, activeSalary: 0, targetSSClaimingAge: 67, estimatedPIA: 1500 },
+        portfolio: { yourPreTaxIRA: 1500000, yourRothIRA: 50000, yourTaxableBrokerage: 400000, yourCash: 50000, wifePreTaxIRA: 0, wifeRothIRA: 0, wifeTaxableBrokerage: 0, wifeCash: 0 },
+        jurisdiction: { currentState: 'FL', targetState: 'FL', relocationYear: null },
+        growthAssumptions: { equityReturnRate: 0.07, fixedIncomeReturnRate: 0.04, cpiInflationRate: 0.025, healthcareInflationRate: 0.05 },
+        annualLivingExpenses: 60000,
+        annualRothConversion: 50000,
+        simulationStartYear: 2026,
+        rothConversionStartYear: 2026,
+        rothConversionEndYear: 2030,
+        rothConversionStrategy: 'fill-to-target',
+        rothConversionTargetValue: 100800, // 12% Bracket ceiling ($100,800 Taxable Income)
+        monteCarloSettings: { mode: 'monte-carlo', trials: 10 },
+        isConfigured: true,
+        isSingleFiler: false,
+      });
+
+      const inputs = getMockInputs();
+      const results = runRetirementSimulation(inputs);
+      
+      const convRows = results.filter(r => r.year >= 2026 && r.year <= 2030);
+      for (const row of convRows) {
+        const expectedTaxableTarget = 100800 * row.cpiFactor;
+        expect(row.intentionalRothConversion).toBeGreaterThan(0);
+        // Taxable income must equal the target taxable ceiling within $1
+        expect(row.taxableIncome).toBeCloseTo(expectedTaxableTarget, 0);
+        expect(row.taxableIncome).toBeLessThanOrEqual(expectedTaxableTarget + 0.05);
+      }
+    });
+
+    it('should fill exactly to IRMAA MAGI ceiling without overshooting', () => {
+      const getMockInputs = (): any => ({
+        you: { birthDate: '1960-01-01', plannedRetirementAge: 65, activeSalary: 0, targetSSClaimingAge: 67, estimatedPIA: 3000 },
+        wife: { birthDate: '1964-01-01', plannedRetirementAge: 61, activeSalary: 0, targetSSClaimingAge: 67, estimatedPIA: 1500 },
+        portfolio: { yourPreTaxIRA: 1500000, yourRothIRA: 50000, yourTaxableBrokerage: 400000, yourCash: 50000, wifePreTaxIRA: 0, wifeRothIRA: 0, wifeTaxableBrokerage: 0, wifeCash: 0 },
+        jurisdiction: { currentState: 'FL', targetState: 'FL', relocationYear: null },
+        growthAssumptions: { equityReturnRate: 0.07, fixedIncomeReturnRate: 0.04, cpiInflationRate: 0.025, healthcareInflationRate: 0.05 },
+        annualLivingExpenses: 60000,
+        annualRothConversion: 50000,
+        simulationStartYear: 2026,
+        rothConversionStartYear: 2026,
+        rothConversionEndYear: 2030,
+        rothConversionStrategy: 'fill-to-target',
+        rothConversionTargetValue: 218000, // IRMAA Tier 1 ceiling ($218,000 MAGI)
+        monteCarloSettings: { mode: 'monte-carlo', trials: 10 },
+        isConfigured: true,
+        isSingleFiler: false,
+      });
+
+      const inputs = getMockInputs();
+      const results = runRetirementSimulation(inputs);
+      
+      const convRows = results.filter(r => r.year >= 2026 && r.year <= 2030);
+      for (const row of convRows) {
+        const expectedMAGITarget = 218000 * row.cpiFactor;
+        expect(row.intentionalRothConversion).toBeGreaterThan(0);
+        // MAGI must equal the IRMAA target ceiling within $1
+        expect(Math.abs(row.magi - expectedMAGITarget)).toBeLessThanOrEqual(1.0);
+        expect(row.magi).toBeLessThanOrEqual(expectedMAGITarget + 0.05);
+      }
+    });
+  });
+
+  describe('solveRothConversionForTargetAGI', () => {
+    it('should return 0 if baseline AGI already meets or exceeds target', () => {
+      const conv = solveRothConversionForTargetAGI(100000, 120000, 0, 0, false);
+      expect(conv).toBe(0);
+    });
+
+    it('should compute exact headroom without Social Security', () => {
+      const conv = solveRothConversionForTargetAGI(150000, 50000, 10000, 0, false);
+      expect(conv).toBe(90000); // 150000 - 60000
+    });
+
+    it('should accurately account for Social Security taxability feedback loop', () => {
+      // Total SS = 40,000. Target = 150,000. Baseline Ordinary = 40,000, Capital Gains = 0.
+      const conv = solveRothConversionForTargetAGI(150000, 40000, 0, 40000, false);
+      const taxableSS = calculateTaxableSS(40000, 40000 + conv, false);
+      const resultingAGI = 40000 + conv + taxableSS;
+      expect(resultingAGI).toBeCloseTo(150000, 0);
+      expect(resultingAGI).toBeLessThanOrEqual(150000.01);
     });
   });
 });
+
