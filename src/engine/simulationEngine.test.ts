@@ -10,7 +10,7 @@ import {
   calculateFedTaxWithLTCG,
   getRMDStartAge,
 } from './simulationEngine';
-import { DEFAULT_DETAILED_EXPENSES, DEFAULT_EXPENSE_FREQUENCIES, normalizeDetailedExpenses, DetailedExpensesState } from '../types';
+import { DEFAULT_DETAILED_EXPENSES, DEFAULT_EXPENSE_FREQUENCIES, normalizeDetailedExpenses, DetailedExpensesState, AppStateInputs } from '../types';
 
 describe('calculateSSBenefit', () => {
   const PIA = 1000;
@@ -1556,5 +1556,119 @@ describe('runRetirementSimulation fixes', () => {
       expect(resultingAGI).toBeLessThanOrEqual(150000.01);
     });
   });
+
+  describe('Actuals Tracking & Guardrail Plan Engine', () => {
+    const getBaseActualsTestInputs = (): AppStateInputs => ({
+      you: { birthDate: '1960-01-01', plannedRetirementAge: 65, activeSalary: 0, targetSSClaimingAge: 67, estimatedPIA: 3000 },
+      wife: { birthDate: '1964-01-01', plannedRetirementAge: 61, activeSalary: 0, targetSSClaimingAge: 67, estimatedPIA: 1500 },
+      portfolio: { yourPreTaxIRA: 1000000, yourRothIRA: 200000, yourTaxableBrokerage: 500000, yourTaxableBasis: 300000, yourCash: 100000, wifePreTaxIRA: 0, wifeRothIRA: 0, wifeTaxableBrokerage: 0, wifeTaxableBasis: 0, wifeCash: 0 },
+      jurisdiction: { currentState: 'FL', targetState: 'FL', relocationYear: null },
+      growthAssumptions: { equityReturnRate: 0.08, fixedIncomeReturnRate: 0.04, cpiInflationRate: 0.025, healthcareInflationRate: 0.05 },
+      annualLivingExpenses: 80000,
+      annualRothConversion: 0,
+      simulationStartYear: 2026,
+      rothConversionStrategy: 'flat',
+      rothConversionTargetValue: null,
+      monteCarloSettings: { mode: 'monte-carlo', trials: 10, equityVolatility: 0.15, fixedIncomeVolatility: 0.05, correlation: 0.15, seed: 42 },
+      isConfigured: true,
+      isSingleFiler: true,
+    });
+
+    it('should seamlessly substitute actual return rates and living expenses for recorded years', () => {
+      const inputs = getBaseActualsTestInputs();
+      inputs.actualTracking = {
+        2026: {
+          year: 2026,
+          equityReturnRate: 0.035,
+          fixedIncomeReturnRate: 0.02,
+          totalLivingExpenses: 72000,
+        },
+      };
+
+      const ledger = runRetirementSimulation(inputs);
+      const row2026 = ledger.find(r => r.year === 2026);
+      expect(row2026).toBeDefined();
+      expect(row2026?.isActual).toBe(true);
+      expect(row2026?.livingExpenses).toBe(72000);
+      expect(row2026?.isBridged).toBe(false);
+    });
+
+    it('should apply balance reconciliation overrides and carry them forward to future simulation years', () => {
+      const inputs = getBaseActualsTestInputs();
+      inputs.actualTracking = {
+        2026: {
+          year: 2026,
+          endYourPreTaxIRA: 950000,
+          endYourRothIRA: 250000,
+          endYourTaxableBrokerage: 600000,
+          endYourTaxableBasis: 350000,
+          endYourCash: 120000,
+        },
+      };
+
+      const ledger = runRetirementSimulation(inputs);
+      const row2026 = ledger.find(r => r.year === 2026);
+      expect(row2026?.endYourPreTaxIRA).toBe(950000);
+      expect(row2026?.endYourRothIRA).toBe(250000);
+      expect(row2026?.endYourTaxableBrokerage).toBe(600000);
+      expect(row2026?.endYourCash).toBe(120000);
+      expect(row2026?.totalPortfolioValue).toBe(1920000);
+
+      // Future projected year 2027 should begin growing from 2026 reconciled balances
+      const row2027 = ledger.find(r => r.year === 2027);
+      expect(row2027?.isActual).toBe(false);
+      expect(row2027).toBeDefined();
+    });
+
+    it('should bridge missing intermediate actual years gracefully with model projections', () => {
+      const inputs = getBaseActualsTestInputs();
+      inputs.actualTracking = {
+        2026: { year: 2026, totalLivingExpenses: 70000 },
+        2028: { year: 2028, totalLivingExpenses: 75000 },
+      };
+
+      const ledger = runRetirementSimulation(inputs);
+      const row2026 = ledger.find(r => r.year === 2026);
+      const row2027 = ledger.find(r => r.year === 2027);
+      const row2028 = ledger.find(r => r.year === 2028);
+
+      expect(row2026?.isActual).toBe(true);
+      expect(row2026?.isBridged).toBe(false);
+
+      expect(row2027?.isActual).toBe(false);
+      expect(row2027?.isBridged).toBe(true);
+
+      expect(row2028?.isActual).toBe(true);
+      expect(row2028?.isBridged).toBe(false);
+    });
+
+    it('should compute Guardrail spending gap and bonus within configured upper/lower bounds', () => {
+      const inputs = getBaseActualsTestInputs();
+      inputs.guardrailSettings = {
+        enabled: true,
+        upperGuardrailPct: 0.15,
+        lowerGuardrailPct: 0.15,
+        marketSurplusSharePct: 0.10,
+        applyToSimulation: false,
+      };
+      inputs.annualLivingExpenses = 100000;
+      inputs.actualTracking = {
+        2026: {
+          year: 2026,
+          totalLivingExpenses: 85000, // $15k spending surplus
+          equityReturnRate: 0.20,     // Strong outperformance
+        },
+      };
+
+      const ledger = runRetirementSimulation(inputs);
+      const row2026 = ledger.find(r => r.year === 2026);
+      expect(row2026).toBeDefined();
+      expect(row2026?.guardrailUpperLimit).toBeCloseTo(115000, 1); // 100k * 1.15
+      expect(row2026?.guardrailLowerLimit).toBeCloseTo(85000, 1);  // 100k * 0.85
+      expect(row2026?.actualSurplusGap).toBeGreaterThan(15000);
+      expect(row2026?.permittedSpendingBonus).toBeLessThanOrEqual(15000.01); // Capped by upper guardrail ceiling ($115k - $100k = $15k)
+    });
+  });
 });
+
 

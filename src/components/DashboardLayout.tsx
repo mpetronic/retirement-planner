@@ -9,7 +9,8 @@ import {
   Sliders,
   AlertTriangle,
   BookOpen,
-  Calculator
+  Calculator,
+  ClipboardCheck,
 } from 'lucide-react';
 
 interface DashboardLayoutProps {
@@ -156,6 +157,17 @@ export const DashboardLayout: React.FC<DashboardLayoutProps> = ({
             >
               <ArrowRightLeft className="w-3.5 h-3.5" />
               Compare
+            </button>
+            <button
+              onClick={() => setActiveTab(5)}
+              className={`px-3 py-1.5 text-xs font-bold rounded-xl transition-all flex items-center gap-1.5 cursor-pointer ${
+                activeTab === 5
+                  ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 shadow-sm'
+                  : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/50'
+              }`}
+            >
+              <ClipboardCheck className="w-3.5 h-3.5" />
+              Actuals & Guardrails
             </button>
           </nav>
         </div>

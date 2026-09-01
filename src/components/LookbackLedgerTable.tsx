@@ -10,12 +10,14 @@ interface LookbackLedgerTableProps {
   ledger: SimulationResultRow[];
   inputs: AppStateInputs;
   simulateSurvivor: boolean;
+  onNavigateToActuals?: (year: number) => void;
 }
 
 export const LookbackLedgerTable: React.FC<LookbackLedgerTableProps> = ({
   ledger,
   inputs,
   simulateSurvivor,
+  onNavigateToActuals,
 }) => {
   const [selectedRow, setSelectedRow] = useState<SimulationResultRow | null>(null);
   const simStartYear = getSimulationStartYear(inputs);
@@ -98,7 +100,7 @@ export const LookbackLedgerTable: React.FC<LookbackLedgerTableProps> = ({
     });
 
     return activeWarnings;
-  }, [ledger, simulateSurvivor, inputs, deathYear]);
+  }, [ledger, simulateSurvivor, inputs, deathYear, simStartYear]);
 
   return (
     <div className="glass-panel rounded-2xl p-3.5 space-y-3">
@@ -293,14 +295,44 @@ export const LookbackLedgerTable: React.FC<LookbackLedgerTableProps> = ({
                    }`}
                  >
                   <td className="px-2.5 py-2.5 font-mono font-semibold whitespace-nowrap">
-                    {r.year}
-                    <span className="text-[10px] font-normal text-slate-400 ml-1">
-                      {inputs.isSingleFiler 
-                        ? `(${r.yourAge})` 
-                        : (simulateSurvivor && r.year >= deathYear) 
-                          ? `(--/${r.wifeAge})` 
-                          : `(${r.yourAge}/${r.wifeAge})`}
-                    </span>
+                    <div className="flex items-center gap-1.5">
+                      <span>{r.year}</span>
+                      {r.isActual && (
+                        <span
+                          onClick={(e) => {
+                            if (onNavigateToActuals) {
+                              e.stopPropagation();
+                              onNavigateToActuals(r.year);
+                            }
+                          }}
+                          className="px-1.5 py-0.2 bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 rounded text-[9px] font-sans font-bold hover:bg-emerald-500/30 cursor-pointer"
+                          title="Click to edit actuals in Actuals & Guardrails Workspace"
+                        >
+                          ACTUAL
+                        </span>
+                      )}
+                      {r.isBridged && (
+                        <span
+                          onClick={(e) => {
+                            if (onNavigateToActuals) {
+                              e.stopPropagation();
+                              onNavigateToActuals(r.year);
+                            }
+                          }}
+                          className="px-1.5 py-0.2 bg-amber-500/20 text-amber-300 border border-amber-500/40 rounded text-[9px] font-sans font-bold hover:bg-amber-500/30 cursor-pointer"
+                          title="Missing actuals — bridged via simulation"
+                        >
+                          BRIDGED
+                        </span>
+                      )}
+                      <span className="text-[10px] font-normal text-slate-400">
+                        {inputs.isSingleFiler 
+                          ? `(${r.yourAge})` 
+                          : (simulateSurvivor && r.year >= deathYear) 
+                            ? `(--/${r.wifeAge})` 
+                            : `(${r.yourAge}/${r.wifeAge})`}
+                      </span>
+                    </div>
                   </td>
                   <td className="px-2.5 py-2.5 font-mono relative group cursor-help text-slate-300">
                     <span>{formatCurrency(r.magi)}</span>

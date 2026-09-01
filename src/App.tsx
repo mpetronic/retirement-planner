@@ -6,8 +6,9 @@ import {
   SimulationResultRow,
   DEFAULT_DETAILED_EXPENSES_STATE,
   DEFAULT_CHARITY_SETTINGS,
+  DEFAULT_GUARDRAIL_SETTINGS,
   normalizeDetailedExpenses,
-  getSimulationStartYear
+  getSimulationStartYear,
 } from './types';
 import { runRetirementSimulation } from './engine/simulationEngine';
 import {
@@ -23,6 +24,7 @@ import { TaxableIncomeWorkspace } from './components/TaxableIncomeWorkspace';
 import { LookbackLedgerTable } from './components/LookbackLedgerTable';
 import { MonteCarloWorkspace } from './components/MonteCarloWorkspace';
 import { PlanComparisonWorkspace } from './components/PlanComparisonWorkspace';
+import { ActualsWorkspace } from './components/ActualsWorkspace';
 import { DocumentationDialog } from './components/DocumentationDialog';
 import { OnboardingWizard } from './components/OnboardingWizard';
 
@@ -105,7 +107,9 @@ const DEFAULT_INPUTS: AppStateInputs = {
   isSingleFiler: false,
   useDetailedExpenses: false,
   detailedExpenses: JSON.parse(JSON.stringify(DEFAULT_DETAILED_EXPENSES_STATE)),
-  charitySettings: DEFAULT_CHARITY_SETTINGS
+  charitySettings: DEFAULT_CHARITY_SETTINGS,
+  actualTracking: {},
+  guardrailSettings: DEFAULT_GUARDRAIL_SETTINGS,
 };
 
 // Custom hook for LocalStorage persistence with defensive deep merge schema protection
@@ -148,6 +152,11 @@ function useLocalStorage<T>(key: string, initialValue: T): [T, (value: T | ((val
             },
             useDetailedExpenses: parsed.useDetailedExpenses !== undefined ? parsed.useDetailedExpenses : false,
             detailedExpenses: normalizeDetailedExpenses(parsed.detailedExpenses),
+            actualTracking: parsed.actualTracking || {},
+            guardrailSettings: {
+              ...DEFAULT_GUARDRAIL_SETTINGS,
+              ...(parsed.guardrailSettings || {}),
+            },
           } as any;
         }
 
@@ -156,7 +165,12 @@ function useLocalStorage<T>(key: string, initialValue: T): [T, (value: T | ((val
             ...p,
             inputs: {
               ...p.inputs,
-              detailedExpenses: normalizeDetailedExpenses(p.inputs?.detailedExpenses)
+              detailedExpenses: normalizeDetailedExpenses(p.inputs?.detailedExpenses),
+              actualTracking: p.inputs?.actualTracking || {},
+              guardrailSettings: {
+                ...DEFAULT_GUARDRAIL_SETTINGS,
+                ...(p.inputs?.guardrailSettings || {}),
+              },
             }
           })) as any;
         }
@@ -532,6 +546,9 @@ function App() {
             ledger={displayActiveLedger}
             inputs={inputs}
             simulateSurvivor={simulateSurvivor}
+            onNavigateToActuals={() => {
+              setActiveTab(5);
+            }}
           />
         )}
         {activeTab === 3 && (
@@ -555,6 +572,31 @@ function App() {
             setSelectedPlanAId={setSelectedPlanAId}
             selectedPlanBId={selectedPlanBId}
             setSelectedPlanBId={setSelectedPlanBId}
+          />
+        )}
+        {activeTab === 5 && (
+          <ActualsWorkspace
+            ledger={displayActiveLedger}
+            inputs={inputs}
+            onUpdateActuals={(actuals) => {
+              setInputs((prev) => ({
+                ...prev,
+                actualTracking: actuals,
+              }));
+            }}
+            onUpdateGuardrailSettings={(guardrails) => {
+              setInputs((prev) => ({
+                ...prev,
+                guardrailSettings: guardrails,
+              }));
+            }}
+            onApplySpendingBonusToBudget={(newBudget) => {
+              setInputs((prev) => ({
+                ...prev,
+                annualLivingExpenses: newBudget,
+              }));
+            }}
+            onNavigateToTab={setActiveTab}
           />
         )}
       </DashboardLayout>

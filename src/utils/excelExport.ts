@@ -134,12 +134,24 @@ export const generateExcelWorkbook = (ledger: SimulationResultRow[], inputs: App
     }
   }
 
+  configData.push(
+    [],
+    ["GUARDRAIL SPENDING POLICY"],
+    ["Guardrail Policy Enabled", inputs.guardrailSettings?.enabled !== false ? "Yes" : "No"],
+    ["Upper Guardrail Ceiling (+%)", `+${(((inputs.guardrailSettings?.upperGuardrailPct ?? 0.15) * 100)).toFixed(0)}%`],
+    ["Lower Guardrail Floor (-%)", `-${(((inputs.guardrailSettings?.lowerGuardrailPct ?? 0.15) * 100)).toFixed(0)}%`],
+    ["Market Surplus Share", `${(((inputs.guardrailSettings?.marketSurplusSharePct ?? 0.10) * 100)).toFixed(0)}%`],
+    ["Apply to Forward Simulation", inputs.guardrailSettings?.applyToSimulation ? "Yes" : "No"],
+    ["Recorded Actual Years Logged", Object.keys(inputs.actualTracking || {}).join(", ") || "None"]
+  );
+
   const wsConfig = XLSX.utils.aoa_to_sheet(configData);
   XLSX.utils.book_append_sheet(wb, wsConfig, "Configuration Summary");
 
   // Tab 2: Simulation Ledger
   const ledgerData = ledger.map(row => ({
     "Year": row.year,
+    "Status": row.isActual ? "Actual" : row.isBridged ? "Bridged" : "Projected",
     "Your Age": row.yourAge,
     "Spouse Age": inputs.isSingleFiler ? "-" : row.wifeAge,
     "Portfolio Value": Math.round(row.totalPortfolioValue),
@@ -162,6 +174,10 @@ export const generateExcelWorkbook = (ledger: SimulationResultRow[], inputs: App
     "Roth Conversion Added": Math.round(row.intentionalRothConversion),
     "Capital Gains Triggered": Math.round(row.capitalGainsTriggered),
     "Base Living Expenses": Math.round(row.livingExpenses),
+    "Guardrail Upper Limit": Math.round(row.guardrailUpperLimit ?? 0),
+    "Guardrail Lower Limit": Math.round(row.guardrailLowerLimit ?? 0),
+    "Spending Surplus Gap": Math.round(row.actualSurplusGap ?? 0),
+    "Permitted Spending Bonus": Math.round(row.permittedSpendingBonus ?? 0),
     "Pre-Medicare Premiums": Math.round(row.preMedicareHealthcareCost),
     "Medicare Base Premiums": Math.round(row.medicareBasePremiums),
     "Medicare Surcharges": Math.round(row.combinedSurchargeAnnual),

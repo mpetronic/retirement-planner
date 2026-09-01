@@ -811,6 +811,29 @@ export const ConfigurationPDF: React.FC<PDFProps> = ({ inputs }) => {
                 )}
               </View>
             </View>
+
+            {/* Guardrail Plan Card */}
+            <View style={styles.col2}>
+              <View style={styles.card}>
+                <Text style={styles.cardTitle}>Guardrail Spending Plan</Text>
+                <View style={styles.row}>
+                  <Text style={styles.rowLabel}>Policy Status:</Text>
+                  <Text style={styles.rowValue}>{inputs.guardrailSettings?.enabled !== false ? 'Active' : 'Disabled'}</Text>
+                </View>
+                <View style={styles.row}>
+                  <Text style={styles.rowLabel}>Upper / Lower Guardrails:</Text>
+                  <Text style={styles.rowValue}>+{(((inputs.guardrailSettings?.upperGuardrailPct ?? 0.15) * 100)).toFixed(0)}% / -{(((inputs.guardrailSettings?.lowerGuardrailPct ?? 0.15) * 100)).toFixed(0)}%</Text>
+                </View>
+                <View style={styles.row}>
+                  <Text style={styles.rowLabel}>Market Surplus Allocation:</Text>
+                  <Text style={styles.rowValue}>{(((inputs.guardrailSettings?.marketSurplusSharePct ?? 0.10) * 100)).toFixed(0)}%</Text>
+                </View>
+                <View style={[styles.row, { borderBottomWidth: 0 }]}>
+                  <Text style={styles.rowLabel}>Actual Years Logged:</Text>
+                  <Text style={styles.rowValue}>{Object.keys(inputs.actualTracking || {}).length} Year(s)</Text>
+                </View>
+              </View>
+            </View>
           </View>
         </View>
 

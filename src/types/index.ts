@@ -313,6 +313,60 @@ export const DEFAULT_CHARITY_SETTINGS: CharitySettings = {
 
 export const BASE_QCD_LIMIT = 105000;
 
+export interface YearActualsRecord {
+  year: number;
+  
+  // Realized macro returns & inflation rates
+  equityReturnRate?: number | null;
+  fixedIncomeReturnRate?: number | null;
+  cpiInflationRate?: number | null;
+  healthcareInflationRate?: number | null;
+  
+  // Realized expenses & inflows
+  totalLivingExpenses?: number | null;
+  categoryExpenses?: Record<string, number>;
+  preMedicareHealthcareCost?: number | null;
+  medicareBasePremiums?: number | null;
+  earnedSalaryYou?: number | null;
+  earnedSalaryWife?: number | null;
+  charitableTithe?: number | null;
+  
+  // Realized tax & surcharge overrides
+  magi?: number | null;
+  totalIncomeTax?: number | null;
+  surchargeTier?: number | null;
+  
+  // Realized balance reconciliation overrides (ending balances after growth/drawdowns)
+  endYourPreTaxIRA?: number | null;
+  endYourRothIRA?: number | null;
+  endYourTaxableBrokerage?: number | null;
+  endYourTaxableBasis?: number | null;
+  endYourCash?: number | null;
+  endWifePreTaxIRA?: number | null;
+  endWifeRothIRA?: number | null;
+  endWifeTaxableBrokerage?: number | null;
+  endWifeTaxableBasis?: number | null;
+  endWifeCash?: number | null;
+}
+
+export type ActualTrackingState = Record<number, YearActualsRecord>;
+
+export interface GuardrailSettings {
+  enabled: boolean;
+  upperGuardrailPct: number; // e.g. 0.15 for +15% above budgeted expenses
+  lowerGuardrailPct: number; // e.g. 0.15 for -15% below budgeted expenses
+  marketSurplusSharePct: number; // e.g. 0.10 for 10% share of excess market growth
+  applyToSimulation: boolean; // if true, applies guardrail adjustment dynamically during forward simulation
+}
+
+export const DEFAULT_GUARDRAIL_SETTINGS: GuardrailSettings = {
+  enabled: true,
+  upperGuardrailPct: 0.15,
+  lowerGuardrailPct: 0.15,
+  marketSurplusSharePct: 0.10,
+  applyToSimulation: false,
+};
+
 export interface AppStateInputs {
   isConfigured: boolean;
   isSingleFiler: boolean;
@@ -339,6 +393,8 @@ export interface AppStateInputs {
   detailedExpenses?: DetailedExpensesState;
   charitySettings?: CharitySettings;
   fileSSA44LifeChangingEvent?: boolean; // Form SSA-44 Life-Changing Event (Work Stoppage / Wage Reduction)
+  actualTracking?: ActualTrackingState;
+  guardrailSettings?: GuardrailSettings;
 }
 
 /**
@@ -440,6 +496,14 @@ export interface SimulationResultRow {
   endWifeCash: number;
   
   totalPortfolioValue: number;
+
+  // Actual Tracking & Guardrails Metadata
+  isActual?: boolean; // True if this row reflects verified historical actuals
+  isBridged?: boolean; // True if this row was bridged via simulation between actual years
+  actualSurplusGap?: number; // Net spending surplus/deficit gap for guardrail tracking
+  guardrailUpperLimit?: number; // Upper spending guardrail ceiling
+  guardrailLowerLimit?: number; // Lower spending guardrail floor
+  permittedSpendingBonus?: number; // Calculated permission to spend bonus for next year
 }
 
 export interface SavedPlan {
