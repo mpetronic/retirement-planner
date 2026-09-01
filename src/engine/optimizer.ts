@@ -69,33 +69,31 @@ export function optimizeRetirementScenario(
   let bestResultDetails: OptimizationResult['details'] | null = null;
 
   // Build comprehensive list of candidate Roth strategies to evaluate
-  const rothCandidates: RothCandidate[] = [
-    // Flat conversion candidates: $0 (baseline) through $400k
-    { strategy: 'flat', annualConversion: 0, targetValue: null },
-    { strategy: 'flat', annualConversion: 10000, targetValue: null },
-    { strategy: 'flat', annualConversion: 25000, targetValue: null },
-    { strategy: 'flat', annualConversion: 50000, targetValue: null },
-    { strategy: 'flat', annualConversion: 75000, targetValue: null },
-    { strategy: 'flat', annualConversion: 100000, targetValue: null },
-    { strategy: 'flat', annualConversion: 125000, targetValue: null },
-    { strategy: 'flat', annualConversion: 150000, targetValue: null },
-    { strategy: 'flat', annualConversion: 200000, targetValue: null },
-    { strategy: 'flat', annualConversion: 250000, targetValue: null },
-    { strategy: 'flat', annualConversion: 300000, targetValue: null },
-    { strategy: 'flat', annualConversion: 400000, targetValue: null },
+  const rothCandidates: RothCandidate[] = [];
 
-    // Target ceiling candidates: Federal Brackets (Taxable Income) and IRMAA cliffs (MAGI)
-    { strategy: 'fill-to-target', annualConversion: inputs.annualRothConversion, targetValue: 24800 },   // 10% Bracket ($24.8k)
-    { strategy: 'fill-to-target', annualConversion: inputs.annualRothConversion, targetValue: 100800 },  // 12% Bracket ($100.8k)
-    { strategy: 'fill-to-target', annualConversion: inputs.annualRothConversion, targetValue: 211400 },  // 22% Bracket ($211.4k)
-    { strategy: 'fill-to-target', annualConversion: inputs.annualRothConversion, targetValue: 217999 },  // IRMAA Tier 1 ($1 below cliff)
-    { strategy: 'fill-to-target', annualConversion: inputs.annualRothConversion, targetValue: 273999 },  // IRMAA Tier 2 ($1 below cliff)
-    { strategy: 'fill-to-target', annualConversion: inputs.annualRothConversion, targetValue: 341999 },  // IRMAA Tier 3 ($1 below cliff)
-    { strategy: 'fill-to-target', annualConversion: inputs.annualRothConversion, targetValue: 403550 },  // 24% Bracket ($403.55k)
-    { strategy: 'fill-to-target', annualConversion: inputs.annualRothConversion, targetValue: 409999 },  // IRMAA Tier 4 ($1 below cliff)
-    { strategy: 'fill-to-target', annualConversion: inputs.annualRothConversion, targetValue: 512450 },  // 32% Bracket ($512.45k)
-    { strategy: 'fill-to-target', annualConversion: inputs.annualRothConversion, targetValue: 749999 },  // IRMAA Tier 5 ($1 below cliff)
+  // Flat conversion candidates: $0 through $400k in $10k increments (41 candidates)
+  for (let amt = 0; amt <= 400000; amt += 10000) {
+    rothCandidates.push({ strategy: 'flat', annualConversion: amt, targetValue: null });
+  }
+
+  // Target ceiling candidates: Federal Brackets (Taxable Income) and IRMAA cliffs (MAGI)
+  const targetCeilings = [
+    24800,   // 10% Bracket ($24.8k)
+    100800,  // 12% Bracket ($100.8k)
+    211400,  // 22% Bracket ($211.4k)
+    217999,  // IRMAA Tier 1 ($1 below cliff)
+    273999,  // IRMAA Tier 2 ($1 below cliff)
+    341999,  // IRMAA Tier 3 ($1 below cliff)
+    403550,  // 24% Bracket ($403.55k)
+    409999,  // IRMAA Tier 4 ($1 below cliff)
+    512450,  // 32% Bracket ($512.45k)
+    749999,  // IRMAA Tier 5 ($1 below cliff)
+    768700,  // 35% Bracket ($768.7k)
   ];
+
+  for (const targetVal of targetCeilings) {
+    rothCandidates.push({ strategy: 'fill-to-target', annualConversion: inputs.annualRothConversion, targetValue: targetVal });
+  }
 
   // Also include the user's current settings if not already in candidate list
   if (inputs.annualRothConversion > 0 && !rothCandidates.some(c => c.strategy === 'flat' && c.annualConversion === inputs.annualRothConversion)) {

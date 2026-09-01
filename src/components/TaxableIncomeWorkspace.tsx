@@ -8,11 +8,16 @@ import {
   TrendingUp,
   ShieldAlert,
   Check,
+  X,
   AlertCircle,
   Sparkles,
-  Info
+  Info,
+  Zap,
+  Shield,
+  Gem,
+  HeartPulse,
 } from 'lucide-react';
-import { optimizeRetirementScenario, OptimizationResult } from '../engine/optimizer';
+import { optimizeRetirementScenario, OptimizationResult, OptimizationGoal } from '../engine/optimizer';
 import { getTargetPresetInfo } from '../engine/taxRates2026';
 
 ChartJS.register(...registerables);
@@ -67,8 +72,28 @@ export const TaxableIncomeWorkspace: React.FC<TaxableIncomeWorkspaceProps> = ({
   // Optimizer modal visual state
   const [showOptimizerModal, setShowOptimizerModal] = useState(false);
   const [isOptimizingScan, setIsOptimizingScan] = useState(false);
+  const [selectedGoal, setSelectedGoal] = useState<OptimizationGoal>('max_portfolio');
   const [optimizationResult, setOptimizationResult] = useState<OptimizationResult | null>(null);
   const [hasHiddenDatasets, setHasHiddenDatasets] = useState(false);
+
+  // Baseline metrics for variance comparison
+  const currentEndingEstate = useMemo(() => {
+    const lastRow = ledger[ledger.length - 1];
+    return lastRow ? lastRow.totalPortfolioValue : 0;
+  }, [ledger]);
+
+  const currentLifetimeTaxes = useMemo(() => {
+    return ledger.reduce((sum, r) => sum + r.totalIncomeTax, 0);
+  }, [ledger]);
+
+  const currentLifetimeIRMAA = useMemo(() => {
+    return ledger.reduce((sum, r) => sum + r.combinedSurchargeAnnual, 0);
+  }, [ledger]);
+
+  const currentEndingRoth = useMemo(() => {
+    const lastRow = ledger[ledger.length - 1];
+    return lastRow ? (lastRow.endYourRothIRA + lastRow.endWifeRothIRA) : 0;
+  }, [ledger]);
 
   const formatCurrency = (val: number) => {
     return new Intl.NumberFormat('en-US', {
@@ -433,16 +458,14 @@ export const TaxableIncomeWorkspace: React.FC<TaxableIncomeWorkspaceProps> = ({
     }
   };
 
-  // Run Optimizer Scan to Fill Headroom
-  const handleRunOptimizer = async () => {
+  // Run Optimizer Scan
+  const runOptimizationScan = (goal: OptimizationGoal = selectedGoal) => {
     setIsOptimizingScan(true);
-    setShowOptimizerModal(true);
-
     setTimeout(() => {
       try {
         const result = optimizeRetirementScenario(
           inputs,
-          'max_portfolio',
+          goal,
           simulateSurvivor,
           activeScenarioSequence
         );
@@ -452,7 +475,35 @@ export const TaxableIncomeWorkspace: React.FC<TaxableIncomeWorkspaceProps> = ({
       } finally {
         setIsOptimizingScan(false);
       }
-    }, 150);
+    }, 120);
+  };
+
+  const handleRunOptimizer = () => {
+    setShowOptimizerModal(true);
+    runOptimizationScan(selectedGoal);
+  };
+
+  const renderVarianceBadge = (current: number, optimal: number, type: 'higher-is-better' | 'lower-is-better') => {
+    const diff = optimal - current;
+    if (Math.abs(diff) < 1) {
+      return <span className="text-xs px-2.5 py-1 rounded-full bg-slate-800 text-slate-400 font-mono font-semibold">No Change</span>;
+    }
+    
+    const isGood = type === 'higher-is-better' ? diff > 0 : diff < 0;
+    const formattedDiff = formatCurrency(Math.abs(diff));
+    const sign = diff > 0 ? '+' : '-';
+    const label = type === 'higher-is-better' ? (diff > 0 ? 'Gained' : 'Reduced') : (diff < 0 ? 'Saved' : 'Increased');
+    
+    return (
+      <span className={`text-xs px-2.5 py-1 rounded-full font-mono font-semibold flex items-center gap-1 ${
+        isGood 
+          ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20' 
+          : 'bg-rose-500/10 text-rose-400 border border-rose-500/20'
+      }`}>
+        {isGood ? <Check className="w-3.5 h-3.5" /> : <AlertCircle className="w-3.5 h-3.5" />}
+        {sign}{formattedDiff} {label}
+      </span>
+    );
   };
 
   return (
@@ -625,6 +676,17 @@ export const TaxableIncomeWorkspace: React.FC<TaxableIncomeWorkspaceProps> = ({
                   >
                     32% ($512.5k)
                   </button>
+                  <button
+                    type="button"
+                    onClick={() => handleSelectPreset(768700)}
+                    className={`text-[10px] px-2 py-0.5 rounded-lg font-bold transition-all border ${
+                      activeTarget === 768700
+                        ? 'bg-indigo-500/20 text-indigo-300 border-indigo-500/60 font-black'
+                        : 'bg-slate-900/60 text-slate-400 hover:text-slate-200 border-slate-800'
+                    }`}
+                  >
+                    35% ($768.7k)
+                  </button>
                 </div>
 
                 {/* IRMAA Tiers */}
@@ -673,6 +735,17 @@ export const TaxableIncomeWorkspace: React.FC<TaxableIncomeWorkspaceProps> = ({
                     }`}
                   >
                     Tier 4 ($410k)
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleSelectPreset(750000)}
+                    className={`text-[10px] px-2 py-0.5 rounded-lg font-bold transition-all border ${
+                      activeTarget === 750000 || activeTarget === 749999
+                        ? 'bg-purple-500/20 text-purple-300 border-purple-500/60 font-black'
+                        : 'bg-slate-900/60 text-slate-400 hover:text-slate-200 border-slate-800'
+                    }`}
+                  >
+                    Tier 5 ($750k)
                   </button>
                 </div>
               </div>
@@ -889,86 +962,234 @@ export const TaxableIncomeWorkspace: React.FC<TaxableIncomeWorkspaceProps> = ({
       {/* Optimizer Modal */}
       {showOptimizerModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-md">
-          <div className="glass-panel max-w-xl w-full p-6 rounded-2xl border border-slate-800 bg-slate-900 shadow-2xl space-y-6 animate-in fade-in zoom-in duration-200">
+          <div className="glass-panel max-w-2xl w-full p-6 rounded-2xl border border-slate-800 bg-slate-900 shadow-2xl space-y-6 animate-in fade-in zoom-in duration-200 flex flex-col max-h-[90vh] overflow-hidden">
+            {/* Modal Header */}
             <div className="flex items-center justify-between border-b border-slate-800 pb-4">
-              <div className="flex items-center gap-2">
-                <Sparkles className="w-5 h-5 text-emerald-400" />
-                <h3 className="text-lg font-bold text-slate-100">Auto-Fill Headroom Optimizer</h3>
+              <div className="flex items-center gap-2.5">
+                <div className="p-2 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-emerald-400">
+                  <Sparkles className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="text-lg font-bold text-slate-100">Retirement Strategy Optimizer</h3>
+                  <p className="text-xs text-slate-400">
+                    Multidimensional scenario engine sweeping 1,700+ conversion and claiming milestone combinations
+                  </p>
+                </div>
               </div>
               <button
                 type="button"
                 onClick={() => setShowOptimizerModal(false)}
-                className="text-slate-400 hover:text-slate-200 text-sm font-bold px-2 py-1 rounded-lg hover:bg-slate-800"
+                className="text-slate-400 hover:text-slate-200 text-sm font-bold p-1.5 rounded-lg hover:bg-slate-800 transition-all"
               >
-                ✕
+                <X className="w-4 h-4" />
               </button>
             </div>
 
-            {isOptimizingScan ? (
-              <div className="py-12 flex flex-col items-center justify-center space-y-4">
-                <div className="w-10 h-10 border-4 border-emerald-500 border-t-transparent rounded-full animate-spin" />
-                <p className="text-sm font-semibold text-slate-300">
-                  Scanning tax brackets & IRMAA thresholds across 35-year horizon...
-                </p>
-              </div>
-            ) : optimizationResult ? (
-              <div className="space-y-4">
-                <div className="p-4 rounded-xl bg-emerald-950/30 border border-emerald-500/40 text-emerald-300 space-y-2">
-                  <div className="flex items-center gap-2 font-bold text-sm">
-                    <Check className="w-4 h-4 text-emerald-400" />
-                    <span>Optimal Strategy Found</span>
-                  </div>
-                  <p className="text-xs text-slate-300">
-                    Calculated optimal annual Roth conversion of{' '}
-                    <span className="font-mono font-bold text-emerald-400">
-                      {formatCurrency(optimizationResult.bestAnnualRothConversion)}
-                    </span>{' '}
-                    to fill headroom under {benchmarkLineData.label}.
-                  </p>
-                </div>
+            {/* Goal Switcher Tabs */}
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+              <button
+                type="button"
+                onClick={() => {
+                  setSelectedGoal('max_portfolio');
+                  runOptimizationScan('max_portfolio');
+                }}
+                className={`px-3 py-2 rounded-xl text-xs font-bold border transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
+                  selectedGoal === 'max_portfolio'
+                    ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/60 shadow-md shadow-emerald-950/40'
+                    : 'bg-slate-950/60 text-slate-400 border-slate-800 hover:text-slate-200 hover:border-slate-700'
+                }`}
+              >
+                <Zap className="w-3.5 h-3.5 text-emerald-400" />
+                <span>Max Net Estate</span>
+              </button>
 
-                <div className="grid grid-cols-2 gap-4 text-xs font-mono">
-                  <div className="p-3 rounded-xl bg-slate-950 border border-slate-800">
-                    <span className="text-[10px] text-slate-400 uppercase font-sans">Projected Net Estate:</span>
-                    <span className="text-base font-bold text-emerald-400 block mt-1">
-                      {formatCurrency(optimizationResult.details.endingEstate)}
-                    </span>
-                  </div>
-                  <div className="p-3 rounded-xl bg-slate-950 border border-slate-800">
-                    <span className="text-[10px] text-slate-400 uppercase font-sans">Lifetime Taxes Paid:</span>
-                    <span className="text-base font-bold text-rose-400 block mt-1">
-                      {formatCurrency(optimizationResult.details.lifetimeTaxes)}
-                    </span>
-                  </div>
-                </div>
+              <button
+                type="button"
+                onClick={() => {
+                  setSelectedGoal('min_taxes');
+                  runOptimizationScan('min_taxes');
+                }}
+                className={`px-3 py-2 rounded-xl text-xs font-bold border transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
+                  selectedGoal === 'min_taxes'
+                    ? 'bg-blue-500/20 text-blue-300 border-blue-500/60 shadow-md shadow-blue-950/40'
+                    : 'bg-slate-950/60 text-slate-400 border-slate-800 hover:text-slate-200 hover:border-slate-700'
+                }`}
+              >
+                <Shield className="w-3.5 h-3.5 text-blue-400" />
+                <span>Min Taxes</span>
+              </button>
 
-                <div className="flex justify-end gap-3 pt-4 border-t border-slate-800">
-                  <button
-                    type="button"
-                    onClick={() => setShowOptimizerModal(false)}
-                    className="px-4 py-2 rounded-xl text-xs font-semibold text-slate-400 hover:text-slate-200 hover:bg-slate-800"
-                  >
-                    Cancel
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      onApplyOptimization(
-                        optimizationResult.bestAnnualRothConversion,
-                        optimizationResult.bestTargetValue ?? activeTarget,
-                        optimizationResult.bestYourSSAge,
-                        optimizationResult.bestWifeSSAge,
-                        optimizationResult.bestStrategy
-                      );
-                      setShowOptimizerModal(false);
-                    }}
-                    className="px-4 py-2 bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold rounded-xl text-xs shadow-lg"
-                  >
-                    Apply Strategy to Plan
-                  </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setSelectedGoal('max_roth');
+                  runOptimizationScan('max_roth');
+                }}
+                className={`px-3 py-2 rounded-xl text-xs font-bold border transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
+                  selectedGoal === 'max_roth'
+                    ? 'bg-purple-500/20 text-purple-300 border-purple-500/60 shadow-md shadow-purple-950/40'
+                    : 'bg-slate-950/60 text-slate-400 border-slate-800 hover:text-slate-200 hover:border-slate-700'
+                }`}
+              >
+                <Gem className="w-3.5 h-3.5 text-purple-400" />
+                <span>Max Roth</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  setSelectedGoal('min_surcharges');
+                  runOptimizationScan('min_surcharges');
+                }}
+                className={`px-3 py-2 rounded-xl text-xs font-bold border transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
+                  selectedGoal === 'min_surcharges'
+                    ? 'bg-amber-500/20 text-amber-300 border-amber-500/60 shadow-md shadow-amber-950/40'
+                    : 'bg-slate-950/60 text-slate-400 border-slate-800 hover:text-slate-200 hover:border-slate-700'
+                }`}
+              >
+                <HeartPulse className="w-3.5 h-3.5 text-amber-400" />
+                <span>Min IRMAA</span>
+              </button>
+            </div>
+
+            {/* Modal Body */}
+            <div className="overflow-y-auto space-y-4 flex-1 custom-scrollbar pr-1">
+              {isOptimizingScan ? (
+                <div className="py-16 flex flex-col items-center justify-center space-y-4">
+                  <div className="w-12 h-12 border-4 border-emerald-500/20 border-t-emerald-400 rounded-full animate-spin" />
+                  <div className="text-center space-y-1">
+                    <p className="text-sm font-bold text-slate-200">Evaluating 1,700+ Multi-Year Scenarios...</p>
+                    <p className="text-xs text-slate-500">
+                      Optimizing Roth conversion rates, bracket headroom, and Social Security claiming milestones
+                    </p>
+                  </div>
                 </div>
+              ) : optimizationResult ? (
+                <div className="space-y-4 animate-in fade-in duration-200">
+                  {/* Recommended Strategy Callout Banner */}
+                  <div className="p-4 rounded-2xl bg-emerald-950/40 border border-emerald-500/40 text-emerald-300 space-y-2">
+                    <div className="flex items-center gap-2 font-bold text-sm text-emerald-400 uppercase tracking-wider font-mono">
+                      <Check className="w-4 h-4" />
+                      <span>Recommended Strategy</span>
+                    </div>
+                    <div className="text-base font-black text-slate-100">
+                      {optimizationResult.bestStrategy === 'fill-to-target' ? (
+                        <>Fill-to-Target ({getTargetPresetInfo(optimizationResult.bestTargetValue)?.description || `Target Limit: ${formatCurrency(optimizationResult.bestTargetValue || 0)}`})</>
+                      ) : (
+                        <>Flat Conversion ({formatCurrency(optimizationResult.bestAnnualRothConversion)} / year)</>
+                      )}
+                    </div>
+                    <p className="text-xs text-slate-300">
+                      Claim Social Security at <span className="font-bold text-white">Age {optimizationResult.bestYourSSAge}</span> for {inputs.you.name || 'You'}
+                      {!inputs.isSingleFiler && <> and <span className="font-bold text-white">Age {optimizationResult.bestWifeSSAge}</span> for {inputs.wife.name || 'Spouse'}</>}.
+                    </p>
+                  </div>
+
+                  {/* Comparative Metrics Grid */}
+                  <div className="space-y-2.5">
+                    <h4 className="text-xs font-bold uppercase tracking-wider text-slate-400 font-mono">
+                      Lifetime Financial Impact Comparison
+                    </h4>
+
+                    <div className="grid grid-cols-1 gap-2.5">
+                      {/* Metric 1: Net Ending Estate */}
+                      <div className="bg-slate-950/40 border border-slate-800/60 p-3.5 rounded-xl flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+                        <div className="space-y-0.5">
+                          <span className="text-xs font-bold text-slate-200">Ending Net Estate</span>
+                          <span className="text-[10px] text-slate-500 block">Total portfolio value remaining at simulation end</span>
+                        </div>
+                        <div className="flex items-center gap-4 justify-between sm:justify-end">
+                          <div className="flex items-baseline gap-2 font-mono">
+                            <span className="text-xs text-slate-500">{formatCurrency(currentEndingEstate)}</span>
+                            <span className="text-slate-400">→</span>
+                            <span className="text-sm font-black text-emerald-400">{formatCurrency(optimizationResult.details.endingEstate)}</span>
+                          </div>
+                          {renderVarianceBadge(currentEndingEstate, optimizationResult.details.endingEstate, 'higher-is-better')}
+                        </div>
+                      </div>
+
+                      {/* Metric 2: Lifetime Taxes */}
+                      <div className="bg-slate-950/40 border border-slate-800/60 p-3.5 rounded-xl flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+                        <div className="space-y-0.5">
+                          <span className="text-xs font-bold text-slate-200">Lifetime Income Taxes</span>
+                          <span className="text-[10px] text-slate-500 block">Total Federal + State income taxes paid over horizon</span>
+                        </div>
+                        <div className="flex items-center gap-4 justify-between sm:justify-end">
+                          <div className="flex items-baseline gap-2 font-mono">
+                            <span className="text-xs text-slate-500">{formatCurrency(currentLifetimeTaxes)}</span>
+                            <span className="text-slate-400">→</span>
+                            <span className="text-sm font-black text-rose-400">{formatCurrency(optimizationResult.details.lifetimeTaxes)}</span>
+                          </div>
+                          {renderVarianceBadge(currentLifetimeTaxes, optimizationResult.details.lifetimeTaxes, 'lower-is-better')}
+                        </div>
+                      </div>
+
+                      {/* Metric 3: Medicare Surcharges */}
+                      <div className="bg-slate-950/40 border border-slate-800/60 p-3.5 rounded-xl flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+                        <div className="space-y-0.5">
+                          <span className="text-xs font-bold text-slate-200">Lifetime Medicare IRMAA</span>
+                          <span className="text-[10px] text-slate-500 block">Total IRMAA Part B & D surcharges from lookback MAGI</span>
+                        </div>
+                        <div className="flex items-center gap-4 justify-between sm:justify-end">
+                          <div className="flex items-baseline gap-2 font-mono">
+                            <span className="text-xs text-slate-500">{formatCurrency(currentLifetimeIRMAA)}</span>
+                            <span className="text-slate-400">→</span>
+                            <span className="text-sm font-black text-amber-400">{formatCurrency(optimizationResult.details.lifetimeIRMAA)}</span>
+                          </div>
+                          {renderVarianceBadge(currentLifetimeIRMAA, optimizationResult.details.lifetimeIRMAA, 'lower-is-better')}
+                        </div>
+                      </div>
+
+                      {/* Metric 4: Ending Roth Value */}
+                      <div className="bg-slate-950/40 border border-slate-800/60 p-3.5 rounded-xl flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+                        <div className="space-y-0.5">
+                          <span className="text-xs font-bold text-slate-200">Ending Roth Balances</span>
+                          <span className="text-[10px] text-slate-500 block">Total tax-free Roth wealth preserved for heirs</span>
+                        </div>
+                        <div className="flex items-center gap-4 justify-between sm:justify-end">
+                          <div className="flex items-baseline gap-2 font-mono">
+                            <span className="text-xs text-slate-500">{formatCurrency(currentEndingRoth)}</span>
+                            <span className="text-slate-400">→</span>
+                            <span className="text-sm font-black text-purple-400">{formatCurrency(optimizationResult.details.endingRoth)}</span>
+                          </div>
+                          {renderVarianceBadge(currentEndingRoth, optimizationResult.details.endingRoth, 'higher-is-better')}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              ) : null}
+            </div>
+
+            {/* Modal Footer */}
+            {!isOptimizingScan && optimizationResult && (
+              <div className="flex justify-end gap-3 pt-4 border-t border-slate-800">
+                <button
+                  type="button"
+                  onClick={() => setShowOptimizerModal(false)}
+                  className="px-4 py-2 rounded-xl text-xs font-semibold text-slate-400 hover:text-slate-200 hover:bg-slate-800 transition-all cursor-pointer"
+                >
+                  Dismiss / Keep Current
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    onApplyOptimization(
+                      optimizationResult.bestAnnualRothConversion,
+                      optimizationResult.bestTargetValue ?? activeTarget,
+                      optimizationResult.bestYourSSAge,
+                      optimizationResult.bestWifeSSAge,
+                      optimizationResult.bestStrategy
+                    );
+                    setShowOptimizerModal(false);
+                  }}
+                  className="px-5 py-2 bg-gradient-to-r from-emerald-400 to-teal-500 hover:from-emerald-300 hover:to-teal-400 text-slate-950 font-bold rounded-xl text-xs shadow-lg shadow-emerald-500/20 transition-all active:scale-95 cursor-pointer flex items-center gap-1.5"
+                >
+                  <Check className="w-4 h-4" />
+                  <span>Apply Optimal Strategy</span>
+                </button>
               </div>
-            ) : null}
+            )}
           </div>
         </div>
       )}

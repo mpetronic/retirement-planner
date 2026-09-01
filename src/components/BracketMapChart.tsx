@@ -1,9 +1,8 @@
 import React, { useMemo, useState, useRef } from 'react';
 import { Chart } from 'react-chartjs-2';
 import { Chart as ChartJS, registerables } from 'chart.js';
-import { SimulationResultRow, AppStateInputs, LockedReturnSequence } from '../types';
-import { Award, Zap, Check, X, AlertCircle } from 'lucide-react';
-import { optimizeRetirementScenario, OptimizationResult } from '../engine/optimizer';
+import { SimulationResultRow, AppStateInputs } from '../types';
+import { Award, Check } from 'lucide-react';
 import { getTargetPresetInfo } from '../engine/taxRates2026';
 
 ChartJS.register(...registerables);
@@ -12,10 +11,6 @@ interface BracketMapChartProps {
   ledger: SimulationResultRow[];
   inputs: AppStateInputs;
   simulateSurvivor: boolean;
-  activeScenarioSequence: LockedReturnSequence | null;
-  onApplyOptimization: (annualConversion: number, targetValue: number | null, yourAge: number, wifeAge: number, strategy?: 'flat' | 'fill-to-target') => void;
-  onUpdateStrategy: (strategy: 'flat' | 'fill-to-target') => void;
-  onUpdateTargetValue: (val: number | null) => void;
   selectedQuickFill: number | null;
   setSelectedQuickFill: (val: number | null) => void;
 }
@@ -24,26 +19,11 @@ export const BracketMapChart: React.FC<BracketMapChartProps> = ({
   ledger,
   inputs,
   simulateSurvivor,
-  activeScenarioSequence,
-  onApplyOptimization,
-  onUpdateStrategy,
-  onUpdateTargetValue,
   selectedQuickFill,
   setSelectedQuickFill,
 }) => {
   const chartRef = useRef<any>(null);
   const [hasHiddenDatasets, setHasHiddenDatasets] = useState(false);
-  
-  // Optimizer visual state hooks
-  const [optimizingGoal, setOptimizingGoal] = useState<OptimizationGoal | null>(null);
-  const [optimizationResult, setOptimizationResult] = useState<OptimizationResult | null>(null);
-  const [showOptimizerModal, setShowOptimizerModal] = useState(false);
-  const [isOptimizingScan, setIsOptimizingScan] = useState(false);
-
-  const endingAge = useMemo(() => {
-    const lastRow = ledger[ledger.length - 1];
-    return lastRow ? lastRow.yourAge : 90;
-  }, [ledger]);
 
   const years = useMemo(() => ledger.map((r) => r.year), [ledger]);
 
@@ -433,253 +413,6 @@ export const BracketMapChart: React.FC<BracketMapChartProps> = ({
     };
   }, [ledger, inputs]);
 
-  // Optimizer metrics and helper functions
-  const currentEndingEstate = ledger[ledger.length - 1]?.totalPortfolioValue || 0;
-  const currentLifetimeTaxes = ledger.reduce((sum, r) => sum + r.totalIncomeTax, 0);
-  const currentLifetimeIRMAA = ledger.reduce((sum, r) => sum + r.combinedSurchargeAnnual, 0);
-  const currentEndingRoth = (ledger[ledger.length - 1]?.endYourRothIRA || 0) + (ledger[ledger.length - 1]?.endWifeRothIRA || 0);
-
-  const getGoalTitle = (goal: OptimizationGoal) => {
-    switch (goal) {
-      case 'min_taxes':
-        return 'Optimize for Minimum Taxes 🎯';
-      case 'max_portfolio':
-        return 'Auto-Optimized Retirement Strategy 🚀';
-      case 'min_surcharges':
-        return 'Optimize for Minimum Surcharges 🎯';
-      case 'max_roth':
-        return 'Optimize for Maximum Roth Value 🎯';
-    }
-  };
-
-  const formatCurrency = (val: number) => {
-    return new Intl.NumberFormat('en-US', {
-      style: 'currency',
-      currency: 'USD',
-      maximumFractionDigits: 0,
-    }).format(val);
-  };
-
-  const renderVarianceBadge = (current: number, optimal: number, type: 'higher-is-better' | 'lower-is-better') => {
-    const diff = optimal - current;
-    if (Math.abs(diff) < 1) {
-      return <span className="text-xs px-2.5 py-1 rounded-full bg-slate-800 text-slate-400 font-mono font-semibold">No Change</span>;
-    }
-    
-    const isGood = type === 'higher-is-better' ? diff > 0 : diff < 0;
-    const formattedDiff = formatCurrency(Math.abs(diff));
-    const sign = diff > 0 ? '+' : '-';
-    const label = type === 'higher-is-better' ? (diff > 0 ? 'Gained' : 'Reduced') : (diff < 0 ? 'Saved' : 'Increased');
-    
-    return (
-      <span className={`text-xs px-2.5 py-1 rounded-full font-mono font-semibold flex items-center gap-1 ${
-        isGood 
-          ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20' 
-          : 'bg-rose-500/10 text-rose-400 border border-rose-500/20'
-      }`}>
-        {isGood ? <Check className="w-3.5 h-3.5" /> : <AlertCircle className="w-3.5 h-3.5" />}
-        {sign}{formattedDiff} {label}
-      </span>
-    );
-  };
-
-  const renderOptimizerModal = () => {
-    if (!showOptimizerModal || !optimizingGoal) return null;
-
-    return (
-      <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm transition-all duration-300">
-        <div className="w-full max-w-2xl bg-slate-900/95 border border-slate-800 rounded-2xl shadow-2xl overflow-hidden glass-panel backdrop-blur-xl transition-all duration-300 transform scale-100 flex flex-col max-h-[90vh]">
-          
-          {/* Modal Header */}
-          <div className="p-6 border-b border-slate-800 flex justify-between items-center bg-slate-900/50">
-            <div className="flex items-center gap-3">
-              <div className="p-2 bg-emerald-500/10 rounded-xl border border-emerald-500/20">
-                <Zap className="w-5 h-5 text-emerald-400 animate-pulse" />
-              </div>
-              <div>
-                <h3 className="text-lg font-black text-slate-100 tracking-tight">
-                  {getGoalTitle(optimizingGoal)}
-                </h3>
-                <p className="text-xs text-slate-400">
-                  Multidimensional pure-function scenario engine projection
-                </p>
-              </div>
-            </div>
-            {!isOptimizingScan && (
-              <button 
-                onClick={() => setShowOptimizerModal(false)}
-                className="p-1.5 text-slate-400 hover:text-slate-100 bg-slate-800/40 hover:bg-slate-800 border border-slate-700/30 rounded-lg transition-all"
-              >
-                <X className="w-4 h-4" />
-              </button>
-            )}
-          </div>
-
-          {/* Modal Body */}
-          <div className="p-6 overflow-y-auto space-y-6 flex-1 custom-scrollbar">
-            {isOptimizingScan ? (
-              <div className="flex flex-col items-center justify-center py-16 space-y-4">
-                <div className="relative">
-                  <div className="w-16 h-16 rounded-full border-4 border-emerald-500/20 border-t-emerald-500 animate-spin" />
-                  <Zap className="w-6 h-6 text-emerald-400 absolute inset-0 m-auto animate-pulse" />
-                </div>
-                <div className="text-center space-y-2">
-                  <p className="text-sm font-black text-slate-100 tracking-tight animate-pulse">Running Simulation Sweeps...</p>
-                  <p className="text-xs text-slate-400 font-mono">Sweeping 4,941 discrete scenario parameters...</p>
-                </div>
-              </div>
-            ) : optimizationResult ? (
-              <div className="space-y-6">
-                
-                {/* Configuration Comparisons */}
-                <div className="space-y-3">
-                  <h4 className="text-xs font-bold text-slate-400 uppercase tracking-wider">Optimal Parameter Set</h4>
-                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                    {/* Roth Conversion / Target MAGI Ceiling */}
-                    <div className="bg-slate-950/40 border border-slate-800/60 p-4 rounded-xl space-y-1.5">
-                      <span className="text-[10px] text-slate-500 font-bold uppercase tracking-wider block">
-                        {optimizationResult.bestStrategy === 'fill-to-target' ? 'Target MAGI Ceiling' : 'Annual Roth Conversion'}
-                      </span>
-                      <div className="flex justify-between items-baseline font-mono">
-                        <span className="text-xs text-slate-400 line-through">
-                          {formatCurrency(inputs.rothConversionStrategy === 'fill-to-target' ? (inputs.rothConversionTargetValue || 0) : inputs.annualRothConversion)}
-                        </span>
-                        <span className="text-base font-black text-emerald-400">
-                          {formatCurrency(optimizationResult.bestStrategy === 'fill-to-target' ? (optimizationResult.bestTargetValue || 0) : optimizationResult.bestAnnualRothConversion)}
-                        </span>
-                      </div>
-                      <span className="text-[10px] text-slate-400 font-sans block">
-                        Strategy: <span className="font-semibold text-slate-300">{optimizationResult.bestStrategy === 'fill-to-target' ? 'Fill to Target Bracket' : 'Flat Annual Conversion'}</span>
-                      </span>
-                    </div>
-                    {/* Your Claiming Age */}
-                    <div className="bg-slate-950/40 border border-slate-800/60 p-4 rounded-xl space-y-1.5">
-                      <span className="text-[10px] text-slate-500 font-bold uppercase tracking-wider block">Your Claiming Age</span>
-                      <div className="flex justify-between items-baseline font-mono font-black text-emerald-400">
-                        <span className="text-xs text-slate-400 line-through font-normal">Age {inputs.you.targetSSClaimingAge}</span>
-                        <span className="text-base">Age {optimizationResult.bestYourSSAge}</span>
-                      </div>
-                    </div>
-                    {/* Spouse Claiming Age */}
-                    <div className="bg-slate-950/40 border border-slate-800/60 p-4 rounded-xl space-y-1.5">
-                      <span className="text-[10px] text-slate-500 font-bold uppercase tracking-wider block">Spouse Claiming Age</span>
-                      <div className="flex justify-between items-baseline font-mono font-black text-emerald-400">
-                        <span className="text-xs text-slate-400 line-through font-normal">Age {inputs.wife.targetSSClaimingAge}</span>
-                        <span className="text-base">Age {optimizationResult.bestWifeSSAge}</span>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Outcome Metrics Grid */}
-                <div className="space-y-3">
-                  <h4 className="text-xs font-bold text-slate-400 uppercase tracking-wider">Comparative Projections</h4>
-                  <div className="space-y-3">
-                    
-                    {/* Metric 1: Ending Net Estate */}
-                    <div className="bg-slate-950/20 border border-slate-800/40 p-4 rounded-xl flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-                      <div className="space-y-0.5">
-                        <span className="text-xs font-bold text-slate-200">Ending Net Estate (Age {endingAge})</span>
-                        <span className="text-[10px] text-slate-500 block">Total wealth remaining in portfolio at simulation end</span>
-                      </div>
-                      <div className="flex items-center gap-4 justify-between sm:justify-end">
-                        <div className="flex items-baseline gap-2 font-mono">
-                          <span className="text-xs text-slate-500">{formatCurrency(currentEndingEstate)}</span>
-                          <span className="text-slate-400">→</span>
-                          <span className="text-sm font-black text-emerald-400">{formatCurrency(optimizationResult.details.endingEstate)}</span>
-                        </div>
-                        {renderVarianceBadge(currentEndingEstate, optimizationResult.details.endingEstate, 'higher-is-better')}
-                      </div>
-                    </div>
-
-                    {/* Metric 2: Lifetime Taxes */}
-                    <div className="bg-slate-950/20 border border-slate-800/40 p-4 rounded-xl flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-                      <div className="space-y-0.5">
-                        <span className="text-xs font-bold text-slate-200">Lifetime Income Taxes Paid</span>
-                        <span className="text-[10px] text-slate-500 block">Total federal + state income taxes paid across 35 years</span>
-                      </div>
-                      <div className="flex items-center gap-4 justify-between sm:justify-end">
-                        <div className="flex items-baseline gap-2 font-mono">
-                          <span className="text-xs text-slate-500">{formatCurrency(currentLifetimeTaxes)}</span>
-                          <span className="text-slate-400">→</span>
-                          <span className="text-sm font-black text-rose-400">{formatCurrency(optimizationResult.details.lifetimeTaxes)}</span>
-                        </div>
-                        {renderVarianceBadge(currentLifetimeTaxes, optimizationResult.details.lifetimeTaxes, 'lower-is-better')}
-                      </div>
-                    </div>
-
-                    {/* Metric 3: Medicare Surcharges */}
-                    <div className="bg-slate-950/20 border border-slate-800/40 p-4 rounded-xl flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-                      <div className="space-y-0.5">
-                        <span className="text-xs font-bold text-slate-200">Lifetime Medicare IRMAA Surcharges</span>
-                        <span className="text-[10px] text-slate-500 block">Total IRMAA premium surcharges based on lookback MAGI</span>
-                      </div>
-                      <div className="flex items-center gap-4 justify-between sm:justify-end">
-                        <div className="flex items-baseline gap-2 font-mono">
-                          <span className="text-xs text-slate-500">{formatCurrency(currentLifetimeIRMAA)}</span>
-                          <span className="text-slate-400">→</span>
-                          <span className="text-sm font-black text-amber-400">{formatCurrency(optimizationResult.details.lifetimeIRMAA)}</span>
-                        </div>
-                        {renderVarianceBadge(currentLifetimeIRMAA, optimizationResult.details.lifetimeIRMAA, 'lower-is-better')}
-                      </div>
-                    </div>
-
-                    {/* Metric 4: Ending Roth Value */}
-                    <div className="bg-slate-950/20 border border-slate-800/40 p-4 rounded-xl flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-                      <div className="space-y-0.5">
-                        <span className="text-xs font-bold text-slate-200">Ending Roth Balances</span>
-                        <span className="text-[10px] text-slate-500 block">Total tax-free Roth wealth at simulation end</span>
-                      </div>
-                      <div className="flex items-center gap-4 justify-between sm:justify-end">
-                        <div className="flex items-baseline gap-2 font-mono">
-                          <span className="text-xs text-slate-500">{formatCurrency(currentEndingRoth)}</span>
-                          <span className="text-slate-400">→</span>
-                          <span className="text-sm font-black text-emerald-400">{formatCurrency(optimizationResult.details.endingRoth)}</span>
-                        </div>
-                        {renderVarianceBadge(currentEndingRoth, optimizationResult.details.endingRoth, 'higher-is-better')}
-                      </div>
-                    </div>
-
-                  </div>
-                </div>
-
-              </div>
-            ) : null}
-          </div>
-
-          {/* Modal Footer */}
-          {!isOptimizingScan && optimizationResult && (
-            <div className="p-6 border-t border-slate-800 bg-slate-900/50 flex justify-end gap-3 z-10">
-              <button
-                onClick={() => setShowOptimizerModal(false)}
-                className="px-5 py-2.5 text-xs font-bold text-slate-300 hover:text-slate-100 bg-slate-800/80 hover:bg-slate-800 border border-slate-700/60 rounded-xl transition-all"
-              >
-                Dismiss / Keep Current
-              </button>
-              <button
-                onClick={() => {
-                  onApplyOptimization(
-                    optimizationResult.bestAnnualRothConversion,
-                    optimizationResult.bestTargetValue,
-                    optimizationResult.bestYourSSAge,
-                    optimizationResult.bestWifeSSAge,
-                    optimizationResult.bestStrategy
-                  );
-                  setShowOptimizerModal(false);
-                }}
-                className="px-5 py-2.5 text-xs font-bold text-slate-950 bg-gradient-to-r from-emerald-400 to-teal-500 hover:from-emerald-300 hover:to-teal-400 rounded-xl shadow-lg shadow-emerald-500/10 hover:shadow-emerald-500/20 active:scale-98 transition-all flex items-center gap-1.5"
-              >
-                <Check className="w-4 h-4" />
-                Apply Optimal Plan
-              </button>
-            </div>
-          )}
-
-        </div>
-      </div>
-    );
-  };
-
   return (
     <div className="glass-panel rounded-2xl p-3.5 space-y-3">
       {/* Header Info */}
@@ -690,95 +423,66 @@ export const BracketMapChart: React.FC<BracketMapChartProps> = ({
             Interactive Tax and IRMAA Bracket Map
           </h3>
           <p className="text-xs text-slate-400">
-            Compare annual income streams against Federal brackets and Medicare IRMAA surcharge cliffs.
+            Compare annual gross income streams against Federal brackets and Medicare IRMAA surcharge cliffs.
           </p>
         </div>
 
         <div className="flex flex-wrap items-center gap-4">
-          {/* Unified Quick-Fill Optimization Targets Dropdown */}
+          {/* Visual Guideline Overlay Selector */}
           <div className="flex items-center gap-2">
-            <span className="text-xs text-slate-400 font-semibold uppercase tracking-wider">Quick Fills:</span>
+            <span className="text-xs text-slate-400 font-semibold uppercase tracking-wider">Guideline Overlay:</span>
             <select
               value={selectedQuickFill !== null ? selectedQuickFill : ""}
               onChange={(e) => {
                 const val = e.target.value;
-                if (val.startsWith('opt-')) {
-                  setSelectedQuickFill(null);
-                  const goal = val.replace('opt-', '') as OptimizationGoal;
-                  setOptimizingGoal(goal);
-                  setShowOptimizerModal(true);
-                  setIsOptimizingScan(true);
-                  
-                  // Sweep grid in small timeout to allow scanning UI to mount
-                  setTimeout(() => {
-                    const res = optimizeRetirementScenario(inputs, goal, simulateSurvivor, activeScenarioSequence);
-                    setOptimizationResult(res);
-                    setIsOptimizingScan(false);
-                  }, 600);
-                } else {
                 const valNum = val === "" ? null : Number(val);
                 setSelectedQuickFill(valNum);
-                if (valNum !== null && valNum > 0) {
-                  onUpdateStrategy('fill-to-target');
-                  onUpdateTargetValue(valNum);
-                } else {
-                  onUpdateStrategy('flat');
-                  onUpdateTargetValue(null);
-                }
-              }
-            }}
-            className="text-xs font-semibold px-3 py-2 bg-slate-900 text-slate-100 border border-slate-800 rounded-xl hover:border-slate-600 focus:outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 transition-all cursor-pointer"
-          >
-            <option value="">No Active Target (Decluttered)</option>
-            <optgroup label="Retirement Goal Optimizers">
-              <option value="opt-max_portfolio">Auto-Optimize Plan (Max Estate) 🚀</option>
-              <option value="opt-min_taxes">Minimize Lifetime Taxes 🛡️</option>
-              <option value="opt-max_roth">Maximize Ending Roth Balances 💎</option>
-              <option value="opt-min_surcharges">Minimize Medicare IRMAA 🩺</option>
-            </optgroup>
-            <optgroup label="Federal Tax Brackets (MFJ)">
-              <option value={24800}>Fill to Top of 10% Bracket ($24,800 Taxable)</option>
-              <option value={100800}>Fill to Top of 12% Bracket ($100,800 Taxable)</option>
-              <option value={211400}>Fill to Top of 22% Bracket ($211,400 Taxable)</option>
-              <option value={403550}>Fill to Top of 24% Bracket ($403,550 Taxable)</option>
-              <option value={512450}>Fill to Top of 32% Bracket ($512,450 Taxable)</option>
-              <option value={768700}>Fill to Top of 35% Bracket ($768,700 Taxable)</option>
-            </optgroup>
-            <optgroup label="Medicare IRMAA Cliffs ($1 Below Cliff)">
-              <option value={217999}>Fill to $1 Below Tier 1 Cliff ($217,999 MAGI)</option>
-              <option value={273999}>Fill to $1 Below Tier 2 Cliff ($273,999 MAGI)</option>
-              <option value={341999}>Fill to $1 Below Tier 3 Cliff ($341,999 MAGI)</option>
-              <option value={409999}>Fill to $1 Below Tier 4 Cliff ($409,999 MAGI)</option>
-              <option value={749999}>Fill to $1 Below Tier 5 Cliff ($749,999 MAGI)</option>
-            </optgroup>
-          </select>
-          {hasHiddenDatasets && (
-            <button
-              onClick={() => {
-                if (chartRef.current) {
-                  const chart = chartRef.current?.chart || chartRef.current;
-                  chart.data.datasets.forEach((_: any, i: number) => {
-                    chart.setDatasetVisibility(i, true);
-                  });
-                  chart.update();
-                  setHasHiddenDatasets(false);
-                }
               }}
-              className="text-xs font-semibold px-3 py-2 bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 hover:bg-emerald-500/20 rounded-xl transition-all cursor-pointer flex items-center gap-1.5"
+              className="text-xs font-semibold px-3 py-2 bg-slate-900 text-slate-100 border border-slate-800 rounded-xl hover:border-slate-600 focus:outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 transition-all cursor-pointer"
             >
-              <Check className="w-3.5 h-3.5" />
-              <span>Show All Categories</span>
-            </button>
-          )}
+              <option value="">No Active Guideline</option>
+              <optgroup label="Federal Tax Brackets (MFJ)">
+                <option value={24800}>10% Federal Bracket ($24,800 Taxable)</option>
+                <option value={100800}>12% Federal Bracket ($100,800 Taxable)</option>
+                <option value={211400}>22% Federal Bracket ($211,400 Taxable)</option>
+                <option value={403550}>24% Federal Bracket ($403,550 Taxable)</option>
+                <option value={512450}>32% Federal Bracket ($512,450 Taxable)</option>
+                <option value={768700}>35% Federal Bracket ($768,700 Taxable)</option>
+              </optgroup>
+              <optgroup label="Medicare IRMAA Cliffs">
+                <option value={217999}>IRMAA Tier 1 Cliff ($218k MAGI)</option>
+                <option value={273999}>IRMAA Tier 2 Cliff ($274k MAGI)</option>
+                <option value={341999}>IRMAA Tier 3 Cliff ($342k MAGI)</option>
+                <option value={409999}>IRMAA Tier 4 Cliff ($410k MAGI)</option>
+                <option value={749999}>IRMAA Tier 5 Cliff ($750k MAGI)</option>
+              </optgroup>
+            </select>
+            {hasHiddenDatasets && (
+              <button
+                onClick={() => {
+                  if (chartRef.current) {
+                    const chart = chartRef.current?.chart || chartRef.current;
+                    chart.data.datasets.forEach((_: any, i: number) => {
+                      chart.setDatasetVisibility(i, true);
+                    });
+                    chart.update();
+                    setHasHiddenDatasets(false);
+                  }
+                }}
+                className="text-xs font-semibold px-3 py-2 bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 hover:bg-emerald-500/20 rounded-xl transition-all cursor-pointer flex items-center gap-1.5"
+              >
+                <Check className="w-3.5 h-3.5" />
+                <span>Show All Categories</span>
+              </button>
+            )}
+          </div>
         </div>
       </div>
-    </div>
 
       {/* Chart Canvas */}
       <div className="h-[580px] relative bg-slate-950/40 rounded-xl border border-slate-800/40 p-4">
         <Chart ref={chartRef} type="bar" data={chartData as any} options={chartOptions as any} />
       </div>
-      {renderOptimizerModal()}
     </div>
   );
 };

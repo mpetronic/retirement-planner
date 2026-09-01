@@ -509,10 +509,6 @@ function App() {
             ledger={displayActiveLedger}
             inputs={inputs}
             simulateSurvivor={simulateSurvivor}
-            activeScenarioSequence={activeSequence}
-            onApplyOptimization={handleApplyOptimization}
-            onUpdateStrategy={handleUpdateStrategy}
-            onUpdateTargetValue={handleUpdateTargetValue}
             selectedQuickFill={selectedQuickFill}
             setSelectedQuickFill={setSelectedQuickFill}
           />
