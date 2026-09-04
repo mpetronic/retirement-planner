@@ -1063,7 +1063,7 @@ export const ConfigurationPDF: React.FC<PDFProps> = ({ inputs }) => {
                   {/* One-Time Header Row */}
                   <View style={[styles.tableRow, { backgroundColor: '#fffbeb', borderBottomColor: '#fde68a' }]}>
                     <Text style={[styles.colExpName, styles.tableCell, { fontFamily: 'Helvetica-Bold', color: '#b45309' }]}>
-                      One-Time Setup Costs
+                      One-Time & Capital Expenses (Today's $)
                     </Text>
                     <Text style={styles.colExpCat} />
                     <Text style={styles.colExpFreq} />
@@ -1075,10 +1075,11 @@ export const ConfigurationPDF: React.FC<PDFProps> = ({ inputs }) => {
                   {oneTimeItems.map((item) => {
                     const costA = costs[stateA]?.[item.id] ?? 0;
                     const costB = costs[stateB]?.[item.id] ?? 0;
+                    const targetYr = item.targetYear ?? (inputs.simulationStartYear || 2026);
                     return (
                       <View style={styles.tableRow} key={item.id}>
                         <Text style={[styles.colExpName, styles.tableCell, { fontFamily: 'Helvetica-Bold' }]}>{item.name}</Text>
-                        <Text style={[styles.colExpCat, styles.tableCell]}>One-Time</Text>
+                        <Text style={[styles.colExpCat, styles.tableCell]}>Year {targetYr}</Text>
                         <Text style={[styles.colExpFreq, styles.tableCell]}>1x</Text>
                         <Text style={[styles.colExpMD, styles.tableCell]}>{formatCurrency(costA)}</Text>
                         <Text style={[styles.colExpFL, styles.tableCell]}>{formatCurrency(costB)}</Text>
@@ -1089,7 +1090,7 @@ export const ConfigurationPDF: React.FC<PDFProps> = ({ inputs }) => {
                   {/* One-Time Subtotal Row */}
                   <View style={[styles.tableRow, { backgroundColor: '#fffbeb', borderBottomWidth: 1, borderBottomColor: '#fde68a' }]}>
                     <Text style={[styles.colExpName, styles.tableCell, { fontFamily: 'Helvetica-Bold', color: '#b45309' }]}>
-                      Subtotal (One-Time)
+                      Total One-Time Capital Outlays
                     </Text>
                     <Text style={[styles.colExpCat, styles.tableCell, { color: '#64748b' }]}>-</Text>
                     <Text style={[styles.colExpFreq, styles.tableCell, { color: '#64748b', textAlign: 'center' }]}>-</Text>

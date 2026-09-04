@@ -858,20 +858,17 @@ export function runRetirementSimulation(
       const de = normalizeDetailedExpenses(inputs.detailedExpenses);
       const items = de.catalog?.items ?? [];
       const oneTimeItems = items.filter((i) => i.isOneTime);
-      const curCosts = de.costs?.[inputs.jurisdiction.currentState];
-      const tgtCosts = de.costs?.[inputs.jurisdiction.targetState];
 
-      if (year === simStartYear && inputs.jurisdiction.relocationYear !== simStartYear) {
-        if (curCosts) {
-          for (const item of oneTimeItems) {
-            oneTimeCosts += curCosts[item.id] ?? 0;
-          }
-        }
-      }
-      if (inputs.jurisdiction.relocationYear !== null && year === inputs.jurisdiction.relocationYear) {
-        if (tgtCosts) {
-          for (const item of oneTimeItems) {
-            oneTimeCosts += tgtCosts[item.id] ?? 0;
+      const activeStateInYear = (inputs.jurisdiction.relocationYear !== null && year >= inputs.jurisdiction.relocationYear)
+        ? inputs.jurisdiction.targetState
+        : inputs.jurisdiction.currentState;
+      const stateCosts = de.costs?.[activeStateInYear] || de.costs?.[inputs.jurisdiction.currentState];
+
+      if (stateCosts) {
+        for (const item of oneTimeItems) {
+          const itemYear = item.targetYear ?? simStartYear;
+          if (itemYear === year) {
+            oneTimeCosts += stateCosts[item.id] ?? 0;
           }
         }
       }

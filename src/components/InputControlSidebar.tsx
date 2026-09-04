@@ -1,5 +1,5 @@
 import React, { useState, useRef, useMemo } from 'react';
-import { AppStateInputs, DEFAULT_EXPENSE_ITEMS, SimulationResultRow, getSimulationStartYear } from '../types';
+import { AppStateInputs, SimulationResultRow, getSimulationStartYear, normalizeDetailedExpenses } from '../types';
 import {
   User,
   TrendingUp,
@@ -129,11 +129,10 @@ export const InputControlSidebar: React.FC<InputControlSidebarProps> = ({
 
   const mdMonthlySum = useMemo(() => {
     if (!inputs.detailedExpenses) return 0;
-    const de = inputs.detailedExpenses;
-    const stateCosts = de.costs?.[inputs.jurisdiction.currentState] ?? (de as any)[inputs.jurisdiction.currentState] ?? de.MD;
-    const freqs = de.frequencies || {};
-    const items = de.catalog?.items ?? DEFAULT_EXPENSE_ITEMS;
-    if (!stateCosts) return 0;
+    const norm = normalizeDetailedExpenses(inputs.detailedExpenses);
+    const stateCosts = norm.costs[inputs.jurisdiction.currentState] || {};
+    const freqs = norm.frequencies;
+    const items = norm.catalog.items;
     let sum = 0;
     for (const item of items) {
       if (item.isOneTime) continue;
@@ -146,11 +145,10 @@ export const InputControlSidebar: React.FC<InputControlSidebarProps> = ({
 
   const flMonthlySum = useMemo(() => {
     if (!inputs.detailedExpenses) return 0;
-    const de = inputs.detailedExpenses;
-    const stateCosts = de.costs?.[inputs.jurisdiction.targetState] ?? (de as any)[inputs.jurisdiction.targetState] ?? de.FL;
-    const freqs = de.frequencies || {};
-    const items = de.catalog?.items ?? DEFAULT_EXPENSE_ITEMS;
-    if (!stateCosts) return 0;
+    const norm = normalizeDetailedExpenses(inputs.detailedExpenses);
+    const stateCosts = norm.costs[inputs.jurisdiction.targetState] || {};
+    const freqs = norm.frequencies;
+    const items = norm.catalog.items;
     let sum = 0;
     for (const item of items) {
       if (item.isOneTime) continue;
@@ -177,7 +175,7 @@ export const InputControlSidebar: React.FC<InputControlSidebarProps> = ({
   const updateNestedState = (
     category: keyof AppStateInputs | 'you' | 'wife' | 'jurisdiction' | 'growthAssumptions' | 'portfolio',
     field: string,
-    value: any
+    value: unknown
   ) => {
     const updated = { ...inputs };
     if (category === 'you' || category === 'wife') {
@@ -189,7 +187,7 @@ export const InputControlSidebar: React.FC<InputControlSidebarProps> = ({
     } else if (category === 'portfolio') {
       updated.portfolio = { ...updated.portfolio, [field]: value };
     } else {
-      (updated as any)[category] = value;
+      (updated as Record<string, unknown>)[category] = value;
     }
     onChange(updated);
   };
@@ -1310,6 +1308,8 @@ export const InputControlSidebar: React.FC<InputControlSidebarProps> = ({
           onClose={() => setShowExpensesDialog(false)}
           currentState={inputs.jurisdiction.currentState}
           targetState={inputs.jurisdiction.targetState}
+          relocationYear={inputs.jurisdiction.relocationYear}
+          simStartYear={simStartYear}
           detailedExpenses={inputs.detailedExpenses}
           onSave={(expenses) => updateNestedState('detailedExpenses', '', expenses)}
         />

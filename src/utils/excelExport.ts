@@ -10,11 +10,11 @@ export const generateExcelWorkbook = (ledger: SimulationResultRow[], inputs: App
     const hc = person === 'you' ? inputs.you.healthcare : inputs.wife.healthcare;
     if (!hc) return "N/A";
     const stateObj = state === 'MD' ? hc.MD : hc.FL;
-    return (stateObj as any)[key] ?? 0;
+    return (stateObj as unknown as Record<string, unknown> | undefined)?.[key] ?? 0;
   };
 
   // Tab 1: Configuration Summary (AOA - Array of Arrays)
-  const configData: any[][] = [
+  const configData: (string | number | boolean | null)[][] = [
     ["Retirement Plan Configuration Summary"],
     [],
     ["Date Generated", new Date().toLocaleDateString('en-US')],
@@ -198,7 +198,7 @@ export const generateExcelWorkbook = (ledger: SimulationResultRow[], inputs: App
 
   // Tab 3: Detailed Expenses (if enabled)
   if (inputs.useDetailedExpenses && inputs.detailedExpenses) {
-    const expensesSheetData: any[] = [];
+    const expensesSheetData: Record<string, unknown>[] = [];
     const stateA = inputs.jurisdiction.currentState || 'MD';
     const stateB = inputs.jurisdiction.targetState || 'FL';
     const normExpenses = normalizeDetailedExpenses(inputs.detailedExpenses);
@@ -216,6 +216,7 @@ export const generateExcelWorkbook = (ledger: SimulationResultRow[], inputs: App
           "Description": item.name,
           "Category": item.category,
           "Type": item.isOneTime ? "One-Time" : "Recurring",
+          "Target Year": item.isOneTime ? (item.targetYear ?? (inputs.simulationStartYear || 2026)) : "Annual Recurring",
           "Frequency / Year": freq,
           [`Cost (${stateA})`]: costA,
           [`Cost (${stateB})`]: costB,

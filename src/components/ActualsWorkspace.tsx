@@ -7,6 +7,7 @@ import {
   DEFAULT_GUARDRAIL_SETTINGS,
   getSimulationStartYear,
   DEFAULT_EXPENSE_CATEGORIES,
+  normalizeDetailedExpenses,
 } from '../types';
 import {
   ClipboardCheck,
@@ -25,6 +26,7 @@ import {
   Layers,
   ChevronDown,
   ChevronUp,
+  RotateCcw,
 } from 'lucide-react';
 import { Chart } from 'react-chartjs-2';
 import { Chart as ChartJS, registerables } from 'chart.js';
@@ -192,6 +194,24 @@ export const ActualsWorkspace: React.FC<ActualsWorkspaceProps> = ({
     if (actualRows.length === 0) return ledger[0];
     return actualRows[actualRows.length - 1];
   }, [ledger]);
+
+  // Baseline recurring budget before discretionary bonuses
+  const baselineRecurringAnnual = useMemo(() => {
+    if (inputs.useDetailedExpenses && inputs.detailedExpenses) {
+      const norm = normalizeDetailedExpenses(inputs.detailedExpenses);
+      const stateCosts = norm.costs[inputs.jurisdiction.currentState] || {};
+      const freqs = norm.frequencies;
+      const sum = norm.catalog.items
+        .filter((i) => !i.isOneTime)
+        .reduce((acc, item) => {
+          const cost = stateCosts[item.id] ?? 0;
+          const freq = freqs[item.id] ?? item.defaultFrequency ?? 12;
+          return acc + cost * freq;
+        }, 0);
+      if (sum > 0) return sum;
+    }
+    return 100000;
+  }, [inputs.useDetailedExpenses, inputs.detailedExpenses, inputs.jurisdiction.currentState]);
 
   // Guardrail metrics
   const guardrailUpperLimit = latestActualRow?.guardrailUpperLimit ?? ((inputs.annualLivingExpenses ?? 100000) * 1.15);
@@ -468,14 +488,30 @@ export const ActualsWorkspace: React.FC<ActualsWorkspaceProps> = ({
             </div>
           </div>
 
-          {currentSurplusGap > 0 && onApplySpendingBonusToBudget && (
-            <div className="pt-3 flex items-center gap-3">
+          {onApplySpendingBonusToBudget && (
+            <div className="pt-3 flex flex-wrap items-center gap-3">
+              {currentSurplusGap > 0 && (
+                <button
+                  onClick={() => {
+                    const base = baselineRecurringAnnual > 0 ? baselineRecurringAnnual : (inputs.annualLivingExpenses ?? 100000);
+                    onApplySpendingBonusToBudget(base + permittedBonus);
+                  }}
+                  className="px-3.5 py-1.5 text-xs font-bold rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 transition-all flex items-center gap-1.5 cursor-pointer shadow"
+                >
+                  <CheckCircle2 className="w-3.5 h-3.5" />
+                  Apply +{formatCurrency(permittedBonus)} to Next Year Budget
+                </button>
+              )}
+
               <button
-                onClick={() => onApplySpendingBonusToBudget(plannedBudget + permittedBonus)}
-                className="px-3.5 py-1.5 text-xs font-bold rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 transition-all flex items-center gap-1.5 cursor-pointer shadow"
+                onClick={() => {
+                  onApplySpendingBonusToBudget(baselineRecurringAnnual > 0 ? baselineRecurringAnnual : 100000);
+                }}
+                className="px-3 py-1.5 text-xs font-semibold rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-slate-100 border border-slate-700 transition-all flex items-center gap-1.5 cursor-pointer"
+                title="Reset annual living expenses budget back to original unadjusted baseline"
               >
-                <CheckCircle2 className="w-3.5 h-3.5" />
-                Apply +{formatCurrency(permittedBonus)} to Next Year Budget
+                <RotateCcw className="w-3.5 h-3.5 text-slate-400" />
+                Reset Budget to Baseline ({formatCurrency(baselineRecurringAnnual || 100000)})
               </button>
             </div>
           )}

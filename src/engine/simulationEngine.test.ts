@@ -307,11 +307,10 @@ describe('runRetirementSimulation', () => {
 
     // In 2030 (relocated to FL, cpiFactor):
     // Recurring annual = (150 * 12) + (60 * 12) = 1800 + 720 = 2520
-    // One-time FL = 8000
-    // Total in 2030 = (2520 + 8000) * cpiFactor
+    // One-time occurred in 2026 start year, so 2030 has recurring base
     const row2030 = results.find(r => r.year === 2030);
     const cpiFactor2030 = Math.pow(1 + inputs.growthAssumptions.cpiInflationRate, 2030 - 2026);
-    expect(row2030!.livingExpenses).toBeCloseTo((2520 + 8000) * cpiFactor2030, 1);
+    expect(row2030!.livingExpenses).toBeCloseTo(2520 * cpiFactor2030, 1);
   });
 
   it('should reinvest annual surplus cash inflows (when SS + RMD > total outflows) back into taxable brokerage accounts and cost basis', () => {
@@ -1078,7 +1077,7 @@ describe('runRetirementSimulation fixes', () => {
       expect(results[0].livingExpenses).toBeCloseTo(4800, 0);
     });
 
-    it('should assess custom one-time setup costs in year 1 for current state and relocation year for target state', () => {
+    it('should assess custom one-time setup costs in their configured target years', () => {
       const inputs = getMockInputs();
       inputs.useDetailedExpenses = true;
       inputs.simulationStartYear = 2026;
@@ -1094,8 +1093,8 @@ describe('runRetirementSimulation fixes', () => {
           categories: ['Living', 'One-Time Setup Costs'],
           items: [
             { id: 'groceries', name: 'Groceries', category: 'Living', defaultFrequency: 12 },
-            { id: 'mdFurniture', name: 'MD Living Room Set', category: 'One-Time Setup Costs', defaultFrequency: 1, isOneTime: true },
-            { id: 'flGolfCart', name: 'FL Golf Cart Purchase', category: 'One-Time Setup Costs', defaultFrequency: 1, isOneTime: true }
+            { id: 'mdFurniture', name: 'MD Living Room Set', category: 'One-Time Setup Costs', defaultFrequency: 1, isOneTime: true, targetYear: 2026 },
+            { id: 'flGolfCart', name: 'FL Golf Cart Purchase', category: 'One-Time Setup Costs', defaultFrequency: 1, isOneTime: true, targetYear: 2030 }
           ]
         },
         costs: {
@@ -1816,6 +1815,148 @@ describe('runRetirementSimulation fixes', () => {
         100000 - (row2027?.intentionalRothConversion || 0),
         1
       );
+    });
+  });
+
+  describe('Itemized Expenses with Multi-Year Target Years', () => {
+    it('should apply one-time expenses only in their designated target years with proper CPI inflation', () => {
+      const inputs = getMockInputs();
+      inputs.simulationStartYear = 2026;
+      inputs.useDetailedExpenses = true;
+      inputs.growthAssumptions.cpiInflationRate = 0.03; // 3% inflation
+      inputs.jurisdiction.currentState = 'MD';
+      inputs.jurisdiction.targetState = 'FL';
+      inputs.jurisdiction.relocationYear = null; // Stays in MD
+
+      // Base recurring: $60,000/yr ($5,000/mo)
+      // One-time 1: $10,000 in Year 1 (2026)
+      // One-time 2: $25,000 roof in Year 5 (2030)
+      inputs.detailedExpenses = {
+        catalog: {
+          categories: ['Housing', 'One-Time Setup Costs'],
+          items: [
+            {
+              id: 'rent',
+              name: 'Rent / Mortgage',
+              category: 'Housing',
+              defaultFrequency: 12,
+              isOneTime: false,
+            },
+            {
+              id: 'moving',
+              name: 'Initial Moving Costs',
+              category: 'One-Time Setup Costs',
+              defaultFrequency: 1,
+              isOneTime: true,
+              targetYear: 2026,
+            },
+            {
+              id: 'roof',
+              name: 'New Roof',
+              category: 'One-Time Setup Costs',
+              defaultFrequency: 1,
+              isOneTime: true,
+              targetYear: 2030,
+            },
+          ],
+        },
+        costs: {
+          MD: {
+            rent: 5000,
+            moving: 10000,
+            roof: 25000,
+          },
+          FL: {
+            rent: 5000,
+            moving: 10000,
+            roof: 25000,
+          },
+        },
+        frequencies: {
+          rent: 12,
+          moving: 1,
+          roof: 1,
+        },
+      };
+
+      const ledger = runRetirementSimulation(inputs);
+
+      const row2026 = ledger.find((r) => r.year === 2026);
+      const row2027 = ledger.find((r) => r.year === 2027);
+      const row2030 = ledger.find((r) => r.year === 2030);
+
+      expect(row2026).toBeDefined();
+      expect(row2027).toBeDefined();
+      expect(row2030).toBeDefined();
+
+      // 2026: base recurring $60k + $10k moving (cpiFactor = 1.0) = $70,000
+      expect(row2026?.livingExpenses).toBeCloseTo(70000, 1);
+
+      // 2027: base recurring $60k * 1.03 = $61,800 (no one-time expenses)
+      expect(row2027?.livingExpenses).toBeCloseTo(60000 * 1.03, 1);
+
+      // 2030 (4 years after 2026):
+      // cpiFactor = (1.03)^4 = 1.12550881
+      // base recurring = 60000 * (1.03)^4 = 67,530.53
+      // roof one-time = 25000 * (1.03)^4 = 28,137.72
+      // total = 67530.53 + 28137.72 = 95,668.25
+      const expectedCPI = Math.pow(1.03, 4);
+      const expected2030Expenses = 60000 * expectedCPI + 25000 * expectedCPI;
+      expect(row2030?.livingExpenses).toBeCloseTo(expected2030Expenses, 1);
+    });
+
+    it('should resolve post-relocation state cost for one-time expenses scheduled in/after relocation year', () => {
+      const inputs = getMockInputs();
+      inputs.simulationStartYear = 2026;
+      inputs.useDetailedExpenses = true;
+      inputs.inflationRate = 0.0; // 0% inflation for easy cost comparison
+      inputs.jurisdiction.currentState = 'MD';
+      inputs.jurisdiction.targetState = 'FL';
+      inputs.jurisdiction.relocationYear = 2028; // Relocates to FL in 2028
+
+      inputs.detailedExpenses = {
+        catalog: {
+          categories: ['Housing', 'One-Time Setup Costs'],
+          items: [
+            {
+              id: 'base',
+              name: 'Living Baseline',
+              category: 'Housing',
+              defaultFrequency: 12,
+              isOneTime: false,
+            },
+            {
+              id: 'pool',
+              name: 'Install Pool',
+              category: 'One-Time Setup Costs',
+              defaultFrequency: 1,
+              isOneTime: true,
+              targetYear: 2029, // After relocation to FL
+            },
+          ],
+        },
+        costs: {
+          MD: {
+            base: 5000,
+            pool: 50000,
+          },
+          FL: {
+            base: 4000,
+            pool: 35000, // FL pool cost is $35k vs MD $50k
+          },
+        },
+        frequencies: {
+          base: 12,
+          pool: 1,
+        },
+      };
+
+      const ledger = runRetirementSimulation(inputs);
+      const row2029 = ledger.find((r) => r.year === 2029);
+
+      expect(row2029).toBeDefined();
+      // In 2029 (FL), baseline = 4000 * 12 = 48000, pool = 35000 (from FL cost table)
+      expect(row2029?.livingExpenses).toBeCloseTo(48000 + 35000, 1);
     });
   });
 });
