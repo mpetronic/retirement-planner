@@ -3,7 +3,7 @@ import { Chart } from 'react-chartjs-2';
 import { Chart as ChartJS, registerables } from 'chart.js';
 import { SimulationResultRow, AppStateInputs } from '../types';
 import { Award, Check } from 'lucide-react';
-import { getTargetPresetInfo } from '../engine/taxRates2026';
+import { getTargetPresetInfo, CONVERSION_TARGET_PRESETS } from '../engine/taxRates2026';
 
 ChartJS.register(...registerables);
 
@@ -35,9 +35,10 @@ export const BracketMapChart: React.FC<BracketMapChartProps> = ({
 
   // Dynamic selected quick-fill guideline line calculator
   const quickFillLineData = useMemo(() => {
+    if (inputs.rothConversionStrategy !== 'fill-to-target') return null;
     const activeTarget = selectedQuickFill !== null
       ? selectedQuickFill
-      : (inputs.rothConversionStrategy === 'fill-to-target' ? inputs.rothConversionTargetValue : null);
+      : inputs.rothConversionTargetValue;
     if (!activeTarget) return null;
 
     const preset = getTargetPresetInfo(activeTarget);
@@ -444,19 +445,18 @@ export const BracketMapChart: React.FC<BracketMapChartProps> = ({
             >
               <option value="">No Active Guideline</option>
               <optgroup label="Federal Tax Brackets (MFJ)">
-                <option value={24800}>10% Federal Bracket ($24,800 Taxable)</option>
-                <option value={100800}>12% Federal Bracket ($100,800 Taxable)</option>
-                <option value={211400}>22% Federal Bracket ($211,400 Taxable)</option>
-                <option value={403550}>24% Federal Bracket ($403,550 Taxable)</option>
-                <option value={512450}>32% Federal Bracket ($512,450 Taxable)</option>
-                <option value={768700}>35% Federal Bracket ($768,700 Taxable)</option>
+                {CONVERSION_TARGET_PRESETS.filter((p) => p.type === 'bracket').map((p) => (
+                  <option key={p.id} value={p.targetValue}>
+                    {p.description}
+                  </option>
+                ))}
               </optgroup>
               <optgroup label="Medicare IRMAA Cliffs">
-                <option value={217999}>IRMAA Tier 1 Cliff ($218k MAGI)</option>
-                <option value={273999}>IRMAA Tier 2 Cliff ($274k MAGI)</option>
-                <option value={341999}>IRMAA Tier 3 Cliff ($342k MAGI)</option>
-                <option value={409999}>IRMAA Tier 4 Cliff ($410k MAGI)</option>
-                <option value={749999}>IRMAA Tier 5 Cliff ($750k MAGI)</option>
+                {CONVERSION_TARGET_PRESETS.filter((p) => p.type === 'irmaa').map((p) => (
+                  <option key={p.id} value={p.targetValue}>
+                    {p.description}
+                  </option>
+                ))}
               </optgroup>
             </select>
             {hasHiddenDatasets && (

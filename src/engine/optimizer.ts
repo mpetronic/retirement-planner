@@ -1,5 +1,6 @@
 import { AppStateInputs, LockedReturnSequence } from '../types';
 import { runRetirementSimulation, calculateSSBenefit, calculateSpousalBenefit } from './simulationEngine';
+import { CONVERSION_TARGET_PRESETS } from './taxRates2026';
 
 export interface OptimizationResult {
   bestStrategy: 'flat' | 'fill-to-target';
@@ -76,20 +77,10 @@ export function optimizeRetirementScenario(
     rothCandidates.push({ strategy: 'flat', annualConversion: amt, targetValue: null });
   }
 
-  // Target ceiling candidates: Federal Brackets (Taxable Income) and IRMAA cliffs (MAGI)
-  const targetCeilings = [
-    24800,   // 10% Bracket ($24.8k)
-    100800,  // 12% Bracket ($100.8k)
-    211400,  // 22% Bracket ($211.4k)
-    217999,  // IRMAA Tier 1 ($1 below cliff)
-    273999,  // IRMAA Tier 2 ($1 below cliff)
-    341999,  // IRMAA Tier 3 ($1 below cliff)
-    403550,  // 24% Bracket ($403.55k)
-    409999,  // IRMAA Tier 4 ($1 below cliff)
-    512450,  // 32% Bracket ($512.45k)
-    749999,  // IRMAA Tier 5 ($1 below cliff)
-    768700,  // 35% Bracket ($768.7k)
-  ];
+  // Target ceiling candidates: Federal Brackets (Taxable Income) and IRMAA cliffs (MAGI) derived directly from statutory presets
+  const targetCeilings = CONVERSION_TARGET_PRESETS.map((p) =>
+    p.type === 'irmaa' ? (p.targetValue === 750000 ? 749999 : p.targetValue - 1) : p.targetValue
+  );
 
   for (const targetVal of targetCeilings) {
     rothCandidates.push({ strategy: 'fill-to-target', annualConversion: inputs.annualRothConversion, targetValue: targetVal });

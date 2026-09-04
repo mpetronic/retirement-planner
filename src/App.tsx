@@ -18,6 +18,7 @@ import {
   generateHistoricalSequence,
   mulberry32
 } from './engine/monteCarloEngine';
+import { DEFAULT_FILL_TO_TARGET_VALUE } from './engine/taxRates2026';
 import { InputControlSidebar } from './components/InputControlSidebar';
 import { DashboardLayout } from './components/DashboardLayout';
 import { BracketMapChart } from './components/BracketMapChart';
@@ -439,7 +440,7 @@ function App() {
     strategy?: 'flat' | 'fill-to-target'
   ) => {
     const finalStrategy = strategy || inputs.rothConversionStrategy;
-    const finalTargetValue = finalStrategy === 'fill-to-target' ? targetValue : null;
+    const finalTargetValue = targetValue !== null ? targetValue : inputs.rothConversionTargetValue;
 
     setInputs((prev) => ({
       ...prev,
@@ -449,19 +450,29 @@ function App() {
       you: { ...prev.you, targetSSClaimingAge: yourAge },
       wife: { ...prev.wife, targetSSClaimingAge: wifeAge },
     }));
-    setSelectedQuickFill(finalTargetValue);
+    if (finalStrategy === 'fill-to-target' && finalTargetValue !== null) {
+      setSelectedQuickFill(finalTargetValue);
+    }
   };
 
-  // Handle changing conversion strategy
+  // Handle changing conversion strategy while preserving last selected target values and active scenario IDs
   const handleUpdateStrategy = (strategy: 'flat' | 'fill-to-target' | 'custom') => {
-    setInputs((prev) => ({
-      ...prev,
-      rothConversionStrategy: strategy,
-      rothConversionTargetValue: strategy === 'fill-to-target' ? (prev.rothConversionTargetValue || 100800) : null,
-    }));
-    if (strategy !== 'fill-to-target') {
-      setSelectedQuickFill(null);
-    }
+    setInputs((prev) => {
+      let targetValue = prev.rothConversionTargetValue;
+      if (strategy === 'fill-to-target' && !targetValue) {
+        targetValue = selectedQuickFill || DEFAULT_FILL_TO_TARGET_VALUE;
+      }
+      let activeCustomId = prev.activeCustomScenarioId;
+      if (strategy === 'custom' && !activeCustomId && prev.customRothScenarios && prev.customRothScenarios.length > 0) {
+        activeCustomId = prev.customRothScenarios[0].id;
+      }
+      return {
+        ...prev,
+        rothConversionStrategy: strategy,
+        rothConversionTargetValue: targetValue,
+        activeCustomScenarioId: activeCustomId,
+      };
+    });
   };
 
   // Handle saving a custom Roth scenario
@@ -482,12 +493,8 @@ function App() {
         customRothScenarios: updated,
         activeCustomScenarioId: applyImmediately ? scenario.id : prev.activeCustomScenarioId,
         rothConversionStrategy: applyImmediately ? 'custom' : prev.rothConversionStrategy,
-        rothConversionTargetValue: applyImmediately ? null : prev.rothConversionTargetValue,
       };
     });
-    if (applyImmediately) {
-      setSelectedQuickFill(null);
-    }
   };
 
   // Handle deleting a custom Roth scenario
@@ -513,9 +520,7 @@ function App() {
       ...prev,
       rothConversionStrategy: 'custom',
       activeCustomScenarioId: scenarioId,
-      rothConversionTargetValue: null,
     }));
-    setSelectedQuickFill(null);
   };
 
   // Handle changing target MAGI threshold limit
@@ -524,16 +529,14 @@ function App() {
       ...prev,
       rothConversionTargetValue: val,
     }));
-    if (inputs.rothConversionStrategy === 'fill-to-target') {
+    if (val !== null) {
       setSelectedQuickFill(val);
     }
   };
 
   // Keep selectedQuickFill synchronized with rothConversionStrategy & rothConversionTargetValue
   useEffect(() => {
-    if (inputs.rothConversionStrategy !== 'fill-to-target' || inputs.rothConversionTargetValue === null) {
-      setSelectedQuickFill(null);
-    } else {
+    if (inputs.rothConversionStrategy === 'fill-to-target' && inputs.rothConversionTargetValue !== null) {
       setSelectedQuickFill(inputs.rothConversionTargetValue);
     }
   }, [inputs.rothConversionStrategy, inputs.rothConversionTargetValue, setSelectedQuickFill]);

@@ -25,7 +25,12 @@ import {
   TrendingUp,
 } from 'lucide-react';
 import { optimizeRetirementScenario, OptimizationResult, OptimizationGoal } from '../engine/optimizer';
-import { getTargetPresetInfo } from '../engine/taxRates2026';
+import { 
+  getTargetPresetInfo, 
+  DEFAULT_FILL_TO_TARGET_VALUE, 
+  CONVERSION_TARGET_PRESETS,
+  FED_STANDARD_DEDUCTION_MFJ 
+} from '../engine/taxRates2026';
 import { CustomRothScenarioModal } from './CustomRothScenarioModal';
 
 ChartJS.register(...registerables);
@@ -83,14 +88,14 @@ export const TaxableIncomeWorkspace: React.FC<TaxableIncomeWorkspaceProps> = ({
   const isFillToTarget = inputs.rothConversionStrategy === 'fill-to-target';
   const activeTarget = useMemo(() => {
     if (!isFillToTarget) return null;
-    return selectedQuickFill || inputs.rothConversionTargetValue || 100800;
-  }, [isFillToTarget, selectedQuickFill, inputs.rothConversionTargetValue]);
+    return inputs.rothConversionTargetValue || selectedQuickFill || DEFAULT_FILL_TO_TARGET_VALUE;
+  }, [isFillToTarget, inputs.rothConversionTargetValue, selectedQuickFill]);
 
-  // Ensure a default benchmark (12% Fed Bracket - $100,800) is active in fill-to-target mode
+  // Ensure a default benchmark (12% Fed Bracket - $100,800) is active in fill-to-target mode only if none exists
   React.useEffect(() => {
     if (inputs.rothConversionStrategy === 'fill-to-target' && !inputs.rothConversionTargetValue && !selectedQuickFill) {
-      onUpdateTargetValue(100800);
-      setSelectedQuickFill(100800);
+      onUpdateTargetValue(DEFAULT_FILL_TO_TARGET_VALUE);
+      setSelectedQuickFill(DEFAULT_FILL_TO_TARGET_VALUE);
     }
   }, [inputs.rothConversionStrategy, inputs.rothConversionTargetValue, selectedQuickFill, onUpdateTargetValue, setSelectedQuickFill]);
 
@@ -590,9 +595,6 @@ export const TaxableIncomeWorkspace: React.FC<TaxableIncomeWorkspaceProps> = ({
                 type="button"
                 onClick={() => {
                   onUpdateStrategy('fill-to-target');
-                  const target = inputs.rothConversionTargetValue || selectedQuickFill || 100800;
-                  onUpdateTargetValue(target);
-                  setSelectedQuickFill(target);
                 }}
                 className={`text-[10px] px-2.5 py-1 rounded-lg font-bold transition-all cursor-pointer ${
                   inputs.rothConversionStrategy === 'fill-to-target'
@@ -606,8 +608,6 @@ export const TaxableIncomeWorkspace: React.FC<TaxableIncomeWorkspaceProps> = ({
                 type="button"
                 onClick={() => {
                   onUpdateStrategy('flat');
-                  onUpdateTargetValue(null);
-                  setSelectedQuickFill(null);
                 }}
                 className={`text-[10px] px-2.5 py-1 rounded-lg font-bold transition-all cursor-pointer ${
                   inputs.rothConversionStrategy === 'flat'
@@ -621,8 +621,6 @@ export const TaxableIncomeWorkspace: React.FC<TaxableIncomeWorkspaceProps> = ({
                 type="button"
                 onClick={() => {
                   onUpdateStrategy('custom');
-                  onUpdateTargetValue(null);
-                  setSelectedQuickFill(null);
                   if (!inputs.customRothScenarios || inputs.customRothScenarios.length === 0) {
                     setShowCustomModal(true);
                   }
@@ -697,132 +695,49 @@ export const TaxableIncomeWorkspace: React.FC<TaxableIncomeWorkspaceProps> = ({
                 {/* Federal Brackets */}
                 <div className="flex items-center gap-1 bg-slate-950/80 p-1 rounded-xl border border-slate-800">
                   <span className="text-[9px] font-bold text-slate-400 px-1.5 uppercase font-mono">Fed:</span>
-                  <button
-                    type="button"
-                    onClick={() => handleSelectPreset(24800)}
-                    className={`text-[10px] px-2 py-0.5 rounded-lg font-bold transition-all border cursor-pointer ${
-                      activeTarget === 24800 || activeTarget === 57000
-                        ? 'bg-rose-500/20 text-rose-300 border-rose-500/60 font-black'
-                        : 'bg-slate-900/60 text-slate-400 hover:text-slate-200 border-slate-800'
-                    }`}
-                  >
-                    10% ($24.8k)
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => handleSelectPreset(100800)}
-                    className={`text-[10px] px-2 py-0.5 rounded-lg font-bold transition-all border cursor-pointer ${
-                      activeTarget === 100800 || activeTarget === 133000
-                        ? 'bg-rose-500/20 text-rose-300 border-rose-500/60 font-black'
-                        : 'bg-slate-900/60 text-slate-400 hover:text-slate-200 border-slate-800'
-                    }`}
-                  >
-                    12% ($100.8k)
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => handleSelectPreset(211400)}
-                    className={`text-[10px] px-2 py-0.5 rounded-lg font-bold transition-all border cursor-pointer ${
-                      activeTarget === 211400 || activeTarget === 243600
-                        ? 'bg-amber-500/20 text-amber-300 border-amber-500/60 font-black'
-                        : 'bg-slate-900/60 text-slate-400 hover:text-slate-200 border-slate-800'
-                    }`}
-                  >
-                    22% ($211.4k)
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => handleSelectPreset(403550)}
-                    className={`text-[10px] px-2 py-0.5 rounded-lg font-bold transition-all border cursor-pointer ${
-                      activeTarget === 403550 || activeTarget === 435750
-                        ? 'bg-pink-500/20 text-pink-300 border-pink-500/60 font-black'
-                        : 'bg-slate-900/60 text-slate-400 hover:text-slate-200 border-slate-800'
-                    }`}
-                  >
-                    24% ($403.6k)
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => handleSelectPreset(512450)}
-                    className={`text-[10px] px-2 py-0.5 rounded-lg font-bold transition-all border cursor-pointer ${
-                      activeTarget === 512450 || activeTarget === 544650
-                        ? 'bg-purple-500/20 text-purple-300 border-purple-500/60 font-black'
-                        : 'bg-slate-900/60 text-slate-400 hover:text-slate-200 border-slate-800'
-                    }`}
-                  >
-                    32% ($512.5k)
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => handleSelectPreset(768700)}
-                    className={`text-[10px] px-2 py-0.5 rounded-lg font-bold transition-all border cursor-pointer ${
-                      activeTarget === 768700
-                        ? 'bg-indigo-500/20 text-indigo-300 border-indigo-500/60 font-black'
-                        : 'bg-slate-900/60 text-slate-400 hover:text-slate-200 border-slate-800'
-                    }`}
-                  >
-                    35% ($768.7k)
-                  </button>
+                  {CONVERSION_TARGET_PRESETS.filter((p) => p.type === 'bracket').map((p) => {
+                    const isSelected =
+                      activeTarget === p.targetValue ||
+                      (activeTarget !== null && activeTarget === p.jointBase + FED_STANDARD_DEDUCTION_MFJ);
+                    return (
+                      <button
+                        key={p.id}
+                        type="button"
+                        onClick={() => handleSelectPreset(p.targetValue)}
+                        className={`text-[10px] px-2 py-0.5 rounded-lg font-bold transition-all border cursor-pointer ${
+                          isSelected
+                            ? 'bg-rose-500/20 text-rose-300 border-rose-500/60 font-black'
+                            : 'bg-slate-900/60 text-slate-400 hover:text-slate-200 border-slate-800'
+                        }`}
+                      >
+                        {p.shortLabel}
+                      </button>
+                    );
+                  })}
                 </div>
 
                 {/* IRMAA Tiers */}
                 <div className="flex items-center gap-1 bg-slate-950/80 p-1 rounded-xl border border-slate-800">
                   <span className="text-[9px] font-bold text-slate-400 px-1.5 uppercase font-mono">IRMAA:</span>
-                  <button
-                    type="button"
-                    onClick={() => handleSelectPreset(218000)}
-                    className={`text-[10px] px-2 py-0.5 rounded-lg font-bold transition-all border cursor-pointer ${
-                      activeTarget === 218000 || activeTarget === 217999
-                        ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/60 font-black'
-                        : 'bg-slate-900/60 text-slate-400 hover:text-slate-200 border-slate-800'
-                    }`}
-                  >
-                    Tier 1 ($218k)
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => handleSelectPreset(274000)}
-                    className={`text-[10px] px-2 py-0.5 rounded-lg font-bold transition-all border cursor-pointer ${
-                      activeTarget === 274000 || activeTarget === 273999
-                        ? 'bg-amber-500/20 text-amber-300 border-amber-500/60 font-black'
-                        : 'bg-slate-900/60 text-slate-400 hover:text-slate-200 border-slate-800'
-                    }`}
-                  >
-                    Tier 2 ($274k)
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => handleSelectPreset(342000)}
-                    className={`text-[10px] px-2 py-0.5 rounded-lg font-bold transition-all border cursor-pointer ${
-                      activeTarget === 342000 || activeTarget === 341999
-                        ? 'bg-blue-500/20 text-blue-300 border-blue-500/60 font-black'
-                        : 'bg-slate-900/60 text-slate-400 hover:text-slate-200 border-slate-800'
-                    }`}
-                  >
-                    Tier 3 ($342k)
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => handleSelectPreset(410000)}
-                    className={`text-[10px] px-2 py-0.5 rounded-lg font-bold transition-all border cursor-pointer ${
-                      activeTarget === 410000 || activeTarget === 409999
-                        ? 'bg-pink-500/20 text-pink-300 border-pink-500/60 font-black'
-                        : 'bg-slate-900/60 text-slate-400 hover:text-slate-200 border-slate-800'
-                    }`}
-                  >
-                    Tier 4 ($410k)
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => handleSelectPreset(750000)}
-                    className={`text-[10px] px-2 py-0.5 rounded-lg font-bold transition-all border cursor-pointer ${
-                      activeTarget === 750000 || activeTarget === 749999
-                        ? 'bg-purple-500/20 text-purple-300 border-purple-500/60 font-black'
-                        : 'bg-slate-900/60 text-slate-400 hover:text-slate-200 border-slate-800'
-                    }`}
-                  >
-                    Tier 5 ($750k)
-                  </button>
+                  {CONVERSION_TARGET_PRESETS.filter((p) => p.type === 'irmaa').map((p) => {
+                    const isSelected =
+                      activeTarget === p.targetValue ||
+                      (activeTarget !== null && Math.abs(activeTarget - p.targetValue) <= 1);
+                    return (
+                      <button
+                        key={p.id}
+                        type="button"
+                        onClick={() => handleSelectPreset(p.targetValue)}
+                        className={`text-[10px] px-2 py-0.5 rounded-lg font-bold transition-all border cursor-pointer ${
+                          isSelected
+                            ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/60 font-black'
+                            : 'bg-slate-900/60 text-slate-400 hover:text-slate-200 border-slate-800'
+                        }`}
+                      >
+                        {p.shortLabel}
+                      </button>
+                    );
+                  })}
                 </div>
               </div>
 
