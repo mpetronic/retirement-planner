@@ -57,7 +57,7 @@ export function optimizeRetirementScenario(
   const yourBirthYear = parseBirthYear(inputs.you.birthDate, 1960);
   const deathYear = yourBirthYear + (inputs.you.longevityAge ?? 85);
 
-  let bestStrategy: 'flat' | 'fill-to-target' = inputs.rothConversionStrategy || 'flat';
+  let bestStrategy: 'flat' | 'fill-to-target' = inputs.rothConversionStrategy === 'fill-to-target' ? 'fill-to-target' : 'flat';
   let bestAnnualRothConversion = inputs.annualRothConversion;
   let bestTargetValue = inputs.rothConversionTargetValue;
   let bestYourSSAge = inputs.you.targetSSClaimingAge ?? 67;

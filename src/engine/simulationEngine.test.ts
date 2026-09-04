@@ -1669,6 +1669,156 @@ describe('runRetirementSimulation fixes', () => {
       expect(row2026?.permittedSpendingBonus).toBeLessThanOrEqual(15000.01); // Capped by upper guardrail ceiling ($115k - $100k = $15k)
     });
   });
+
+  describe('Custom Roth Conversion Scenarios', () => {
+    const getCustomTestInputs = (): AppStateInputs => ({
+      you: {
+        name: 'John',
+        birthDate: '1965-06-15',
+        estimatedPIA: 0,
+        targetSSClaimingAge: null,
+        plannedRetirementAge: 65,
+        activeSalary: 0,
+      },
+      wife: {
+        name: 'Jane',
+        birthDate: '1968-09-20',
+        estimatedPIA: 0,
+        targetSSClaimingAge: null,
+        plannedRetirementAge: 65,
+        activeSalary: 0,
+      },
+      portfolio: {
+        yourPreTaxIRA: 300000,
+        yourRothIRA: 50000,
+        yourTaxableBrokerage: 0,
+        yourTaxableBasis: 0,
+        yourCash: 50000,
+        wifePreTaxIRA: 200000,
+        wifeRothIRA: 20000,
+        wifeTaxableBrokerage: 0,
+        wifeTaxableBasis: 0,
+        wifeCash: 0,
+      },
+      jurisdiction: {
+        currentState: 'FL',
+        targetState: 'FL',
+        relocationYear: null,
+      },
+      growthAssumptions: {
+        equityReturnRate: 0.05,
+        fixedIncomeReturnRate: 0.03,
+        cpiInflationRate: 0.025,
+        healthcareInflationRate: 0.04,
+      },
+      annualLivingExpenses: 20000,
+      annualRothConversion: 0,
+      rothConversionTargetValue: null,
+      rothConversionStartYear: 2027,
+      rothConversionEndYear: 2030,
+      rothConversionStrategy: 'custom',
+      customRothScenarios: [
+        {
+          id: 'custom-plan-1',
+          name: 'Frontloaded Custom Plan',
+          schedule: {
+            2027: 85000,
+            2028: 95000,
+            2029: 60000,
+            2030: 40000,
+          },
+          createdAt: '2026-09-04T00:00:00.000Z',
+          updatedAt: '2026-09-04T00:00:00.000Z',
+        },
+      ],
+      activeCustomScenarioId: 'custom-plan-1',
+      monteCarloSettings: {
+        mode: 'monte-carlo',
+        equityVolatility: 0.0,
+        fixedIncomeVolatility: 0.0,
+        correlation: 0.0,
+        trials: 1,
+        seed: 42,
+      },
+      isConfigured: true,
+      isSingleFiler: false,
+    });
+
+    it('should convert exact nominal scheduled amounts each year and 0 in unconfigured years', () => {
+      const inputs = getCustomTestInputs();
+      const ledger = runRetirementSimulation(inputs);
+
+      const row2026 = ledger.find(r => r.year === 2026);
+      const row2027 = ledger.find(r => r.year === 2027);
+      const row2028 = ledger.find(r => r.year === 2028);
+      const row2029 = ledger.find(r => r.year === 2029);
+      const row2030 = ledger.find(r => r.year === 2030);
+      const row2031 = ledger.find(r => r.year === 2031);
+
+      // 2026: Not in schedule -> 0
+      expect(row2026?.intentionalRothConversion).toBe(0);
+
+      // 2027: Exactly $85,000 nominal (without inflation scaling)
+      expect(row2027?.intentionalRothConversion).toBe(85000);
+      expect(row2027?.requestedCustomRothConversion).toBe(85000);
+      expect(row2027?.isRothConversionCapped).toBe(false);
+
+      // 2028: Exactly $95,000 nominal
+      expect(row2028?.intentionalRothConversion).toBe(95000);
+      expect(row2028?.requestedCustomRothConversion).toBe(95000);
+      expect(row2028?.isRothConversionCapped).toBe(false);
+
+      // 2029: Exactly $60,000 nominal
+      expect(row2029?.intentionalRothConversion).toBe(60000);
+
+      // 2030: Exactly $40,000 nominal
+      expect(row2030?.intentionalRothConversion).toBe(40000);
+
+      // 2031: Not in schedule -> 0
+      expect(row2031?.intentionalRothConversion).toBe(0);
+    });
+
+    it('should cap conversion when pre-tax balances are exhausted and set warning flags', () => {
+      const inputs = getCustomTestInputs();
+      // Lower starting pre-tax balances so it exhausts in 2028
+      inputs.portfolio.yourPreTaxIRA = 80000;
+      inputs.portfolio.wifePreTaxIRA = 40000; // Total starting pre-tax = 120,000
+
+      inputs.customRothScenarios = [
+        {
+          id: 'heavy-plan',
+          name: 'Heavy Aggressive Plan',
+          schedule: {
+            2026: 100000,
+            2027: 100000, // Starting pre-tax had ~120k, after 100k conversion in 2026, ~20k remains
+          },
+          createdAt: '2026-09-04T00:00:00.000Z',
+          updatedAt: '2026-09-04T00:00:00.000Z',
+        },
+      ];
+      inputs.activeCustomScenarioId = 'heavy-plan';
+
+      const ledger = runRetirementSimulation(inputs);
+
+      const row2026 = ledger.find(r => r.year === 2026);
+      const row2027 = ledger.find(r => r.year === 2027);
+
+      expect(row2026?.intentionalRothConversion).toBe(100000);
+      expect(row2026?.isRothConversionCapped).toBe(false);
+
+      // 2027 requested 100,000 but only ~20k plus growth remained
+      expect(row2027).toBeDefined();
+      expect(row2027?.requestedCustomRothConversion).toBe(100000);
+      expect(row2027?.isRothConversionCapped).toBe(true);
+      expect(row2027?.intentionalRothConversion).toBeLessThan(100000);
+      expect(row2027?.intentionalRothConversion).toBeGreaterThan(0);
+      expect(row2027?.rothConversionShortfall).toBeCloseTo(
+        100000 - (row2027?.intentionalRothConversion || 0),
+        1
+      );
+    });
+  });
 });
+
 
 

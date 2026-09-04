@@ -303,6 +303,8 @@ export function runRetirementSimulation(
   const WIFE_DEATH_YEAR = inputs.isSingleFiler ? 0 : (wifeBirthYear + (inputs.wife.longevityAge ?? 95));
 
   const simStartYear = getSimulationStartYear(inputs);
+  const startYear = inputs.rothConversionStartYear !== undefined ? inputs.rothConversionStartYear : (simStartYear + 1);
+  const endYear = inputs.rothConversionEndYear !== undefined ? inputs.rothConversionEndYear : (simStartYear + 8);
 
   // The simulation runs until the last survivor passes away
   const endSimulationYear = Math.max(simStartYear, inputs.isSingleFiler ? DEATH_YEAR : Math.max(DEATH_YEAR, WIFE_DEATH_YEAR));
@@ -689,16 +691,43 @@ export function runRetirementSimulation(
     let drawdownPreTax = 0;
     let drawdownRoth = 0;
     let capitalGainsTriggered = 0;
+    let requestedCustomAmount: number | undefined = undefined;
+    let isRothConversionCapped: boolean | undefined = undefined;
+    let rothConversionShortfall: number | undefined = undefined;
 
-    const startYear = inputs.rothConversionStartYear !== undefined ? inputs.rothConversionStartYear : (inputs.jurisdiction.relocationYear ?? simStartYear);
-    const endYear = inputs.rothConversionEndYear !== undefined ? inputs.rothConversionEndYear : (startYear + 9);
+    // 1. Custom Roth Conversion Schedule
+    if (inputs.rothConversionStrategy === 'custom') {
+      const activeCustomScenario = inputs.customRothScenarios?.find(
+        (s) => s.id === inputs.activeCustomScenarioId
+      ) || inputs.customRothScenarios?.[0];
 
-    // Flat Roth Conversion (pre-determined annual conversion executed on Jan 1)
-    if (inputs.rothConversionStrategy !== 'fill-to-target' && year >= startYear && year <= endYear) {
+      if (activeCustomScenario && activeCustomScenario.schedule[year] !== undefined) {
+        requestedCustomAmount = activeCustomScenario.schedule[year] || 0;
+        targetConversion = requestedCustomAmount;
+      }
+    } 
+    // 2. Flat Roth Conversion (pre-determined annual conversion executed on Jan 1)
+    else if (inputs.rothConversionStrategy === 'flat' && year >= startYear && year <= endYear) {
       const conversionInflationFactor = Math.pow(1 + inputs.growthAssumptions.cpiInflationRate, year - startYear);
       targetConversion = inputs.annualRothConversion * conversionInflationFactor;
+    }
 
-      if (targetConversion > 0) {
+    if (targetConversion > 0) {
+      const totalAvailablePreTax = isSurvivorActive || youDeceased ? wifePreTax : (yourPreTax + (wifeDeceased ? 0 : wifePreTax));
+
+      if (inputs.rothConversionStrategy === 'custom') {
+        if (targetConversion > totalAvailablePreTax + 0.01) {
+          isRothConversionCapped = true;
+          rothConversionShortfall = Math.max(0, targetConversion - totalAvailablePreTax);
+        } else {
+          isRothConversionCapped = false;
+        }
+      }
+
+      // Cap conversion by available pre-tax assets
+      targetConversion = Math.min(targetConversion, totalAvailablePreTax);
+
+      if (inputs.rothConversionStrategy === 'flat') {
         const totalTaxableBrokerage = yourTaxable + (wifeDeceased ? 0 : wifeTaxable);
         const estLiving = baseLivingExpensesAnnual * cpiFactor;
         const totalTaxableLeft = Math.max(0, totalTaxableBrokerage - estLiving);
@@ -1827,6 +1856,9 @@ export function runRetirementSimulation(
       reinvestedSurplus,
       capitalGainsTriggered,
       intentionalRothConversion: combinedRothConversion,
+      requestedCustomRothConversion: requestedCustomAmount,
+      isRothConversionCapped,
+      rothConversionShortfall,
       otherTaxableIncome: drawdownPreTax,
       magi,
       fedAGI,

@@ -367,6 +367,15 @@ export const DEFAULT_GUARDRAIL_SETTINGS: GuardrailSettings = {
   applyToSimulation: false,
 };
 
+export interface CustomRothScenario {
+  id: string;
+  name: string;
+  description?: string;
+  schedule: Record<number, number>; // year -> nominal conversion amount
+  createdAt: string;
+  updatedAt: string;
+}
+
 export interface AppStateInputs {
   isConfigured: boolean;
   isSingleFiler: boolean;
@@ -387,8 +396,10 @@ export interface AppStateInputs {
   annualRothConversion: number;
   rothConversionStartYear?: number;
   rothConversionEndYear?: number;
-  rothConversionStrategy: 'flat' | 'fill-to-target';
+  rothConversionStrategy: 'flat' | 'fill-to-target' | 'custom';
   rothConversionTargetValue: number | null;
+  customRothScenarios?: CustomRothScenario[];
+  activeCustomScenarioId?: string | null;
   monteCarloSettings: MonteCarloSettings;
   detailedExpenses?: DetailedExpensesState;
   charitySettings?: CharitySettings;
@@ -426,6 +437,9 @@ export interface SimulationResultRow {
   wifeSalary?: number; // Pre-retirement annual active salary earned
   capitalGainsTriggered: number;
   intentionalRothConversion: number;
+  requestedCustomRothConversion?: number;
+  isRothConversionCapped?: boolean;
+  rothConversionShortfall?: number;
   otherTaxableIncome: number; // Placeholder if needed
   
   // MAGI & Tax Calculations

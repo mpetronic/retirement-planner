@@ -7,6 +7,7 @@ import {
   DEFAULT_DETAILED_EXPENSES_STATE,
   DEFAULT_CHARITY_SETTINGS,
   DEFAULT_GUARDRAIL_SETTINGS,
+  CustomRothScenario,
   normalizeDetailedExpenses,
   getSimulationStartYear,
 } from './types';
@@ -452,7 +453,7 @@ function App() {
   };
 
   // Handle changing conversion strategy
-  const handleUpdateStrategy = (strategy: 'flat' | 'fill-to-target') => {
+  const handleUpdateStrategy = (strategy: 'flat' | 'fill-to-target' | 'custom') => {
     setInputs((prev) => ({
       ...prev,
       rothConversionStrategy: strategy,
@@ -461,6 +462,60 @@ function App() {
     if (strategy !== 'fill-to-target') {
       setSelectedQuickFill(null);
     }
+  };
+
+  // Handle saving a custom Roth scenario
+  const handleSaveCustomRothScenario = (scenario: CustomRothScenario, applyImmediately: boolean = true) => {
+    setInputs((prev) => {
+      const existing = prev.customRothScenarios || [];
+      const index = existing.findIndex((s) => s.id === scenario.id);
+      let updated: CustomRothScenario[];
+      if (index >= 0) {
+        updated = [...existing];
+        updated[index] = scenario;
+      } else {
+        updated = [...existing, scenario];
+      }
+
+      return {
+        ...prev,
+        customRothScenarios: updated,
+        activeCustomScenarioId: applyImmediately ? scenario.id : prev.activeCustomScenarioId,
+        rothConversionStrategy: applyImmediately ? 'custom' : prev.rothConversionStrategy,
+        rothConversionTargetValue: applyImmediately ? null : prev.rothConversionTargetValue,
+      };
+    });
+    if (applyImmediately) {
+      setSelectedQuickFill(null);
+    }
+  };
+
+  // Handle deleting a custom Roth scenario
+  const handleDeleteCustomRothScenario = (scenarioId: string) => {
+    setInputs((prev) => {
+      const existing = prev.customRothScenarios || [];
+      const updated = existing.filter((s) => s.id !== scenarioId);
+      const isDeletingActive = prev.activeCustomScenarioId === scenarioId;
+      const nextActiveId = updated[0]?.id || null;
+
+      return {
+        ...prev,
+        customRothScenarios: updated,
+        activeCustomScenarioId: isDeletingActive ? nextActiveId : prev.activeCustomScenarioId,
+        rothConversionStrategy: isDeletingActive && !nextActiveId ? 'fill-to-target' : prev.rothConversionStrategy,
+      };
+    });
+  };
+
+  // Handle selecting active custom Roth scenario
+  const handleSelectCustomRothScenario = (scenarioId: string) => {
+    setInputs((prev) => ({
+      ...prev,
+      rothConversionStrategy: 'custom',
+      activeCustomScenarioId: scenarioId,
+      rothConversionTargetValue: null,
+    }));
+    setSelectedQuickFill(null);
   };
 
   // Handle changing target MAGI threshold limit
@@ -545,6 +600,9 @@ function App() {
             onApplyOptimization={handleApplyOptimization}
             onUpdateStrategy={handleUpdateStrategy}
             onUpdateTargetValue={handleUpdateTargetValue}
+            onSaveCustomScenario={handleSaveCustomRothScenario}
+            onDeleteCustomScenario={handleDeleteCustomRothScenario}
+            onSelectCustomScenario={handleSelectCustomRothScenario}
             onInputsChange={handleInputsChange}
             selectedQuickFill={selectedQuickFill}
             setSelectedQuickFill={setSelectedQuickFill}
