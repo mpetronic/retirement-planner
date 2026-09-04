@@ -118,12 +118,12 @@ export const ExportPlanDialog: React.FC<ExportPlanDialogProps> = ({
           onClose();
         }, 1500);
       }
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error('Export error:', err);
       setExportStatus({
         success: false,
         filename: fullFileNamePreview,
-        error: err?.message || 'An unexpected error occurred during export.',
+        error: err instanceof Error ? err.message : 'An unexpected error occurred during export.',
       });
     } finally {
       setIsExporting(false);

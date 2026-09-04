@@ -124,46 +124,48 @@ function useLocalStorage<T>(key: string, initialValue: T): [T, (value: T | ((val
         
         // Robust deep merge to ensure new Monte Carlo fields are populated for users with old saved states
         if (key === 'retirement_planner_inputs') {
+          const init = initialValue as unknown as AppStateInputs;
+          const p = parsed as Partial<AppStateInputs>;
           return {
-            ...initialValue,
-            ...parsed,
-            simulationStartYear: parsed.simulationStartYear !== undefined ? parsed.simulationStartYear : (parsed.rothConversionStartYear ? parsed.rothConversionStartYear - 1 : 2026),
+            ...init,
+            ...p,
+            simulationStartYear: p.simulationStartYear !== undefined ? p.simulationStartYear : (p.rothConversionStartYear ? p.rothConversionStartYear - 1 : 2026),
             growthAssumptions: {
-              ...(initialValue as any).growthAssumptions,
-              ...parsed.growthAssumptions,
+              ...init.growthAssumptions,
+              ...p.growthAssumptions,
             },
             you: {
-              ...(initialValue as any).you,
-              ...parsed.you,
+              ...init.you,
+              ...p.you,
             },
             wife: {
-              ...(initialValue as any).wife,
-              ...parsed.wife,
+              ...init.wife,
+              ...p.wife,
             },
             portfolio: {
-              ...(initialValue as any).portfolio,
-              ...parsed.portfolio,
+              ...init.portfolio,
+              ...p.portfolio,
             },
             jurisdiction: {
-              ...(initialValue as any).jurisdiction,
-              ...parsed.jurisdiction,
+              ...init.jurisdiction,
+              ...p.jurisdiction,
             },
             monteCarloSettings: {
-              ...(initialValue as any).monteCarloSettings,
-              ...parsed.monteCarloSettings,
+              ...init.monteCarloSettings,
+              ...p.monteCarloSettings,
             },
-            useDetailedExpenses: parsed.useDetailedExpenses !== undefined ? parsed.useDetailedExpenses : false,
-            detailedExpenses: normalizeDetailedExpenses(parsed.detailedExpenses),
-            actualTracking: parsed.actualTracking || {},
+            useDetailedExpenses: p.useDetailedExpenses !== undefined ? p.useDetailedExpenses : false,
+            detailedExpenses: normalizeDetailedExpenses(p.detailedExpenses),
+            actualTracking: p.actualTracking || {},
             guardrailSettings: {
               ...DEFAULT_GUARDRAIL_SETTINGS,
-              ...(parsed.guardrailSettings || {}),
+              ...(p.guardrailSettings || {}),
             },
-          } as any;
+          } as unknown as T;
         }
 
         if (key === 'retirement_planner_saved_plans' && Array.isArray(parsed)) {
-          return parsed.map((p: any) => ({
+          return (parsed as SavedPlan[]).map((p) => ({
             ...p,
             inputs: {
               ...p.inputs,
@@ -174,7 +176,7 @@ function useLocalStorage<T>(key: string, initialValue: T): [T, (value: T | ((val
                 ...(p.inputs?.guardrailSettings || {}),
               },
             }
-          })) as any;
+          })) as unknown as T;
         }
         
         return parsed;
@@ -382,8 +384,9 @@ function App() {
     const nonCurrencyKeys = new Set(['year', 'yourAge', 'wifeAge', 'surchargeTier', 'cpiFactor']);
     
     for (const key of Object.keys(discounted) as Array<keyof SimulationResultRow>) {
-      if (!nonCurrencyKeys.has(key as string) && typeof discounted[key] === 'number') {
-        (discounted as any)[key] = (discounted[key] as number) / factor;
+      const val = discounted[key];
+      if (!nonCurrencyKeys.has(key as string) && typeof val === 'number') {
+        (discounted as Record<string, unknown>)[key] = val / factor;
       }
     }
     return discounted;
@@ -429,7 +432,7 @@ function App() {
       ...monteCarloSummary,
       percentiles: discountedPercentiles,
     };
-  }, [monteCarloSummary, useTodayDollars, deferredInputs.growthAssumptions.cpiInflationRate, deferredInputs.monteCarloSettings?.randomizeCPI, deferredInputs.monteCarloSettings?.constantCPIRate]);
+  }, [monteCarloSummary, useTodayDollars, deferredInputs]);
 
   // Handle applying a fully optimized retirement configuration at once
   const handleApplyOptimization = (

@@ -1,6 +1,14 @@
 import React, { useMemo, useState, useRef } from 'react';
 import { Chart } from 'react-chartjs-2';
-import { Chart as ChartJS, registerables } from 'chart.js';
+import {
+  Chart as ChartJS,
+  registerables,
+  ChartData,
+  ChartOptions,
+  TooltipItem,
+  LegendItem,
+  ChartEvent,
+} from 'chart.js';
 import { SimulationResultRow, AppStateInputs } from '../types';
 import { Award, Check } from 'lucide-react';
 import { getTargetPresetInfo, CONVERSION_TARGET_PRESETS } from '../engine/taxRates2026';
@@ -22,7 +30,7 @@ export const BracketMapChart: React.FC<BracketMapChartProps> = ({
   selectedQuickFill,
   setSelectedQuickFill,
 }) => {
-  const chartRef = useRef<any>(null);
+  const chartRef = useRef<ChartJS<'bar' | 'line'> | null>(null);
   const [hasHiddenDatasets, setHasHiddenDatasets] = useState(false);
 
   const years = useMemo(() => ledger.map((r) => r.year), [ledger]);
@@ -181,7 +189,7 @@ export const BracketMapChart: React.FC<BracketMapChartProps> = ({
       }
     ];
 
-    const datasets: any[] = rawDatasets.filter(Boolean) as any[];
+    const datasets = rawDatasets.filter(Boolean) as ChartData<'bar' | 'line'>['datasets'];
 
     // If a quick-fill is selected, show only the line related to it
     if (quickFillLineData) {
@@ -206,24 +214,25 @@ export const BracketMapChart: React.FC<BracketMapChartProps> = ({
     };
   }, [years, activeSalaries, ssIncomes, rmds, rothConversions, ledger, quickFillLineData]);
 
-  const chartOptions = useMemo(() => {
+  const chartOptions: ChartOptions<'bar' | 'line'> = useMemo(() => {
     return {
       responsive: true,
       maintainAspectRatio: false,
-      animation: true,
       plugins: {
         legend: {
           position: 'top' as const,
-          onClick: (e: any, legendItem: any, legend: any) => {
+          onClick: (e: ChartEvent, legendItem: LegendItem, legend: { chart: ChartJS }) => {
             const index = legendItem.datasetIndex;
+            if (index === undefined) return;
             const ci = legend.chart;
-            const hasModifier = e.native.ctrlKey || e.native.altKey || e.native.shiftKey || e.native.metaKey;
+            const nativeEvent = e.native as MouseEvent | undefined;
+            const hasModifier = nativeEvent ? (nativeEvent.ctrlKey || nativeEvent.altKey || nativeEvent.shiftKey || nativeEvent.metaKey) : false;
             
             if (hasModifier) {
               // Modifier + Click: Solo / Isolate (or reset if already soloed)
               let visibleCount = 0;
               let isClickedVisible = false;
-              ci.data.datasets.forEach((_: any, i: number) => {
+              ci.data.datasets.forEach((_, i: number) => {
                 if (ci.isDatasetVisible(i)) {
                   visibleCount++;
                   if (i === index) {
@@ -234,12 +243,12 @@ export const BracketMapChart: React.FC<BracketMapChartProps> = ({
               
               if (visibleCount === 1 && isClickedVisible) {
                 // Already soloed: Show all
-                ci.data.datasets.forEach((_: any, i: number) => {
+                ci.data.datasets.forEach((_, i: number) => {
                   ci.setDatasetVisibility(i, true);
                 });
               } else {
                 // Solo this dataset
-                ci.data.datasets.forEach((_: any, i: number) => {
+                ci.data.datasets.forEach((_, i: number) => {
                   ci.setDatasetVisibility(i, i === index);
                 });
               }
@@ -253,7 +262,7 @@ export const BracketMapChart: React.FC<BracketMapChartProps> = ({
             
             // Update hasHiddenDatasets state to conditionally render Reset Legend UI
             let anyHidden = false;
-            ci.data.datasets.forEach((_: any, i: number) => {
+            ci.data.datasets.forEach((_, i: number) => {
               if (!ci.isDatasetVisible(i)) {
                 anyHidden = true;
               }
@@ -279,7 +288,7 @@ export const BracketMapChart: React.FC<BracketMapChartProps> = ({
           borderWidth: 1,
           padding: 12,
           callbacks: {
-            label: function (context: any) {
+            label: function (context: TooltipItem<'bar' | 'line'>) {
               let label = context.dataset.label || '';
               const row = ledger[context.dataIndex];
               
@@ -337,7 +346,7 @@ export const BracketMapChart: React.FC<BracketMapChartProps> = ({
               }
               return label;
             },
-            footer: function (tooltipItems: any[]) {
+            footer: function (tooltipItems: TooltipItem<'bar' | 'line'>[]) {
               let sum = 0;
               tooltipItems.forEach((item) => {
                 if (item.dataset.stack === 'income') {
@@ -379,8 +388,8 @@ export const BracketMapChart: React.FC<BracketMapChartProps> = ({
             font: {
               size: 10,
             },
-            callback: function (value: any) {
-              return '$' + (value / 1000) + 'k';
+            callback: function (value: string | number) {
+              return '$' + (Number(value) / 1000) + 'k';
             },
           },
           title: {
@@ -401,8 +410,8 @@ export const BracketMapChart: React.FC<BracketMapChartProps> = ({
             font: {
               size: 10,
             },
-            callback: function (value: any) {
-              return '$' + (value / 1000000).toFixed(1) + 'M';
+            callback: function (value: string | number) {
+              return '$' + (Number(value) / 1000000).toFixed(1) + 'M';
             },
           },
           title: {
@@ -463,8 +472,8 @@ export const BracketMapChart: React.FC<BracketMapChartProps> = ({
               <button
                 onClick={() => {
                   if (chartRef.current) {
-                    const chart = chartRef.current?.chart || chartRef.current;
-                    chart.data.datasets.forEach((_: any, i: number) => {
+                    const chart = chartRef.current;
+                    chart.data.datasets.forEach((_, i: number) => {
                       chart.setDatasetVisibility(i, true);
                     });
                     chart.update();
@@ -483,7 +492,7 @@ export const BracketMapChart: React.FC<BracketMapChartProps> = ({
 
       {/* Chart Canvas */}
       <div className="h-[580px] relative bg-slate-950/40 rounded-xl border border-slate-800/40 p-4">
-        <Chart ref={chartRef} type="bar" data={chartData as any} options={chartOptions as any} />
+        <Chart ref={chartRef} type="bar" data={chartData} options={chartOptions} />
       </div>
     </div>
   );

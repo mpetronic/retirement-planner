@@ -1,6 +1,14 @@
 import React, { useMemo, useState, useRef } from 'react';
 import { Chart } from 'react-chartjs-2';
-import { Chart as ChartJS, registerables } from 'chart.js';
+import {
+  Chart as ChartJS,
+  registerables,
+  ChartData,
+  ChartOptions,
+  TooltipItem,
+  LegendItem,
+  ChartEvent,
+} from 'chart.js';
 import {
   SimulationResultRow,
   AppStateInputs,
@@ -72,7 +80,7 @@ export const TaxableIncomeWorkspace: React.FC<TaxableIncomeWorkspaceProps> = ({
   selectedQuickFill,
   setSelectedQuickFill,
 }) => {
-  const chartRef = useRef<any>(null);
+  const chartRef = useRef<ChartJS<'bar' | 'line'> | null>(null);
   const simStartYear = getSimulationStartYear(inputs);
 
   // Custom scenario modal state
@@ -328,7 +336,7 @@ export const TaxableIncomeWorkspace: React.FC<TaxableIncomeWorkspaceProps> = ({
       },
     ];
 
-    const datasets = rawDatasets.filter(Boolean) as any[];
+    const datasets = rawDatasets.filter(Boolean) as ChartData<'bar' | 'line'>['datasets'];
 
     return {
       labels: years,
@@ -337,7 +345,7 @@ export const TaxableIncomeWorkspace: React.FC<TaxableIncomeWorkspaceProps> = ({
   }, [years, processedRows, benchmarkLineData]);
 
   // Chart options
-  const chartOptions: any = useMemo(() => {
+  const chartOptions: ChartOptions<'bar' | 'line'> = useMemo(() => {
     return {
       responsive: true,
       maintainAspectRatio: false,
@@ -348,16 +356,18 @@ export const TaxableIncomeWorkspace: React.FC<TaxableIncomeWorkspaceProps> = ({
       plugins: {
         legend: {
           position: 'top',
-          onClick: (e: any, legendItem: any, legend: any) => {
+          onClick: (e: ChartEvent, legendItem: LegendItem, legend: { chart: ChartJS }) => {
             const index = legendItem.datasetIndex;
+            if (index === undefined) return;
             const ci = legend.chart;
-            const hasModifier = e.native.ctrlKey || e.native.altKey || e.native.shiftKey || e.native.metaKey;
+            const nativeEvent = e.native as MouseEvent | undefined;
+            const hasModifier = nativeEvent ? (nativeEvent.ctrlKey || nativeEvent.altKey || nativeEvent.shiftKey || nativeEvent.metaKey) : false;
             
             if (hasModifier) {
               // Modifier + Click: Solo / Isolate (or reset if already soloed)
               let visibleCount = 0;
               let isClickedVisible = false;
-              ci.data.datasets.forEach((_: any, i: number) => {
+              ci.data.datasets.forEach((_, i: number) => {
                 if (ci.isDatasetVisible(i)) {
                   visibleCount++;
                   if (i === index) {
@@ -368,12 +378,12 @@ export const TaxableIncomeWorkspace: React.FC<TaxableIncomeWorkspaceProps> = ({
               
               if (visibleCount === 1 && isClickedVisible) {
                 // Already soloed: Show all
-                ci.data.datasets.forEach((_: any, i: number) => {
+                ci.data.datasets.forEach((_, i: number) => {
                   ci.setDatasetVisibility(i, true);
                 });
               } else {
                 // Solo this dataset
-                ci.data.datasets.forEach((_: any, i: number) => {
+                ci.data.datasets.forEach((_, i: number) => {
                   ci.setDatasetVisibility(i, i === index);
                 });
               }
@@ -387,7 +397,7 @@ export const TaxableIncomeWorkspace: React.FC<TaxableIncomeWorkspaceProps> = ({
             
             // Update hasHiddenDatasets state to conditionally render Reset Legend UI
             let anyHidden = false;
-            ci.data.datasets.forEach((_: any, i: number) => {
+            ci.data.datasets.forEach((_, i: number) => {
               if (!ci.isDatasetVisible(i)) {
                 anyHidden = true;
               }
@@ -396,7 +406,7 @@ export const TaxableIncomeWorkspace: React.FC<TaxableIncomeWorkspaceProps> = ({
           },
           labels: {
             color: '#cbd5e1',
-            font: { size: 11, weight: '600' },
+            font: { size: 11, weight: 'bold' as const },
             usePointStyle: true,
             boxWidth: 10,
             padding: 16,
@@ -412,18 +422,18 @@ export const TaxableIncomeWorkspace: React.FC<TaxableIncomeWorkspaceProps> = ({
           boxPadding: 6,
           usePointStyle: true,
           callbacks: {
-            title: (items: any[]) => {
+            title: (items: TooltipItem<'bar' | 'line'>[]) => {
               if (!items.length) return '';
               const idx = items[0].dataIndex;
               const r = processedRows[idx];
               return `Year ${r.year} (Ages: You ${r.yourAge} / Spouse ${r.wifeAge})`;
             },
-            label: (context: any) => {
+            label: (context: TooltipItem<'bar' | 'line'>) => {
               const label = context.dataset.label || '';
-              const rawVal = context.parsed.y ?? context.raw ?? 0;
+              const rawVal = context.parsed.y ?? (context.raw as number) ?? 0;
               return `${label}: ${formatCurrency(rawVal)}`;
             },
-            footer: (items: any[]) => {
+            footer: (items: TooltipItem<'bar' | 'line'>[]) => {
               if (!items.length) return '';
               const idx = items[0].dataIndex;
               const r = processedRows[idx];
@@ -466,7 +476,7 @@ export const TaxableIncomeWorkspace: React.FC<TaxableIncomeWorkspaceProps> = ({
           ticks: {
             color: '#94a3b8',
             font: { size: 10 },
-            callback: (val: number) => `$${(val / 1000).toFixed(0)}k`,
+            callback: (val: string | number) => `$${(Number(val) / 1000).toFixed(0)}k`,
           },
           stacked: true,
         },
@@ -971,8 +981,8 @@ export const TaxableIncomeWorkspace: React.FC<TaxableIncomeWorkspaceProps> = ({
             <button
               onClick={() => {
                 if (chartRef.current) {
-                  const chart = chartRef.current?.chart || chartRef.current;
-                  chart.data.datasets.forEach((_: any, i: number) => {
+                  const chart = chartRef.current;
+                  chart.data.datasets.forEach((_, i: number) => {
                     chart.setDatasetVisibility(i, true);
                   });
                   chart.update();

@@ -155,7 +155,7 @@ describe('Tax calculations', () => {
 });
 
 describe('runRetirementSimulation', () => {
-  const getMockInputs = (): any => ({
+  const getMockInputs = (): AppStateInputs => ({
     you: {
       name: 'John',
       birthDate: '1965-06-15',
@@ -265,7 +265,7 @@ describe('runRetirementSimulation', () => {
   it('should calculate living expenses using detailed state-specific itemized entries and frequencies when useDetailedExpenses is true', () => {
     const inputs = getMockInputs();
     inputs.useDetailedExpenses = true;
-    inputs.detailedExpenses = {
+    inputs.detailedExpenses = normalizeDetailedExpenses({
       MD: {
         ...DEFAULT_DETAILED_EXPENSES,
         amenityFee: 100, // Monthly
@@ -283,7 +283,7 @@ describe('runRetirementSimulation', () => {
         amenityFee: 12,
         water: 12,
       }
-    };
+    });
     inputs.jurisdiction.currentState = 'MD';
     inputs.jurisdiction.targetState = 'FL';
     inputs.jurisdiction.relocationYear = 2030;
@@ -361,8 +361,9 @@ describe('runRetirementSimulation', () => {
   it('should apply pre-Medicare premiums and detailed health expenses correctly based on age, work status, and retirement', () => {
     const inputs = getMockInputs();
     inputs.useDetailedExpenses = true;
-    inputs.detailedExpenses = {
+    inputs.detailedExpenses = normalizeDetailedExpenses({
       MD: {
+        ...DEFAULT_DETAILED_EXPENSES,
         pre65MedicalPremium: 400,
         pre65MedicalOOP: 1200,
         pre65DentalPremium: 30,
@@ -378,12 +379,29 @@ describe('runRetirementSimulation', () => {
         post65DentalPremium: 20,
         post65DentalOOP: 60,
         post65VisionPremium: 10,
-        post65VisionOOP: 35,
+        post65VisionOOP: 40,
       },
       FL: {
         ...DEFAULT_DETAILED_EXPENSES,
+        pre65MedicalPremium: 350,
+        pre65MedicalOOP: 1000,
+        pre65DentalPremium: 25,
+        pre65DentalOOP: 75,
+        pre65VisionPremium: 15,
+        pre65VisionOOP: 45,
+
+        medicarePartDPremium: 35,
+        medicarePartDDeductibleCopays: 250,
+        supplementPremium: 130,
+        supplementOOP: 230,
+        post65HearingCare: 400,
+        post65DentalPremium: 15,
+        post65DentalOOP: 50,
+        post65VisionPremium: 10,
+        post65VisionOOP: 30,
       },
       frequencies: {
+        ...DEFAULT_EXPENSE_FREQUENCIES,
         pre65MedicalPremium: 12,
         pre65MedicalOOP: 1,
         pre65DentalPremium: 12,
@@ -401,7 +419,7 @@ describe('runRetirementSimulation', () => {
         post65VisionPremium: 12,
         post65VisionOOP: 1,
       }
-    };
+    });
 
     // John: 62 => retired from 2027 onwards
     // Jane: 60 => retired from 2028 onwards
@@ -558,53 +576,52 @@ describe('runRetirementSimulation', () => {
     const inputs = getMockInputs();
     inputs.isSingleFiler = true;
     inputs.useDetailedExpenses = true;
-    inputs.detailedExpenses = {
+    inputs.detailedExpenses = normalizeDetailedExpenses({
       MD: { ...DEFAULT_DETAILED_EXPENSES },
       FL: { ...DEFAULT_DETAILED_EXPENSES },
       frequencies: { ...DEFAULT_EXPENSE_FREQUENCIES }
-    };
+    });
 
     inputs.you.birthDate = '1970-01-01'; // turns 65 in 2035.
     inputs.you.plannedRetirementAge = 60; // retired
     inputs.you.healthcare = {
       medicarePartBPremium: 200,
-    };
-    
-    inputs.you.healthcare.MD = {
-      pre65MedicalPremium: 500,
-      pre65MedicalOOP: 1000,
-      pre65DentalPremium: 20,
-      pre65DentalOOP: 50,
-      pre65VisionPremium: 10,
-      pre65VisionOOP: 30,
+      MD: {
+        pre65MedicalPremium: 500,
+        pre65MedicalOOP: 1000,
+        pre65DentalPremium: 20,
+        pre65DentalOOP: 50,
+        pre65VisionPremium: 10,
+        pre65VisionOOP: 30,
 
-      medicarePartDPremium: 40,
-      medicarePartDDeductibleCopays: 300,
-      supplementPremium: 150,
-      supplementOOP: 300,
-      post65HearingCare: 500,
-      post65DentalPremium: 20,
-      post65DentalOOP: 60,
-      post65VisionPremium: 10,
-      post65VisionOOP: 40,
-    };
-    inputs.you.healthcare.FL = {
-      pre65MedicalPremium: 400,
-      pre65MedicalOOP: 800,
-      pre65DentalPremium: 15,
-      pre65DentalOOP: 40,
-      pre65VisionPremium: 8,
-      pre65VisionOOP: 20,
+        medicarePartDPremium: 40,
+        medicarePartDDeductibleCopays: 300,
+        supplementPremium: 150,
+        supplementOOP: 300,
+        post65HearingCare: 500,
+        post65DentalPremium: 20,
+        post65DentalOOP: 60,
+        post65VisionPremium: 10,
+        post65VisionOOP: 40,
+      },
+      FL: {
+        pre65MedicalPremium: 400,
+        pre65MedicalOOP: 800,
+        pre65DentalPremium: 15,
+        pre65DentalOOP: 40,
+        pre65VisionPremium: 8,
+        pre65VisionOOP: 20,
 
-      medicarePartDPremium: 30,
-      medicarePartDDeductibleCopays: 200,
-      supplementPremium: 120,
-      supplementOOP: 200,
-      post65HearingCare: 400,
-      post65DentalPremium: 15,
-      post65DentalOOP: 40,
-      post65VisionPremium: 8,
-      post65VisionOOP: 30,
+        medicarePartDPremium: 30,
+        medicarePartDDeductibleCopays: 200,
+        supplementPremium: 120,
+        supplementOOP: 200,
+        post65HearingCare: 400,
+        post65DentalPremium: 15,
+        post65DentalOOP: 40,
+        post65VisionPremium: 8,
+        post65VisionOOP: 30,
+      }
     };
 
     inputs.jurisdiction.currentState = 'MD';
@@ -743,7 +760,7 @@ describe('getRMDStartAge', () => {
 });
 
 describe('runRetirementSimulation fixes', () => {
-  const getMockInputs = (): any => ({
+  const getMockInputs = (): AppStateInputs => ({
     you: {
       name: 'John',
       birthDate: '1965-06-15',
@@ -1443,10 +1460,10 @@ describe('runRetirementSimulation fixes', () => {
     });
 
     it('should correctly account for active salary in 2026 when fill-to-target strategy is enabled so 2026 total AGI does not exceed target limit', () => {
-      const getMockInputs = (): any => ({
+      const getMockInputs = (): AppStateInputs => ({
         you: { birthDate: '1961-01-01', plannedRetirementAge: 66, activeSalary: 150000, targetSSClaimingAge: 67, estimatedPIA: 3000 },
         wife: { birthDate: '1965-01-01', plannedRetirementAge: 65, activeSalary: 0, targetSSClaimingAge: 67, estimatedPIA: 1500 },
-        portfolio: { yourPreTaxIRA: 1000000, yourRothIRA: 100000, yourTaxableBrokerage: 500000, wifePreTaxIRA: 0, wifeRothIRA: 0, wifeTaxableBrokerage: 0 },
+        portfolio: { yourPreTaxIRA: 1000000, yourRothIRA: 100000, yourTaxableBrokerage: 500000, yourTaxableBasis: 0, yourCash: 0, wifePreTaxIRA: 0, wifeRothIRA: 0, wifeTaxableBrokerage: 0, wifeTaxableBasis: 0, wifeCash: 0 },
         jurisdiction: { currentState: 'FL', targetState: 'FL', relocationYear: null },
         growthAssumptions: { equityReturnRate: 0.07, fixedIncomeReturnRate: 0.04, cpiInflationRate: 0.025, healthcareInflationRate: 0.05 },
         annualLivingExpenses: 80000,
@@ -1456,7 +1473,7 @@ describe('runRetirementSimulation fixes', () => {
         rothConversionEndYear: 2032,
         rothConversionStrategy: 'fill-to-target',
         rothConversionTargetValue: 215000,
-        monteCarloSettings: { mode: 'monte-carlo', trials: 10 },
+        monteCarloSettings: { mode: 'monte-carlo', trials: 10, equityVolatility: 0.15, fixedIncomeVolatility: 0.05, correlation: 0.15, seed: null },
         isConfigured: true,
         isSingleFiler: false,
       });
@@ -1471,10 +1488,10 @@ describe('runRetirementSimulation fixes', () => {
     });
 
     it('should fill exactly to 12% bracket taxable income ceiling without overshooting', () => {
-      const getMockInputs = (): any => ({
+      const getMockInputs = (): AppStateInputs => ({
         you: { birthDate: '1960-01-01', plannedRetirementAge: 65, activeSalary: 0, targetSSClaimingAge: 67, estimatedPIA: 3000 },
         wife: { birthDate: '1964-01-01', plannedRetirementAge: 61, activeSalary: 0, targetSSClaimingAge: 67, estimatedPIA: 1500 },
-        portfolio: { yourPreTaxIRA: 1500000, yourRothIRA: 50000, yourTaxableBrokerage: 400000, yourCash: 50000, wifePreTaxIRA: 0, wifeRothIRA: 0, wifeTaxableBrokerage: 0, wifeCash: 0 },
+        portfolio: { yourPreTaxIRA: 1500000, yourRothIRA: 50000, yourTaxableBrokerage: 400000, yourTaxableBasis: 0, yourCash: 50000, wifePreTaxIRA: 0, wifeRothIRA: 0, wifeTaxableBrokerage: 0, wifeTaxableBasis: 0, wifeCash: 0 },
         jurisdiction: { currentState: 'FL', targetState: 'FL', relocationYear: null },
         growthAssumptions: { equityReturnRate: 0.07, fixedIncomeReturnRate: 0.04, cpiInflationRate: 0.025, healthcareInflationRate: 0.05 },
         annualLivingExpenses: 60000,
@@ -1484,7 +1501,7 @@ describe('runRetirementSimulation fixes', () => {
         rothConversionEndYear: 2030,
         rothConversionStrategy: 'fill-to-target',
         rothConversionTargetValue: 100800, // 12% Bracket ceiling ($100,800 Taxable Income)
-        monteCarloSettings: { mode: 'monte-carlo', trials: 10 },
+        monteCarloSettings: { mode: 'monte-carlo', trials: 10, equityVolatility: 0.15, fixedIncomeVolatility: 0.05, correlation: 0.15, seed: null },
         isConfigured: true,
         isSingleFiler: false,
       });
@@ -1503,10 +1520,10 @@ describe('runRetirementSimulation fixes', () => {
     });
 
     it('should fill exactly to IRMAA MAGI ceiling without overshooting', () => {
-      const getMockInputs = (): any => ({
+      const getMockInputs = (): AppStateInputs => ({
         you: { birthDate: '1960-01-01', plannedRetirementAge: 65, activeSalary: 0, targetSSClaimingAge: 67, estimatedPIA: 3000 },
         wife: { birthDate: '1964-01-01', plannedRetirementAge: 61, activeSalary: 0, targetSSClaimingAge: 67, estimatedPIA: 1500 },
-        portfolio: { yourPreTaxIRA: 1500000, yourRothIRA: 50000, yourTaxableBrokerage: 400000, yourCash: 50000, wifePreTaxIRA: 0, wifeRothIRA: 0, wifeTaxableBrokerage: 0, wifeCash: 0 },
+        portfolio: { yourPreTaxIRA: 1500000, yourRothIRA: 50000, yourTaxableBrokerage: 400000, yourTaxableBasis: 0, yourCash: 50000, wifePreTaxIRA: 0, wifeRothIRA: 0, wifeTaxableBrokerage: 0, wifeTaxableBasis: 0, wifeCash: 0 },
         jurisdiction: { currentState: 'FL', targetState: 'FL', relocationYear: null },
         growthAssumptions: { equityReturnRate: 0.07, fixedIncomeReturnRate: 0.04, cpiInflationRate: 0.025, healthcareInflationRate: 0.05 },
         annualLivingExpenses: 60000,
@@ -1516,7 +1533,7 @@ describe('runRetirementSimulation fixes', () => {
         rothConversionEndYear: 2030,
         rothConversionStrategy: 'fill-to-target',
         rothConversionTargetValue: 218000, // IRMAA Tier 1 ceiling ($218,000 MAGI)
-        monteCarloSettings: { mode: 'monte-carlo', trials: 10 },
+        monteCarloSettings: { mode: 'monte-carlo', trials: 10, equityVolatility: 0.15, fixedIncomeVolatility: 0.05, correlation: 0.15, seed: null },
         isConfigured: true,
         isSingleFiler: false,
       });
@@ -1909,7 +1926,7 @@ describe('runRetirementSimulation fixes', () => {
       const inputs = getMockInputs();
       inputs.simulationStartYear = 2026;
       inputs.useDetailedExpenses = true;
-      inputs.inflationRate = 0.0; // 0% inflation for easy cost comparison
+      inputs.growthAssumptions.cpiInflationRate = 0.0; // 0% inflation for easy cost comparison
       inputs.jurisdiction.currentState = 'MD';
       inputs.jurisdiction.targetState = 'FL';
       inputs.jurisdiction.relocationYear = 2028; // Relocates to FL in 2028

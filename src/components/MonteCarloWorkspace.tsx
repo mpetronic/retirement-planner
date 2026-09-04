@@ -1,7 +1,7 @@
 import React, { useMemo } from 'react';
 import { Chart } from 'react-chartjs-2';
-import { Chart as ChartJS, registerables } from 'chart.js';
-import { AppStateInputs } from '../types';
+import { Chart as ChartJS, registerables, ChartOptions, TooltipItem } from 'chart.js';
+import { AppStateInputs, MonteCarloSettings } from '../types';
 import { MonteCarloSummary } from '../engine/monteCarloEngine';
 import { StressTestControlPanel } from './StressTestControlPanel';
 import { 
@@ -67,7 +67,7 @@ export const MonteCarloWorkspace: React.FC<MonteCarloWorkspaceProps> = ({
   };
 
   // State update helpers
-  const updateSettings = (field: string, value: any) => {
+  const updateSettings = <K extends keyof MonteCarloSettings>(field: K, value: MonteCarloSettings[K]) => {
     onChangeInputs({
       ...inputs,
       monteCarloSettings: {
@@ -152,7 +152,7 @@ export const MonteCarloWorkspace: React.FC<MonteCarloWorkspaceProps> = ({
     ],
   };
 
-  const chartOptions = {
+  const chartOptions: ChartOptions<'line'> = {
     responsive: true,
     maintainAspectRatio: false,
     plugins: {
@@ -161,7 +161,6 @@ export const MonteCarloWorkspace: React.FC<MonteCarloWorkspaceProps> = ({
         labels: {
           color: '#cbd5e1',
           font: { size: 10, weight: 'bold' as const },
-          usePointStyle: true,
           boxWidth: 10,
         },
       },
@@ -175,8 +174,8 @@ export const MonteCarloWorkspace: React.FC<MonteCarloWorkspaceProps> = ({
         borderWidth: 1,
         padding: 10,
         callbacks: {
-          label: function (context: any) {
-            return `${context.dataset.label}: ${formatCurrency(context.parsed.y)}`;
+          label: function (context: TooltipItem<'line'>) {
+            return `${context.dataset.label}: ${formatCurrency(context.parsed.y ?? 0)}`;
           },
         },
       },
@@ -191,7 +190,7 @@ export const MonteCarloWorkspace: React.FC<MonteCarloWorkspaceProps> = ({
         ticks: { 
           color: '#94a3b8', 
           font: { size: 9 },
-          callback: (val: any) => `$${(val / 1000000).toFixed(1)}M`,
+          callback: (val: string | number) => `$${(Number(val) / 1000000).toFixed(1)}M`,
         },
       },
     },
@@ -246,7 +245,7 @@ export const MonteCarloWorkspace: React.FC<MonteCarloWorkspaceProps> = ({
     ]
   };
 
-  const barChartOptions = {
+  const barChartOptions: ChartOptions<'bar'> = {
     responsive: true,
     maintainAspectRatio: false,
     plugins: {
@@ -264,7 +263,7 @@ export const MonteCarloWorkspace: React.FC<MonteCarloWorkspaceProps> = ({
         borderColor: 'rgba(255, 255, 255, 0.08)',
         borderWidth: 1,
         callbacks: {
-          label: function(context: any) {
+          label: function(context: TooltipItem<'bar'>) {
             let label = context.dataset.label || '';
             if (label) label += ': ';
             if (context.parsed.y !== null) {
@@ -286,9 +285,10 @@ export const MonteCarloWorkspace: React.FC<MonteCarloWorkspaceProps> = ({
         ticks: {
           color: '#94a3b8',
           font: { size: 9 },
-          callback: (val: any) => {
-            const sign = val >= 0 ? '+' : '';
-            return sign + val + '%';
+          callback: (val: string | number) => {
+            const num = Number(val);
+            const sign = num >= 0 ? '+' : '';
+            return sign + num + '%';
           }
         }
       }
@@ -1046,7 +1046,7 @@ export const MonteCarloWorkspace: React.FC<MonteCarloWorkspaceProps> = ({
         </div>
 
         <div className="h-96 bg-slate-950/40 rounded-xl border border-slate-800/40 p-4">
-          <Chart type="line" data={chartData as any} options={chartOptions as any} />
+          <Chart type="line" data={chartData} options={chartOptions} />
         </div>
       </div>
 
@@ -1067,7 +1067,7 @@ export const MonteCarloWorkspace: React.FC<MonteCarloWorkspaceProps> = ({
         </div>
 
         <div className="h-72 bg-slate-950/40 rounded-xl border border-slate-800/40 p-4">
-          <Chart type="bar" data={barChartData as any} options={barChartOptions as any} />
+          <Chart type="bar" data={barChartData} options={barChartOptions} />
         </div>
       </div>
     </div>
