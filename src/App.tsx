@@ -437,14 +437,18 @@ function App() {
     wifeAge: number,
     strategy?: 'flat' | 'fill-to-target'
   ) => {
+    const finalStrategy = strategy || inputs.rothConversionStrategy;
+    const finalTargetValue = finalStrategy === 'fill-to-target' ? targetValue : null;
+
     setInputs((prev) => ({
       ...prev,
-      rothConversionStrategy: strategy || prev.rothConversionStrategy,
+      rothConversionStrategy: finalStrategy,
       annualRothConversion: annualConversion,
-      rothConversionTargetValue: targetValue,
+      rothConversionTargetValue: finalTargetValue,
       you: { ...prev.you, targetSSClaimingAge: yourAge },
       wife: { ...prev.wife, targetSSClaimingAge: wifeAge },
     }));
+    setSelectedQuickFill(finalTargetValue);
   };
 
   // Handle changing conversion strategy
@@ -452,7 +456,11 @@ function App() {
     setInputs((prev) => ({
       ...prev,
       rothConversionStrategy: strategy,
+      rothConversionTargetValue: strategy === 'fill-to-target' ? (prev.rothConversionTargetValue || 100800) : null,
     }));
+    if (strategy !== 'fill-to-target') {
+      setSelectedQuickFill(null);
+    }
   };
 
   // Handle changing target MAGI threshold limit
@@ -461,9 +469,10 @@ function App() {
       ...prev,
       rothConversionTargetValue: val,
     }));
+    if (inputs.rothConversionStrategy === 'fill-to-target') {
+      setSelectedQuickFill(val);
+    }
   };
-
-
 
   // Keep selectedQuickFill synchronized with rothConversionStrategy & rothConversionTargetValue
   useEffect(() => {

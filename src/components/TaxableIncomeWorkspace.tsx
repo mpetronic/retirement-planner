@@ -56,10 +56,12 @@ export const TaxableIncomeWorkspace: React.FC<TaxableIncomeWorkspaceProps> = ({
   const chartRef = useRef<any>(null);
   const simStartYear = getSimulationStartYear(inputs);
 
-  // Selected benchmark state (defaults to 12% Fed Tax Bracket if none set)
+  // Selected benchmark state (only active and defaults in fill-to-target mode)
+  const isFillToTarget = inputs.rothConversionStrategy === 'fill-to-target';
   const activeTarget = useMemo(() => {
+    if (!isFillToTarget) return null;
     return selectedQuickFill || inputs.rothConversionTargetValue || 100800;
-  }, [selectedQuickFill, inputs.rothConversionTargetValue]);
+  }, [isFillToTarget, selectedQuickFill, inputs.rothConversionTargetValue]);
 
   // Ensure a default benchmark (12% Fed Bracket - $100,800) is active in fill-to-target mode
   React.useEffect(() => {
@@ -200,6 +202,10 @@ export const TaxableIncomeWorkspace: React.FC<TaxableIncomeWorkspaceProps> = ({
 
   // Compute dynamic benchmark line data points (indexed to Taxable Income threshold)
   const benchmarkLineData = useMemo(() => {
+    if (!isFillToTarget || !activeTarget) {
+      return null;
+    }
+
     const preset = getTargetPresetInfo(activeTarget);
     const isMAGIBased = preset?.type === 'irmaa' || !preset;
     const jointBase = preset ? preset.jointBase : activeTarget;
@@ -229,7 +235,7 @@ export const TaxableIncomeWorkspace: React.FC<TaxableIncomeWorkspaceProps> = ({
       pointHoverRadius: 5,
       order: 1,
     };
-  }, [activeTarget, processedRows]);
+  }, [isFillToTarget, activeTarget, processedRows]);
 
   // Chart datasets configuration
   const chartData = useMemo(() => {
@@ -277,7 +283,7 @@ export const TaxableIncomeWorkspace: React.FC<TaxableIncomeWorkspaceProps> = ({
         stack: 'taxable',
         order: 6,
       },
-      {
+      benchmarkLineData && {
         type: 'line' as const,
         label: benchmarkLineData.label,
         data: benchmarkLineData.data,
@@ -390,22 +396,31 @@ export const TaxableIncomeWorkspace: React.FC<TaxableIncomeWorkspaceProps> = ({
               if (!items.length) return '';
               const idx = items[0].dataIndex;
               const r = processedRows[idx];
-              const limit = benchmarkLineData.data[idx];
-              const headroom = limit - r.totalTaxableIncome;
-
-              return [
+              const lines = [
                 '-----------------------------------',
                 `Gross Federal AGI: ${formatCurrency(r.grossNonConvAGI + r.rothConv)}`,
                 `Standard Deduction: -${formatCurrency(r.stdDeduction)}`,
                 `Net Non-Conv Taxable: ${formatCurrency(r.netNonConvTaxable)}`,
                 `Roth Conversion: +${formatCurrency(r.rothConv)}`,
                 `TOTAL TAXABLE INCOME: ${formatCurrency(r.totalTaxableIncome)}`,
-                `Target Upper Limit: ${formatCurrency(limit)}`,
-                `Headroom Remaining: ${headroom >= 0 ? '+' : ''}${formatCurrency(headroom)}`,
+              ];
+
+              if (benchmarkLineData && benchmarkLineData.data[idx] !== undefined) {
+                const limit = benchmarkLineData.data[idx];
+                const headroom = limit - r.totalTaxableIncome;
+                lines.push(
+                  `Target Upper Limit: ${formatCurrency(limit)}`,
+                  `Headroom Remaining: ${headroom >= 0 ? '+' : ''}${formatCurrency(headroom)}`
+                );
+              }
+
+              lines.push(
                 '-----------------------------------',
                 `Dividends & Interest: ${formatCurrency(r.rawDividends)}`,
-                `Net Realized Cap Gains: ${formatCurrency(r.rawCapGains)} (excl. basis)`,
-              ].join('\n');
+                `Net Realized Cap Gains: ${formatCurrency(r.rawCapGains)} (excl. basis)`
+              );
+
+              return lines.join('\n');
             },
           },
         },
@@ -431,20 +446,26 @@ export const TaxableIncomeWorkspace: React.FC<TaxableIncomeWorkspaceProps> = ({
   // Key KPI summary statistics across conversion window years
   const kpiStats = useMemo(() => {
     const convStart = inputs.rothConversionStartYear || ledger[0]?.year || 2026;
-    const convEnd = inputs.rothConversionEndYear || ledger[0]?.year + 5 || 2031;
+    const convEnd = inputs.rothConversionEndYear || (ledger[0]?.year ? ledger[0].year + 5 : 2031);
 
     const convRows = processedRows.filter((r) => r.year >= convStart && r.year <= convEnd);
     const targetRows = convRows.length > 0 ? convRows : processedRows.slice(0, 5);
 
     const maxTaxable = Math.max(...targetRows.map((r) => r.totalTaxableIncome));
-    const avgHeadroom = targetRows.reduce((sum, r) => {
-      const rowIdx = ledger.findIndex((l) => l.year === r.year);
-      const limit = benchmarkLineData.data[rowIdx >= 0 ? rowIdx : 0];
-      return sum + (limit - r.totalTaxableIncome);
-    }, 0) / (targetRows.length || 1);
-
     const totalConversions = targetRows.reduce((sum, r) => sum + r.rothConv, 0);
-    const breachedYears = processedRows.filter((r, idx) => r.totalTaxableIncome > benchmarkLineData.data[idx]).length;
+
+    let avgHeadroom = 0;
+    let breachedYears = 0;
+
+    if (benchmarkLineData) {
+      avgHeadroom = targetRows.reduce((sum, r) => {
+        const rowIdx = ledger.findIndex((l) => l.year === r.year);
+        const limit = benchmarkLineData.data[rowIdx >= 0 ? rowIdx : 0];
+        return sum + (limit - r.totalTaxableIncome);
+      }, 0) / (targetRows.length || 1);
+
+      breachedYears = processedRows.filter((r, idx) => r.totalTaxableIncome > benchmarkLineData.data[idx]).length;
+    }
 
     return { convStart, convEnd, maxTaxable, avgHeadroom, totalConversions, breachedYears };
   }, [inputs, ledger, processedRows, benchmarkLineData]);
@@ -535,10 +556,9 @@ export const TaxableIncomeWorkspace: React.FC<TaxableIncomeWorkspaceProps> = ({
                 type="button"
                 onClick={() => {
                   onUpdateStrategy('fill-to-target');
-                  if (!inputs.rothConversionTargetValue) {
-                    onUpdateTargetValue(133000);
-                    setSelectedQuickFill(133000);
-                  }
+                  const target = inputs.rothConversionTargetValue || selectedQuickFill || 100800;
+                  onUpdateTargetValue(target);
+                  setSelectedQuickFill(target);
                 }}
                 className={`text-[10px] px-2.5 py-1 rounded-lg font-bold transition-all cursor-pointer ${
                   inputs.rothConversionStrategy === 'fill-to-target'
@@ -550,7 +570,11 @@ export const TaxableIncomeWorkspace: React.FC<TaxableIncomeWorkspaceProps> = ({
               </button>
               <button
                 type="button"
-                onClick={() => onUpdateStrategy('flat')}
+                onClick={() => {
+                  onUpdateStrategy('flat');
+                  onUpdateTargetValue(null);
+                  setSelectedQuickFill(null);
+                }}
                 className={`text-[10px] px-2.5 py-1 rounded-lg font-bold transition-all cursor-pointer ${
                   inputs.rothConversionStrategy === 'flat'
                     ? 'bg-amber-500 text-slate-950 shadow'
@@ -751,7 +775,7 @@ export const TaxableIncomeWorkspace: React.FC<TaxableIncomeWorkspaceProps> = ({
               </div>
 
               {/* Active Line Badge */}
-              {activeTarget && (
+              {activeTarget && benchmarkLineData && (
                 <span className="text-[10px] font-mono text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 px-2 py-0.5 rounded-md shrink-0">
                   Active: {benchmarkLineData.label}
                 </span>
@@ -826,41 +850,79 @@ export const TaxableIncomeWorkspace: React.FC<TaxableIncomeWorkspaceProps> = ({
           <TrendingUp className="w-5 h-5 text-blue-500/50 shrink-0 ml-2" />
         </div>
 
-        {/* Card 3: Average Headroom */}
-        <div className="glass-panel rounded-xl px-3 py-2 flex items-center justify-between border-l-4 border-l-amber-500 bg-slate-900/60">
-          <div className="min-w-0">
-            <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider block truncate">
-              Avg Headroom to Limit
-            </span>
-            <div className="flex items-baseline gap-1.5 mt-0.5">
-              <span className={`text-base font-black font-mono ${kpiStats.avgHeadroom >= 0 ? 'text-amber-400' : 'text-rose-400'}`}>
-                {formatCurrency(kpiStats.avgHeadroom)}
+        {/* Card 3: Avg Headroom to Limit (Fill-to-Target) OR Annual Flat Conversion (Flat) */}
+        {isFillToTarget ? (
+          <div className="glass-panel rounded-xl px-3 py-2 flex items-center justify-between border-l-4 border-l-amber-500 bg-slate-900/60">
+            <div className="min-w-0">
+              <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider block truncate">
+                Avg Headroom to Limit
               </span>
-              <span className="text-[9px] text-slate-500 font-mono truncate">
-                under target
-              </span>
+              <div className="flex items-baseline gap-1.5 mt-0.5">
+                <span className={`text-base font-black font-mono ${kpiStats.avgHeadroom >= 0 ? 'text-amber-400' : 'text-rose-400'}`}>
+                  {formatCurrency(kpiStats.avgHeadroom)}
+                </span>
+                <span className="text-[9px] text-slate-500 font-mono truncate">
+                  under target
+                </span>
+              </div>
             </div>
+            <ShieldAlert className="w-5 h-5 text-amber-500/50 shrink-0 ml-2" />
           </div>
-          <ShieldAlert className="w-5 h-5 text-amber-500/50 shrink-0 ml-2" />
-        </div>
+        ) : (
+          <div className="glass-panel rounded-xl px-3 py-2 flex items-center justify-between border-l-4 border-l-amber-500 bg-slate-900/60">
+            <div className="min-w-0">
+              <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider block truncate">
+                Annual Flat Target
+              </span>
+              <div className="flex items-baseline gap-1.5 mt-0.5">
+                <span className="text-base font-black font-mono text-amber-400">
+                  {formatCurrency(inputs.annualRothConversion)}
+                </span>
+                <span className="text-[9px] text-slate-500 font-mono truncate">
+                  per year
+                </span>
+              </div>
+            </div>
+            <Sliders className="w-5 h-5 text-amber-500/50 shrink-0 ml-2" />
+          </div>
+        )}
 
-        {/* Card 4: Limit Breaches */}
-        <div className="glass-panel rounded-xl px-3 py-2 flex items-center justify-between border-l-4 border-l-purple-500 bg-slate-900/60">
-          <div className="min-w-0">
-            <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider block truncate">
-              Limit Overages
-            </span>
-            <div className="flex items-baseline gap-1.5 mt-0.5">
-              <span className={`text-base font-black font-mono ${kpiStats.breachedYears === 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
-                {kpiStats.breachedYears} {kpiStats.breachedYears === 1 ? 'Yr' : 'Yrs'}
+        {/* Card 4: Limit Breaches (Fill-to-Target) OR Total Lifetime Taxes (Flat) */}
+        {isFillToTarget ? (
+          <div className="glass-panel rounded-xl px-3 py-2 flex items-center justify-between border-l-4 border-l-purple-500 bg-slate-900/60">
+            <div className="min-w-0">
+              <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider block truncate">
+                Limit Overages
               </span>
-              <span className="text-[9px] text-slate-500 font-mono truncate">
-                exceeding line
-              </span>
+              <div className="flex items-baseline gap-1.5 mt-0.5">
+                <span className={`text-base font-black font-mono ${kpiStats.breachedYears === 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
+                  {kpiStats.breachedYears} {kpiStats.breachedYears === 1 ? 'Yr' : 'Yrs'}
+                </span>
+                <span className="text-[9px] text-slate-500 font-mono truncate">
+                  exceeding line
+                </span>
+              </div>
             </div>
+            <AlertCircle className="w-5 h-5 text-purple-500/50 shrink-0 ml-2" />
           </div>
-          <AlertCircle className="w-5 h-5 text-purple-500/50 shrink-0 ml-2" />
-        </div>
+        ) : (
+          <div className="glass-panel rounded-xl px-3 py-2 flex items-center justify-between border-l-4 border-l-purple-500 bg-slate-900/60">
+            <div className="min-w-0">
+              <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider block truncate">
+                Lifetime Income Taxes
+              </span>
+              <div className="flex items-baseline gap-1.5 mt-0.5">
+                <span className="text-base font-black font-mono text-purple-400">
+                  {formatCurrency(currentLifetimeTaxes)}
+                </span>
+                <span className="text-[9px] text-slate-500 font-mono truncate">
+                  total horizon
+                </span>
+              </div>
+            </div>
+            <Shield className="w-5 h-5 text-purple-500/50 shrink-0 ml-2" />
+          </div>
+        )}
       </div>
 
       {/* Main Stacked Bar Chart */}
@@ -924,9 +986,9 @@ export const TaxableIncomeWorkspace: React.FC<TaxableIncomeWorkspaceProps> = ({
             </thead>
             <tbody className="divide-y divide-slate-800/60 text-slate-300">
               {processedRows.map((r, idx) => {
-                const limit = benchmarkLineData.data[idx];
-                const headroom = limit - r.totalTaxableIncome;
-                const isBreached = headroom < 0;
+                const limit = benchmarkLineData?.data[idx];
+                const headroom = limit !== undefined ? limit - r.totalTaxableIncome : null;
+                const isBreached = headroom !== null && headroom < 0;
                 const isConvYear = r.rothConv > 0;
 
                 return (
@@ -947,9 +1009,13 @@ export const TaxableIncomeWorkspace: React.FC<TaxableIncomeWorkspaceProps> = ({
                       {r.rothConv > 0 ? formatCurrency(r.rothConv) : '—'}
                     </td>
                     <td className="py-2 px-3 font-black text-slate-100">{formatCurrency(r.totalTaxableIncome)}</td>
-                    <td className="py-2 px-3 text-slate-400">{formatCurrency(limit)}</td>
-                    <td className={`py-2 px-3 font-bold ${isBreached ? 'text-rose-400' : 'text-emerald-400'}`}>
-                      {headroom >= 0 ? `+${formatCurrency(headroom)}` : formatCurrency(headroom)}
+                    <td className="py-2 px-3 text-slate-400">
+                      {limit !== undefined ? formatCurrency(limit) : '—'}
+                    </td>
+                    <td className={`py-2 px-3 font-bold ${
+                      headroom === null ? 'text-slate-500' : isBreached ? 'text-rose-400' : 'text-emerald-400'
+                    }`}>
+                      {headroom !== null ? (headroom >= 0 ? `+${formatCurrency(headroom)}` : formatCurrency(headroom)) : '—'}
                     </td>
                   </tr>
                 );
@@ -1174,13 +1240,16 @@ export const TaxableIncomeWorkspace: React.FC<TaxableIncomeWorkspaceProps> = ({
                 <button
                   type="button"
                   onClick={() => {
+                    const isFill = optimizationResult.bestStrategy === 'fill-to-target';
+                    const targetVal = isFill ? optimizationResult.bestTargetValue : null;
                     onApplyOptimization(
                       optimizationResult.bestAnnualRothConversion,
-                      optimizationResult.bestTargetValue ?? activeTarget,
+                      targetVal,
                       optimizationResult.bestYourSSAge,
                       optimizationResult.bestWifeSSAge,
                       optimizationResult.bestStrategy
                     );
+                    setSelectedQuickFill(targetVal);
                     setShowOptimizerModal(false);
                   }}
                   className="px-5 py-2 bg-gradient-to-r from-emerald-400 to-teal-500 hover:from-emerald-300 hover:to-teal-400 text-slate-950 font-bold rounded-xl text-xs shadow-lg shadow-emerald-500/20 transition-all active:scale-95 cursor-pointer flex items-center gap-1.5"
