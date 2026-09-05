@@ -1,0 +1,1205 @@
+import React, { useState, useMemo } from 'react';
+import {
+  SimulationResultRow,
+  AppStateInputs,
+  YearActualsRecord,
+  GuardrailSettings,
+  DEFAULT_GUARDRAIL_SETTINGS,
+  getSimulationStartYear,
+  DEFAULT_EXPENSE_CATEGORIES,
+  normalizeDetailedExpenses,
+} from '../types';
+import {
+  ClipboardCheck,
+  ShieldCheck,
+  TrendingUp,
+  Sliders,
+  DollarSign,
+  Plus,
+  Trash2,
+  CheckCircle2,
+  ArrowUpRight,
+  ArrowDownRight,
+  Sparkles,
+  AlertTriangle,
+  Calendar,
+  Layers,
+  ChevronDown,
+  ChevronUp,
+  RotateCcw,
+} from 'lucide-react';
+import { Chart } from 'react-chartjs-2';
+import { Chart as ChartJS, registerables } from 'chart.js';
+
+ChartJS.register(...registerables);
+
+interface ActualsWorkspaceProps {
+  ledger: SimulationResultRow[];
+  inputs: AppStateInputs;
+  onUpdateActuals: (actuals: Record<number, YearActualsRecord>) => void;
+  onUpdateGuardrailSettings: (settings: GuardrailSettings) => void;
+  onApplySpendingBonusToBudget?: (newBudget: number) => void;
+  onNavigateToTab?: (tabIndex: number) => void;
+}
+
+export const ActualsWorkspace: React.FC<ActualsWorkspaceProps> = ({
+  ledger,
+  inputs,
+  onUpdateActuals,
+  onUpdateGuardrailSettings,
+  onApplySpendingBonusToBudget,
+}) => {
+  const simStartYear = getSimulationStartYear(inputs);
+  const currentCalendarYear = new Date().getFullYear();
+
+  // Guardrail settings state
+  const guardrailSettings: GuardrailSettings = inputs.guardrailSettings || DEFAULT_GUARDRAIL_SETTINGS;
+  const actualTracking = useMemo(() => inputs.actualTracking || {}, [inputs.actualTracking]);
+
+  // Find all years with actuals or between start year and current year
+  const recordedYears = useMemo(() => {
+    const keys = Object.keys(actualTracking).map(Number);
+    if (keys.length === 0) return [simStartYear];
+    return Array.from(new Set([...keys, simStartYear])).sort((a, b) => a - b);
+  }, [actualTracking, simStartYear]);
+
+  // Selected year for editing
+  const [selectedYear, setSelectedYear] = useState<number>(() => {
+    const keys = Object.keys(actualTracking).map(Number);
+    if (keys.length > 0) {
+      return Math.max(...keys);
+    }
+    return simStartYear;
+  });
+
+  // Category breakdown toggle
+  const [showCategoryBreakdown, setShowCategoryBreakdown] = useState(false);
+  const [showReconciliation, setShowReconciliation] = useState(true);
+  const [showGuardrailConfig, setShowGuardrailConfig] = useState(false);
+  const [yearPendingDelete, setYearPendingDelete] = useState<number | null>(null);
+
+  // Active year record or defaults
+  const activeRecord: YearActualsRecord = useMemo(() => {
+    return actualTracking[selectedYear] || {
+      year: selectedYear,
+      equityReturnRate: null,
+      fixedIncomeReturnRate: null,
+      cpiInflationRate: null,
+      healthcareInflationRate: null,
+      totalLivingExpenses: null,
+      categoryExpenses: {},
+      preMedicareHealthcareCost: null,
+      medicareBasePremiums: null,
+      earnedSalaryYou: null,
+      earnedSalaryWife: null,
+      charitableTithe: null,
+      magi: null,
+      totalIncomeTax: null,
+      endYourPreTaxIRA: null,
+      endYourRothIRA: null,
+      endYourTaxableBrokerage: null,
+      endYourTaxableBasis: null,
+      endYourCash: null,
+      endWifePreTaxIRA: null,
+      endWifeRothIRA: null,
+      endWifeTaxableBrokerage: null,
+      endWifeTaxableBasis: null,
+      endWifeCash: null,
+    };
+  }, [actualTracking, selectedYear]);
+
+  // Active ledger row for selected year
+  const activeLedgerRow = useMemo(() => {
+    return ledger.find((r) => r.year === selectedYear);
+  }, [ledger, selectedYear]);
+
+  // Format currency helper
+  const formatCurrency = (val: number | null | undefined) => {
+    if (val === null || val === undefined || isNaN(val)) return '$0';
+    return new Intl.NumberFormat('en-US', {
+      style: 'currency',
+      currency: 'USD',
+      maximumFractionDigits: 0,
+    }).format(val);
+  };
+
+  // Update field in active record
+  const handleFieldChange = <K extends keyof YearActualsRecord>(field: K, value: YearActualsRecord[K]) => {
+    const updatedRecord = {
+      ...activeRecord,
+      [field]: value,
+    };
+    const nextActuals = {
+      ...actualTracking,
+      [selectedYear]: updatedRecord,
+    };
+    onUpdateActuals(nextActuals);
+  };
+
+  // Update category expense
+  const handleCategoryCostChange = (category: string, cost: number) => {
+    const nextCategories = {
+      ...(activeRecord.categoryExpenses || {}),
+      [category]: cost,
+    };
+    const nextTotal = Object.values(nextCategories).reduce((sum, c) => sum + (c || 0), 0);
+    const updatedRecord = {
+      ...activeRecord,
+      categoryExpenses: nextCategories,
+      totalLivingExpenses: nextTotal,
+    };
+    const nextActuals = {
+      ...actualTracking,
+      [selectedYear]: updatedRecord,
+    };
+    onUpdateActuals(nextActuals);
+  };
+
+  // Add a new year
+  const handleAddYear = () => {
+    const existingYears = Object.keys(actualTracking).map(Number);
+    const nextYear = existingYears.length > 0 ? Math.max(...existingYears) + 1 : simStartYear;
+    const newRecord: YearActualsRecord = {
+      year: nextYear,
+      equityReturnRate: inputs.growthAssumptions.equityReturnRate,
+      fixedIncomeReturnRate: inputs.growthAssumptions.fixedIncomeReturnRate,
+      cpiInflationRate: inputs.growthAssumptions.cpiInflationRate,
+      healthcareInflationRate: inputs.growthAssumptions.healthcareInflationRate,
+      totalLivingExpenses: inputs.annualLivingExpenses,
+    };
+    const nextActuals = {
+      ...actualTracking,
+      [nextYear]: newRecord,
+    };
+    onUpdateActuals(nextActuals);
+    setSelectedYear(nextYear);
+  };
+
+  // Delete active year after confirmation
+  const confirmDeleteYear = (yearToDelete: number) => {
+    const nextActuals = { ...actualTracking };
+    delete nextActuals[yearToDelete];
+    onUpdateActuals(nextActuals);
+    const remaining = Object.keys(nextActuals).map(Number);
+    if (remaining.length > 0) {
+      setSelectedYear(remaining[0]);
+    } else {
+      setSelectedYear(simStartYear);
+    }
+  };
+
+  // Latest actual row for guardrail analysis
+  const latestActualRow = useMemo(() => {
+    const actualRows = ledger.filter((r) => r.isActual);
+    if (actualRows.length === 0) return ledger[0];
+    return actualRows[actualRows.length - 1];
+  }, [ledger]);
+
+  // Baseline recurring budget before discretionary bonuses
+  const baselineRecurringAnnual = useMemo(() => {
+    if (inputs.useDetailedExpenses && inputs.detailedExpenses) {
+      const norm = normalizeDetailedExpenses(inputs.detailedExpenses);
+      const stateCosts = norm.costs[inputs.jurisdiction.currentState] || {};
+      const freqs = norm.frequencies;
+      const sum = norm.catalog.items
+        .filter((i) => !i.isOneTime)
+        .reduce((acc, item) => {
+          const cost = stateCosts[item.id] ?? 0;
+          const freq = freqs[item.id] ?? item.defaultFrequency ?? 12;
+          return acc + cost * freq;
+        }, 0);
+      if (sum > 0) return sum;
+    }
+    return 100000;
+  }, [inputs.useDetailedExpenses, inputs.detailedExpenses, inputs.jurisdiction.currentState]);
+
+  // Guardrail metrics
+  const guardrailUpperLimit = latestActualRow?.guardrailUpperLimit ?? ((inputs.annualLivingExpenses ?? 100000) * 1.15);
+  const guardrailLowerLimit = latestActualRow?.guardrailLowerLimit ?? ((inputs.annualLivingExpenses ?? 100000) * 0.85);
+  const currentSurplusGap = latestActualRow?.actualSurplusGap ?? 0;
+  const permittedBonus = latestActualRow?.permittedSpendingBonus ?? 0;
+  const plannedBudget = (inputs.annualLivingExpenses ?? 100000) * (latestActualRow?.cpiFactor ?? 1.0);
+  const actualSpend = latestActualRow?.livingExpenses ?? plannedBudget;
+  const spendingSavings = plannedBudget - actualSpend;
+  const marketSurplusShare = currentSurplusGap - spendingSavings;
+
+  // Variance Comparison Chart Data
+  const varianceChartData = useMemo(() => {
+    const actualYears = ledger.filter((r) => r.isActual || r.isBridged);
+    const rowsToChart = actualYears.length > 0 ? actualYears : ledger.slice(0, 8);
+    const isProjectedFallback = actualYears.length === 0;
+
+    return {
+      labels: rowsToChart.map((r) => r.year.toString()),
+      datasets: [
+        {
+          label: 'Planned Budget ($)',
+          data: rowsToChart.map((r) => (inputs.annualLivingExpenses ?? 100000) * r.cpiFactor),
+          borderColor: '#60a5fa',
+          backgroundColor: 'rgba(96, 165, 250, 0.1)',
+          borderWidth: 1.75,
+          borderDash: [5, 5],
+          pointRadius: 3,
+          fill: false,
+        },
+        {
+          label: isProjectedFallback ? 'Projected Spending ($)' : 'Actual Spending ($)',
+          data: rowsToChart.map((r) => r.livingExpenses),
+          borderColor: '#34d399',
+          backgroundColor: 'rgba(52, 211, 153, 0.2)',
+          borderWidth: 2.5,
+          pointRadius: 4,
+          fill: false,
+        },
+        {
+          label: 'Upper Guardrail Ceiling ($)',
+          data: rowsToChart.map((r) => r.guardrailUpperLimit || 0),
+          borderColor: '#f59e0b',
+          borderWidth: 1.25,
+          borderDash: [4, 4],
+          pointRadius: 2,
+          fill: false,
+        },
+        {
+          label: 'Lower Guardrail Floor ($)',
+          data: rowsToChart.map((r) => r.guardrailLowerLimit || 0),
+          borderColor: '#ef4444',
+          borderWidth: 1.25,
+          borderDash: [4, 4],
+          pointRadius: 2,
+          fill: false,
+        },
+      ],
+    };
+  }, [ledger, inputs.annualLivingExpenses]);
+
+  return (
+    <div className="flex-1 overflow-y-auto p-4 md:p-6 space-y-6 custom-scrollbar bg-slate-950 text-slate-100">
+      {/* Top Header */}
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-slate-800 pb-4">
+        <div>
+          <div className="flex items-center gap-2.5">
+            <div className="p-2 rounded-xl bg-emerald-500/10 border border-emerald-500/30 text-emerald-400">
+              <ClipboardCheck className="w-5 h-5" />
+            </div>
+            <div>
+              <h2 className="text-xl font-bold tracking-tight text-white flex items-center gap-2">
+                Actual Tracking & Guardrail Plan
+                <span className="text-xs px-2 py-0.5 rounded-full font-semibold bg-emerald-500/20 text-emerald-300 border border-emerald-500/40">
+                  Active
+                </span>
+              </h2>
+              <p className="text-xs text-slate-400 mt-0.5">
+                Substitute simulated predictions with verified real-world market returns, expenses, and account balances.
+              </p>
+            </div>
+          </div>
+        </div>
+
+        {/* Quick Action Buttons */}
+        <div className="flex items-center gap-2">
+          {actualTracking[selectedYear] && (
+            <button
+              onClick={() => setYearPendingDelete(selectedYear)}
+              className="px-3 py-1.5 text-xs font-semibold rounded-xl bg-rose-500/10 hover:bg-rose-500/20 border border-rose-500/30 text-rose-300 transition-all flex items-center gap-1.5 cursor-pointer"
+              title={`Delete actual record for ${selectedYear}`}
+            >
+              <Trash2 className="w-3.5 h-3.5" />
+              Delete {selectedYear} Actuals
+            </button>
+          )}
+          <button
+            onClick={() => setShowGuardrailConfig(!showGuardrailConfig)}
+            className={`px-3 py-1.5 text-xs font-semibold rounded-xl border transition-all flex items-center gap-1.5 cursor-pointer ${
+              showGuardrailConfig
+                ? 'bg-emerald-500/20 border-emerald-500/40 text-emerald-300'
+                : 'bg-slate-900 border-slate-700 text-slate-300 hover:bg-slate-800'
+            }`}
+          >
+            <Sliders className="w-3.5 h-3.5" />
+            Guardrail Settings
+          </button>
+          <button
+            onClick={handleAddYear}
+            className="px-3 py-1.5 text-xs font-bold rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 transition-all flex items-center gap-1.5 shadow-md cursor-pointer"
+          >
+            <Plus className="w-3.5 h-3.5 stroke-[2.5]" />
+            Log New Year
+          </button>
+        </div>
+      </div>
+
+      {/* Guardrail Settings Panel (Expandable) */}
+      {showGuardrailConfig && (
+        <div className="bg-slate-900/90 border border-emerald-500/30 rounded-2xl p-4 shadow-xl space-y-4 animate-in fade-in duration-200">
+          <div className="flex items-center justify-between">
+            <h3 className="text-sm font-bold text-emerald-300 flex items-center gap-2">
+              <ShieldCheck className="w-4 h-4 text-emerald-400" />
+              Guardrail Dynamic Spending Policy Parameters
+            </h3>
+            <button
+              onClick={() => setShowGuardrailConfig(false)}
+              className="text-slate-400 hover:text-slate-200 text-xs cursor-pointer"
+            >
+              Close
+            </button>
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-4 text-xs">
+            <div className="bg-slate-950/80 p-3 rounded-xl border border-slate-800 space-y-1.5">
+              <label className="text-slate-300 font-semibold flex items-center justify-between">
+                Upper Guardrail (+%)
+                <span className="text-emerald-400 font-mono">+{((guardrailSettings.upperGuardrailPct || 0.15) * 100).toFixed(0)}%</span>
+              </label>
+              <input
+                type="range"
+                min="0.05"
+                max="0.40"
+                step="0.01"
+                value={guardrailSettings.upperGuardrailPct}
+                onChange={(e) =>
+                  onUpdateGuardrailSettings({
+                    ...guardrailSettings,
+                    upperGuardrailPct: parseFloat(e.target.value),
+                  })
+                }
+                className="w-full accent-emerald-400"
+              />
+              <p className="text-[11px] text-slate-500">Maximum allowable budget surge in boom years.</p>
+            </div>
+
+            <div className="bg-slate-950/80 p-3 rounded-xl border border-slate-800 space-y-1.5">
+              <label className="text-slate-300 font-semibold flex items-center justify-between">
+                Lower Guardrail (-%)
+                <span className="text-rose-400 font-mono">-{((guardrailSettings.lowerGuardrailPct || 0.15) * 100).toFixed(0)}%</span>
+              </label>
+              <input
+                type="range"
+                min="0.05"
+                max="0.40"
+                step="0.01"
+                value={guardrailSettings.lowerGuardrailPct}
+                onChange={(e) =>
+                  onUpdateGuardrailSettings({
+                    ...guardrailSettings,
+                    lowerGuardrailPct: parseFloat(e.target.value),
+                  })
+                }
+                className="w-full accent-rose-400"
+              />
+              <p className="text-[11px] text-slate-500">Maximum recommended belt-tightening floor.</p>
+            </div>
+
+            <div className="bg-slate-950/80 p-3 rounded-xl border border-slate-800 space-y-1.5">
+              <label className="text-slate-300 font-semibold flex items-center justify-between">
+                Market Surplus Share
+                <span className="text-sky-400 font-mono">{((guardrailSettings.marketSurplusSharePct || 0.10) * 100).toFixed(0)}%</span>
+              </label>
+              <input
+                type="range"
+                min="0.02"
+                max="0.25"
+                step="0.01"
+                value={guardrailSettings.marketSurplusSharePct}
+                onChange={(e) =>
+                  onUpdateGuardrailSettings({
+                    ...guardrailSettings,
+                    marketSurplusSharePct: parseFloat(e.target.value),
+                  })
+                }
+                className="w-full accent-sky-400"
+              />
+              <p className="text-[11px] text-slate-500">Share of market excess allocated to spending bonus.</p>
+            </div>
+
+            <div className="bg-slate-950/80 p-3 rounded-xl border border-slate-800 flex flex-col justify-between">
+              <div className="space-y-1">
+                <span className="text-slate-300 font-semibold">Apply to Forward Simulation</span>
+                <p className="text-[11px] text-slate-500">Dynamic Guyton-Klinger style adjustments in Monte Carlo.</p>
+              </div>
+              <label className="flex items-center gap-2 cursor-pointer pt-2">
+                <input
+                  type="checkbox"
+                  checked={guardrailSettings.applyToSimulation}
+                  onChange={(e) =>
+                    onUpdateGuardrailSettings({
+                      ...guardrailSettings,
+                      applyToSimulation: e.target.checked,
+                    })
+                  }
+                  className="rounded border-slate-700 text-emerald-500 focus:ring-emerald-500 w-4 h-4"
+                />
+                <span className="text-xs font-semibold text-slate-200">Enable Dynamic Policy</span>
+              </label>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Guardrail Health Advisory & KPI Banner */}
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+        {/* Permission to Spend Advisory Card */}
+        <div className="md:col-span-2 bg-gradient-to-br from-slate-900 to-slate-900/70 border border-emerald-500/30 rounded-2xl p-4 shadow-lg flex flex-col justify-between relative overflow-hidden">
+          <div className="space-y-1">
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-bold text-emerald-400 uppercase tracking-wider flex items-center gap-1.5">
+                <Sparkles className="w-3.5 h-3.5" />
+                Permission to Spend Advisory ({latestActualRow ? latestActualRow.year : currentCalendarYear})
+              </span>
+              <span
+                className={`text-xs font-extrabold px-2.5 py-0.5 rounded-full border ${
+                  currentSurplusGap >= 0
+                    ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40'
+                    : 'bg-rose-500/20 text-rose-300 border-rose-500/40'
+                }`}
+              >
+                {currentSurplusGap >= 0 ? `+${formatCurrency(currentSurplusGap)} Net Surplus` : `${formatCurrency(currentSurplusGap)} Deficit`}
+              </span>
+            </div>
+            <p className="text-sm font-bold text-slate-100 mt-1">
+              {currentSurplusGap >= 0 ? (
+                <>
+                  You have <span className="text-emerald-400">permission to spend up to +{formatCurrency(permittedBonus)}</span> in extra discretionary budget next year!
+                </>
+              ) : (
+                <>
+                  Portfolio underperformance / spending gap suggests trimming next year's budget by{' '}
+                  <span className="text-rose-400">{formatCurrency(Math.abs(currentSurplusGap))}</span>.
+                </>
+              )}
+            </p>
+            <p className="text-xs text-slate-400">
+              Planned Baseline: <span className="text-slate-200 font-semibold">{formatCurrency(plannedBudget)}</span> | Actual Spent:{' '}
+              <span className="text-slate-200 font-semibold">{formatCurrency(actualSpend)}</span>
+            </p>
+
+            <div className="flex flex-wrap items-center gap-2 pt-1 text-[11px] text-slate-400">
+              <span className="bg-slate-950/80 px-2.5 py-1 rounded-lg border border-slate-800">
+                Expense Savings: <span className={spendingSavings >= 0 ? "text-emerald-400 font-semibold font-mono" : "text-rose-400 font-semibold font-mono"}>{spendingSavings >= 0 ? `+${formatCurrency(spendingSavings)}` : formatCurrency(spendingSavings)}</span>
+              </span>
+              <span className="bg-slate-950/80 px-2.5 py-1 rounded-lg border border-slate-800">
+                Market Growth Share ({((guardrailSettings.marketSurplusSharePct || 0.10) * 100).toFixed(0)}%): <span className="text-sky-400 font-semibold font-mono">+{formatCurrency(marketSurplusShare)}</span>
+              </span>
+              <span className="bg-slate-950/80 px-2.5 py-1 rounded-lg border border-slate-800">
+                Upper Ceiling (+{((guardrailSettings.upperGuardrailPct || 0.15) * 100).toFixed(0)}%): <span className="text-amber-400 font-semibold font-mono">{formatCurrency(guardrailUpperLimit)}</span>
+              </span>
+              <span className="bg-slate-950/80 px-2.5 py-1 rounded-lg border border-slate-800">
+                Lower Floor (-{((guardrailSettings.lowerGuardrailPct || 0.15) * 100).toFixed(0)}%): <span className="text-rose-400 font-semibold font-mono">{formatCurrency(guardrailLowerLimit)}</span>
+              </span>
+            </div>
+          </div>
+
+          {onApplySpendingBonusToBudget && (
+            <div className="pt-3 flex flex-wrap items-center gap-3">
+              {currentSurplusGap > 0 && (
+                <button
+                  onClick={() => {
+                    const base = baselineRecurringAnnual > 0 ? baselineRecurringAnnual : (inputs.annualLivingExpenses ?? 100000);
+                    onApplySpendingBonusToBudget(base + permittedBonus);
+                  }}
+                  className="px-3.5 py-1.5 text-xs font-bold rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 transition-all flex items-center gap-1.5 cursor-pointer shadow"
+                >
+                  <CheckCircle2 className="w-3.5 h-3.5" />
+                  Apply +{formatCurrency(permittedBonus)} to Next Year Budget
+                </button>
+              )}
+
+              <button
+                onClick={() => {
+                  onApplySpendingBonusToBudget(baselineRecurringAnnual > 0 ? baselineRecurringAnnual : 100000);
+                }}
+                className="px-3 py-1.5 text-xs font-semibold rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-slate-100 border border-slate-700 transition-all flex items-center gap-1.5 cursor-pointer"
+                title="Reset annual living expenses budget back to original unadjusted baseline"
+              >
+                <RotateCcw className="w-3.5 h-3.5 text-slate-400" />
+                Reset Budget to Baseline ({formatCurrency(baselineRecurringAnnual || 100000)})
+              </button>
+            </div>
+          )}
+        </div>
+
+        {/* Guardrail Boundaries Card */}
+        <div className="bg-slate-900/80 border border-slate-800 rounded-2xl p-4 shadow flex flex-col justify-between">
+          <span className="text-xs font-bold text-slate-400 uppercase tracking-wider flex items-center gap-1.5">
+            <ShieldCheck className="w-3.5 h-3.5 text-sky-400" />
+            Guardrail Spending Bands
+          </span>
+          <div className="space-y-1.5 my-2">
+            <div className="flex items-center justify-between text-xs">
+              <span className="text-slate-400 flex items-center gap-1">
+                <ArrowUpRight className="w-3.5 h-3.5 text-amber-400" /> Upper Ceiling:
+              </span>
+              <span className="font-bold text-amber-300">{formatCurrency(guardrailUpperLimit)}</span>
+            </div>
+            <div className="flex items-center justify-between text-xs">
+              <span className="text-slate-400">Planned Budget:</span>
+              <span className="font-bold text-slate-200">{formatCurrency(plannedBudget)}</span>
+            </div>
+            <div className="flex items-center justify-between text-xs">
+              <span className="text-slate-400 flex items-center gap-1">
+                <ArrowDownRight className="w-3.5 h-3.5 text-rose-400" /> Lower Floor:
+              </span>
+              <span className="font-bold text-rose-300">{formatCurrency(guardrailLowerLimit)}</span>
+            </div>
+          </div>
+          <div className="w-full bg-slate-800 rounded-full h-2 overflow-hidden flex">
+            <div
+              className="bg-emerald-400 h-full rounded-full"
+              style={{
+                width: `${Math.min(100, Math.max(10, (actualSpend / (guardrailUpperLimit || 1)) * 100))}%`,
+              }}
+            />
+          </div>
+        </div>
+
+        {/* Reconciled Ending Balance Card */}
+        <div className="bg-slate-900/80 border border-slate-800 rounded-2xl p-4 shadow flex flex-col justify-between">
+          <span className="text-xs font-bold text-slate-400 uppercase tracking-wider flex items-center gap-1.5">
+            <TrendingUp className="w-3.5 h-3.5 text-emerald-400" />
+            Verified Portfolio Value ({latestActualRow ? latestActualRow.year : currentCalendarYear})
+          </span>
+          <div className="my-2">
+            <div className="text-2xl font-black text-white tracking-tight">
+              {formatCurrency(latestActualRow?.totalPortfolioValue ?? 0)}
+            </div>
+            <p className="text-[11px] text-slate-400 mt-0.5">
+              {Object.keys(actualTracking).length} verified year{Object.keys(actualTracking).length === 1 ? '' : 's'} logged
+            </p>
+          </div>
+          <div className="flex items-center gap-1 text-[11px] text-emerald-400 font-semibold">
+            <CheckCircle2 className="w-3.5 h-3.5" />
+            Timeline seamlessly stitched forward
+          </div>
+        </div>
+      </div>
+
+      {/* Year Selection Strip */}
+      <div className="bg-slate-900/60 border border-slate-800 rounded-2xl p-3 flex items-center gap-2 overflow-x-auto custom-scrollbar">
+        <span className="text-xs font-bold text-slate-400 uppercase tracking-wider shrink-0 mr-2 flex items-center gap-1">
+          <Calendar className="w-3.5 h-3.5 text-emerald-400" /> Timeline Years:
+        </span>
+        {recordedYears.map((yr) => {
+          const isSelected = selectedYear === yr;
+          const isAct = Boolean(actualTracking[yr]);
+          return (
+            <button
+              key={yr}
+              onClick={() => setSelectedYear(yr)}
+              className={`group px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 shrink-0 cursor-pointer ${
+                isSelected
+                  ? 'bg-emerald-500 text-slate-950 shadow-md font-extrabold'
+                  : isAct
+                  ? 'bg-emerald-500/10 border border-emerald-500/30 text-emerald-300 hover:bg-emerald-500/20'
+                  : 'bg-slate-800/80 border border-slate-700/80 text-slate-400 hover:text-slate-200'
+              }`}
+            >
+              <span>{yr}</span>
+              <span
+                className={`text-[10px] px-1.5 py-0.2 rounded font-mono ${
+                  isSelected
+                    ? 'bg-slate-950/30 text-slate-950 font-bold'
+                    : isAct
+                    ? 'bg-emerald-500/30 text-emerald-200'
+                    : 'bg-slate-700 text-slate-300'
+                }`}
+              >
+                {isAct ? 'ACTUAL' : 'PROJECTED'}
+              </span>
+            </button>
+          );
+        })}
+      </div>
+
+      {/* Active Year Data Entry Cards */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        {/* Card 1: Macro Returns & Inflation */}
+        <div className="bg-slate-900/80 border border-slate-800 rounded-2xl p-5 shadow space-y-4">
+          <div className="flex items-center justify-between border-b border-slate-800 pb-3">
+            <h3 className="text-sm font-bold text-white flex items-center gap-2">
+              <TrendingUp className="w-4 h-4 text-emerald-400" />
+              Realized Market Returns ({selectedYear})
+            </h3>
+          </div>
+
+          <div className="space-y-3 text-xs">
+            <div>
+              <label className="text-slate-300 font-semibold block mb-1">
+                Realized Equities Return (S&P 500 / Total Stock)
+              </label>
+              <div className="relative">
+                <input
+                  type="number"
+                  step="0.01"
+                  placeholder="e.g. 12.5"
+                  value={activeRecord.equityReturnRate !== null && activeRecord.equityReturnRate !== undefined ? Math.round(activeRecord.equityReturnRate * 10000) / 100 : ''}
+                  onChange={(e) =>
+                    handleFieldChange(
+                      'equityReturnRate',
+                      e.target.value === '' ? null : parseFloat(e.target.value) / 100
+                    )
+                  }
+                  className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 pr-8 text-white font-mono focus:border-emerald-500 focus:outline-none"
+                />
+                <span className="absolute right-3 top-2 text-slate-400 font-mono font-bold">
+                  %
+                </span>
+              </div>
+            </div>
+
+            <div>
+              <label className="text-slate-300 font-semibold block mb-1">
+                Realized Fixed Income Return (Bonds / Treasuries)
+              </label>
+              <div className="relative">
+                <input
+                  type="number"
+                  step="0.01"
+                  placeholder="e.g. 4.0"
+                  value={activeRecord.fixedIncomeReturnRate !== null && activeRecord.fixedIncomeReturnRate !== undefined ? Math.round(activeRecord.fixedIncomeReturnRate * 10000) / 100 : ''}
+                  onChange={(e) =>
+                    handleFieldChange(
+                      'fixedIncomeReturnRate',
+                      e.target.value === '' ? null : parseFloat(e.target.value) / 100
+                    )
+                  }
+                  className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 pr-8 text-white font-mono focus:border-emerald-500 focus:outline-none"
+                />
+                <span className="absolute right-3 top-2 text-slate-400 font-mono font-bold">
+                  %
+                </span>
+              </div>
+            </div>
+
+            <div>
+              <label className="text-slate-300 font-semibold block mb-1">
+                Realized CPI Headline Inflation Rate
+              </label>
+              <div className="relative">
+                <input
+                  type="number"
+                  step="0.01"
+                  placeholder="e.g. 2.8"
+                  value={activeRecord.cpiInflationRate !== null && activeRecord.cpiInflationRate !== undefined ? Math.round(activeRecord.cpiInflationRate * 10000) / 100 : ''}
+                  onChange={(e) =>
+                    handleFieldChange(
+                      'cpiInflationRate',
+                      e.target.value === '' ? null : parseFloat(e.target.value) / 100
+                    )
+                  }
+                  className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 pr-8 text-white font-mono focus:border-emerald-500 focus:outline-none"
+                />
+                <span className="absolute right-3 top-2 text-slate-400 font-mono font-bold">
+                  %
+                </span>
+              </div>
+            </div>
+
+            <div>
+              <label className="text-slate-300 font-semibold block mb-1">
+                Realized Healthcare Inflation Rate
+              </label>
+              <div className="relative">
+                <input
+                  type="number"
+                  step="0.01"
+                  placeholder="e.g. 5.0"
+                  value={activeRecord.healthcareInflationRate !== null && activeRecord.healthcareInflationRate !== undefined ? Math.round(activeRecord.healthcareInflationRate * 10000) / 100 : ''}
+                  onChange={(e) =>
+                    handleFieldChange(
+                      'healthcareInflationRate',
+                      e.target.value === '' ? null : parseFloat(e.target.value) / 100
+                    )
+                  }
+                  className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 pr-8 text-white font-mono focus:border-emerald-500 focus:outline-none"
+                />
+                <span className="absolute right-3 top-2 text-slate-400 font-mono font-bold">
+                  %
+                </span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Card 2: Actual Living Expenses & Inflows */}
+        <div className="bg-slate-900/80 border border-slate-800 rounded-2xl p-5 shadow space-y-4">
+          <div className="flex items-center justify-between border-b border-slate-800 pb-3">
+            <h3 className="text-sm font-bold text-white flex items-center gap-2">
+              <DollarSign className="w-4 h-4 text-sky-400" />
+              Actual Living Expenses ({selectedYear})
+            </h3>
+            <button
+              onClick={() => setShowCategoryBreakdown(!showCategoryBreakdown)}
+              className="text-xs text-sky-400 hover:text-sky-300 font-semibold flex items-center gap-1 cursor-pointer"
+            >
+              {showCategoryBreakdown ? 'Summary View' : 'Itemize Categories'}
+              {showCategoryBreakdown ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
+            </button>
+          </div>
+
+          <div className="space-y-3 text-xs">
+            <div>
+              <label className="text-slate-300 font-semibold block mb-1">
+                Total Annual Living Expenses
+              </label>
+              <input
+                type="number"
+                step="100"
+                placeholder={`Budgeted: ${formatCurrency((inputs.annualLivingExpenses ?? 100000) * (activeLedgerRow?.cpiFactor || 1))}`}
+                value={activeRecord.totalLivingExpenses !== null && activeRecord.totalLivingExpenses !== undefined ? activeRecord.totalLivingExpenses : ''}
+                onChange={(e) =>
+                  handleFieldChange(
+                    'totalLivingExpenses',
+                    e.target.value === '' ? null : parseFloat(e.target.value)
+                  )
+                }
+                className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-white font-mono focus:border-sky-500 focus:outline-none"
+              />
+            </div>
+
+            {showCategoryBreakdown && (
+              <div className="p-3 bg-slate-950/70 border border-slate-800 rounded-xl space-y-2 max-h-48 overflow-y-auto custom-scrollbar">
+                <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider block">
+                  Category Breakdown
+                </span>
+                {DEFAULT_EXPENSE_CATEGORIES.map((cat) => (
+                  <div key={cat} className="flex items-center justify-between gap-2">
+                    <span className="text-slate-400">{cat}:</span>
+                    <input
+                      type="number"
+                      placeholder="$0"
+                      value={activeRecord.categoryExpenses?.[cat] || ''}
+                      onChange={(e) =>
+                        handleCategoryCostChange(cat, e.target.value === '' ? 0 : parseFloat(e.target.value))
+                      }
+                      className="w-28 bg-slate-900 border border-slate-700 rounded-lg px-2 py-1 text-right text-white font-mono text-xs"
+                    />
+                  </div>
+                ))}
+              </div>
+            )}
+
+            <div>
+              <label className="text-slate-300 font-semibold block mb-1">
+                Pre-Medicare Healthcare Costs (Annual)
+              </label>
+              <input
+                type="number"
+                placeholder="Optional override ($)"
+                value={activeRecord.preMedicareHealthcareCost !== null && activeRecord.preMedicareHealthcareCost !== undefined ? activeRecord.preMedicareHealthcareCost : ''}
+                onChange={(e) =>
+                  handleFieldChange(
+                    'preMedicareHealthcareCost',
+                    e.target.value === '' ? null : parseFloat(e.target.value)
+                  )
+                }
+                className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-white font-mono focus:border-sky-500 focus:outline-none"
+              />
+            </div>
+
+            <div>
+              <label className="text-slate-300 font-semibold block mb-1">
+                Medicare Base Premiums (Annual)
+              </label>
+              <input
+                type="number"
+                placeholder="Optional override ($)"
+                value={activeRecord.medicareBasePremiums !== null && activeRecord.medicareBasePremiums !== undefined ? activeRecord.medicareBasePremiums : ''}
+                onChange={(e) =>
+                  handleFieldChange(
+                    'medicareBasePremiums',
+                    e.target.value === '' ? null : parseFloat(e.target.value)
+                  )
+                }
+                className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-white font-mono focus:border-sky-500 focus:outline-none"
+              />
+            </div>
+
+            <div>
+              <label className="text-slate-300 font-semibold block mb-1">
+                Actual Charitable Giving & Tithe ($)
+              </label>
+              <input
+                type="number"
+                placeholder="Optional override ($)"
+                value={activeRecord.charitableTithe !== null && activeRecord.charitableTithe !== undefined ? activeRecord.charitableTithe : ''}
+                onChange={(e) =>
+                  handleFieldChange(
+                    'charitableTithe',
+                    e.target.value === '' ? null : parseFloat(e.target.value)
+                  )
+                }
+                className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-white font-mono focus:border-sky-500 focus:outline-none"
+              />
+            </div>
+          </div>
+        </div>
+
+        {/* Card 3: Actual Tax & Surcharges Overrides */}
+        <div className="bg-slate-900/80 border border-slate-800 rounded-2xl p-5 shadow space-y-4">
+          <div className="flex items-center justify-between border-b border-slate-800 pb-3">
+            <h3 className="text-sm font-bold text-white flex items-center gap-2">
+              <ShieldCheck className="w-4 h-4 text-purple-400" />
+              Realized Taxes & Lookback MAGI
+            </h3>
+          </div>
+
+          <div className="space-y-3 text-xs">
+            <div>
+              <label className="text-slate-300 font-semibold block mb-1">
+                Realized MAGI / AGI (Feeds 2-Yr Lookback)
+              </label>
+              <input
+                type="number"
+                placeholder={`Replayed: ${formatCurrency(activeLedgerRow?.magi)}`}
+                value={activeRecord.magi !== null && activeRecord.magi !== undefined ? activeRecord.magi : ''}
+                onChange={(e) =>
+                  handleFieldChange('magi', e.target.value === '' ? null : parseFloat(e.target.value))
+                }
+                className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-white font-mono focus:border-purple-500 focus:outline-none"
+              />
+              <p className="text-[11px] text-slate-500 mt-0.5">
+                Automatically determines Medicare IRMAA tiers for {selectedYear + 2}.
+              </p>
+            </div>
+
+            <div>
+              <label className="text-slate-300 font-semibold block mb-1">
+                Total Income Taxes Paid (Fed + State)
+              </label>
+              <input
+                type="number"
+                placeholder={`Replayed: ${formatCurrency(activeLedgerRow?.totalIncomeTax)}`}
+                value={activeRecord.totalIncomeTax !== null && activeRecord.totalIncomeTax !== undefined ? activeRecord.totalIncomeTax : ''}
+                onChange={(e) =>
+                  handleFieldChange(
+                    'totalIncomeTax',
+                    e.target.value === '' ? null : parseFloat(e.target.value)
+                  )
+                }
+                className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-white font-mono focus:border-purple-500 focus:outline-none"
+              />
+            </div>
+
+            <div>
+              <label className="text-slate-300 font-semibold block mb-1">
+                Earned Gross Salary - Primary ($)
+              </label>
+              <input
+                type="number"
+                placeholder="Active paycheck salary earned"
+                value={activeRecord.earnedSalaryYou !== null && activeRecord.earnedSalaryYou !== undefined ? activeRecord.earnedSalaryYou : ''}
+                onChange={(e) =>
+                  handleFieldChange(
+                    'earnedSalaryYou',
+                    e.target.value === '' ? null : parseFloat(e.target.value)
+                  )
+                }
+                className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-white font-mono focus:border-purple-500 focus:outline-none"
+              />
+            </div>
+
+            {!inputs.isSingleFiler && (
+              <div>
+                <label className="text-slate-300 font-semibold block mb-1">
+                  Earned Gross Salary - Spouse ($)
+                </label>
+                <input
+                  type="number"
+                  placeholder="Active paycheck salary earned"
+                  value={activeRecord.earnedSalaryWife !== null && activeRecord.earnedSalaryWife !== undefined ? activeRecord.earnedSalaryWife : ''}
+                  onChange={(e) =>
+                    handleFieldChange(
+                      'earnedSalaryWife',
+                      e.target.value === '' ? null : parseFloat(e.target.value)
+                    )
+                  }
+                  className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-white font-mono focus:border-purple-500 focus:outline-none"
+                />
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+
+      {/* Card 4: Year-End Portfolio Balance Reconciliation */}
+      <div className="bg-slate-900/80 border border-slate-800 rounded-2xl p-5 shadow space-y-4">
+        <div className="flex items-center justify-between border-b border-slate-800 pb-3">
+          <div className="flex items-center gap-2">
+            <Layers className="w-4 h-4 text-emerald-400" />
+            <h3 className="text-sm font-bold text-white">
+              Year-End Portfolio Balance Reconciliation ({selectedYear})
+            </h3>
+          </div>
+          <button
+            onClick={() => setShowReconciliation(!showReconciliation)}
+            className="text-xs text-slate-400 hover:text-slate-200 cursor-pointer flex items-center gap-1"
+          >
+            {showReconciliation ? 'Collapse' : 'Expand'}
+            {showReconciliation ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
+          </button>
+        </div>
+
+        {showReconciliation && (
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6 text-xs">
+            {/* Primary Spouse Balances */}
+            <div className="space-y-3 bg-slate-950/60 p-4 rounded-xl border border-slate-800">
+              <span className="font-bold text-slate-200 block text-xs uppercase tracking-wider border-b border-slate-800 pb-2">
+                Primary Accounts (Year-End)
+              </span>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="text-slate-400 block mb-1">Pre-Tax (Traditional IRA)</label>
+                  <input
+                    type="number"
+                    placeholder={`Calc: ${formatCurrency(activeLedgerRow?.endYourPreTaxIRA)}`}
+                    value={activeRecord.endYourPreTaxIRA !== null && activeRecord.endYourPreTaxIRA !== undefined ? activeRecord.endYourPreTaxIRA : ''}
+                    onChange={(e) =>
+                      handleFieldChange(
+                        'endYourPreTaxIRA',
+                        e.target.value === '' ? null : parseFloat(e.target.value)
+                      )
+                    }
+                    className="w-full bg-slate-900 border border-slate-700 rounded-lg px-2.5 py-1.5 text-white font-mono"
+                  />
+                </div>
+                <div>
+                  <label className="text-slate-400 block mb-1">Roth IRA</label>
+                  <input
+                    type="number"
+                    placeholder={`Calc: ${formatCurrency(activeLedgerRow?.endYourRothIRA)}`}
+                    value={activeRecord.endYourRothIRA !== null && activeRecord.endYourRothIRA !== undefined ? activeRecord.endYourRothIRA : ''}
+                    onChange={(e) =>
+                      handleFieldChange(
+                        'endYourRothIRA',
+                        e.target.value === '' ? null : parseFloat(e.target.value)
+                      )
+                    }
+                    className="w-full bg-slate-900 border border-slate-700 rounded-lg px-2.5 py-1.5 text-white font-mono"
+                  />
+                </div>
+                <div>
+                  <label className="text-slate-400 block mb-1">Taxable Brokerage</label>
+                  <input
+                    type="number"
+                    placeholder={`Calc: ${formatCurrency(activeLedgerRow?.endYourTaxableBrokerage)}`}
+                    value={activeRecord.endYourTaxableBrokerage !== null && activeRecord.endYourTaxableBrokerage !== undefined ? activeRecord.endYourTaxableBrokerage : ''}
+                    onChange={(e) =>
+                      handleFieldChange(
+                        'endYourTaxableBrokerage',
+                        e.target.value === '' ? null : parseFloat(e.target.value)
+                      )
+                    }
+                    className="w-full bg-slate-900 border border-slate-700 rounded-lg px-2.5 py-1.5 text-white font-mono"
+                  />
+                </div>
+                <div>
+                  <label className="text-slate-400 block mb-1">Taxable Cost Basis</label>
+                  <input
+                    type="number"
+                    placeholder={`Calc: ${formatCurrency(activeLedgerRow?.endYourTaxableBasis)}`}
+                    value={activeRecord.endYourTaxableBasis !== null && activeRecord.endYourTaxableBasis !== undefined ? activeRecord.endYourTaxableBasis : ''}
+                    onChange={(e) =>
+                      handleFieldChange(
+                        'endYourTaxableBasis',
+                        e.target.value === '' ? null : parseFloat(e.target.value)
+                      )
+                    }
+                    className="w-full bg-slate-900 border border-slate-700 rounded-lg px-2.5 py-1.5 text-white font-mono"
+                  />
+                </div>
+                <div className="col-span-2">
+                  <label className="text-slate-400 block mb-1">Cash Reserve Savings</label>
+                  <input
+                    type="number"
+                    placeholder={`Calc: ${formatCurrency(activeLedgerRow?.endYourCash)}`}
+                    value={activeRecord.endYourCash !== null && activeRecord.endYourCash !== undefined ? activeRecord.endYourCash : ''}
+                    onChange={(e) =>
+                      handleFieldChange(
+                        'endYourCash',
+                        e.target.value === '' ? null : parseFloat(e.target.value)
+                      )
+                    }
+                    className="w-full bg-slate-900 border border-slate-700 rounded-lg px-2.5 py-1.5 text-white font-mono"
+                  />
+                </div>
+              </div>
+            </div>
+
+            {/* Spouse Balances */}
+            {!inputs.isSingleFiler && (
+              <div className="space-y-3 bg-slate-950/60 p-4 rounded-xl border border-slate-800">
+                <span className="font-bold text-slate-200 block text-xs uppercase tracking-wider border-b border-slate-800 pb-2">
+                  Spouse Accounts (Year-End)
+                </span>
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="text-slate-400 block mb-1">Pre-Tax (Traditional IRA)</label>
+                    <input
+                      type="number"
+                      placeholder={`Calc: ${formatCurrency(activeLedgerRow?.endWifePreTaxIRA)}`}
+                      value={activeRecord.endWifePreTaxIRA !== null && activeRecord.endWifePreTaxIRA !== undefined ? activeRecord.endWifePreTaxIRA : ''}
+                      onChange={(e) =>
+                        handleFieldChange(
+                          'endWifePreTaxIRA',
+                          e.target.value === '' ? null : parseFloat(e.target.value)
+                        )
+                      }
+                      className="w-full bg-slate-900 border border-slate-700 rounded-lg px-2.5 py-1.5 text-white font-mono"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-slate-400 block mb-1">Roth IRA</label>
+                    <input
+                      type="number"
+                      placeholder={`Calc: ${formatCurrency(activeLedgerRow?.endWifeRothIRA)}`}
+                      value={activeRecord.endWifeRothIRA !== null && activeRecord.endWifeRothIRA !== undefined ? activeRecord.endWifeRothIRA : ''}
+                      onChange={(e) =>
+                        handleFieldChange(
+                          'endWifeRothIRA',
+                          e.target.value === '' ? null : parseFloat(e.target.value)
+                        )
+                      }
+                      className="w-full bg-slate-900 border border-slate-700 rounded-lg px-2.5 py-1.5 text-white font-mono"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-slate-400 block mb-1">Taxable Brokerage</label>
+                    <input
+                      type="number"
+                      placeholder={`Calc: ${formatCurrency(activeLedgerRow?.endWifeTaxableBrokerage)}`}
+                      value={activeRecord.endWifeTaxableBrokerage !== null && activeRecord.endWifeTaxableBrokerage !== undefined ? activeRecord.endWifeTaxableBrokerage : ''}
+                      onChange={(e) =>
+                        handleFieldChange(
+                          'endWifeTaxableBrokerage',
+                          e.target.value === '' ? null : parseFloat(e.target.value)
+                        )
+                      }
+                      className="w-full bg-slate-900 border border-slate-700 rounded-lg px-2.5 py-1.5 text-white font-mono"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-slate-400 block mb-1">Taxable Cost Basis</label>
+                    <input
+                      type="number"
+                      placeholder={`Calc: ${formatCurrency(activeLedgerRow?.endWifeTaxableBasis)}`}
+                      value={activeRecord.endWifeTaxableBasis !== null && activeRecord.endWifeTaxableBasis !== undefined ? activeRecord.endWifeTaxableBasis : ''}
+                      onChange={(e) =>
+                        handleFieldChange(
+                          'endWifeTaxableBasis',
+                          e.target.value === '' ? null : parseFloat(e.target.value)
+                        )
+                      }
+                      className="w-full bg-slate-900 border border-slate-700 rounded-lg px-2.5 py-1.5 text-white font-mono"
+                    />
+                  </div>
+                  <div className="col-span-2">
+                    <label className="text-slate-400 block mb-1">Cash Reserve Savings</label>
+                    <input
+                      type="number"
+                      placeholder={`Calc: ${formatCurrency(activeLedgerRow?.endWifeCash)}`}
+                      value={activeRecord.endWifeCash !== null && activeRecord.endWifeCash !== undefined ? activeRecord.endWifeCash : ''}
+                      onChange={(e) =>
+                        handleFieldChange(
+                          'endWifeCash',
+                          e.target.value === '' ? null : parseFloat(e.target.value)
+                        )
+                      }
+                      className="w-full bg-slate-900 border border-slate-700 rounded-lg px-2.5 py-1.5 text-white font-mono"
+                    />
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+
+      {/* Model vs. Actual Variance Chart */}
+      <div className="bg-slate-900/80 border border-slate-800 rounded-2xl p-5 shadow space-y-4">
+        <div className="flex items-center justify-between border-b border-slate-800 pb-3">
+          <h3 className="text-sm font-bold text-white flex items-center gap-2">
+            <TrendingUp className="w-4 h-4 text-emerald-400" />
+            Model vs. Actual Spending & Guardrails Variance
+          </h3>
+        </div>
+        <div className="h-64">
+          <Chart
+            type="line"
+            data={varianceChartData}
+            options={{
+              responsive: true,
+              maintainAspectRatio: false,
+              plugins: {
+                legend: {
+                  position: 'top' as const,
+                  labels: { color: '#94a3b8', font: { size: 11 } },
+                },
+                tooltip: {
+                  callbacks: {
+                    label: (context) => {
+                      return `${context.dataset.label}: ${formatCurrency(context.parsed.y)}`;
+                    },
+                  },
+                },
+              },
+              scales: {
+                x: {
+                  ticks: { color: '#94a3b8' },
+                  grid: { color: 'rgba(51, 65, 85, 0.2)' },
+                },
+                y: {
+                  ticks: {
+                    color: '#94a3b8',
+                    callback: (value) => formatCurrency(Number(value)),
+                  },
+                  grid: { color: 'rgba(51, 65, 85, 0.2)' },
+                },
+              },
+            }}
+          />
+        </div>
+      </div>
+
+      {/* Delete Confirmation Modal */}
+      {yearPendingDelete !== null && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm animate-in fade-in duration-150">
+          <div className="bg-slate-900 border border-slate-700/80 rounded-2xl max-w-md w-full p-6 shadow-2xl space-y-4">
+            <div className="flex items-center gap-3">
+              <div className="p-2.5 rounded-xl bg-rose-500/10 border border-rose-500/30 text-rose-400">
+                <AlertTriangle className="w-5 h-5" />
+              </div>
+              <div>
+                <h3 className="text-base font-bold text-white">Delete {yearPendingDelete} Actuals Record?</h3>
+                <p className="text-xs text-slate-400">This action will remove recorded historical actuals for year {yearPendingDelete}.</p>
+              </div>
+            </div>
+
+            <div className="bg-slate-950/60 p-3.5 rounded-xl border border-slate-800 text-xs text-slate-300 space-y-1.5 leading-relaxed">
+              <p>• Year {yearPendingDelete} will revert to the standard simulation model projection.</p>
+              <p>• Future years will re-simulate starting from the preceding reconciled balance.</p>
+            </div>
+
+            <div className="flex items-center justify-end gap-3 pt-2">
+              <button
+                onClick={() => setYearPendingDelete(null)}
+                className="px-4 py-2 rounded-xl text-xs font-semibold text-slate-300 hover:text-white bg-slate-800 hover:bg-slate-700 transition-all cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => {
+                  const target = yearPendingDelete;
+                  setYearPendingDelete(null);
+                  confirmDeleteYear(target);
+                }}
+                className="px-4 py-2 rounded-xl text-xs font-bold bg-rose-600 hover:bg-rose-500 text-white transition-all shadow-md flex items-center gap-1.5 cursor-pointer"
+              >
+                <Trash2 className="w-4 h-4" />
+                Confirm Delete
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};

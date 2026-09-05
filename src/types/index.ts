@@ -100,6 +100,7 @@ export interface ExpenseItemDefinition {
   description?: string;
   defaultFrequency: number;
   isOneTime?: boolean;
+  targetYear?: number | null; // The specific year a one-time expense occurs (in today's dollars)
 }
 
 export interface ExpenseCatalog {
@@ -199,29 +200,33 @@ export const DEFAULT_DETAILED_EXPENSES_STATE: DetailedExpensesState = {
 /**
  * Normalizes any detailed expenses object (legacy or new) to guaranteed DetailedExpensesState
  */
-export function normalizeDetailedExpenses(raw?: any): DetailedExpensesState {
-  if (!raw) {
+export function normalizeDetailedExpenses(raw?: unknown): DetailedExpensesState {
+  if (!raw || typeof raw !== 'object') {
     return JSON.parse(JSON.stringify(DEFAULT_DETAILED_EXPENSES_STATE));
   }
 
+  const rawObj = raw as Record<string, unknown>;
+  const rawCatalog = rawObj.catalog as { items?: ExpenseItemDefinition[]; categories?: string[] } | undefined;
+
   // If already in new format with catalog
-  if (raw.catalog && Array.isArray(raw.catalog.items) && Array.isArray(raw.catalog.categories)) {
-    const costs: Record<string, Record<string, number>> = { ...(raw.costs || {}) };
-    if (raw.MD && !costs.MD) costs.MD = { ...raw.MD };
-    if (raw.FL && !costs.FL) costs.FL = { ...raw.FL };
+  if (rawCatalog && Array.isArray(rawCatalog.items) && Array.isArray(rawCatalog.categories)) {
+    const rawCosts = (rawObj.costs || {}) as Record<string, Record<string, number>>;
+    const costs: Record<string, Record<string, number>> = { ...rawCosts };
+    if (rawObj.MD && !costs.MD) costs.MD = { ...(rawObj.MD as Record<string, number>) };
+    if (rawObj.FL && !costs.FL) costs.FL = { ...(rawObj.FL as Record<string, number>) };
     
     // Ensure both MD and FL objects exist
     if (!costs.MD) costs.MD = {};
     if (!costs.FL) costs.FL = {};
 
     const frequencies: Record<string, number> = {
-      ...(raw.frequencies || {})
+      ...((rawObj.frequencies as Record<string, number>) || {})
     };
 
     return {
       catalog: {
-        categories: raw.catalog.categories.length > 0 ? [...raw.catalog.categories] : [...DEFAULT_EXPENSE_CATEGORIES],
-        items: [...raw.catalog.items]
+        categories: rawCatalog.categories.length > 0 ? [...rawCatalog.categories] : [...DEFAULT_EXPENSE_CATEGORIES],
+        items: [...rawCatalog.items]
       },
       costs,
       frequencies,
@@ -231,9 +236,9 @@ export function normalizeDetailedExpenses(raw?: any): DetailedExpensesState {
   }
 
   // Legacy format migration
-  const legacyMD = raw.MD || {};
-  const legacyFL = raw.FL || {};
-  const legacyFreqs = raw.frequencies || {};
+  const legacyMD = (rawObj.MD || {}) as Record<string, number>;
+  const legacyFL = (rawObj.FL || {}) as Record<string, number>;
+  const legacyFreqs = (rawObj.frequencies || {}) as Record<string, number>;
 
   const knownOneTimeKeys = new Set([
     'masterBedFurniture', 'masterBedCloset', 'livingRoomFurniture', 'windowTreatments',
@@ -313,6 +318,69 @@ export const DEFAULT_CHARITY_SETTINGS: CharitySettings = {
 
 export const BASE_QCD_LIMIT = 105000;
 
+export interface YearActualsRecord {
+  year: number;
+  
+  // Realized macro returns & inflation rates
+  equityReturnRate?: number | null;
+  fixedIncomeReturnRate?: number | null;
+  cpiInflationRate?: number | null;
+  healthcareInflationRate?: number | null;
+  
+  // Realized expenses & inflows
+  totalLivingExpenses?: number | null;
+  categoryExpenses?: Record<string, number>;
+  preMedicareHealthcareCost?: number | null;
+  medicareBasePremiums?: number | null;
+  earnedSalaryYou?: number | null;
+  earnedSalaryWife?: number | null;
+  charitableTithe?: number | null;
+  
+  // Realized tax & surcharge overrides
+  magi?: number | null;
+  totalIncomeTax?: number | null;
+  surchargeTier?: number | null;
+  
+  // Realized balance reconciliation overrides (ending balances after growth/drawdowns)
+  endYourPreTaxIRA?: number | null;
+  endYourRothIRA?: number | null;
+  endYourTaxableBrokerage?: number | null;
+  endYourTaxableBasis?: number | null;
+  endYourCash?: number | null;
+  endWifePreTaxIRA?: number | null;
+  endWifeRothIRA?: number | null;
+  endWifeTaxableBrokerage?: number | null;
+  endWifeTaxableBasis?: number | null;
+  endWifeCash?: number | null;
+}
+
+export type ActualTrackingState = Record<number, YearActualsRecord>;
+
+export interface GuardrailSettings {
+  enabled: boolean;
+  upperGuardrailPct: number; // e.g. 0.15 for +15% above budgeted expenses
+  lowerGuardrailPct: number; // e.g. 0.15 for -15% below budgeted expenses
+  marketSurplusSharePct: number; // e.g. 0.10 for 10% share of excess market growth
+  applyToSimulation: boolean; // if true, applies guardrail adjustment dynamically during forward simulation
+}
+
+export const DEFAULT_GUARDRAIL_SETTINGS: GuardrailSettings = {
+  enabled: true,
+  upperGuardrailPct: 0.15,
+  lowerGuardrailPct: 0.15,
+  marketSurplusSharePct: 0.10,
+  applyToSimulation: false,
+};
+
+export interface CustomRothScenario {
+  id: string;
+  name: string;
+  description?: string;
+  schedule: Record<number, number>; // year -> nominal conversion amount
+  createdAt: string;
+  updatedAt: string;
+}
+
 export interface AppStateInputs {
   isConfigured: boolean;
   isSingleFiler: boolean;
@@ -333,12 +401,16 @@ export interface AppStateInputs {
   annualRothConversion: number;
   rothConversionStartYear?: number;
   rothConversionEndYear?: number;
-  rothConversionStrategy: 'flat' | 'fill-to-target';
+  rothConversionStrategy: 'flat' | 'fill-to-target' | 'custom';
   rothConversionTargetValue: number | null;
+  customRothScenarios?: CustomRothScenario[];
+  activeCustomScenarioId?: string | null;
   monteCarloSettings: MonteCarloSettings;
   detailedExpenses?: DetailedExpensesState;
   charitySettings?: CharitySettings;
   fileSSA44LifeChangingEvent?: boolean; // Form SSA-44 Life-Changing Event (Work Stoppage / Wage Reduction)
+  actualTracking?: ActualTrackingState;
+  guardrailSettings?: GuardrailSettings;
 }
 
 /**
@@ -370,6 +442,9 @@ export interface SimulationResultRow {
   wifeSalary?: number; // Pre-retirement annual active salary earned
   capitalGainsTriggered: number;
   intentionalRothConversion: number;
+  requestedCustomRothConversion?: number;
+  isRothConversionCapped?: boolean;
+  rothConversionShortfall?: number;
   otherTaxableIncome: number; // Placeholder if needed
   
   // MAGI & Tax Calculations
@@ -440,6 +515,14 @@ export interface SimulationResultRow {
   endWifeCash: number;
   
   totalPortfolioValue: number;
+
+  // Actual Tracking & Guardrails Metadata
+  isActual?: boolean; // True if this row reflects verified historical actuals
+  isBridged?: boolean; // True if this row was bridged via simulation between actual years
+  actualSurplusGap?: number; // Net spending surplus/deficit gap for guardrail tracking
+  guardrailUpperLimit?: number; // Upper spending guardrail ceiling
+  guardrailLowerLimit?: number; // Lower spending guardrail floor
+  permittedSpendingBonus?: number; // Calculated permission to spend bonus for next year
 }
 
 export interface SavedPlan {

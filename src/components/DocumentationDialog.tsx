@@ -22,7 +22,8 @@ import {
   TrendingUp,
   FileSpreadsheet,
   FileText,
-  DollarSign
+  DollarSign,
+  ClipboardCheck,
 } from 'lucide-react';
 
 interface DocumentationDialogProps {
@@ -535,12 +536,74 @@ export const DocumentationDialog: React.FC<DocumentationDialogProps> = ({
             <button
               type="button"
               onClick={() => {
-                onNavigateTab?.(3);
+                onNavigateTab?.(4);
                 onClose();
               }}
               className="px-3.5 py-1.5 bg-purple-600 hover:bg-purple-500 text-white font-bold rounded-xl text-xs flex items-center gap-1.5 transition-all cursor-pointer"
             >
               <span>Open Workspace 4</span>
+              <ChevronRight className="w-3.5 h-3.5" />
+            </button>
+          </div>
+        </div>
+      ),
+    },
+    {
+      id: 'workspace-5',
+      title: 'Workspace 5: Actuals Tracking & Guardrail Plan',
+      category: 'Workspaces',
+      icon: ClipboardCheck,
+      badge: 'Execution Tracker',
+      keywords: ['workspace 5', 'actuals', 'guardrails', 'tracking', 'reconciliation', 'permission to spend', 'market surplus', 'guyton-klinger', 'realized returns', 'lookback magi', 'surplus gap', 'balance reconciliation'],
+      content: (
+        <div className="space-y-6">
+          <div className="p-4 bg-slate-900/60 border border-slate-800 rounded-2xl">
+            <h3 className="text-sm font-bold text-slate-100 mb-1 flex items-center gap-2">
+              <ClipboardCheck className="w-4 h-4 text-emerald-400" />
+              Live Plan Execution, Historical Replay & Guardrail Governance
+            </h3>
+            <p className="text-xs text-slate-400 leading-relaxed">
+              Workspace 5 transitions your retirement model from a static long-range forecast into a live, living execution dashboard. Log real-world annual market returns, actual living expenses, tax overrides, and reconciled year-end brokerage/IRA balances. The engine anchors future projections to exact real-world balances and applies dynamic Guyton-Klinger style guardrail rules to guide annual spending adjustments.
+            </p>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="p-4 bg-slate-950/60 border border-slate-800 rounded-xl space-y-2">
+              <span className="text-xs font-bold text-emerald-400 block">Hybrid Historical Replay & Reconciliation</span>
+              <ul className="text-[11px] text-slate-300 space-y-1.5 list-disc list-inside leading-relaxed">
+                <li><strong>Realized Macro Returns:</strong> Substitute equity, bond, CPI inflation, and healthcare rates for each logged calendar year.</li>
+                <li><strong>Dual-Mode Living Expenses:</strong> Record aggregate annual spend or itemize by category (Housing, Food, Healthcare, Travel, Discretionary).</li>
+                <li><strong>Ending Balance Reconciliation:</strong> Lock in verified brokerage, Traditional IRA, Roth IRA, cost basis, and cash balances at year-end.</li>
+                <li><strong>2-Year Medicare MAGI Stitching:</strong> Historical actual MAGI automatically chains into the 2-year lookback Medicare IRMAA calculations.</li>
+                <li><strong>Graceful Bridge:</strong> Any unrecorded intermediate years are seamlessly simulated by the baseline model.</li>
+              </ul>
+            </div>
+
+            <div className="p-4 bg-slate-950/60 border border-slate-800 rounded-xl space-y-2">
+              <span className="text-xs font-bold text-sky-400 block">Dynamic Guardrail Spending Governance</span>
+              <ul className="text-[11px] text-slate-300 space-y-1.5 list-disc list-inside leading-relaxed">
+                <li><strong>Upper Ceiling (+15%):</strong> Maximum allowable lifestyle spending surge to prevent unsustainable lifestyle creep.</li>
+                <li><strong>Lower Floor (-15%):</strong> Maximum recommended spending contraction floor during bear markets to preserve capital.</li>
+                <li><strong>Market Surplus Share (10%):</strong> Allocates a configured percentage of portfolio investment returns above expectations to discretionary bonuses.</li>
+                <li><strong>Permission to Spend Advisory:</strong> Transparently breaks down net surplus into direct Expense Savings and Market Growth Share.</li>
+                <li><strong>1-Click Budget Update:</strong> Apply earned discretionary bonuses directly to next year's planned living budget.</li>
+              </ul>
+            </div>
+          </div>
+
+          <div className="p-4 bg-emerald-950/20 border border-emerald-900/30 rounded-xl flex items-center justify-between">
+            <div className="text-xs text-slate-300">
+              Record actuals and manage your dynamic guardrail spending policy:
+            </div>
+            <button
+              type="button"
+              onClick={() => {
+                onNavigateTab?.(5);
+                onClose();
+              }}
+              className="px-3.5 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-slate-950 font-bold rounded-xl text-xs flex items-center gap-1.5 transition-all cursor-pointer"
+            >
+              <span>Open Workspace 5</span>
               <ChevronRight className="w-3.5 h-3.5" />
             </button>
           </div>

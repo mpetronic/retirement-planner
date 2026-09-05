@@ -1,11 +1,24 @@
 import React, { useMemo, useState, useRef } from 'react';
 import { Chart } from 'react-chartjs-2';
-import { Chart as ChartJS, registerables } from 'chart.js';
-import { SimulationResultRow, AppStateInputs, LockedReturnSequence, getSimulationStartYear } from '../types';
 import {
+  Chart as ChartJS,
+  registerables,
+  ChartData,
+  ChartOptions,
+  TooltipItem,
+  LegendItem,
+  ChartEvent,
+} from 'chart.js';
+import {
+  SimulationResultRow,
+  AppStateInputs,
+  LockedReturnSequence,
+  CustomRothScenario,
+  getSimulationStartYear,
+} from '../types';
+import { 
   Calculator,
   Sliders,
-  TrendingUp,
   ShieldAlert,
   Check,
   X,
@@ -16,9 +29,17 @@ import {
   Shield,
   Gem,
   HeartPulse,
+  Edit3,
+  TrendingUp,
 } from 'lucide-react';
 import { optimizeRetirementScenario, OptimizationResult, OptimizationGoal } from '../engine/optimizer';
-import { getTargetPresetInfo } from '../engine/taxRates2026';
+import { 
+  getTargetPresetInfo, 
+  DEFAULT_FILL_TO_TARGET_VALUE, 
+  CONVERSION_TARGET_PRESETS,
+  FED_STANDARD_DEDUCTION_MFJ 
+} from '../engine/taxRates2026';
+import { CustomRothScenarioModal } from './CustomRothScenarioModal';
 
 ChartJS.register(...registerables);
 
@@ -34,8 +55,11 @@ interface TaxableIncomeWorkspaceProps {
     wifeAge: number,
     strategy?: 'flat' | 'fill-to-target'
   ) => void;
-  onUpdateStrategy: (strategy: 'flat' | 'fill-to-target') => void;
+  onUpdateStrategy: (strategy: 'flat' | 'fill-to-target' | 'custom') => void;
   onUpdateTargetValue: (val: number | null) => void;
+  onSaveCustomScenario?: (scenario: CustomRothScenario, applyImmediately?: boolean) => void;
+  onDeleteCustomScenario?: (scenarioId: string) => void;
+  onSelectCustomScenario?: (scenarioId: string) => void;
   onInputsChange?: (newInputs: AppStateInputs) => void;
   selectedQuickFill: number | null;
   setSelectedQuickFill: (val: number | null) => void;
@@ -49,23 +73,37 @@ export const TaxableIncomeWorkspace: React.FC<TaxableIncomeWorkspaceProps> = ({
   onApplyOptimization,
   onUpdateStrategy,
   onUpdateTargetValue,
+  onSaveCustomScenario,
+  onDeleteCustomScenario,
+  onSelectCustomScenario,
   onInputsChange,
   selectedQuickFill,
   setSelectedQuickFill,
 }) => {
-  const chartRef = useRef<any>(null);
+  const chartRef = useRef<ChartJS<'bar' | 'line'> | null>(null);
   const simStartYear = getSimulationStartYear(inputs);
 
-  // Selected benchmark state (defaults to 12% Fed Tax Bracket if none set)
-  const activeTarget = useMemo(() => {
-    return selectedQuickFill || inputs.rothConversionTargetValue || 100800;
-  }, [selectedQuickFill, inputs.rothConversionTargetValue]);
+  // Custom scenario modal state
+  const [showCustomModal, setShowCustomModal] = useState(false);
 
-  // Ensure a default benchmark (12% Fed Bracket - $100,800) is active in fill-to-target mode
+  const customScenarios = useMemo(() => inputs.customRothScenarios || [], [inputs.customRothScenarios]);
+  const activeCustomScenario = useMemo(() => {
+    if (inputs.rothConversionStrategy !== 'custom') return null;
+    return customScenarios.find((s) => s.id === inputs.activeCustomScenarioId) || customScenarios[0] || null;
+  }, [inputs.rothConversionStrategy, customScenarios, inputs.activeCustomScenarioId]);
+
+  // Selected benchmark state (only active and defaults in fill-to-target mode)
+  const isFillToTarget = inputs.rothConversionStrategy === 'fill-to-target';
+  const activeTarget = useMemo(() => {
+    if (!isFillToTarget) return null;
+    return inputs.rothConversionTargetValue || selectedQuickFill || DEFAULT_FILL_TO_TARGET_VALUE;
+  }, [isFillToTarget, inputs.rothConversionTargetValue, selectedQuickFill]);
+
+  // Ensure a default benchmark (12% Fed Bracket - $100,800) is active in fill-to-target mode only if none exists
   React.useEffect(() => {
     if (inputs.rothConversionStrategy === 'fill-to-target' && !inputs.rothConversionTargetValue && !selectedQuickFill) {
-      onUpdateTargetValue(100800);
-      setSelectedQuickFill(100800);
+      onUpdateTargetValue(DEFAULT_FILL_TO_TARGET_VALUE);
+      setSelectedQuickFill(DEFAULT_FILL_TO_TARGET_VALUE);
     }
   }, [inputs.rothConversionStrategy, inputs.rothConversionTargetValue, selectedQuickFill, onUpdateTargetValue, setSelectedQuickFill]);
 
@@ -194,12 +232,19 @@ export const TaxableIncomeWorkspace: React.FC<TaxableIncomeWorkspaceProps> = ({
         rawDividends: (r.taxableDividends || 0) + (r.taxableInterest || 0),
         rawCapGains: r.capitalGainsTriggered || 0,
         totalTaxableIncome,
+        requestedCustomRothConversion: r.requestedCustomRothConversion,
+        isRothConversionCapped: r.isRothConversionCapped,
+        rothConversionShortfall: r.rothConversionShortfall,
       };
     });
   }, [ledger, simulateSurvivor, deathYear]);
 
   // Compute dynamic benchmark line data points (indexed to Taxable Income threshold)
   const benchmarkLineData = useMemo(() => {
+    if (!isFillToTarget || !activeTarget) {
+      return null;
+    }
+
     const preset = getTargetPresetInfo(activeTarget);
     const isMAGIBased = preset?.type === 'irmaa' || !preset;
     const jointBase = preset ? preset.jointBase : activeTarget;
@@ -229,7 +274,7 @@ export const TaxableIncomeWorkspace: React.FC<TaxableIncomeWorkspaceProps> = ({
       pointHoverRadius: 5,
       order: 1,
     };
-  }, [activeTarget, processedRows]);
+  }, [isFillToTarget, activeTarget, processedRows]);
 
   // Chart datasets configuration
   const chartData = useMemo(() => {
@@ -277,7 +322,7 @@ export const TaxableIncomeWorkspace: React.FC<TaxableIncomeWorkspaceProps> = ({
         stack: 'taxable',
         order: 6,
       },
-      {
+      benchmarkLineData && {
         type: 'line' as const,
         label: benchmarkLineData.label,
         data: benchmarkLineData.data,
@@ -291,7 +336,7 @@ export const TaxableIncomeWorkspace: React.FC<TaxableIncomeWorkspaceProps> = ({
       },
     ];
 
-    const datasets = rawDatasets.filter(Boolean) as any[];
+    const datasets = rawDatasets.filter(Boolean) as ChartData<'bar' | 'line'>['datasets'];
 
     return {
       labels: years,
@@ -300,7 +345,7 @@ export const TaxableIncomeWorkspace: React.FC<TaxableIncomeWorkspaceProps> = ({
   }, [years, processedRows, benchmarkLineData]);
 
   // Chart options
-  const chartOptions: any = useMemo(() => {
+  const chartOptions: ChartOptions<'bar' | 'line'> = useMemo(() => {
     return {
       responsive: true,
       maintainAspectRatio: false,
@@ -311,16 +356,18 @@ export const TaxableIncomeWorkspace: React.FC<TaxableIncomeWorkspaceProps> = ({
       plugins: {
         legend: {
           position: 'top',
-          onClick: (e: any, legendItem: any, legend: any) => {
+          onClick: (e: ChartEvent, legendItem: LegendItem, legend: { chart: ChartJS }) => {
             const index = legendItem.datasetIndex;
+            if (index === undefined) return;
             const ci = legend.chart;
-            const hasModifier = e.native.ctrlKey || e.native.altKey || e.native.shiftKey || e.native.metaKey;
+            const nativeEvent = e.native as MouseEvent | undefined;
+            const hasModifier = nativeEvent ? (nativeEvent.ctrlKey || nativeEvent.altKey || nativeEvent.shiftKey || nativeEvent.metaKey) : false;
             
             if (hasModifier) {
               // Modifier + Click: Solo / Isolate (or reset if already soloed)
               let visibleCount = 0;
               let isClickedVisible = false;
-              ci.data.datasets.forEach((_: any, i: number) => {
+              ci.data.datasets.forEach((_, i: number) => {
                 if (ci.isDatasetVisible(i)) {
                   visibleCount++;
                   if (i === index) {
@@ -331,12 +378,12 @@ export const TaxableIncomeWorkspace: React.FC<TaxableIncomeWorkspaceProps> = ({
               
               if (visibleCount === 1 && isClickedVisible) {
                 // Already soloed: Show all
-                ci.data.datasets.forEach((_: any, i: number) => {
+                ci.data.datasets.forEach((_, i: number) => {
                   ci.setDatasetVisibility(i, true);
                 });
               } else {
                 // Solo this dataset
-                ci.data.datasets.forEach((_: any, i: number) => {
+                ci.data.datasets.forEach((_, i: number) => {
                   ci.setDatasetVisibility(i, i === index);
                 });
               }
@@ -350,7 +397,7 @@ export const TaxableIncomeWorkspace: React.FC<TaxableIncomeWorkspaceProps> = ({
             
             // Update hasHiddenDatasets state to conditionally render Reset Legend UI
             let anyHidden = false;
-            ci.data.datasets.forEach((_: any, i: number) => {
+            ci.data.datasets.forEach((_, i: number) => {
               if (!ci.isDatasetVisible(i)) {
                 anyHidden = true;
               }
@@ -359,7 +406,7 @@ export const TaxableIncomeWorkspace: React.FC<TaxableIncomeWorkspaceProps> = ({
           },
           labels: {
             color: '#cbd5e1',
-            font: { size: 11, weight: '600' },
+            font: { size: 11, weight: 'bold' as const },
             usePointStyle: true,
             boxWidth: 10,
             padding: 16,
@@ -375,37 +422,46 @@ export const TaxableIncomeWorkspace: React.FC<TaxableIncomeWorkspaceProps> = ({
           boxPadding: 6,
           usePointStyle: true,
           callbacks: {
-            title: (items: any[]) => {
+            title: (items: TooltipItem<'bar' | 'line'>[]) => {
               if (!items.length) return '';
               const idx = items[0].dataIndex;
               const r = processedRows[idx];
               return `Year ${r.year} (Ages: You ${r.yourAge} / Spouse ${r.wifeAge})`;
             },
-            label: (context: any) => {
+            label: (context: TooltipItem<'bar' | 'line'>) => {
               const label = context.dataset.label || '';
-              const rawVal = context.parsed.y ?? context.raw ?? 0;
+              const rawVal = context.parsed.y ?? (context.raw as number) ?? 0;
               return `${label}: ${formatCurrency(rawVal)}`;
             },
-            footer: (items: any[]) => {
+            footer: (items: TooltipItem<'bar' | 'line'>[]) => {
               if (!items.length) return '';
               const idx = items[0].dataIndex;
               const r = processedRows[idx];
-              const limit = benchmarkLineData.data[idx];
-              const headroom = limit - r.totalTaxableIncome;
-
-              return [
+              const lines = [
                 '-----------------------------------',
                 `Gross Federal AGI: ${formatCurrency(r.grossNonConvAGI + r.rothConv)}`,
                 `Standard Deduction: -${formatCurrency(r.stdDeduction)}`,
                 `Net Non-Conv Taxable: ${formatCurrency(r.netNonConvTaxable)}`,
                 `Roth Conversion: +${formatCurrency(r.rothConv)}`,
                 `TOTAL TAXABLE INCOME: ${formatCurrency(r.totalTaxableIncome)}`,
-                `Target Upper Limit: ${formatCurrency(limit)}`,
-                `Headroom Remaining: ${headroom >= 0 ? '+' : ''}${formatCurrency(headroom)}`,
+              ];
+
+              if (benchmarkLineData && benchmarkLineData.data[idx] !== undefined) {
+                const limit = benchmarkLineData.data[idx];
+                const headroom = limit - r.totalTaxableIncome;
+                lines.push(
+                  `Target Upper Limit: ${formatCurrency(limit)}`,
+                  `Headroom Remaining: ${headroom >= 0 ? '+' : ''}${formatCurrency(headroom)}`
+                );
+              }
+
+              lines.push(
                 '-----------------------------------',
                 `Dividends & Interest: ${formatCurrency(r.rawDividends)}`,
-                `Net Realized Cap Gains: ${formatCurrency(r.rawCapGains)} (excl. basis)`,
-              ].join('\n');
+                `Net Realized Cap Gains: ${formatCurrency(r.rawCapGains)} (excl. basis)`
+              );
+
+              return lines.join('\n');
             },
           },
         },
@@ -420,7 +476,7 @@ export const TaxableIncomeWorkspace: React.FC<TaxableIncomeWorkspaceProps> = ({
           ticks: {
             color: '#94a3b8',
             font: { size: 10 },
-            callback: (val: number) => `$${(val / 1000).toFixed(0)}k`,
+            callback: (val: string | number) => `$${(Number(val) / 1000).toFixed(0)}k`,
           },
           stacked: true,
         },
@@ -430,24 +486,38 @@ export const TaxableIncomeWorkspace: React.FC<TaxableIncomeWorkspaceProps> = ({
 
   // Key KPI summary statistics across conversion window years
   const kpiStats = useMemo(() => {
-    const convStart = inputs.rothConversionStartYear || ledger[0]?.year || 2026;
-    const convEnd = inputs.rothConversionEndYear || ledger[0]?.year + 5 || 2031;
+    let convStart = inputs.rothConversionStartYear || ledger[0]?.year || 2026;
+    let convEnd = inputs.rothConversionEndYear || (ledger[0]?.year ? ledger[0].year + 5 : 2031);
+
+    if (inputs.rothConversionStrategy === 'custom' && activeCustomScenario) {
+      const customYears = Object.keys(activeCustomScenario.schedule).map(Number).sort((a, b) => a - b);
+      if (customYears.length > 0) {
+        convStart = customYears[0];
+        convEnd = customYears[customYears.length - 1];
+      }
+    }
 
     const convRows = processedRows.filter((r) => r.year >= convStart && r.year <= convEnd);
     const targetRows = convRows.length > 0 ? convRows : processedRows.slice(0, 5);
 
-    const maxTaxable = Math.max(...targetRows.map((r) => r.totalTaxableIncome));
-    const avgHeadroom = targetRows.reduce((sum, r) => {
-      const rowIdx = ledger.findIndex((l) => l.year === r.year);
-      const limit = benchmarkLineData.data[rowIdx >= 0 ? rowIdx : 0];
-      return sum + (limit - r.totalTaxableIncome);
-    }, 0) / (targetRows.length || 1);
+    const maxTaxable = Math.max(...processedRows.map((r) => r.totalTaxableIncome));
+    const totalConversions = processedRows.reduce((sum, r) => sum + r.rothConv, 0);
 
-    const totalConversions = targetRows.reduce((sum, r) => sum + r.rothConv, 0);
-    const breachedYears = processedRows.filter((r, idx) => r.totalTaxableIncome > benchmarkLineData.data[idx]).length;
+    let avgHeadroom = 0;
+    let breachedYears = 0;
+
+    if (benchmarkLineData) {
+      avgHeadroom = targetRows.reduce((sum, r) => {
+        const rowIdx = ledger.findIndex((l) => l.year === r.year);
+        const limit = benchmarkLineData.data[rowIdx >= 0 ? rowIdx : 0];
+        return sum + (limit - r.totalTaxableIncome);
+      }, 0) / (targetRows.length || 1);
+
+      breachedYears = processedRows.filter((r, idx) => r.totalTaxableIncome > benchmarkLineData.data[idx]).length;
+    }
 
     return { convStart, convEnd, maxTaxable, avgHeadroom, totalConversions, breachedYears };
-  }, [inputs, ledger, processedRows, benchmarkLineData]);
+  }, [inputs, ledger, processedRows, benchmarkLineData, activeCustomScenario]);
 
   // Quick Preset Selection Buttons handler
   const handleSelectPreset = (targetVal: number) => {
@@ -535,10 +605,6 @@ export const TaxableIncomeWorkspace: React.FC<TaxableIncomeWorkspaceProps> = ({
                 type="button"
                 onClick={() => {
                   onUpdateStrategy('fill-to-target');
-                  if (!inputs.rothConversionTargetValue) {
-                    onUpdateTargetValue(133000);
-                    setSelectedQuickFill(133000);
-                  }
                 }}
                 className={`text-[10px] px-2.5 py-1 rounded-lg font-bold transition-all cursor-pointer ${
                   inputs.rothConversionStrategy === 'fill-to-target'
@@ -550,7 +616,9 @@ export const TaxableIncomeWorkspace: React.FC<TaxableIncomeWorkspaceProps> = ({
               </button>
               <button
                 type="button"
-                onClick={() => onUpdateStrategy('flat')}
+                onClick={() => {
+                  onUpdateStrategy('flat');
+                }}
                 className={`text-[10px] px-2.5 py-1 rounded-lg font-bold transition-all cursor-pointer ${
                   inputs.rothConversionStrategy === 'flat'
                     ? 'bg-amber-500 text-slate-950 shadow'
@@ -558,6 +626,22 @@ export const TaxableIncomeWorkspace: React.FC<TaxableIncomeWorkspaceProps> = ({
                 }`}
               >
                 Flat Target
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  onUpdateStrategy('custom');
+                  if (!inputs.customRothScenarios || inputs.customRothScenarios.length === 0) {
+                    setShowCustomModal(true);
+                  }
+                }}
+                className={`text-[10px] px-2.5 py-1 rounded-lg font-bold transition-all cursor-pointer ${
+                  inputs.rothConversionStrategy === 'custom'
+                    ? 'bg-purple-500 text-slate-950 shadow'
+                    : 'text-slate-400 hover:text-slate-200'
+                }`}
+              >
+                Custom Schedule
               </button>
             </div>
 
@@ -613,7 +697,7 @@ export const TaxableIncomeWorkspace: React.FC<TaxableIncomeWorkspaceProps> = ({
           </div>
         </div>
 
-        {/* Row 2: Strategy Configuration (Benchmark Pills for Fill-to-Target OR Slider for Flat Amount) */}
+        {/* Row 2: Strategy Configuration (Benchmark Pills for Fill-to-Target, Slider for Flat, or Dropdown for Custom) */}
         <div className="flex flex-wrap items-center justify-between gap-2 pt-2 border-t border-slate-800/60 min-h-[36px]">
           {inputs.rothConversionStrategy === 'fill-to-target' ? (
             <>
@@ -621,142 +705,101 @@ export const TaxableIncomeWorkspace: React.FC<TaxableIncomeWorkspaceProps> = ({
                 {/* Federal Brackets */}
                 <div className="flex items-center gap-1 bg-slate-950/80 p-1 rounded-xl border border-slate-800">
                   <span className="text-[9px] font-bold text-slate-400 px-1.5 uppercase font-mono">Fed:</span>
-                  <button
-                    type="button"
-                    onClick={() => handleSelectPreset(24800)}
-                    className={`text-[10px] px-2 py-0.5 rounded-lg font-bold transition-all border ${
-                      activeTarget === 24800 || activeTarget === 57000
-                        ? 'bg-rose-500/20 text-rose-300 border-rose-500/60 font-black'
-                        : 'bg-slate-900/60 text-slate-400 hover:text-slate-200 border-slate-800'
-                    }`}
-                  >
-                    10% ($24.8k)
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => handleSelectPreset(100800)}
-                    className={`text-[10px] px-2 py-0.5 rounded-lg font-bold transition-all border ${
-                      activeTarget === 100800 || activeTarget === 133000
-                        ? 'bg-rose-500/20 text-rose-300 border-rose-500/60 font-black'
-                        : 'bg-slate-900/60 text-slate-400 hover:text-slate-200 border-slate-800'
-                    }`}
-                  >
-                    12% ($100.8k)
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => handleSelectPreset(211400)}
-                    className={`text-[10px] px-2 py-0.5 rounded-lg font-bold transition-all border ${
-                      activeTarget === 211400 || activeTarget === 243600
-                        ? 'bg-amber-500/20 text-amber-300 border-amber-500/60 font-black'
-                        : 'bg-slate-900/60 text-slate-400 hover:text-slate-200 border-slate-800'
-                    }`}
-                  >
-                    22% ($211.4k)
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => handleSelectPreset(403550)}
-                    className={`text-[10px] px-2 py-0.5 rounded-lg font-bold transition-all border ${
-                      activeTarget === 403550 || activeTarget === 435750
-                        ? 'bg-pink-500/20 text-pink-300 border-pink-500/60 font-black'
-                        : 'bg-slate-900/60 text-slate-400 hover:text-slate-200 border-slate-800'
-                    }`}
-                  >
-                    24% ($403.6k)
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => handleSelectPreset(512450)}
-                    className={`text-[10px] px-2 py-0.5 rounded-lg font-bold transition-all border ${
-                      activeTarget === 512450 || activeTarget === 544650
-                        ? 'bg-purple-500/20 text-purple-300 border-purple-500/60 font-black'
-                        : 'bg-slate-900/60 text-slate-400 hover:text-slate-200 border-slate-800'
-                    }`}
-                  >
-                    32% ($512.5k)
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => handleSelectPreset(768700)}
-                    className={`text-[10px] px-2 py-0.5 rounded-lg font-bold transition-all border ${
-                      activeTarget === 768700
-                        ? 'bg-indigo-500/20 text-indigo-300 border-indigo-500/60 font-black'
-                        : 'bg-slate-900/60 text-slate-400 hover:text-slate-200 border-slate-800'
-                    }`}
-                  >
-                    35% ($768.7k)
-                  </button>
+                  {CONVERSION_TARGET_PRESETS.filter((p) => p.type === 'bracket').map((p) => {
+                    const isSelected =
+                      activeTarget === p.targetValue ||
+                      (activeTarget !== null && activeTarget === p.jointBase + FED_STANDARD_DEDUCTION_MFJ);
+                    return (
+                      <button
+                        key={p.id}
+                        type="button"
+                        onClick={() => handleSelectPreset(p.targetValue)}
+                        className={`text-[10px] px-2 py-0.5 rounded-lg font-bold transition-all border cursor-pointer ${
+                          isSelected
+                            ? 'bg-rose-500/20 text-rose-300 border-rose-500/60 font-black'
+                            : 'bg-slate-900/60 text-slate-400 hover:text-slate-200 border-slate-800'
+                        }`}
+                      >
+                        {p.shortLabel}
+                      </button>
+                    );
+                  })}
                 </div>
 
                 {/* IRMAA Tiers */}
                 <div className="flex items-center gap-1 bg-slate-950/80 p-1 rounded-xl border border-slate-800">
                   <span className="text-[9px] font-bold text-slate-400 px-1.5 uppercase font-mono">IRMAA:</span>
-                  <button
-                    type="button"
-                    onClick={() => handleSelectPreset(218000)}
-                    className={`text-[10px] px-2 py-0.5 rounded-lg font-bold transition-all border ${
-                      activeTarget === 218000 || activeTarget === 217999
-                        ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/60 font-black'
-                        : 'bg-slate-900/60 text-slate-400 hover:text-slate-200 border-slate-800'
-                    }`}
-                  >
-                    Tier 1 ($218k)
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => handleSelectPreset(274000)}
-                    className={`text-[10px] px-2 py-0.5 rounded-lg font-bold transition-all border ${
-                      activeTarget === 274000 || activeTarget === 273999
-                        ? 'bg-amber-500/20 text-amber-300 border-amber-500/60 font-black'
-                        : 'bg-slate-900/60 text-slate-400 hover:text-slate-200 border-slate-800'
-                    }`}
-                  >
-                    Tier 2 ($274k)
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => handleSelectPreset(342000)}
-                    className={`text-[10px] px-2 py-0.5 rounded-lg font-bold transition-all border ${
-                      activeTarget === 342000 || activeTarget === 341999
-                        ? 'bg-blue-500/20 text-blue-300 border-blue-500/60 font-black'
-                        : 'bg-slate-900/60 text-slate-400 hover:text-slate-200 border-slate-800'
-                    }`}
-                  >
-                    Tier 3 ($342k)
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => handleSelectPreset(410000)}
-                    className={`text-[10px] px-2 py-0.5 rounded-lg font-bold transition-all border ${
-                      activeTarget === 410000 || activeTarget === 409999
-                        ? 'bg-pink-500/20 text-pink-300 border-pink-500/60 font-black'
-                        : 'bg-slate-900/60 text-slate-400 hover:text-slate-200 border-slate-800'
-                    }`}
-                  >
-                    Tier 4 ($410k)
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => handleSelectPreset(750000)}
-                    className={`text-[10px] px-2 py-0.5 rounded-lg font-bold transition-all border ${
-                      activeTarget === 750000 || activeTarget === 749999
-                        ? 'bg-purple-500/20 text-purple-300 border-purple-500/60 font-black'
-                        : 'bg-slate-900/60 text-slate-400 hover:text-slate-200 border-slate-800'
-                    }`}
-                  >
-                    Tier 5 ($750k)
-                  </button>
+                  {CONVERSION_TARGET_PRESETS.filter((p) => p.type === 'irmaa').map((p) => {
+                    const isSelected =
+                      activeTarget === p.targetValue ||
+                      (activeTarget !== null && Math.abs(activeTarget - p.targetValue) <= 1);
+                    return (
+                      <button
+                        key={p.id}
+                        type="button"
+                        onClick={() => handleSelectPreset(p.targetValue)}
+                        className={`text-[10px] px-2 py-0.5 rounded-lg font-bold transition-all border cursor-pointer ${
+                          isSelected
+                            ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/60 font-black'
+                            : 'bg-slate-900/60 text-slate-400 hover:text-slate-200 border-slate-800'
+                        }`}
+                      >
+                        {p.shortLabel}
+                      </button>
+                    );
+                  })}
                 </div>
               </div>
 
               {/* Active Line Badge */}
-              {activeTarget && (
+              {activeTarget && benchmarkLineData && (
                 <span className="text-[10px] font-mono text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 px-2 py-0.5 rounded-md shrink-0">
                   Active: {benchmarkLineData.label}
                 </span>
               )}
             </>
+          ) : inputs.rothConversionStrategy === 'custom' ? (
+            <div className="flex flex-wrap items-center justify-between gap-3 w-full">
+              <div className="flex flex-wrap items-center gap-2.5">
+                <span className="text-[10px] font-bold text-slate-400 uppercase font-mono tracking-wider">
+                  Custom Plan:
+                </span>
+                {customScenarios.length > 0 ? (
+                  <select
+                    value={inputs.activeCustomScenarioId || customScenarios[0]?.id || ''}
+                    onChange={(e) => {
+                      if (onSelectCustomScenario) {
+                        onSelectCustomScenario(e.target.value);
+                      }
+                    }}
+                    className="bg-slate-950 text-purple-300 font-bold border border-purple-500/40 rounded-lg px-2.5 py-1 text-xs focus:outline-none focus:border-purple-400 cursor-pointer"
+                  >
+                    {customScenarios.map((scen) => (
+                      <option key={scen.id} value={scen.id}>
+                        {scen.name} ({Object.keys(scen.schedule).length} yrs)
+                      </option>
+                    ))}
+                  </select>
+                ) : (
+                  <span className="text-xs text-slate-500 italic">No custom plans saved yet</span>
+                )}
+
+                <button
+                  type="button"
+                  onClick={() => setShowCustomModal(true)}
+                  className="flex items-center gap-1.5 px-3 py-1 rounded-lg bg-purple-500/20 text-purple-300 border border-purple-500/40 hover:bg-purple-500/30 text-xs font-bold transition-all cursor-pointer"
+                >
+                  <Edit3 className="w-3.5 h-3.5" />
+                  <span>{customScenarios.length > 0 ? 'Edit / New Custom Plan' : '+ Create Custom Plan'}</span>
+                </button>
+              </div>
+
+              {activeCustomScenario && (
+                <span className="text-[10px] font-mono text-purple-400 bg-purple-500/10 border border-purple-500/20 px-2 py-0.5 rounded-md shrink-0">
+                  Active: {activeCustomScenario.name} ({Object.keys(activeCustomScenario.schedule).length} yrs, {formatCurrency(Object.values(activeCustomScenario.schedule).reduce((a, b) => a + (b || 0), 0))})
+                </span>
+              )}
+            </div>
           ) : (
             <div className="flex items-center justify-between w-full">
               <div className="flex items-center gap-3 bg-slate-950/80 px-3 py-1.5 rounded-xl border border-slate-800 text-[11px] font-mono text-slate-300">
@@ -780,9 +823,18 @@ export const TaxableIncomeWorkspace: React.FC<TaxableIncomeWorkspaceProps> = ({
                   {formatCurrency(inputs.annualRothConversion)}/yr
                 </span>
               </div>
-              <span className="text-[10px] text-slate-500 font-mono">
-                Converts a fixed dollar amount each year regardless of bracket headroom
-              </span>
+              <div className="flex items-center gap-3">
+                <span className="text-[10px] text-slate-500 font-mono hidden md:inline">
+                  Converts a fixed dollar amount each year regardless of bracket headroom
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setShowCustomModal(true)}
+                  className="text-xs text-purple-400 hover:text-purple-300 font-semibold underline cursor-pointer"
+                >
+                  Custom Plan Editor
+                </button>
+              </div>
             </div>
           )}
         </div>
@@ -826,41 +878,96 @@ export const TaxableIncomeWorkspace: React.FC<TaxableIncomeWorkspaceProps> = ({
           <TrendingUp className="w-5 h-5 text-blue-500/50 shrink-0 ml-2" />
         </div>
 
-        {/* Card 3: Average Headroom */}
-        <div className="glass-panel rounded-xl px-3 py-2 flex items-center justify-between border-l-4 border-l-amber-500 bg-slate-900/60">
-          <div className="min-w-0">
-            <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider block truncate">
-              Avg Headroom to Limit
-            </span>
-            <div className="flex items-baseline gap-1.5 mt-0.5">
-              <span className={`text-base font-black font-mono ${kpiStats.avgHeadroom >= 0 ? 'text-amber-400' : 'text-rose-400'}`}>
-                {formatCurrency(kpiStats.avgHeadroom)}
+        {/* Card 3: Avg Headroom to Limit (Fill-to-Target), Active Custom Plan (Custom), or Annual Flat Conversion (Flat) */}
+        {isFillToTarget ? (
+          <div className="glass-panel rounded-xl px-3 py-2 flex items-center justify-between border-l-4 border-l-amber-500 bg-slate-900/60">
+            <div className="min-w-0">
+              <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider block truncate">
+                Avg Headroom to Limit
               </span>
-              <span className="text-[9px] text-slate-500 font-mono truncate">
-                under target
-              </span>
+              <div className="flex items-baseline gap-1.5 mt-0.5">
+                <span className={`text-base font-black font-mono ${kpiStats.avgHeadroom >= 0 ? 'text-amber-400' : 'text-rose-400'}`}>
+                  {formatCurrency(kpiStats.avgHeadroom)}
+                </span>
+                <span className="text-[9px] text-slate-500 font-mono truncate">
+                  under target
+                </span>
+              </div>
             </div>
+            <ShieldAlert className="w-5 h-5 text-amber-500/50 shrink-0 ml-2" />
           </div>
-          <ShieldAlert className="w-5 h-5 text-amber-500/50 shrink-0 ml-2" />
-        </div>
+        ) : inputs.rothConversionStrategy === 'custom' ? (
+          <div className="glass-panel rounded-xl px-3 py-2 flex items-center justify-between border-l-4 border-l-purple-500 bg-slate-900/60">
+            <div className="min-w-0">
+              <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider block truncate">
+                Active Custom Plan
+              </span>
+              <div className="flex items-baseline gap-1.5 mt-0.5">
+                <span className="text-base font-black font-mono text-purple-400 truncate">
+                  {activeCustomScenario ? activeCustomScenario.name : 'Custom Schedule'}
+                </span>
+                <span className="text-[9px] text-slate-500 font-mono truncate">
+                  ({activeCustomScenario ? Object.keys(activeCustomScenario.schedule).length : 0} yrs)
+                </span>
+              </div>
+            </div>
+            <Sliders className="w-5 h-5 text-purple-500/50 shrink-0 ml-2" />
+          </div>
+        ) : (
+          <div className="glass-panel rounded-xl px-3 py-2 flex items-center justify-between border-l-4 border-l-amber-500 bg-slate-900/60">
+            <div className="min-w-0">
+              <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider block truncate">
+                Annual Flat Target
+              </span>
+              <div className="flex items-baseline gap-1.5 mt-0.5">
+                <span className="text-base font-black font-mono text-amber-400">
+                  {formatCurrency(inputs.annualRothConversion)}
+                </span>
+                <span className="text-[9px] text-slate-500 font-mono truncate">
+                  per year
+                </span>
+              </div>
+            </div>
+            <Sliders className="w-5 h-5 text-amber-500/50 shrink-0 ml-2" />
+          </div>
+        )}
 
-        {/* Card 4: Limit Breaches */}
-        <div className="glass-panel rounded-xl px-3 py-2 flex items-center justify-between border-l-4 border-l-purple-500 bg-slate-900/60">
-          <div className="min-w-0">
-            <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider block truncate">
-              Limit Overages
-            </span>
-            <div className="flex items-baseline gap-1.5 mt-0.5">
-              <span className={`text-base font-black font-mono ${kpiStats.breachedYears === 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
-                {kpiStats.breachedYears} {kpiStats.breachedYears === 1 ? 'Yr' : 'Yrs'}
+        {/* Card 4: Limit Breaches (Fill-to-Target) OR Total Lifetime Taxes (Flat / Custom) */}
+        {isFillToTarget ? (
+          <div className="glass-panel rounded-xl px-3 py-2 flex items-center justify-between border-l-4 border-l-purple-500 bg-slate-900/60">
+            <div className="min-w-0">
+              <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider block truncate">
+                Limit Overages
               </span>
-              <span className="text-[9px] text-slate-500 font-mono truncate">
-                exceeding line
-              </span>
+              <div className="flex items-baseline gap-1.5 mt-0.5">
+                <span className={`text-base font-black font-mono ${kpiStats.breachedYears === 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
+                  {kpiStats.breachedYears} {kpiStats.breachedYears === 1 ? 'Yr' : 'Yrs'}
+                </span>
+                <span className="text-[9px] text-slate-500 font-mono truncate">
+                  exceeding line
+                </span>
+              </div>
             </div>
+            <AlertCircle className="w-5 h-5 text-purple-500/50 shrink-0 ml-2" />
           </div>
-          <AlertCircle className="w-5 h-5 text-purple-500/50 shrink-0 ml-2" />
-        </div>
+        ) : (
+          <div className="glass-panel rounded-xl px-3 py-2 flex items-center justify-between border-l-4 border-l-purple-500 bg-slate-900/60">
+            <div className="min-w-0">
+              <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider block truncate">
+                Lifetime Income Taxes
+              </span>
+              <div className="flex items-baseline gap-1.5 mt-0.5">
+                <span className="text-base font-black font-mono text-purple-400">
+                  {formatCurrency(currentLifetimeTaxes)}
+                </span>
+                <span className="text-[9px] text-slate-500 font-mono truncate">
+                  total horizon
+                </span>
+              </div>
+            </div>
+            <Shield className="w-5 h-5 text-purple-500/50 shrink-0 ml-2" />
+          </div>
+        )}
       </div>
 
       {/* Main Stacked Bar Chart */}
@@ -874,8 +981,8 @@ export const TaxableIncomeWorkspace: React.FC<TaxableIncomeWorkspaceProps> = ({
             <button
               onClick={() => {
                 if (chartRef.current) {
-                  const chart = chartRef.current?.chart || chartRef.current;
-                  chart.data.datasets.forEach((_: any, i: number) => {
+                  const chart = chartRef.current;
+                  chart.data.datasets.forEach((_, i: number) => {
                     chart.setDatasetVisibility(i, true);
                   });
                   chart.update();
@@ -924,9 +1031,9 @@ export const TaxableIncomeWorkspace: React.FC<TaxableIncomeWorkspaceProps> = ({
             </thead>
             <tbody className="divide-y divide-slate-800/60 text-slate-300">
               {processedRows.map((r, idx) => {
-                const limit = benchmarkLineData.data[idx];
-                const headroom = limit - r.totalTaxableIncome;
-                const isBreached = headroom < 0;
+                const limit = benchmarkLineData?.data[idx];
+                const headroom = limit !== undefined ? limit - r.totalTaxableIncome : null;
+                const isBreached = headroom !== null && headroom < 0;
                 const isConvYear = r.rothConv > 0;
 
                 return (
@@ -944,12 +1051,30 @@ export const TaxableIncomeWorkspace: React.FC<TaxableIncomeWorkspaceProps> = ({
                     <td className="py-2 px-3 text-slate-400">-{formatCurrency(r.stdDeduction)}</td>
                     <td className="py-2 px-3 font-semibold text-slate-200">{formatCurrency(r.netNonConvTaxable)}</td>
                     <td className="py-2 px-3 font-bold text-emerald-400">
-                      {r.rothConv > 0 ? formatCurrency(r.rothConv) : '—'}
+                      {r.rothConv > 0 ? (
+                        <div className="flex items-center gap-1.5">
+                          <span>{formatCurrency(r.rothConv)}</span>
+                          {r.isRothConversionCapped && (
+                            <span
+                              className="text-[9px] px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-300 border border-amber-500/40 font-semibold cursor-help"
+                              title={`Requested conversion was ${formatCurrency(r.requestedCustomRothConversion || 0)}, but was capped due to exhausted pre-tax IRA balance.`}
+                            >
+                              ⚠️ Capped
+                            </span>
+                          )}
+                        </div>
+                      ) : (
+                        '—'
+                      )}
                     </td>
                     <td className="py-2 px-3 font-black text-slate-100">{formatCurrency(r.totalTaxableIncome)}</td>
-                    <td className="py-2 px-3 text-slate-400">{formatCurrency(limit)}</td>
-                    <td className={`py-2 px-3 font-bold ${isBreached ? 'text-rose-400' : 'text-emerald-400'}`}>
-                      {headroom >= 0 ? `+${formatCurrency(headroom)}` : formatCurrency(headroom)}
+                    <td className="py-2 px-3 text-slate-400">
+                      {limit !== undefined ? formatCurrency(limit) : '—'}
+                    </td>
+                    <td className={`py-2 px-3 font-bold ${
+                      headroom === null ? 'text-slate-500' : isBreached ? 'text-rose-400' : 'text-emerald-400'
+                    }`}>
+                      {headroom !== null ? (headroom >= 0 ? `+${formatCurrency(headroom)}` : formatCurrency(headroom)) : '—'}
                     </td>
                   </tr>
                 );
@@ -979,7 +1104,7 @@ export const TaxableIncomeWorkspace: React.FC<TaxableIncomeWorkspaceProps> = ({
               <button
                 type="button"
                 onClick={() => setShowOptimizerModal(false)}
-                className="text-slate-400 hover:text-slate-200 text-sm font-bold p-1.5 rounded-lg hover:bg-slate-800 transition-all"
+                className="text-slate-400 hover:text-slate-200 text-sm font-bold p-1.5 rounded-lg hover:bg-slate-800 transition-all cursor-pointer"
               >
                 <X className="w-4 h-4" />
               </button>
@@ -1174,13 +1299,16 @@ export const TaxableIncomeWorkspace: React.FC<TaxableIncomeWorkspaceProps> = ({
                 <button
                   type="button"
                   onClick={() => {
+                    const isFill = optimizationResult.bestStrategy === 'fill-to-target';
+                    const targetVal = isFill ? optimizationResult.bestTargetValue : null;
                     onApplyOptimization(
                       optimizationResult.bestAnnualRothConversion,
-                      optimizationResult.bestTargetValue ?? activeTarget,
+                      targetVal,
                       optimizationResult.bestYourSSAge,
                       optimizationResult.bestWifeSSAge,
                       optimizationResult.bestStrategy
                     );
+                    setSelectedQuickFill(targetVal);
                     setShowOptimizerModal(false);
                   }}
                   className="px-5 py-2 bg-gradient-to-r from-emerald-400 to-teal-500 hover:from-emerald-300 hover:to-teal-400 text-slate-950 font-bold rounded-xl text-xs shadow-lg shadow-emerald-500/20 transition-all active:scale-95 cursor-pointer flex items-center gap-1.5"
@@ -1192,6 +1320,28 @@ export const TaxableIncomeWorkspace: React.FC<TaxableIncomeWorkspaceProps> = ({
             )}
           </div>
         </div>
+      )}
+
+      {/* Custom Roth Scenario Editor Modal */}
+      {showCustomModal && (
+        <CustomRothScenarioModal
+          isOpen={showCustomModal}
+          onClose={() => setShowCustomModal(false)}
+          inputs={inputs}
+          ledger={ledger}
+          simulateSurvivor={simulateSurvivor}
+          activeScenarioId={inputs.activeCustomScenarioId}
+          onSaveScenario={(scenario, applyImmediately) => {
+            if (onSaveCustomScenario) {
+              onSaveCustomScenario(scenario, applyImmediately);
+            }
+          }}
+          onDeleteScenario={(scenarioId) => {
+            if (onDeleteCustomScenario) {
+              onDeleteCustomScenario(scenarioId);
+            }
+          }}
+        />
       )}
     </div>
   );

@@ -185,14 +185,20 @@ describe('exportHelpers', () => {
   });
 
   describe('saveFileWithLocationPrompt and browser APIs', () => {
-    const originalWindow = (globalThis as any).window;
-    const originalDocument = (globalThis as any).document;
+    interface TestGlobal {
+      window: Record<string, unknown>;
+      document: Record<string, unknown>;
+      URL: typeof URL;
+    }
+    const testGlobal = globalThis as unknown as TestGlobal;
+    const originalWindow = testGlobal.window;
+    const originalDocument = testGlobal.document;
     const originalURL = globalThis.URL;
 
     beforeEach(() => {
       vi.restoreAllMocks();
-      (globalThis as any).window = {};
-      (globalThis as any).document = {
+      testGlobal.window = {};
+      testGlobal.document = {
         body: {
           appendChild: vi.fn(),
           removeChild: vi.fn(),
@@ -208,8 +214,8 @@ describe('exportHelpers', () => {
     });
 
     afterEach(() => {
-      (globalThis as any).window = originalWindow;
-      (globalThis as any).document = originalDocument;
+      testGlobal.window = originalWindow;
+      testGlobal.document = originalDocument;
       globalThis.URL = originalURL;
     });
 
@@ -223,12 +229,13 @@ describe('exportHelpers', () => {
         createWritable: vi.fn().mockResolvedValue(mockWritable),
       };
 
-      (globalThis as any).window.showSaveFilePicker = vi.fn().mockResolvedValue(mockHandle);
+      const mockPicker = vi.fn().mockResolvedValue(mockHandle);
+      testGlobal.window.showSaveFilePicker = mockPicker;
 
       const blob = generateJsonBlob(mockInputs);
       const result = await saveFileWithLocationPrompt(blob, 'custom_saved_plan', 'json', true);
 
-      expect((globalThis as any).window.showSaveFilePicker).toHaveBeenCalled();
+      expect(mockPicker).toHaveBeenCalled();
       expect(mockWritable.write).toHaveBeenCalledWith(blob);
       expect(mockWritable.close).toHaveBeenCalled();
       expect(result.success).toBe(true);
@@ -240,7 +247,7 @@ describe('exportHelpers', () => {
       const abortErr = new Error('The user aborted a request.');
       abortErr.name = 'AbortError';
 
-      (globalThis as any).window.showSaveFilePicker = vi.fn().mockRejectedValue(abortErr);
+      testGlobal.window.showSaveFilePicker = vi.fn().mockRejectedValue(abortErr);
 
       const blob = generateJsonBlob(mockInputs);
       const result = await saveFileWithLocationPrompt(blob, 'my_plan', 'json', true);
@@ -259,7 +266,7 @@ describe('exportHelpers', () => {
     });
 
     it('returns true when showSaveFilePicker is in window', () => {
-      (globalThis as any).window.showSaveFilePicker = () => {};
+      testGlobal.window.showSaveFilePicker = () => {};
       expect(isFileSystemAccessSupported()).toBe(true);
     });
   });

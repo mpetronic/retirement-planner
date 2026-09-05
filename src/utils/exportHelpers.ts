@@ -107,12 +107,28 @@ export const generateExcelExportBlob = (
   return generateExcelBlob(ledger, inputs);
 };
 
+interface FileSystemPickerWindow extends Window {
+  showSaveFilePicker?: (options?: {
+    suggestedName?: string;
+    types?: Array<{
+      description?: string;
+      accept: Record<string, string[]>;
+    }>;
+  }) => Promise<{
+    name: string;
+    createWritable: () => Promise<{
+      write: (data: Blob) => Promise<void>;
+      close: () => Promise<void>;
+    }>;
+  }>;
+}
+
 /**
  * Generates a Blob for the PDF report asynchronously using @react-pdf/renderer.
  */
 export const generatePdfBlob = async (inputs: AppStateInputs): Promise<Blob> => {
   const doc = React.createElement(ConfigurationPDF, { inputs });
-  const pdfInstance = pdf(doc as any);
+  const pdfInstance = pdf(doc as React.ReactElement);
   return await pdfInstance.toBlob();
 };
 
@@ -140,7 +156,12 @@ export const saveFileWithLocationPrompt = async (
 
   if (promptForLocation && isFileSystemAccessSupported()) {
     try {
-      const handle = await (window as any).showSaveFilePicker({
+      const pickerWindow = window as unknown as FileSystemPickerWindow;
+      if (!pickerWindow.showSaveFilePicker) {
+        throw new Error('showSaveFilePicker not supported');
+      }
+
+      const handle = await pickerWindow.showSaveFilePicker({
         suggestedName: sanitized,
         types: [
           {
@@ -159,8 +180,9 @@ export const saveFileWithLocationPrompt = async (
         savedViaPicker: true,
         filename: handle.name || sanitized,
       };
-    } catch (err: any) {
-      if (err.name === 'AbortError') {
+    } catch (err: unknown) {
+      const errorObj = err as { name?: string; message?: string } | undefined;
+      if (errorObj?.name === 'AbortError') {
         return {
           success: false,
           cancelled: true,
@@ -187,12 +209,12 @@ export const saveFileWithLocationPrompt = async (
       savedViaPicker: false,
       filename: sanitized,
     };
-  } catch (err: any) {
+  } catch (err: unknown) {
     console.error('File download failed:', err);
     return {
       success: false,
       filename: sanitized,
-      error: err?.message || 'Download failed',
+      error: err instanceof Error ? err.message : 'Download failed',
     };
   }
 };

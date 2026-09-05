@@ -30,6 +30,8 @@ interface DetailedExpensesDialogProps {
   targetState?: string;
   detailedExpenses: DetailedExpensesState | undefined;
   onSave: (expenses: DetailedExpensesState) => void;
+  simStartYear?: number;
+  relocationYear?: number | null;
 }
 
 export const DetailedExpensesDialog: React.FC<DetailedExpensesDialogProps> = ({
@@ -38,7 +40,9 @@ export const DetailedExpensesDialog: React.FC<DetailedExpensesDialogProps> = ({
   currentState = 'MD',
   targetState = 'FL',
   detailedExpenses,
-  onSave
+  onSave,
+  simStartYear = 2026,
+  relocationYear = null
 }) => {
   const [activeTab, setActiveTab] = useState<'expenses' | 'catalog'>('expenses');
 
@@ -82,6 +86,7 @@ export const DetailedExpensesDialog: React.FC<DetailedExpensesDialogProps> = ({
   const [itemDescription, setItemDescription] = useState('');
   const [itemFrequency, setItemFrequency] = useState<number>(12);
   const [itemIsOneTime, setItemIsOneTime] = useState<boolean>(false);
+  const [itemTargetYear, setItemTargetYear] = useState<number | string>(simStartYear);
   const [itemError, setItemError] = useState<string | null>(null);
 
   // Category Add/Rename state
@@ -142,7 +147,7 @@ export const DetailedExpensesDialog: React.FC<DetailedExpensesDialogProps> = ({
   };
 
   // Item Add/Edit open
-  const handleOpenItemModal = (item?: ExpenseItemDefinition, defaultCat?: string) => {
+  const handleOpenItemModal = (item?: ExpenseItemDefinition, defaultCat?: string, defaultYear?: number) => {
     setItemError(null);
     if (item) {
       setEditingItem(item);
@@ -151,13 +156,15 @@ export const DetailedExpensesDialog: React.FC<DetailedExpensesDialogProps> = ({
       setItemDescription(item.description || '');
       setItemFrequency(frequencies[item.id] ?? item.defaultFrequency ?? 12);
       setItemIsOneTime(!!item.isOneTime);
+      setItemTargetYear(item.targetYear ?? simStartYear);
     } else {
       setEditingItem(null);
       setItemName('');
       setItemCategory(defaultCat || catalog.categories[0] || 'Living');
       setItemDescription('');
       setItemFrequency(12);
-      setItemIsOneTime(defaultCat === 'One-Time Setup Costs');
+      setItemIsOneTime(defaultCat === 'One-Time Setup Costs' || !!defaultYear);
+      setItemTargetYear(defaultYear ?? simStartYear);
     }
     setCustomCategoryInput('');
     setItemModalOpen(true);
@@ -177,7 +184,7 @@ export const DetailedExpensesDialog: React.FC<DetailedExpensesDialogProps> = ({
     }
 
     let finalCategory = itemCategory;
-    if (itemCategory === '__NEW__') {
+    if (itemCategory === '__NEW__' || itemCategory === '+ Create New Category...') {
       const trimmedCat = customCategoryInput.trim();
       if (!trimmedCat) {
         setItemError('Please provide a name for the new category.');
@@ -205,7 +212,8 @@ export const DetailedExpensesDialog: React.FC<DetailedExpensesDialogProps> = ({
                 category: finalCategory,
                 description: itemDescription.trim() || undefined,
                 defaultFrequency: itemFrequency,
-                isOneTime: itemIsOneTime
+                isOneTime: itemIsOneTime,
+                targetYear: itemIsOneTime ? (Number(itemTargetYear) || simStartYear) : undefined
               }
             : it
         )
@@ -223,7 +231,8 @@ export const DetailedExpensesDialog: React.FC<DetailedExpensesDialogProps> = ({
         category: finalCategory,
         description: itemDescription.trim() || undefined,
         defaultFrequency: itemFrequency,
-        isOneTime: itemIsOneTime
+        isOneTime: itemIsOneTime,
+        targetYear: itemIsOneTime ? (Number(itemTargetYear) || simStartYear) : undefined
       };
 
       setCatalog((prev) => ({
@@ -392,6 +401,24 @@ export const DetailedExpensesDialog: React.FC<DetailedExpensesDialogProps> = ({
   // Dynamic Totals Calculations
   const recurringItems = useMemo(() => catalog.items.filter((i) => !i.isOneTime), [catalog.items]);
   const oneTimeItems = useMemo(() => catalog.items.filter((i) => i.isOneTime), [catalog.items]);
+
+  const oneTimeItemsByYear = useMemo(() => {
+    const groups: { [year: number]: ExpenseItemDefinition[] } = {};
+    for (const item of oneTimeItems) {
+      const yr = item.targetYear ?? simStartYear;
+      if (!groups[yr]) {
+        groups[yr] = [];
+      }
+      groups[yr].push(item);
+    }
+    return Object.keys(groups)
+      .map(Number)
+      .sort((a, b) => a - b)
+      .map((year) => ({
+        year,
+        items: groups[year]
+      }));
+  }, [oneTimeItems, simStartYear]);
 
   const stateATotals = useMemo(() => {
     const costMap = costs[stateA] || {};
@@ -711,119 +738,190 @@ export const DetailedExpensesDialog: React.FC<DetailedExpensesDialogProps> = ({
                 );
               }))}
 
-              {/* One-Time Setup Costs Section */}
-              <div className="space-y-2 bg-amber-950/20 p-4 rounded-xl border border-amber-500/30">
-                <div className="flex items-center justify-between pb-2 border-b border-amber-500/20">
+              {/* One-Time & Capital Outlays Section (Grouped by Year) */}
+              <div className="space-y-4 bg-amber-950/20 p-5 rounded-2xl border border-amber-500/30">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-amber-500/20">
                   <div>
-                    <h4 className="text-xs font-bold text-amber-400 uppercase tracking-wider flex items-center gap-1.5">
-                      <Sparkles className="w-3.5 h-3.5 text-amber-400" />
-                      One-Time Setup & Relocation Costs
+                    <h4 className="text-sm font-bold text-amber-400 uppercase tracking-wider flex items-center gap-2">
+                      <Sparkles className="w-4 h-4 text-amber-400" />
+                      One-Time & Capital Expenses (Grouped by Year)
                     </h4>
-                    <p className="text-[11px] text-slate-400">
-                      Assessed in Year 1 for {stateA} and Relocation Year for {stateB}. Excluded from ongoing monthly living expense burn rate.
+                    <p className="text-[11px] text-slate-400 mt-0.5">
+                      Lump-sum capital outlays (e.g. roof replacement, vehicle purchase, relocation setup). Enter amounts in today's dollars; the simulation engine scales them with inflation for the target year.
                     </p>
                   </div>
                   <button
                     onClick={() => handleOpenItemModal(undefined, 'One-Time Setup Costs')}
-                    className="text-[10px] font-semibold text-amber-400 hover:text-amber-300 flex items-center gap-1 transition-colors cursor-pointer bg-amber-500/10 px-2 py-1 rounded border border-amber-500/30"
+                    className="self-start sm:self-auto text-xs font-semibold text-amber-300 hover:text-amber-200 flex items-center gap-1.5 transition-colors cursor-pointer bg-amber-500/20 hover:bg-amber-500/30 px-3 py-1.5 rounded-lg border border-amber-500/40 shadow-sm"
                   >
-                    <Plus className="w-3 h-3" />
+                    <Plus className="w-3.5 h-3.5" />
                     Add One-Time Cost
                   </button>
                 </div>
 
-                <div className="min-w-full overflow-x-auto">
-                  <table className="w-full text-left border-collapse">
-                    <thead>
-                      <tr className="border-b border-amber-500/20 text-[10px] text-amber-300/60 font-bold uppercase">
-                        <th className="py-2 pr-4 w-5/12">Expense Name</th>
-                        <th className="py-2 px-2 text-center w-28">Timing</th>
-                        <th className="py-2 px-2 text-right w-36">{stateA} Cost</th>
-                        <th className="py-2 pl-4 text-right w-36">{stateB} Cost</th>
-                        <th className="py-2 pl-2 text-right w-10"></th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-amber-500/10 text-xs">
-                      {oneTimeItems.map((item) => {
-                        const costA = costs[stateA]?.[item.id] || 0;
-                        const costB = costs[stateB]?.[item.id] || 0;
+                {oneTimeItemsByYear.length === 0 ? (
+                  <div className="py-8 text-center text-slate-400 text-xs bg-slate-950/40 rounded-xl border border-dashed border-amber-500/20">
+                    No one-time capital expenses configured. Click "Add One-Time Cost" above to schedule future outlays (e.g. roof in 5 years, vehicle replacement, relocation costs).
+                  </div>
+                ) : (
+                  <div className="space-y-4">
+                    {oneTimeItemsByYear.map(({ year, items: yearItems }) => {
+                      const yearSubtotalA = yearItems.reduce((sum, item) => sum + (costs[stateA]?.[item.id] || 0), 0);
+                      const yearSubtotalB = yearItems.reduce((sum, item) => sum + (costs[stateB]?.[item.id] || 0), 0);
+                      const isStartYear = year === simStartYear;
+                      const isRelocYear = relocationYear !== null && year === relocationYear;
+                      const yearsOut = year - simStartYear;
 
-                        return (
-                          <tr key={item.id} className="hover:bg-amber-950/30 transition-colors group">
-                            <td className="py-2 pr-4">
-                              <div className="flex items-center gap-1.5">
-                                <span className="text-slate-200 font-medium">{item.name}</span>
-                                {item.description && (
-                                  <div className="relative group/tip cursor-help">
-                                    <Info className="w-3.5 h-3.5 text-slate-500 hover:text-slate-300 transition-colors" />
-                                    <div className="absolute left-full ml-2 top-1/2 -translate-y-1/2 hidden group-hover/tip:block z-50 w-56 p-2 bg-slate-950 text-[11px] text-slate-300 rounded-lg shadow-xl border border-slate-700 pointer-events-none">
-                                      {item.description}
-                                    </div>
-                                  </div>
-                                )}
-                              </div>
-                            </td>
-                            <td className="py-1 px-2 text-center text-slate-400 font-mono text-[10px]">
-                              1-Time Lump Sum
-                            </td>
-                            <td className="py-1 px-2 text-right">
-                              <div className="relative inline-block w-full max-w-[130px]">
-                                <span className="absolute left-2.5 top-1.5 text-slate-500 font-mono text-xs">$</span>
-                                <input
-                                  type="number"
-                                  min="0"
-                                  value={costA === 0 ? '' : costA}
-                                  onChange={(e) => handleCostChange(stateA, item.id, Number(e.target.value))}
-                                  placeholder="0"
-                                  className="w-full bg-slate-950 border border-slate-800/80 rounded pl-5 pr-2 py-1 text-right text-slate-200 font-mono text-xs focus:outline-none focus:border-amber-500"
-                                />
-                              </div>
-                            </td>
-                            <td className="py-1 pl-4 text-right">
-                              <div className="relative inline-block w-full max-w-[130px]">
-                                <span className="absolute left-2.5 top-1.5 text-slate-500 font-mono text-xs">$</span>
-                                <input
-                                  type="number"
-                                  min="0"
-                                  value={costB === 0 ? '' : costB}
-                                  onChange={(e) => handleCostChange(stateB, item.id, Number(e.target.value))}
-                                  placeholder="0"
-                                  className="w-full bg-slate-950 border border-slate-800/80 rounded pl-5 pr-2 py-1 text-right text-slate-200 font-mono text-xs focus:outline-none focus:border-amber-500"
-                                />
-                              </div>
-                            </td>
-                            <td className="py-1 pl-2 text-right">
-                              <button
-                                onClick={() => handleOpenItemModal(item)}
-                                className="p-1 text-slate-600 hover:text-slate-300 opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer"
-                                title="Edit item details"
-                              >
-                                <Edit2 className="w-3 h-3" />
-                              </button>
-                            </td>
-                          </tr>
-                        );
-                      })}
-                    </tbody>
-                    <tfoot className="border-t border-amber-500/30 bg-amber-950/40 text-xs font-bold text-slate-200">
-                      <tr>
-                        <td className="py-2 pr-4 text-amber-400 font-semibold">
-                          Total One-Time Costs
-                        </td>
-                        <td className="py-2 px-2 text-center text-slate-500 font-mono text-[10px] font-normal">
-                          -
-                        </td>
-                        <td className="py-2 px-2 text-right text-amber-400 font-mono font-bold">
-                          {formatCurrency(stateATotals.oneTime)}
-                        </td>
-                        <td className="py-2 pl-4 text-right text-amber-400 font-mono font-bold">
-                          {formatCurrency(stateBTotals.oneTime)}
-                        </td>
-                        <td></td>
-                      </tr>
-                    </tfoot>
-                  </table>
-                </div>
+                      return (
+                        <div key={year} className="bg-slate-950/60 rounded-xl border border-amber-500/25 overflow-hidden">
+                          {/* Year Group Header */}
+                          <div className="px-4 py-2.5 bg-amber-950/30 border-b border-amber-500/20 flex flex-wrap items-center justify-between gap-2">
+                            <div className="flex items-center gap-2">
+                              <span className="font-mono font-bold text-amber-300 text-sm">
+                                Year {year}
+                              </span>
+                              {isStartYear && (
+                                <span className="px-2 py-0.5 text-[10px] font-bold uppercase rounded-full bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">
+                                  Start Year
+                                </span>
+                              )}
+                              {isRelocYear && (
+                                <span className="px-2 py-0.5 text-[10px] font-bold uppercase rounded-full bg-cyan-500/20 text-cyan-400 border border-cyan-500/30">
+                                  Relocation Year
+                                </span>
+                              )}
+                              {yearsOut > 0 && !isStartYear && (
+                                <span className="px-2 py-0.5 text-[10px] font-mono rounded-full bg-slate-800 text-slate-400 border border-slate-700">
+                                  +{yearsOut} {yearsOut === 1 ? 'yr' : 'yrs'}
+                                </span>
+                              )}
+                            </div>
+
+                            <button
+                              onClick={() => handleOpenItemModal(undefined, 'One-Time Setup Costs', year)}
+                              className="text-[11px] font-medium text-amber-400/90 hover:text-amber-200 flex items-center gap-1 transition-colors cursor-pointer hover:underline"
+                            >
+                              <Plus className="w-3 h-3" />
+                              Add item to {year}
+                            </button>
+                          </div>
+
+                          {/* Table for this Year */}
+                          <div className="min-w-full overflow-x-auto">
+                            <table className="w-full text-left border-collapse">
+                              <thead>
+                                <tr className="border-b border-amber-500/15 text-[10px] text-amber-300/60 font-bold uppercase">
+                                  <th className="py-2 pl-4 pr-4 w-5/12">Expense Item</th>
+                                  <th className="py-2 px-2 text-center w-28">Timing</th>
+                                  <th className="py-2 px-2 text-right w-36">{stateA} Cost</th>
+                                  <th className="py-2 pl-4 text-right w-36">{stateB} Cost</th>
+                                  <th className="py-2 pl-2 pr-3 text-right w-10"></th>
+                                </tr>
+                              </thead>
+                              <tbody className="divide-y divide-amber-500/10 text-xs">
+                                {yearItems.map((item) => {
+                                  const costA = costs[stateA]?.[item.id] || 0;
+                                  const costB = costs[stateB]?.[item.id] || 0;
+
+                                  return (
+                                    <tr key={item.id} className="hover:bg-amber-950/20 transition-colors group">
+                                      <td className="py-2 pl-4 pr-4">
+                                        <div className="flex items-center gap-1.5">
+                                          <span className="text-slate-200 font-medium">{item.name}</span>
+                                          {item.description && (
+                                            <div className="relative group/tip cursor-help">
+                                              <Info className="w-3.5 h-3.5 text-slate-500 hover:text-slate-300 transition-colors" />
+                                              <div className="absolute left-full ml-2 top-1/2 -translate-y-1/2 hidden group-hover/tip:block z-50 w-56 p-2 bg-slate-950 text-[11px] text-slate-300 rounded-lg shadow-xl border border-slate-700 pointer-events-none">
+                                                {item.description}
+                                              </div>
+                                            </div>
+                                          )}
+                                        </div>
+                                      </td>
+                                      <td className="py-1 px-2 text-center text-slate-400 font-mono text-[10px]">
+                                        Year {year} Lump Sum
+                                      </td>
+                                      <td className="py-1 px-2 text-right">
+                                        <div className="relative inline-block w-full max-w-[130px]">
+                                          <span className="absolute left-2.5 top-1.5 text-slate-500 font-mono text-xs">$</span>
+                                          <input
+                                            type="number"
+                                            min="0"
+                                            value={costA === 0 ? '' : costA}
+                                            onChange={(e) => handleCostChange(stateA, item.id, Number(e.target.value))}
+                                            placeholder="0"
+                                            className="w-full bg-slate-950 border border-slate-800/80 rounded pl-5 pr-2 py-1 text-right text-slate-200 font-mono text-xs focus:outline-none focus:border-amber-500"
+                                          />
+                                        </div>
+                                      </td>
+                                      <td className="py-1 pl-4 text-right">
+                                        <div className="relative inline-block w-full max-w-[130px]">
+                                          <span className="absolute left-2.5 top-1.5 text-slate-500 font-mono text-xs">$</span>
+                                          <input
+                                            type="number"
+                                            min="0"
+                                            value={costB === 0 ? '' : costB}
+                                            onChange={(e) => handleCostChange(stateB, item.id, Number(e.target.value))}
+                                            placeholder="0"
+                                            className="w-full bg-slate-950 border border-slate-800/80 rounded pl-5 pr-2 py-1 text-right text-slate-200 font-mono text-xs focus:outline-none focus:border-amber-500"
+                                          />
+                                        </div>
+                                      </td>
+                                      <td className="py-1 pl-2 pr-3 text-right">
+                                        <button
+                                          onClick={() => handleOpenItemModal(item)}
+                                          className="p-1 text-slate-500 hover:text-slate-300 opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer"
+                                          title="Edit item details"
+                                        >
+                                          <Edit2 className="w-3 h-3" />
+                                        </button>
+                                      </td>
+                                    </tr>
+                                  );
+                                })}
+                              </tbody>
+                              <tfoot className="border-t border-amber-500/20 bg-amber-950/30 text-xs font-bold text-slate-200">
+                                <tr>
+                                  <td className="py-2 pl-4 pr-4 text-amber-300/90 font-semibold">
+                                    Subtotal ({year})
+                                  </td>
+                                  <td className="py-2 px-2 text-center text-slate-500 font-mono text-[10px] font-normal">
+                                    Today's $
+                                  </td>
+                                  <td className="py-2 px-2 text-right text-amber-400 font-mono font-bold">
+                                    {formatCurrency(yearSubtotalA)}
+                                  </td>
+                                  <td className="py-2 pl-4 text-right text-amber-400 font-mono font-bold">
+                                    {formatCurrency(yearSubtotalB)}
+                                  </td>
+                                  <td></td>
+                                </tr>
+                              </tfoot>
+                            </table>
+                          </div>
+                        </div>
+                      );
+                    })}
+
+                    {/* Overall One-Time Grand Totals */}
+                    <div className="p-3 bg-amber-950/40 rounded-xl border border-amber-500/30 flex items-center justify-between text-xs font-bold">
+                      <div className="flex items-center gap-2 text-amber-300">
+                        <Sparkles className="w-4 h-4 text-amber-400" />
+                        <span>Grand Total All One-Time Costs ({oneTimeItems.length} items across {oneTimeItemsByYear.length} scheduled years)</span>
+                      </div>
+                      <div className="flex items-center gap-6 font-mono text-sm">
+                        <div>
+                          <span className="text-slate-400 font-normal text-xs mr-2">{stateA}:</span>
+                          <span className="text-amber-400">{formatCurrency(stateATotals.oneTime)}</span>
+                        </div>
+                        <div>
+                          <span className="text-slate-400 font-normal text-xs mr-2">{stateB}:</span>
+                          <span className="text-amber-400">{formatCurrency(stateBTotals.oneTime)}</span>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                )}
               </div>
             </div>
           )}
@@ -980,12 +1078,12 @@ export const DetailedExpensesDialog: React.FC<DetailedExpensesDialogProps> = ({
                                 </span>
                               </td>
                               <td className="py-2.5 px-3 text-center font-mono text-slate-400">
-                                {item.isOneTime ? '1x (Lump sum)' : `${item.defaultFrequency}x / year`}
+                                {item.isOneTime ? `1x (Year ${item.targetYear ?? simStartYear})` : `${item.defaultFrequency}x / year`}
                               </td>
                               <td className="py-2.5 px-3">
                                 {item.isOneTime ? (
-                                  <span className="px-2 py-0.5 rounded bg-amber-500/10 text-amber-400 border border-amber-500/30 text-[10px] font-bold uppercase">
-                                    One-Time
+                                  <span className="px-2 py-0.5 rounded bg-amber-500/10 text-amber-400 border border-amber-500/30 text-[10px] font-bold uppercase whitespace-nowrap">
+                                    One-Time (Yr {item.targetYear ?? simStartYear})
                                   </span>
                                 ) : (
                                   <span className="px-2 py-0.5 rounded bg-emerald-500/10 text-emerald-400 border border-emerald-500/30 text-[10px] font-bold uppercase">
@@ -1057,7 +1155,7 @@ export const DetailedExpensesDialog: React.FC<DetailedExpensesDialogProps> = ({
               <span className="text-amber-400 font-bold font-mono text-sm">
                 {formatCurrency(stateATotals.oneTime)}
               </span>
-              <span className="text-slate-500 text-[10px] block">Year 1 outlay</span>
+              <span className="text-slate-500 text-[10px] block">Total scheduled capital outlays</span>
             </div>
 
             <div>
@@ -1067,7 +1165,7 @@ export const DetailedExpensesDialog: React.FC<DetailedExpensesDialogProps> = ({
               <span className="text-amber-400 font-bold font-mono text-sm">
                 {formatCurrency(stateBTotals.oneTime)}
               </span>
-              <span className="text-slate-500 text-[10px] block">Relocation outlay</span>
+              <span className="text-slate-500 text-[10px] block">Total scheduled capital outlays</span>
             </div>
           </div>
 
@@ -1125,7 +1223,7 @@ export const DetailedExpensesDialog: React.FC<DetailedExpensesDialogProps> = ({
                     setItemName(e.target.value);
                     if (itemError) setItemError(null);
                   }}
-                  placeholder="e.g., Homeowners Insurance, Pool Care, Golf Dues"
+                  placeholder="e.g., Homeowners Insurance, Roof Replacement, Vehicle Purchase"
                   className="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-slate-200 focus:outline-none focus:border-emerald-500"
                 />
               </div>
@@ -1173,19 +1271,36 @@ export const DetailedExpensesDialog: React.FC<DetailedExpensesDialogProps> = ({
 
               <div className="grid grid-cols-2 gap-3 pt-1">
                 <div>
-                  <label className="block text-slate-300 font-semibold mb-1">Default Cadence</label>
-                  <select
-                    value={itemFrequency}
-                    disabled={itemIsOneTime}
-                    onChange={(e) => setItemFrequency(Number(e.target.value))}
-                    className="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-slate-200 disabled:opacity-50 focus:outline-none focus:border-emerald-500"
-                  >
-                    <option value={12}>Monthly (12x/yr)</option>
-                    <option value={1}>Annual (1x/yr)</option>
-                    <option value={4}>Quarterly (4x/yr)</option>
-                    <option value={2}>Semi-Annual (2x/yr)</option>
-                    <option value={26}>Bi-Weekly (26x/yr)</option>
-                  </select>
+                  <label className="block text-slate-300 font-semibold mb-1">
+                    {itemIsOneTime ? 'Target Calendar Year' : 'Default Cadence'}
+                  </label>
+                  {itemIsOneTime ? (
+                    <input
+                      type="number"
+                      min={simStartYear}
+                      value={itemTargetYear}
+                      onChange={(e) => setItemTargetYear(e.target.value === '' ? '' : Number(e.target.value))}
+                      onBlur={() => {
+                        if (itemTargetYear === '' || Number(itemTargetYear) < simStartYear) {
+                          setItemTargetYear(simStartYear);
+                        }
+                      }}
+                      placeholder={String(simStartYear)}
+                      className="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-slate-200 font-mono focus:outline-none focus:border-amber-500"
+                    />
+                  ) : (
+                    <select
+                      value={itemFrequency}
+                      onChange={(e) => setItemFrequency(Number(e.target.value))}
+                      className="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-slate-200 focus:outline-none focus:border-emerald-500"
+                    >
+                      <option value={12}>Monthly (12x/yr)</option>
+                      <option value={1}>Annual (1x/yr)</option>
+                      <option value={4}>Quarterly (4x/yr)</option>
+                      <option value={2}>Semi-Annual (2x/yr)</option>
+                      <option value={26}>Bi-Weekly (26x/yr)</option>
+                    </select>
+                  )}
                 </div>
 
                 <div>
@@ -1195,15 +1310,28 @@ export const DetailedExpensesDialog: React.FC<DetailedExpensesDialogProps> = ({
                       type="checkbox"
                       checked={itemIsOneTime}
                       onChange={(e) => {
-                        setItemIsOneTime(e.target.checked);
-                        if (e.target.checked) setItemFrequency(1);
+                        const checked = e.target.checked;
+                        setItemIsOneTime(checked);
+                        if (checked) {
+                          setItemFrequency(1);
+                          if (!itemTargetYear) setItemTargetYear(simStartYear);
+                        }
                       }}
-                      className="rounded text-emerald-500 focus:ring-0 focus:outline-none"
+                      className="rounded text-amber-500 focus:ring-0 focus:outline-none"
                     />
-                    <span className="text-slate-300 font-medium">One-Time Setup Cost</span>
+                    <span className="text-slate-300 font-medium">One-Time / Capital Outlay</span>
                   </label>
                 </div>
               </div>
+
+              {itemIsOneTime && (
+                <div className="p-2.5 bg-amber-500/10 border border-amber-500/20 rounded-lg text-[11px] text-amber-300/90 flex items-start gap-2">
+                  <Info className="w-4 h-4 shrink-0 text-amber-400 mt-0.5" />
+                  <span>
+                    Enter cost in <strong>today's dollars</strong>. The simulation engine automatically applies inflation to scale this outlay for calendar year {itemTargetYear || simStartYear}.
+                  </span>
+                </div>
+              )}
             </div>
 
             <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-800">

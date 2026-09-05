@@ -10,7 +10,7 @@ import {
   calculateFedTaxWithLTCG,
   getRMDStartAge,
 } from './simulationEngine';
-import { DEFAULT_DETAILED_EXPENSES, DEFAULT_EXPENSE_FREQUENCIES, normalizeDetailedExpenses, DetailedExpensesState } from '../types';
+import { DEFAULT_DETAILED_EXPENSES, DEFAULT_EXPENSE_FREQUENCIES, normalizeDetailedExpenses, DetailedExpensesState, AppStateInputs } from '../types';
 
 describe('calculateSSBenefit', () => {
   const PIA = 1000;
@@ -155,7 +155,7 @@ describe('Tax calculations', () => {
 });
 
 describe('runRetirementSimulation', () => {
-  const getMockInputs = (): any => ({
+  const getMockInputs = (): AppStateInputs => ({
     you: {
       name: 'John',
       birthDate: '1965-06-15',
@@ -265,7 +265,7 @@ describe('runRetirementSimulation', () => {
   it('should calculate living expenses using detailed state-specific itemized entries and frequencies when useDetailedExpenses is true', () => {
     const inputs = getMockInputs();
     inputs.useDetailedExpenses = true;
-    inputs.detailedExpenses = {
+    inputs.detailedExpenses = normalizeDetailedExpenses({
       MD: {
         ...DEFAULT_DETAILED_EXPENSES,
         amenityFee: 100, // Monthly
@@ -283,7 +283,7 @@ describe('runRetirementSimulation', () => {
         amenityFee: 12,
         water: 12,
       }
-    };
+    });
     inputs.jurisdiction.currentState = 'MD';
     inputs.jurisdiction.targetState = 'FL';
     inputs.jurisdiction.relocationYear = 2030;
@@ -307,11 +307,10 @@ describe('runRetirementSimulation', () => {
 
     // In 2030 (relocated to FL, cpiFactor):
     // Recurring annual = (150 * 12) + (60 * 12) = 1800 + 720 = 2520
-    // One-time FL = 8000
-    // Total in 2030 = (2520 + 8000) * cpiFactor
+    // One-time occurred in 2026 start year, so 2030 has recurring base
     const row2030 = results.find(r => r.year === 2030);
     const cpiFactor2030 = Math.pow(1 + inputs.growthAssumptions.cpiInflationRate, 2030 - 2026);
-    expect(row2030!.livingExpenses).toBeCloseTo((2520 + 8000) * cpiFactor2030, 1);
+    expect(row2030!.livingExpenses).toBeCloseTo(2520 * cpiFactor2030, 1);
   });
 
   it('should reinvest annual surplus cash inflows (when SS + RMD > total outflows) back into taxable brokerage accounts and cost basis', () => {
@@ -362,8 +361,9 @@ describe('runRetirementSimulation', () => {
   it('should apply pre-Medicare premiums and detailed health expenses correctly based on age, work status, and retirement', () => {
     const inputs = getMockInputs();
     inputs.useDetailedExpenses = true;
-    inputs.detailedExpenses = {
+    inputs.detailedExpenses = normalizeDetailedExpenses({
       MD: {
+        ...DEFAULT_DETAILED_EXPENSES,
         pre65MedicalPremium: 400,
         pre65MedicalOOP: 1200,
         pre65DentalPremium: 30,
@@ -379,12 +379,29 @@ describe('runRetirementSimulation', () => {
         post65DentalPremium: 20,
         post65DentalOOP: 60,
         post65VisionPremium: 10,
-        post65VisionOOP: 35,
+        post65VisionOOP: 40,
       },
       FL: {
         ...DEFAULT_DETAILED_EXPENSES,
+        pre65MedicalPremium: 350,
+        pre65MedicalOOP: 1000,
+        pre65DentalPremium: 25,
+        pre65DentalOOP: 75,
+        pre65VisionPremium: 15,
+        pre65VisionOOP: 45,
+
+        medicarePartDPremium: 35,
+        medicarePartDDeductibleCopays: 250,
+        supplementPremium: 130,
+        supplementOOP: 230,
+        post65HearingCare: 400,
+        post65DentalPremium: 15,
+        post65DentalOOP: 50,
+        post65VisionPremium: 10,
+        post65VisionOOP: 30,
       },
       frequencies: {
+        ...DEFAULT_EXPENSE_FREQUENCIES,
         pre65MedicalPremium: 12,
         pre65MedicalOOP: 1,
         pre65DentalPremium: 12,
@@ -402,7 +419,7 @@ describe('runRetirementSimulation', () => {
         post65VisionPremium: 12,
         post65VisionOOP: 1,
       }
-    };
+    });
 
     // John: 62 => retired from 2027 onwards
     // Jane: 60 => retired from 2028 onwards
@@ -559,53 +576,52 @@ describe('runRetirementSimulation', () => {
     const inputs = getMockInputs();
     inputs.isSingleFiler = true;
     inputs.useDetailedExpenses = true;
-    inputs.detailedExpenses = {
+    inputs.detailedExpenses = normalizeDetailedExpenses({
       MD: { ...DEFAULT_DETAILED_EXPENSES },
       FL: { ...DEFAULT_DETAILED_EXPENSES },
       frequencies: { ...DEFAULT_EXPENSE_FREQUENCIES }
-    };
+    });
 
     inputs.you.birthDate = '1970-01-01'; // turns 65 in 2035.
     inputs.you.plannedRetirementAge = 60; // retired
     inputs.you.healthcare = {
       medicarePartBPremium: 200,
-    };
-    
-    inputs.you.healthcare.MD = {
-      pre65MedicalPremium: 500,
-      pre65MedicalOOP: 1000,
-      pre65DentalPremium: 20,
-      pre65DentalOOP: 50,
-      pre65VisionPremium: 10,
-      pre65VisionOOP: 30,
+      MD: {
+        pre65MedicalPremium: 500,
+        pre65MedicalOOP: 1000,
+        pre65DentalPremium: 20,
+        pre65DentalOOP: 50,
+        pre65VisionPremium: 10,
+        pre65VisionOOP: 30,
 
-      medicarePartDPremium: 40,
-      medicarePartDDeductibleCopays: 300,
-      supplementPremium: 150,
-      supplementOOP: 300,
-      post65HearingCare: 500,
-      post65DentalPremium: 20,
-      post65DentalOOP: 60,
-      post65VisionPremium: 10,
-      post65VisionOOP: 40,
-    };
-    inputs.you.healthcare.FL = {
-      pre65MedicalPremium: 400,
-      pre65MedicalOOP: 800,
-      pre65DentalPremium: 15,
-      pre65DentalOOP: 40,
-      pre65VisionPremium: 8,
-      pre65VisionOOP: 20,
+        medicarePartDPremium: 40,
+        medicarePartDDeductibleCopays: 300,
+        supplementPremium: 150,
+        supplementOOP: 300,
+        post65HearingCare: 500,
+        post65DentalPremium: 20,
+        post65DentalOOP: 60,
+        post65VisionPremium: 10,
+        post65VisionOOP: 40,
+      },
+      FL: {
+        pre65MedicalPremium: 400,
+        pre65MedicalOOP: 800,
+        pre65DentalPremium: 15,
+        pre65DentalOOP: 40,
+        pre65VisionPremium: 8,
+        pre65VisionOOP: 20,
 
-      medicarePartDPremium: 30,
-      medicarePartDDeductibleCopays: 200,
-      supplementPremium: 120,
-      supplementOOP: 200,
-      post65HearingCare: 400,
-      post65DentalPremium: 15,
-      post65DentalOOP: 40,
-      post65VisionPremium: 8,
-      post65VisionOOP: 30,
+        medicarePartDPremium: 30,
+        medicarePartDDeductibleCopays: 200,
+        supplementPremium: 120,
+        supplementOOP: 200,
+        post65HearingCare: 400,
+        post65DentalPremium: 15,
+        post65DentalOOP: 40,
+        post65VisionPremium: 8,
+        post65VisionOOP: 30,
+      }
     };
 
     inputs.jurisdiction.currentState = 'MD';
@@ -744,7 +760,7 @@ describe('getRMDStartAge', () => {
 });
 
 describe('runRetirementSimulation fixes', () => {
-  const getMockInputs = (): any => ({
+  const getMockInputs = (): AppStateInputs => ({
     you: {
       name: 'John',
       birthDate: '1965-06-15',
@@ -1078,7 +1094,7 @@ describe('runRetirementSimulation fixes', () => {
       expect(results[0].livingExpenses).toBeCloseTo(4800, 0);
     });
 
-    it('should assess custom one-time setup costs in year 1 for current state and relocation year for target state', () => {
+    it('should assess custom one-time setup costs in their configured target years', () => {
       const inputs = getMockInputs();
       inputs.useDetailedExpenses = true;
       inputs.simulationStartYear = 2026;
@@ -1094,8 +1110,8 @@ describe('runRetirementSimulation fixes', () => {
           categories: ['Living', 'One-Time Setup Costs'],
           items: [
             { id: 'groceries', name: 'Groceries', category: 'Living', defaultFrequency: 12 },
-            { id: 'mdFurniture', name: 'MD Living Room Set', category: 'One-Time Setup Costs', defaultFrequency: 1, isOneTime: true },
-            { id: 'flGolfCart', name: 'FL Golf Cart Purchase', category: 'One-Time Setup Costs', defaultFrequency: 1, isOneTime: true }
+            { id: 'mdFurniture', name: 'MD Living Room Set', category: 'One-Time Setup Costs', defaultFrequency: 1, isOneTime: true, targetYear: 2026 },
+            { id: 'flGolfCart', name: 'FL Golf Cart Purchase', category: 'One-Time Setup Costs', defaultFrequency: 1, isOneTime: true, targetYear: 2030 }
           ]
         },
         costs: {
@@ -1444,10 +1460,10 @@ describe('runRetirementSimulation fixes', () => {
     });
 
     it('should correctly account for active salary in 2026 when fill-to-target strategy is enabled so 2026 total AGI does not exceed target limit', () => {
-      const getMockInputs = (): any => ({
+      const getMockInputs = (): AppStateInputs => ({
         you: { birthDate: '1961-01-01', plannedRetirementAge: 66, activeSalary: 150000, targetSSClaimingAge: 67, estimatedPIA: 3000 },
         wife: { birthDate: '1965-01-01', plannedRetirementAge: 65, activeSalary: 0, targetSSClaimingAge: 67, estimatedPIA: 1500 },
-        portfolio: { yourPreTaxIRA: 1000000, yourRothIRA: 100000, yourTaxableBrokerage: 500000, wifePreTaxIRA: 0, wifeRothIRA: 0, wifeTaxableBrokerage: 0 },
+        portfolio: { yourPreTaxIRA: 1000000, yourRothIRA: 100000, yourTaxableBrokerage: 500000, yourTaxableBasis: 0, yourCash: 0, wifePreTaxIRA: 0, wifeRothIRA: 0, wifeTaxableBrokerage: 0, wifeTaxableBasis: 0, wifeCash: 0 },
         jurisdiction: { currentState: 'FL', targetState: 'FL', relocationYear: null },
         growthAssumptions: { equityReturnRate: 0.07, fixedIncomeReturnRate: 0.04, cpiInflationRate: 0.025, healthcareInflationRate: 0.05 },
         annualLivingExpenses: 80000,
@@ -1457,7 +1473,7 @@ describe('runRetirementSimulation fixes', () => {
         rothConversionEndYear: 2032,
         rothConversionStrategy: 'fill-to-target',
         rothConversionTargetValue: 215000,
-        monteCarloSettings: { mode: 'monte-carlo', trials: 10 },
+        monteCarloSettings: { mode: 'monte-carlo', trials: 10, equityVolatility: 0.15, fixedIncomeVolatility: 0.05, correlation: 0.15, seed: null },
         isConfigured: true,
         isSingleFiler: false,
       });
@@ -1472,10 +1488,10 @@ describe('runRetirementSimulation fixes', () => {
     });
 
     it('should fill exactly to 12% bracket taxable income ceiling without overshooting', () => {
-      const getMockInputs = (): any => ({
+      const getMockInputs = (): AppStateInputs => ({
         you: { birthDate: '1960-01-01', plannedRetirementAge: 65, activeSalary: 0, targetSSClaimingAge: 67, estimatedPIA: 3000 },
         wife: { birthDate: '1964-01-01', plannedRetirementAge: 61, activeSalary: 0, targetSSClaimingAge: 67, estimatedPIA: 1500 },
-        portfolio: { yourPreTaxIRA: 1500000, yourRothIRA: 50000, yourTaxableBrokerage: 400000, yourCash: 50000, wifePreTaxIRA: 0, wifeRothIRA: 0, wifeTaxableBrokerage: 0, wifeCash: 0 },
+        portfolio: { yourPreTaxIRA: 1500000, yourRothIRA: 50000, yourTaxableBrokerage: 400000, yourTaxableBasis: 0, yourCash: 50000, wifePreTaxIRA: 0, wifeRothIRA: 0, wifeTaxableBrokerage: 0, wifeTaxableBasis: 0, wifeCash: 0 },
         jurisdiction: { currentState: 'FL', targetState: 'FL', relocationYear: null },
         growthAssumptions: { equityReturnRate: 0.07, fixedIncomeReturnRate: 0.04, cpiInflationRate: 0.025, healthcareInflationRate: 0.05 },
         annualLivingExpenses: 60000,
@@ -1485,7 +1501,7 @@ describe('runRetirementSimulation fixes', () => {
         rothConversionEndYear: 2030,
         rothConversionStrategy: 'fill-to-target',
         rothConversionTargetValue: 100800, // 12% Bracket ceiling ($100,800 Taxable Income)
-        monteCarloSettings: { mode: 'monte-carlo', trials: 10 },
+        monteCarloSettings: { mode: 'monte-carlo', trials: 10, equityVolatility: 0.15, fixedIncomeVolatility: 0.05, correlation: 0.15, seed: null },
         isConfigured: true,
         isSingleFiler: false,
       });
@@ -1504,10 +1520,10 @@ describe('runRetirementSimulation fixes', () => {
     });
 
     it('should fill exactly to IRMAA MAGI ceiling without overshooting', () => {
-      const getMockInputs = (): any => ({
+      const getMockInputs = (): AppStateInputs => ({
         you: { birthDate: '1960-01-01', plannedRetirementAge: 65, activeSalary: 0, targetSSClaimingAge: 67, estimatedPIA: 3000 },
         wife: { birthDate: '1964-01-01', plannedRetirementAge: 61, activeSalary: 0, targetSSClaimingAge: 67, estimatedPIA: 1500 },
-        portfolio: { yourPreTaxIRA: 1500000, yourRothIRA: 50000, yourTaxableBrokerage: 400000, yourCash: 50000, wifePreTaxIRA: 0, wifeRothIRA: 0, wifeTaxableBrokerage: 0, wifeCash: 0 },
+        portfolio: { yourPreTaxIRA: 1500000, yourRothIRA: 50000, yourTaxableBrokerage: 400000, yourTaxableBasis: 0, yourCash: 50000, wifePreTaxIRA: 0, wifeRothIRA: 0, wifeTaxableBrokerage: 0, wifeTaxableBasis: 0, wifeCash: 0 },
         jurisdiction: { currentState: 'FL', targetState: 'FL', relocationYear: null },
         growthAssumptions: { equityReturnRate: 0.07, fixedIncomeReturnRate: 0.04, cpiInflationRate: 0.025, healthcareInflationRate: 0.05 },
         annualLivingExpenses: 60000,
@@ -1517,7 +1533,7 @@ describe('runRetirementSimulation fixes', () => {
         rothConversionEndYear: 2030,
         rothConversionStrategy: 'fill-to-target',
         rothConversionTargetValue: 218000, // IRMAA Tier 1 ceiling ($218,000 MAGI)
-        monteCarloSettings: { mode: 'monte-carlo', trials: 10 },
+        monteCarloSettings: { mode: 'monte-carlo', trials: 10, equityVolatility: 0.15, fixedIncomeVolatility: 0.05, correlation: 0.15, seed: null },
         isConfigured: true,
         isSingleFiler: false,
       });
@@ -1556,5 +1572,411 @@ describe('runRetirementSimulation fixes', () => {
       expect(resultingAGI).toBeLessThanOrEqual(150000.01);
     });
   });
+
+  describe('Actuals Tracking & Guardrail Plan Engine', () => {
+    const getBaseActualsTestInputs = (): AppStateInputs => ({
+      you: { birthDate: '1960-01-01', plannedRetirementAge: 65, activeSalary: 0, targetSSClaimingAge: 67, estimatedPIA: 3000 },
+      wife: { birthDate: '1964-01-01', plannedRetirementAge: 61, activeSalary: 0, targetSSClaimingAge: 67, estimatedPIA: 1500 },
+      portfolio: { yourPreTaxIRA: 1000000, yourRothIRA: 200000, yourTaxableBrokerage: 500000, yourTaxableBasis: 300000, yourCash: 100000, wifePreTaxIRA: 0, wifeRothIRA: 0, wifeTaxableBrokerage: 0, wifeTaxableBasis: 0, wifeCash: 0 },
+      jurisdiction: { currentState: 'FL', targetState: 'FL', relocationYear: null },
+      growthAssumptions: { equityReturnRate: 0.08, fixedIncomeReturnRate: 0.04, cpiInflationRate: 0.025, healthcareInflationRate: 0.05 },
+      annualLivingExpenses: 80000,
+      annualRothConversion: 0,
+      simulationStartYear: 2026,
+      rothConversionStrategy: 'flat',
+      rothConversionTargetValue: null,
+      monteCarloSettings: { mode: 'monte-carlo', trials: 10, equityVolatility: 0.15, fixedIncomeVolatility: 0.05, correlation: 0.15, seed: 42 },
+      isConfigured: true,
+      isSingleFiler: true,
+    });
+
+    it('should seamlessly substitute actual return rates and living expenses for recorded years', () => {
+      const inputs = getBaseActualsTestInputs();
+      inputs.actualTracking = {
+        2026: {
+          year: 2026,
+          equityReturnRate: 0.035,
+          fixedIncomeReturnRate: 0.02,
+          totalLivingExpenses: 72000,
+        },
+      };
+
+      const ledger = runRetirementSimulation(inputs);
+      const row2026 = ledger.find(r => r.year === 2026);
+      expect(row2026).toBeDefined();
+      expect(row2026?.isActual).toBe(true);
+      expect(row2026?.livingExpenses).toBe(72000);
+      expect(row2026?.isBridged).toBe(false);
+    });
+
+    it('should apply balance reconciliation overrides and carry them forward to future simulation years', () => {
+      const inputs = getBaseActualsTestInputs();
+      inputs.actualTracking = {
+        2026: {
+          year: 2026,
+          endYourPreTaxIRA: 950000,
+          endYourRothIRA: 250000,
+          endYourTaxableBrokerage: 600000,
+          endYourTaxableBasis: 350000,
+          endYourCash: 120000,
+        },
+      };
+
+      const ledger = runRetirementSimulation(inputs);
+      const row2026 = ledger.find(r => r.year === 2026);
+      expect(row2026?.endYourPreTaxIRA).toBe(950000);
+      expect(row2026?.endYourRothIRA).toBe(250000);
+      expect(row2026?.endYourTaxableBrokerage).toBe(600000);
+      expect(row2026?.endYourCash).toBe(120000);
+      expect(row2026?.totalPortfolioValue).toBe(1920000);
+
+      // Future projected year 2027 should begin growing from 2026 reconciled balances
+      const row2027 = ledger.find(r => r.year === 2027);
+      expect(row2027?.isActual).toBe(false);
+      expect(row2027).toBeDefined();
+    });
+
+    it('should bridge missing intermediate actual years gracefully with model projections', () => {
+      const inputs = getBaseActualsTestInputs();
+      inputs.actualTracking = {
+        2026: { year: 2026, totalLivingExpenses: 70000 },
+        2028: { year: 2028, totalLivingExpenses: 75000 },
+      };
+
+      const ledger = runRetirementSimulation(inputs);
+      const row2026 = ledger.find(r => r.year === 2026);
+      const row2027 = ledger.find(r => r.year === 2027);
+      const row2028 = ledger.find(r => r.year === 2028);
+
+      expect(row2026?.isActual).toBe(true);
+      expect(row2026?.isBridged).toBe(false);
+
+      expect(row2027?.isActual).toBe(false);
+      expect(row2027?.isBridged).toBe(true);
+
+      expect(row2028?.isActual).toBe(true);
+      expect(row2028?.isBridged).toBe(false);
+    });
+
+    it('should compute Guardrail spending gap and bonus within configured upper/lower bounds', () => {
+      const inputs = getBaseActualsTestInputs();
+      inputs.guardrailSettings = {
+        enabled: true,
+        upperGuardrailPct: 0.15,
+        lowerGuardrailPct: 0.15,
+        marketSurplusSharePct: 0.10,
+        applyToSimulation: false,
+      };
+      inputs.annualLivingExpenses = 100000;
+      inputs.actualTracking = {
+        2026: {
+          year: 2026,
+          totalLivingExpenses: 85000, // $15k spending surplus
+          equityReturnRate: 0.20,     // Strong outperformance
+        },
+      };
+
+      const ledger = runRetirementSimulation(inputs);
+      const row2026 = ledger.find(r => r.year === 2026);
+      expect(row2026).toBeDefined();
+      expect(row2026?.guardrailUpperLimit).toBeCloseTo(115000, 1); // 100k * 1.15
+      expect(row2026?.guardrailLowerLimit).toBeCloseTo(85000, 1);  // 100k * 0.85
+      expect(row2026?.actualSurplusGap).toBeGreaterThan(15000);
+      expect(row2026?.permittedSpendingBonus).toBeLessThanOrEqual(15000.01); // Capped by upper guardrail ceiling ($115k - $100k = $15k)
+    });
+  });
+
+  describe('Custom Roth Conversion Scenarios', () => {
+    const getCustomTestInputs = (): AppStateInputs => ({
+      you: {
+        name: 'John',
+        birthDate: '1965-06-15',
+        estimatedPIA: 0,
+        targetSSClaimingAge: null,
+        plannedRetirementAge: 65,
+        activeSalary: 0,
+      },
+      wife: {
+        name: 'Jane',
+        birthDate: '1968-09-20',
+        estimatedPIA: 0,
+        targetSSClaimingAge: null,
+        plannedRetirementAge: 65,
+        activeSalary: 0,
+      },
+      portfolio: {
+        yourPreTaxIRA: 300000,
+        yourRothIRA: 50000,
+        yourTaxableBrokerage: 0,
+        yourTaxableBasis: 0,
+        yourCash: 50000,
+        wifePreTaxIRA: 200000,
+        wifeRothIRA: 20000,
+        wifeTaxableBrokerage: 0,
+        wifeTaxableBasis: 0,
+        wifeCash: 0,
+      },
+      jurisdiction: {
+        currentState: 'FL',
+        targetState: 'FL',
+        relocationYear: null,
+      },
+      growthAssumptions: {
+        equityReturnRate: 0.05,
+        fixedIncomeReturnRate: 0.03,
+        cpiInflationRate: 0.025,
+        healthcareInflationRate: 0.04,
+      },
+      annualLivingExpenses: 20000,
+      annualRothConversion: 0,
+      rothConversionTargetValue: null,
+      rothConversionStartYear: 2027,
+      rothConversionEndYear: 2030,
+      rothConversionStrategy: 'custom',
+      customRothScenarios: [
+        {
+          id: 'custom-plan-1',
+          name: 'Frontloaded Custom Plan',
+          schedule: {
+            2027: 85000,
+            2028: 95000,
+            2029: 60000,
+            2030: 40000,
+          },
+          createdAt: '2026-09-04T00:00:00.000Z',
+          updatedAt: '2026-09-04T00:00:00.000Z',
+        },
+      ],
+      activeCustomScenarioId: 'custom-plan-1',
+      monteCarloSettings: {
+        mode: 'monte-carlo',
+        equityVolatility: 0.0,
+        fixedIncomeVolatility: 0.0,
+        correlation: 0.0,
+        trials: 1,
+        seed: 42,
+      },
+      isConfigured: true,
+      isSingleFiler: false,
+    });
+
+    it('should convert exact nominal scheduled amounts each year and 0 in unconfigured years', () => {
+      const inputs = getCustomTestInputs();
+      const ledger = runRetirementSimulation(inputs);
+
+      const row2026 = ledger.find(r => r.year === 2026);
+      const row2027 = ledger.find(r => r.year === 2027);
+      const row2028 = ledger.find(r => r.year === 2028);
+      const row2029 = ledger.find(r => r.year === 2029);
+      const row2030 = ledger.find(r => r.year === 2030);
+      const row2031 = ledger.find(r => r.year === 2031);
+
+      // 2026: Not in schedule -> 0
+      expect(row2026?.intentionalRothConversion).toBe(0);
+
+      // 2027: Exactly $85,000 nominal (without inflation scaling)
+      expect(row2027?.intentionalRothConversion).toBe(85000);
+      expect(row2027?.requestedCustomRothConversion).toBe(85000);
+      expect(row2027?.isRothConversionCapped).toBe(false);
+
+      // 2028: Exactly $95,000 nominal
+      expect(row2028?.intentionalRothConversion).toBe(95000);
+      expect(row2028?.requestedCustomRothConversion).toBe(95000);
+      expect(row2028?.isRothConversionCapped).toBe(false);
+
+      // 2029: Exactly $60,000 nominal
+      expect(row2029?.intentionalRothConversion).toBe(60000);
+
+      // 2030: Exactly $40,000 nominal
+      expect(row2030?.intentionalRothConversion).toBe(40000);
+
+      // 2031: Not in schedule -> 0
+      expect(row2031?.intentionalRothConversion).toBe(0);
+    });
+
+    it('should cap conversion when pre-tax balances are exhausted and set warning flags', () => {
+      const inputs = getCustomTestInputs();
+      // Lower starting pre-tax balances so it exhausts in 2028
+      inputs.portfolio.yourPreTaxIRA = 80000;
+      inputs.portfolio.wifePreTaxIRA = 40000; // Total starting pre-tax = 120,000
+
+      inputs.customRothScenarios = [
+        {
+          id: 'heavy-plan',
+          name: 'Heavy Aggressive Plan',
+          schedule: {
+            2026: 100000,
+            2027: 100000, // Starting pre-tax had ~120k, after 100k conversion in 2026, ~20k remains
+          },
+          createdAt: '2026-09-04T00:00:00.000Z',
+          updatedAt: '2026-09-04T00:00:00.000Z',
+        },
+      ];
+      inputs.activeCustomScenarioId = 'heavy-plan';
+
+      const ledger = runRetirementSimulation(inputs);
+
+      const row2026 = ledger.find(r => r.year === 2026);
+      const row2027 = ledger.find(r => r.year === 2027);
+
+      expect(row2026?.intentionalRothConversion).toBe(100000);
+      expect(row2026?.isRothConversionCapped).toBe(false);
+
+      // 2027 requested 100,000 but only ~20k plus growth remained
+      expect(row2027).toBeDefined();
+      expect(row2027?.requestedCustomRothConversion).toBe(100000);
+      expect(row2027?.isRothConversionCapped).toBe(true);
+      expect(row2027?.intentionalRothConversion).toBeLessThan(100000);
+      expect(row2027?.intentionalRothConversion).toBeGreaterThan(0);
+      expect(row2027?.rothConversionShortfall).toBeCloseTo(
+        100000 - (row2027?.intentionalRothConversion || 0),
+        1
+      );
+    });
+  });
+
+  describe('Itemized Expenses with Multi-Year Target Years', () => {
+    it('should apply one-time expenses only in their designated target years with proper CPI inflation', () => {
+      const inputs = getMockInputs();
+      inputs.simulationStartYear = 2026;
+      inputs.useDetailedExpenses = true;
+      inputs.growthAssumptions.cpiInflationRate = 0.03; // 3% inflation
+      inputs.jurisdiction.currentState = 'MD';
+      inputs.jurisdiction.targetState = 'FL';
+      inputs.jurisdiction.relocationYear = null; // Stays in MD
+
+      // Base recurring: $60,000/yr ($5,000/mo)
+      // One-time 1: $10,000 in Year 1 (2026)
+      // One-time 2: $25,000 roof in Year 5 (2030)
+      inputs.detailedExpenses = {
+        catalog: {
+          categories: ['Housing', 'One-Time Setup Costs'],
+          items: [
+            {
+              id: 'rent',
+              name: 'Rent / Mortgage',
+              category: 'Housing',
+              defaultFrequency: 12,
+              isOneTime: false,
+            },
+            {
+              id: 'moving',
+              name: 'Initial Moving Costs',
+              category: 'One-Time Setup Costs',
+              defaultFrequency: 1,
+              isOneTime: true,
+              targetYear: 2026,
+            },
+            {
+              id: 'roof',
+              name: 'New Roof',
+              category: 'One-Time Setup Costs',
+              defaultFrequency: 1,
+              isOneTime: true,
+              targetYear: 2030,
+            },
+          ],
+        },
+        costs: {
+          MD: {
+            rent: 5000,
+            moving: 10000,
+            roof: 25000,
+          },
+          FL: {
+            rent: 5000,
+            moving: 10000,
+            roof: 25000,
+          },
+        },
+        frequencies: {
+          rent: 12,
+          moving: 1,
+          roof: 1,
+        },
+      };
+
+      const ledger = runRetirementSimulation(inputs);
+
+      const row2026 = ledger.find((r) => r.year === 2026);
+      const row2027 = ledger.find((r) => r.year === 2027);
+      const row2030 = ledger.find((r) => r.year === 2030);
+
+      expect(row2026).toBeDefined();
+      expect(row2027).toBeDefined();
+      expect(row2030).toBeDefined();
+
+      // 2026: base recurring $60k + $10k moving (cpiFactor = 1.0) = $70,000
+      expect(row2026?.livingExpenses).toBeCloseTo(70000, 1);
+
+      // 2027: base recurring $60k * 1.03 = $61,800 (no one-time expenses)
+      expect(row2027?.livingExpenses).toBeCloseTo(60000 * 1.03, 1);
+
+      // 2030 (4 years after 2026):
+      // cpiFactor = (1.03)^4 = 1.12550881
+      // base recurring = 60000 * (1.03)^4 = 67,530.53
+      // roof one-time = 25000 * (1.03)^4 = 28,137.72
+      // total = 67530.53 + 28137.72 = 95,668.25
+      const expectedCPI = Math.pow(1.03, 4);
+      const expected2030Expenses = 60000 * expectedCPI + 25000 * expectedCPI;
+      expect(row2030?.livingExpenses).toBeCloseTo(expected2030Expenses, 1);
+    });
+
+    it('should resolve post-relocation state cost for one-time expenses scheduled in/after relocation year', () => {
+      const inputs = getMockInputs();
+      inputs.simulationStartYear = 2026;
+      inputs.useDetailedExpenses = true;
+      inputs.growthAssumptions.cpiInflationRate = 0.0; // 0% inflation for easy cost comparison
+      inputs.jurisdiction.currentState = 'MD';
+      inputs.jurisdiction.targetState = 'FL';
+      inputs.jurisdiction.relocationYear = 2028; // Relocates to FL in 2028
+
+      inputs.detailedExpenses = {
+        catalog: {
+          categories: ['Housing', 'One-Time Setup Costs'],
+          items: [
+            {
+              id: 'base',
+              name: 'Living Baseline',
+              category: 'Housing',
+              defaultFrequency: 12,
+              isOneTime: false,
+            },
+            {
+              id: 'pool',
+              name: 'Install Pool',
+              category: 'One-Time Setup Costs',
+              defaultFrequency: 1,
+              isOneTime: true,
+              targetYear: 2029, // After relocation to FL
+            },
+          ],
+        },
+        costs: {
+          MD: {
+            base: 5000,
+            pool: 50000,
+          },
+          FL: {
+            base: 4000,
+            pool: 35000, // FL pool cost is $35k vs MD $50k
+          },
+        },
+        frequencies: {
+          base: 12,
+          pool: 1,
+        },
+      };
+
+      const ledger = runRetirementSimulation(inputs);
+      const row2029 = ledger.find((r) => r.year === 2029);
+
+      expect(row2029).toBeDefined();
+      // In 2029 (FL), baseline = 4000 * 12 = 48000, pool = 35000 (from FL cost table)
+      expect(row2029?.livingExpenses).toBeCloseTo(48000 + 35000, 1);
+    });
+  });
 });
+
+
 

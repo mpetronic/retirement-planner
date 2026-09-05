@@ -6,8 +6,10 @@ import {
   SimulationResultRow,
   DEFAULT_DETAILED_EXPENSES_STATE,
   DEFAULT_CHARITY_SETTINGS,
+  DEFAULT_GUARDRAIL_SETTINGS,
+  CustomRothScenario,
   normalizeDetailedExpenses,
-  getSimulationStartYear
+  getSimulationStartYear,
 } from './types';
 import { runRetirementSimulation } from './engine/simulationEngine';
 import {
@@ -16,6 +18,7 @@ import {
   generateHistoricalSequence,
   mulberry32
 } from './engine/monteCarloEngine';
+import { DEFAULT_FILL_TO_TARGET_VALUE } from './engine/taxRates2026';
 import { InputControlSidebar } from './components/InputControlSidebar';
 import { DashboardLayout } from './components/DashboardLayout';
 import { BracketMapChart } from './components/BracketMapChart';
@@ -23,6 +26,7 @@ import { TaxableIncomeWorkspace } from './components/TaxableIncomeWorkspace';
 import { LookbackLedgerTable } from './components/LookbackLedgerTable';
 import { MonteCarloWorkspace } from './components/MonteCarloWorkspace';
 import { PlanComparisonWorkspace } from './components/PlanComparisonWorkspace';
+import { ActualsWorkspace } from './components/ActualsWorkspace';
 import { DocumentationDialog } from './components/DocumentationDialog';
 import { OnboardingWizard } from './components/OnboardingWizard';
 
@@ -105,7 +109,9 @@ const DEFAULT_INPUTS: AppStateInputs = {
   isSingleFiler: false,
   useDetailedExpenses: false,
   detailedExpenses: JSON.parse(JSON.stringify(DEFAULT_DETAILED_EXPENSES_STATE)),
-  charitySettings: DEFAULT_CHARITY_SETTINGS
+  charitySettings: DEFAULT_CHARITY_SETTINGS,
+  actualTracking: {},
+  guardrailSettings: DEFAULT_GUARDRAIL_SETTINGS,
 };
 
 // Custom hook for LocalStorage persistence with defensive deep merge schema protection
@@ -118,47 +124,59 @@ function useLocalStorage<T>(key: string, initialValue: T): [T, (value: T | ((val
         
         // Robust deep merge to ensure new Monte Carlo fields are populated for users with old saved states
         if (key === 'retirement_planner_inputs') {
+          const init = initialValue as unknown as AppStateInputs;
+          const p = parsed as Partial<AppStateInputs>;
           return {
-            ...initialValue,
-            ...parsed,
-            simulationStartYear: parsed.simulationStartYear !== undefined ? parsed.simulationStartYear : (parsed.rothConversionStartYear ? parsed.rothConversionStartYear - 1 : 2026),
+            ...init,
+            ...p,
+            simulationStartYear: p.simulationStartYear !== undefined ? p.simulationStartYear : (p.rothConversionStartYear ? p.rothConversionStartYear - 1 : 2026),
             growthAssumptions: {
-              ...(initialValue as any).growthAssumptions,
-              ...parsed.growthAssumptions,
+              ...init.growthAssumptions,
+              ...p.growthAssumptions,
             },
             you: {
-              ...(initialValue as any).you,
-              ...parsed.you,
+              ...init.you,
+              ...p.you,
             },
             wife: {
-              ...(initialValue as any).wife,
-              ...parsed.wife,
+              ...init.wife,
+              ...p.wife,
             },
             portfolio: {
-              ...(initialValue as any).portfolio,
-              ...parsed.portfolio,
+              ...init.portfolio,
+              ...p.portfolio,
             },
             jurisdiction: {
-              ...(initialValue as any).jurisdiction,
-              ...parsed.jurisdiction,
+              ...init.jurisdiction,
+              ...p.jurisdiction,
             },
             monteCarloSettings: {
-              ...(initialValue as any).monteCarloSettings,
-              ...parsed.monteCarloSettings,
+              ...init.monteCarloSettings,
+              ...p.monteCarloSettings,
             },
-            useDetailedExpenses: parsed.useDetailedExpenses !== undefined ? parsed.useDetailedExpenses : false,
-            detailedExpenses: normalizeDetailedExpenses(parsed.detailedExpenses),
-          } as any;
+            useDetailedExpenses: p.useDetailedExpenses !== undefined ? p.useDetailedExpenses : false,
+            detailedExpenses: normalizeDetailedExpenses(p.detailedExpenses),
+            actualTracking: p.actualTracking || {},
+            guardrailSettings: {
+              ...DEFAULT_GUARDRAIL_SETTINGS,
+              ...(p.guardrailSettings || {}),
+            },
+          } as unknown as T;
         }
 
         if (key === 'retirement_planner_saved_plans' && Array.isArray(parsed)) {
-          return parsed.map((p: any) => ({
+          return (parsed as SavedPlan[]).map((p) => ({
             ...p,
             inputs: {
               ...p.inputs,
-              detailedExpenses: normalizeDetailedExpenses(p.inputs?.detailedExpenses)
+              detailedExpenses: normalizeDetailedExpenses(p.inputs?.detailedExpenses),
+              actualTracking: p.inputs?.actualTracking || {},
+              guardrailSettings: {
+                ...DEFAULT_GUARDRAIL_SETTINGS,
+                ...(p.inputs?.guardrailSettings || {}),
+              },
             }
-          })) as any;
+          })) as unknown as T;
         }
         
         return parsed;
@@ -366,8 +384,9 @@ function App() {
     const nonCurrencyKeys = new Set(['year', 'yourAge', 'wifeAge', 'surchargeTier', 'cpiFactor']);
     
     for (const key of Object.keys(discounted) as Array<keyof SimulationResultRow>) {
-      if (!nonCurrencyKeys.has(key as string) && typeof discounted[key] === 'number') {
-        (discounted as any)[key] = (discounted[key] as number) / factor;
+      const val = discounted[key];
+      if (!nonCurrencyKeys.has(key as string) && typeof val === 'number') {
+        (discounted as Record<string, unknown>)[key] = val / factor;
       }
     }
     return discounted;
@@ -413,7 +432,7 @@ function App() {
       ...monteCarloSummary,
       percentiles: discountedPercentiles,
     };
-  }, [monteCarloSummary, useTodayDollars, deferredInputs.growthAssumptions.cpiInflationRate, deferredInputs.monteCarloSettings?.randomizeCPI, deferredInputs.monteCarloSettings?.constantCPIRate]);
+  }, [monteCarloSummary, useTodayDollars, deferredInputs]);
 
   // Handle applying a fully optimized retirement configuration at once
   const handleApplyOptimization = (
@@ -423,21 +442,87 @@ function App() {
     wifeAge: number,
     strategy?: 'flat' | 'fill-to-target'
   ) => {
+    const finalStrategy = strategy || inputs.rothConversionStrategy;
+    const finalTargetValue = targetValue !== null ? targetValue : inputs.rothConversionTargetValue;
+
     setInputs((prev) => ({
       ...prev,
-      rothConversionStrategy: strategy || prev.rothConversionStrategy,
+      rothConversionStrategy: finalStrategy,
       annualRothConversion: annualConversion,
-      rothConversionTargetValue: targetValue,
+      rothConversionTargetValue: finalTargetValue,
       you: { ...prev.you, targetSSClaimingAge: yourAge },
       wife: { ...prev.wife, targetSSClaimingAge: wifeAge },
     }));
+    if (finalStrategy === 'fill-to-target' && finalTargetValue !== null) {
+      setSelectedQuickFill(finalTargetValue);
+    }
   };
 
-  // Handle changing conversion strategy
-  const handleUpdateStrategy = (strategy: 'flat' | 'fill-to-target') => {
+  // Handle changing conversion strategy while preserving last selected target values and active scenario IDs
+  const handleUpdateStrategy = (strategy: 'flat' | 'fill-to-target' | 'custom') => {
+    setInputs((prev) => {
+      let targetValue = prev.rothConversionTargetValue;
+      if (strategy === 'fill-to-target' && !targetValue) {
+        targetValue = selectedQuickFill || DEFAULT_FILL_TO_TARGET_VALUE;
+      }
+      let activeCustomId = prev.activeCustomScenarioId;
+      if (strategy === 'custom' && !activeCustomId && prev.customRothScenarios && prev.customRothScenarios.length > 0) {
+        activeCustomId = prev.customRothScenarios[0].id;
+      }
+      return {
+        ...prev,
+        rothConversionStrategy: strategy,
+        rothConversionTargetValue: targetValue,
+        activeCustomScenarioId: activeCustomId,
+      };
+    });
+  };
+
+  // Handle saving a custom Roth scenario
+  const handleSaveCustomRothScenario = (scenario: CustomRothScenario, applyImmediately: boolean = true) => {
+    setInputs((prev) => {
+      const existing = prev.customRothScenarios || [];
+      const index = existing.findIndex((s) => s.id === scenario.id);
+      let updated: CustomRothScenario[];
+      if (index >= 0) {
+        updated = [...existing];
+        updated[index] = scenario;
+      } else {
+        updated = [...existing, scenario];
+      }
+
+      return {
+        ...prev,
+        customRothScenarios: updated,
+        activeCustomScenarioId: applyImmediately ? scenario.id : prev.activeCustomScenarioId,
+        rothConversionStrategy: applyImmediately ? 'custom' : prev.rothConversionStrategy,
+      };
+    });
+  };
+
+  // Handle deleting a custom Roth scenario
+  const handleDeleteCustomRothScenario = (scenarioId: string) => {
+    setInputs((prev) => {
+      const existing = prev.customRothScenarios || [];
+      const updated = existing.filter((s) => s.id !== scenarioId);
+      const isDeletingActive = prev.activeCustomScenarioId === scenarioId;
+      const nextActiveId = updated[0]?.id || null;
+
+      return {
+        ...prev,
+        customRothScenarios: updated,
+        activeCustomScenarioId: isDeletingActive ? nextActiveId : prev.activeCustomScenarioId,
+        rothConversionStrategy: isDeletingActive && !nextActiveId ? 'fill-to-target' : prev.rothConversionStrategy,
+      };
+    });
+  };
+
+  // Handle selecting active custom Roth scenario
+  const handleSelectCustomRothScenario = (scenarioId: string) => {
     setInputs((prev) => ({
       ...prev,
-      rothConversionStrategy: strategy,
+      rothConversionStrategy: 'custom',
+      activeCustomScenarioId: scenarioId,
     }));
   };
 
@@ -447,15 +532,14 @@ function App() {
       ...prev,
       rothConversionTargetValue: val,
     }));
+    if (val !== null) {
+      setSelectedQuickFill(val);
+    }
   };
-
-
 
   // Keep selectedQuickFill synchronized with rothConversionStrategy & rothConversionTargetValue
   useEffect(() => {
-    if (inputs.rothConversionStrategy !== 'fill-to-target' || inputs.rothConversionTargetValue === null) {
-      setSelectedQuickFill(null);
-    } else {
+    if (inputs.rothConversionStrategy === 'fill-to-target' && inputs.rothConversionTargetValue !== null) {
       setSelectedQuickFill(inputs.rothConversionTargetValue);
     }
   }, [inputs.rothConversionStrategy, inputs.rothConversionTargetValue, setSelectedQuickFill]);
@@ -522,6 +606,9 @@ function App() {
             onApplyOptimization={handleApplyOptimization}
             onUpdateStrategy={handleUpdateStrategy}
             onUpdateTargetValue={handleUpdateTargetValue}
+            onSaveCustomScenario={handleSaveCustomRothScenario}
+            onDeleteCustomScenario={handleDeleteCustomRothScenario}
+            onSelectCustomScenario={handleSelectCustomRothScenario}
             onInputsChange={handleInputsChange}
             selectedQuickFill={selectedQuickFill}
             setSelectedQuickFill={setSelectedQuickFill}
@@ -532,6 +619,9 @@ function App() {
             ledger={displayActiveLedger}
             inputs={inputs}
             simulateSurvivor={simulateSurvivor}
+            onNavigateToActuals={() => {
+              setActiveTab(5);
+            }}
           />
         )}
         {activeTab === 3 && (
@@ -555,6 +645,31 @@ function App() {
             setSelectedPlanAId={setSelectedPlanAId}
             selectedPlanBId={selectedPlanBId}
             setSelectedPlanBId={setSelectedPlanBId}
+          />
+        )}
+        {activeTab === 5 && (
+          <ActualsWorkspace
+            ledger={displayActiveLedger}
+            inputs={inputs}
+            onUpdateActuals={(actuals) => {
+              setInputs((prev) => ({
+                ...prev,
+                actualTracking: actuals,
+              }));
+            }}
+            onUpdateGuardrailSettings={(guardrails) => {
+              setInputs((prev) => ({
+                ...prev,
+                guardrailSettings: guardrails,
+              }));
+            }}
+            onApplySpendingBonusToBudget={(newBudget) => {
+              setInputs((prev) => ({
+                ...prev,
+                annualLivingExpenses: newBudget,
+              }));
+            }}
+            onNavigateToTab={setActiveTab}
           />
         )}
       </DashboardLayout>

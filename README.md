@@ -13,6 +13,7 @@ An interactive, premium, 35-year financial planning web application. This tool e
   - [3. Lookback Ledger](#3-lookback-ledger)
   - [4. Monte Carlo Analysis](#4-monte-carlo-analysis)
   - [5. Plan Comparison](#5-plan-comparison)
+  - [6. Actuals & Guardrails](#6-actuals--guardrails)
 - [Interactive Controls & Scenario Planning Drawer](#interactive-controls--scenario-planning-drawer)
   - [Scenario Planner Drawer](#scenario-planner-drawer)
   - [Global Keyboard Shortcuts](#global-keyboard-shortcuts)
@@ -85,6 +86,15 @@ Multi-scenario comparison and plan management.
 - **Plan Repository**: Save active scenario configurations, load saved plans, clone scenarios, and export/import plan files via JSON.
 - **Side-by-Side Delta Analysis**: Select any two saved plans (Plan A vs. Plan B) to compare lifetime taxes, IRMAA surcharges, ending estate values, Monte Carlo success rates, and year-by-year drawdown differences.
 - **Comparative Charts & Diff Tables**: Visual portfolio trajectory comparisons and delta summary cards highlighting net financial advantages.
+
+### 6. Actuals & Guardrails
+Real-world plan execution tracking, historical replay, portfolio reconciliation, and dynamic spending governance.
+- **Historical Actuals Replay**: Substitute real-world equity returns, bond returns, CPI inflation, healthcare inflation, and living expenses for completed years into the deterministic ledger and forward Monte Carlo sequence.
+- **Year-End Balance Reconciliation**: Lock in verified brokerage, Traditional IRA, Roth IRA, cost basis, and cash balances to ensure forward projections branch from verified real-world account values.
+- **2-Year Lookback MAGI Stitching**: Chains historical actual MAGI directly into downstream Medicare IRMAA surcharge calculations.
+- **Dynamic Guardrail Governance**: Guyton-Klinger style spending guardrails featuring an Upper Ceiling (+15%) to prevent unsustainable lifestyle creep and a Lower Floor (-15%) to protect capital during market contractions.
+- **Permission to Spend Advisory**: Transparently analyzes net surplus into direct Expense Savings and Market Growth Share (10% surplus share), providing a 1-click button to apply earned bonuses to next year's budget.
+- **Visual Status Badges**: Lookback Ledger displays `ACTUAL` and `BRIDGED` pill badges with direct navigation shortcuts.
 
 ---
 

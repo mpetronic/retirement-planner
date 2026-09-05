@@ -37,15 +37,21 @@ function resolveScmVersionInfo() {
   try {
     commitShort = execSync('git rev-parse --short HEAD', { encoding: 'utf-8' }).trim();
     commitFull = execSync('git rev-parse HEAD', { encoding: 'utf-8' }).trim();
-  } catch {}
+  } catch {
+    /* ignore */
+  }
 
   try {
     commitDate = execSync('git log -1 --format=%cd --date=iso', { encoding: 'utf-8' }).trim();
-  } catch {}
+  } catch {
+    /* ignore */
+  }
 
   try {
     branch = execSync('git rev-parse --abbrev-ref HEAD', { encoding: 'utf-8' }).trim();
-  } catch {}
+  } catch {
+    /* ignore */
+  }
 
   try {
     const tagOutput = execSync('git describe --tags --exact-match HEAD 2>/dev/null', { encoding: 'utf-8' }).trim();

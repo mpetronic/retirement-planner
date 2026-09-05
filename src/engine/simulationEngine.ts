@@ -303,6 +303,8 @@ export function runRetirementSimulation(
   const WIFE_DEATH_YEAR = inputs.isSingleFiler ? 0 : (wifeBirthYear + (inputs.wife.longevityAge ?? 95));
 
   const simStartYear = getSimulationStartYear(inputs);
+  const startYear = inputs.rothConversionStartYear !== undefined ? inputs.rothConversionStartYear : (simStartYear + 1);
+  const endYear = inputs.rothConversionEndYear !== undefined ? inputs.rothConversionEndYear : (simStartYear + 8);
 
   // The simulation runs until the last survivor passes away
   const endSimulationYear = Math.max(simStartYear, inputs.isSingleFiler ? DEATH_YEAR : Math.max(DEATH_YEAR, WIFE_DEATH_YEAR));
@@ -312,14 +314,25 @@ export function runRetirementSimulation(
 
   let cpiFactor = 1.0;
 
+  let healthcareFactor = 1.0;
+
   // Let's run year-by-year from simStartYear to endSimulationYear
   for (let year = simStartYear; year <= endSimulationYear; year++) {
     const yearsElapsed = year - simStartYear;
+    const actualRec = inputs.actualTracking?.[year];
+    const hasLaterActual = Object.keys(inputs.actualTracking || {}).some(
+      (y) => Number(y) > year && Boolean(inputs.actualTracking?.[Number(y)])
+    );
+    const isBridged = !actualRec && hasLaterActual;
     
-    // Accumulate inflation index (CPI) dynamically based on co-sampled rates if available
+    // Accumulate inflation index (CPI) dynamically based on co-sampled rates if available or actuals
     if (yearsElapsed > 0) {
       let annualInflation = inputs.growthAssumptions.cpiInflationRate;
-      if (activeSeq && activeSeq.inflationRates) {
+      const prevYear = year - 1;
+      const prevActualRec = inputs.actualTracking?.[prevYear];
+      if (prevActualRec?.cpiInflationRate !== undefined && prevActualRec?.cpiInflationRate !== null) {
+        annualInflation = prevActualRec.cpiInflationRate;
+      } else if (activeSeq && activeSeq.inflationRates) {
         const prevYearElapsed = yearsElapsed - 1;
         if (activeSeq.inflationRates[prevYearElapsed] !== undefined) {
           const historicalRate = activeSeq.inflationRates[prevYearElapsed];
@@ -328,16 +341,27 @@ export function runRetirementSimulation(
         }
       }
       cpiFactor *= (1 + annualInflation);
+
+      let annualHcInflation = inputs.growthAssumptions.healthcareInflationRate;
+      if (prevActualRec?.healthcareInflationRate !== undefined && prevActualRec?.healthcareInflationRate !== null) {
+        annualHcInflation = prevActualRec.healthcareInflationRate;
+      }
+      healthcareFactor *= (1 + annualHcInflation);
     }
-    
-    const healthcareFactor = Math.pow(1 + inputs.growthAssumptions.healthcareInflationRate, yearsElapsed);
     
     // Growth rates by account type (Equities vs Fixed Income allocation)
     let equityRate = inputs.growthAssumptions.equityReturnRate;
     let bondRate = inputs.growthAssumptions.fixedIncomeReturnRate;
     
-    if (activeSeq) {
+    if (actualRec?.equityReturnRate !== undefined && actualRec?.equityReturnRate !== null) {
+      equityRate = actualRec.equityReturnRate;
+    } else if (activeSeq) {
       equityRate = activeSeq.equityReturns[yearsElapsed] !== undefined ? activeSeq.equityReturns[yearsElapsed] : equityRate;
+    }
+
+    if (actualRec?.fixedIncomeReturnRate !== undefined && actualRec?.fixedIncomeReturnRate !== null) {
+      bondRate = actualRec.fixedIncomeReturnRate;
+    } else if (activeSeq) {
       bondRate = activeSeq.fixedIncomeReturns[yearsElapsed] !== undefined ? activeSeq.fixedIncomeReturns[yearsElapsed] : bondRate;
     }
 
@@ -616,8 +640,19 @@ export function runRetirementSimulation(
       }
     }
 
+    if (actualRec?.preMedicareHealthcareCost !== undefined && actualRec?.preMedicareHealthcareCost !== null) {
+      yourPreMedicareAnnual = actualRec.preMedicareHealthcareCost;
+      wifePreMedicareAnnual = 0;
+    }
+    if (actualRec?.medicareBasePremiums !== undefined && actualRec?.medicareBasePremiums !== null) {
+      yourMedicarePremiums = actualRec.medicareBasePremiums;
+      wifeMedicarePremiums = 0;
+    }
+
     let baseLivingExpensesAnnual = inputs.annualLivingExpenses ?? 100000;
-    if (inputs.useDetailedExpenses && inputs.detailedExpenses) {
+    if (actualRec?.totalLivingExpenses !== undefined && actualRec?.totalLivingExpenses !== null) {
+      baseLivingExpensesAnnual = actualRec.totalLivingExpenses / (cpiFactor || 1);
+    } else if (inputs.useDetailedExpenses && inputs.detailedExpenses) {
       const de = normalizeDetailedExpenses(inputs.detailedExpenses);
       const items = de.catalog?.items ?? [];
       let detailedSum = 0;
@@ -634,6 +669,15 @@ export function runRetirementSimulation(
       baseLivingExpensesAnnual = detailedSum;
     }
 
+    // Dynamic Guardrail policy adjustment during forward simulation (post-actuals)
+    if (!actualRec && inputs.guardrailSettings?.enabled && inputs.guardrailSettings?.applyToSimulation && ledger.length > 0) {
+      const prevRow = ledger[ledger.length - 1];
+      if (prevRow.actualSurplusGap !== undefined && prevRow.actualSurplusGap !== 0) {
+        const adjustment = prevRow.permittedSpendingBonus || 0;
+        baseLivingExpensesAnnual = Math.max(0, baseLivingExpensesAnnual + (adjustment / (cpiFactor || 1)));
+      }
+    }
+
     const baseMinCashDollars = inputs.growthAssumptions.minCashReserveDollars ?? inputs.annualLivingExpenses ?? 100000;
     const minCashReserveTarget = Math.max(0, baseMinCashDollars * cpiFactor);
 
@@ -647,16 +691,43 @@ export function runRetirementSimulation(
     let drawdownPreTax = 0;
     let drawdownRoth = 0;
     let capitalGainsTriggered = 0;
+    let requestedCustomAmount: number | undefined = undefined;
+    let isRothConversionCapped: boolean | undefined = undefined;
+    let rothConversionShortfall: number | undefined = undefined;
 
-    const startYear = inputs.rothConversionStartYear !== undefined ? inputs.rothConversionStartYear : (inputs.jurisdiction.relocationYear ?? simStartYear);
-    const endYear = inputs.rothConversionEndYear !== undefined ? inputs.rothConversionEndYear : (startYear + 9);
+    // 1. Custom Roth Conversion Schedule
+    if (inputs.rothConversionStrategy === 'custom') {
+      const activeCustomScenario = inputs.customRothScenarios?.find(
+        (s) => s.id === inputs.activeCustomScenarioId
+      ) || inputs.customRothScenarios?.[0];
 
-    // Flat Roth Conversion (pre-determined annual conversion executed on Jan 1)
-    if (inputs.rothConversionStrategy !== 'fill-to-target' && year >= startYear && year <= endYear) {
+      if (activeCustomScenario && activeCustomScenario.schedule[year] !== undefined) {
+        requestedCustomAmount = activeCustomScenario.schedule[year] || 0;
+        targetConversion = requestedCustomAmount;
+      }
+    } 
+    // 2. Flat Roth Conversion (pre-determined annual conversion executed on Jan 1)
+    else if (inputs.rothConversionStrategy === 'flat' && year >= startYear && year <= endYear) {
       const conversionInflationFactor = Math.pow(1 + inputs.growthAssumptions.cpiInflationRate, year - startYear);
       targetConversion = inputs.annualRothConversion * conversionInflationFactor;
+    }
 
-      if (targetConversion > 0) {
+    if (targetConversion > 0) {
+      const totalAvailablePreTax = isSurvivorActive || youDeceased ? wifePreTax : (yourPreTax + (wifeDeceased ? 0 : wifePreTax));
+
+      if (inputs.rothConversionStrategy === 'custom') {
+        if (targetConversion > totalAvailablePreTax + 0.01) {
+          isRothConversionCapped = true;
+          rothConversionShortfall = Math.max(0, targetConversion - totalAvailablePreTax);
+        } else {
+          isRothConversionCapped = false;
+        }
+      }
+
+      // Cap conversion by available pre-tax assets
+      targetConversion = Math.min(targetConversion, totalAvailablePreTax);
+
+      if (inputs.rothConversionStrategy === 'flat') {
         const totalTaxableBrokerage = yourTaxable + (wifeDeceased ? 0 : wifeTaxable);
         const estLiving = baseLivingExpensesAnnual * cpiFactor;
         const totalTaxableLeft = Math.max(0, totalTaxableBrokerage - estLiving);
@@ -787,20 +858,17 @@ export function runRetirementSimulation(
       const de = normalizeDetailedExpenses(inputs.detailedExpenses);
       const items = de.catalog?.items ?? [];
       const oneTimeItems = items.filter((i) => i.isOneTime);
-      const curCosts = de.costs?.[inputs.jurisdiction.currentState];
-      const tgtCosts = de.costs?.[inputs.jurisdiction.targetState];
 
-      if (year === simStartYear && inputs.jurisdiction.relocationYear !== simStartYear) {
-        if (curCosts) {
-          for (const item of oneTimeItems) {
-            oneTimeCosts += curCosts[item.id] ?? 0;
-          }
-        }
-      }
-      if (inputs.jurisdiction.relocationYear !== null && year === inputs.jurisdiction.relocationYear) {
-        if (tgtCosts) {
-          for (const item of oneTimeItems) {
-            oneTimeCosts += tgtCosts[item.id] ?? 0;
+      const activeStateInYear = (inputs.jurisdiction.relocationYear !== null && year >= inputs.jurisdiction.relocationYear)
+        ? inputs.jurisdiction.targetState
+        : inputs.jurisdiction.currentState;
+      const stateCosts = de.costs?.[activeStateInYear] || de.costs?.[inputs.jurisdiction.currentState];
+
+      if (stateCosts) {
+        for (const item of oneTimeItems) {
+          const itemYear = item.targetYear ?? simStartYear;
+          if (itemYear === year) {
+            oneTimeCosts += stateCosts[item.id] ?? 0;
           }
         }
       }
@@ -1645,6 +1713,21 @@ export function runRetirementSimulation(
     annualWifeInterest += wifeDecInterest;
     wifeCash = wifeCash + wifeDecInterest;
 
+    // Balance reconciliation overrides if this year is an actual record
+    if (actualRec) {
+      if (actualRec.endYourPreTaxIRA !== undefined && actualRec.endYourPreTaxIRA !== null) yourPreTax = actualRec.endYourPreTaxIRA;
+      if (actualRec.endYourRothIRA !== undefined && actualRec.endYourRothIRA !== null) yourRoth = actualRec.endYourRothIRA;
+      if (actualRec.endYourTaxableBrokerage !== undefined && actualRec.endYourTaxableBrokerage !== null) yourTaxable = actualRec.endYourTaxableBrokerage;
+      if (actualRec.endYourTaxableBasis !== undefined && actualRec.endYourTaxableBasis !== null) yourBasis = actualRec.endYourTaxableBasis;
+      if (actualRec.endYourCash !== undefined && actualRec.endYourCash !== null) yourCash = actualRec.endYourCash;
+
+      if (actualRec.endWifePreTaxIRA !== undefined && actualRec.endWifePreTaxIRA !== null) wifePreTax = actualRec.endWifePreTaxIRA;
+      if (actualRec.endWifeRothIRA !== undefined && actualRec.endWifeRothIRA !== null) wifeRoth = actualRec.endWifeRothIRA;
+      if (actualRec.endWifeTaxableBrokerage !== undefined && actualRec.endWifeTaxableBrokerage !== null) wifeTaxable = actualRec.endWifeTaxableBrokerage;
+      if (actualRec.endWifeTaxableBasis !== undefined && actualRec.endWifeTaxableBasis !== null) wifeBasis = actualRec.endWifeTaxableBasis;
+      if (actualRec.endWifeCash !== undefined && actualRec.endWifeCash !== null) wifeCash = actualRec.endWifeCash;
+    }
+
     // Negative checking safety
     if (yourTaxable < 0.01) { yourTaxable = 0; yourBasis = 0; }
     if (yourPreTax < 0.01) yourPreTax = 0;
@@ -1708,7 +1791,7 @@ export function runRetirementSimulation(
     const otherAGI = nonSSOrdinary + capitalGains;
     const taxableSS = calculateTaxableSS(totalSS, otherAGI, isSingle);
     const fedAGI = nonSSOrdinary + taxableSS + capitalGains;
-    const magi = fedAGI;
+    const magi = (actualRec?.magi !== undefined && actualRec?.magi !== null) ? actualRec.magi : fedAGI;
 
     // Drawdowns rollup
     drawdownCash = annualDrawdownCash + drawdownCashDec;
@@ -1723,10 +1806,35 @@ export function runRetirementSimulation(
       qcdTaxSavings = qcdAmount * (marginalFedRate + stateRate);
     }
 
-    const totalExpenses = annualLivingExpenses + nonQcdTithe + fedIncomeTax + stateIncomeTax + annualMedicareBasePremiums + annualMedicareSurcharges + annualPreMedicarePremium;
+    let finalTotalTax = fedIncomeTax + stateIncomeTax;
+    let finalFedTax = fedIncomeTax;
+    let finalStateTax = stateIncomeTax;
+    if (actualRec?.totalIncomeTax !== undefined && actualRec?.totalIncomeTax !== null) {
+      finalTotalTax = actualRec.totalIncomeTax;
+      finalFedTax = actualRec.totalIncomeTax;
+      finalStateTax = 0;
+    }
+
+    const totalExpenses = annualLivingExpenses + nonQcdTithe + finalTotalTax + annualMedicareBasePremiums + annualMedicareSurcharges + annualPreMedicarePremium;
     const incomeInflow = totalSS + taxableCombinedRMD + grossSalary + totalDividends;
     const deficit = Math.max(0, totalExpenses - incomeInflow);
     const netTakeHomeSalary = Math.max(0, grossSalary - annualTotal401k - annualTotalFICA - annualTotalTaxWithholding);
+
+    // Guardrails calculation
+    const plannedLivingExpenses = (inputs.annualLivingExpenses ?? 100000) * cpiFactor;
+    const spendingVariance = plannedLivingExpenses - annualLivingExpenses; // positive if spent less than budget
+    const modeledGrowthRate = (preTaxEquityPortion * inputs.growthAssumptions.equityReturnRate) + ((1 - preTaxEquityPortion) * inputs.growthAssumptions.fixedIncomeReturnRate);
+    const startYearPortfolio = (ledger.length > 0) ? ledger[ledger.length - 1].totalPortfolioValue : (
+      (inputs.portfolio.yourPreTaxIRA || 0) + (inputs.portfolio.yourRothIRA || 0) + (inputs.portfolio.yourTaxableBrokerage || 0) + (inputs.portfolio.yourCash || 0) +
+      (inputs.isSingleFiler ? 0 : ((inputs.portfolio.wifePreTaxIRA || 0) + (inputs.portfolio.wifeRothIRA || 0) + (inputs.portfolio.wifeTaxableBrokerage || 0) + (inputs.portfolio.wifeCash || 0)))
+    );
+    const estimatedBaselineGrowth = startYearPortfolio * modeledGrowthRate;
+    const surplusGrowth = Math.max(0, portfolioGrowth - estimatedBaselineGrowth);
+    const marketSurplusShare = (inputs.guardrailSettings?.marketSurplusSharePct ?? 0.10) * surplusGrowth;
+    const actualSurplusGap = spendingVariance + marketSurplusShare;
+    const upperGuardrailLimit = plannedLivingExpenses * (1 + (inputs.guardrailSettings?.upperGuardrailPct ?? 0.15));
+    const lowerGuardrailLimit = plannedLivingExpenses * (1 - (inputs.guardrailSettings?.lowerGuardrailPct ?? 0.15));
+    const permittedSpendingBonus = Math.min(Math.max(0, actualSurplusGap), upperGuardrailLimit - plannedLivingExpenses);
 
     ledger.push({
       year,
@@ -1745,14 +1853,17 @@ export function runRetirementSimulation(
       reinvestedSurplus,
       capitalGainsTriggered,
       intentionalRothConversion: combinedRothConversion,
+      requestedCustomRothConversion: requestedCustomAmount,
+      isRothConversionCapped,
+      rothConversionShortfall,
       otherTaxableIncome: drawdownPreTax,
       magi,
       fedAGI,
       standardDeduction: stdDeduction,
       taxableIncome: Math.max(0, fedAGI - stdDeduction),
-      fedIncomeTax,
-      stateIncomeTax,
-      totalIncomeTax: fedIncomeTax + stateIncomeTax,
+      fedIncomeTax: finalFedTax,
+      stateIncomeTax: finalStateTax,
+      totalIncomeTax: finalTotalTax,
       niitTax,
       taxableSS,
       taxableDividends: totalDividends,
@@ -1794,6 +1905,12 @@ export function runRetirementSimulation(
       endWifeTaxableBasis: wifeBasis,
       endWifeCash: wifeCash,
       totalPortfolioValue,
+      isActual: Boolean(actualRec),
+      isBridged: Boolean(isBridged),
+      actualSurplusGap,
+      guardrailUpperLimit: upperGuardrailLimit,
+      guardrailLowerLimit: lowerGuardrailLimit,
+      permittedSpendingBonus,
     });
   }
   

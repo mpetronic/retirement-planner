@@ -378,8 +378,9 @@ export const PlanComparisonWorkspace: React.FC<PlanComparisonWorkspaceProps> = (
     const nonCurrencyKeys = new Set(['year', 'yourAge', 'wifeAge', 'surchargeTier', 'cpiFactor']);
     
     for (const key of Object.keys(discounted) as Array<keyof SimulationResultRow>) {
-      if (!nonCurrencyKeys.has(key) && typeof discounted[key] === 'number') {
-        (discounted as any)[key] = (discounted[key] as number) / factor;
+      const val = discounted[key];
+      if (!nonCurrencyKeys.has(key) && typeof val === 'number') {
+        (discounted as Record<string, unknown>)[key] = val / factor;
       }
     }
     return discounted;

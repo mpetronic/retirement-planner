@@ -811,6 +811,29 @@ export const ConfigurationPDF: React.FC<PDFProps> = ({ inputs }) => {
                 )}
               </View>
             </View>
+
+            {/* Guardrail Plan Card */}
+            <View style={styles.col2}>
+              <View style={styles.card}>
+                <Text style={styles.cardTitle}>Guardrail Spending Plan</Text>
+                <View style={styles.row}>
+                  <Text style={styles.rowLabel}>Policy Status:</Text>
+                  <Text style={styles.rowValue}>{inputs.guardrailSettings?.enabled !== false ? 'Active' : 'Disabled'}</Text>
+                </View>
+                <View style={styles.row}>
+                  <Text style={styles.rowLabel}>Upper / Lower Guardrails:</Text>
+                  <Text style={styles.rowValue}>+{(((inputs.guardrailSettings?.upperGuardrailPct ?? 0.15) * 100)).toFixed(0)}% / -{(((inputs.guardrailSettings?.lowerGuardrailPct ?? 0.15) * 100)).toFixed(0)}%</Text>
+                </View>
+                <View style={styles.row}>
+                  <Text style={styles.rowLabel}>Market Surplus Allocation:</Text>
+                  <Text style={styles.rowValue}>{(((inputs.guardrailSettings?.marketSurplusSharePct ?? 0.10) * 100)).toFixed(0)}%</Text>
+                </View>
+                <View style={[styles.row, { borderBottomWidth: 0 }]}>
+                  <Text style={styles.rowLabel}>Actual Years Logged:</Text>
+                  <Text style={styles.rowValue}>{Object.keys(inputs.actualTracking || {}).length} Year(s)</Text>
+                </View>
+              </View>
+            </View>
           </View>
         </View>
 
@@ -1040,7 +1063,7 @@ export const ConfigurationPDF: React.FC<PDFProps> = ({ inputs }) => {
                   {/* One-Time Header Row */}
                   <View style={[styles.tableRow, { backgroundColor: '#fffbeb', borderBottomColor: '#fde68a' }]}>
                     <Text style={[styles.colExpName, styles.tableCell, { fontFamily: 'Helvetica-Bold', color: '#b45309' }]}>
-                      One-Time Setup Costs
+                      One-Time & Capital Expenses (Today's $)
                     </Text>
                     <Text style={styles.colExpCat} />
                     <Text style={styles.colExpFreq} />
@@ -1052,10 +1075,11 @@ export const ConfigurationPDF: React.FC<PDFProps> = ({ inputs }) => {
                   {oneTimeItems.map((item) => {
                     const costA = costs[stateA]?.[item.id] ?? 0;
                     const costB = costs[stateB]?.[item.id] ?? 0;
+                    const targetYr = item.targetYear ?? (inputs.simulationStartYear || 2026);
                     return (
                       <View style={styles.tableRow} key={item.id}>
                         <Text style={[styles.colExpName, styles.tableCell, { fontFamily: 'Helvetica-Bold' }]}>{item.name}</Text>
-                        <Text style={[styles.colExpCat, styles.tableCell]}>One-Time</Text>
+                        <Text style={[styles.colExpCat, styles.tableCell]}>Year {targetYr}</Text>
                         <Text style={[styles.colExpFreq, styles.tableCell]}>1x</Text>
                         <Text style={[styles.colExpMD, styles.tableCell]}>{formatCurrency(costA)}</Text>
                         <Text style={[styles.colExpFL, styles.tableCell]}>{formatCurrency(costB)}</Text>
@@ -1066,7 +1090,7 @@ export const ConfigurationPDF: React.FC<PDFProps> = ({ inputs }) => {
                   {/* One-Time Subtotal Row */}
                   <View style={[styles.tableRow, { backgroundColor: '#fffbeb', borderBottomWidth: 1, borderBottomColor: '#fde68a' }]}>
                     <Text style={[styles.colExpName, styles.tableCell, { fontFamily: 'Helvetica-Bold', color: '#b45309' }]}>
-                      Subtotal (One-Time)
+                      Total One-Time Capital Outlays
                     </Text>
                     <Text style={[styles.colExpCat, styles.tableCell, { color: '#64748b' }]}>-</Text>
                     <Text style={[styles.colExpFreq, styles.tableCell, { color: '#64748b', textAlign: 'center' }]}>-</Text>
