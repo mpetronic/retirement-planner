@@ -1184,11 +1184,14 @@ export function runRetirementSimulation(
     let yourDecInterest = youDeceased ? 0 : yourCash * monthlyCashRate;
     let wifeDecInterest = wifeDeceased ? 0 : wifeCash * monthlyCashRate;
 
-    // Calculate total gross portfolio dollar growth for the year (gains + dividends + interest)
+    // Calculate total gross portfolio dollar growth for the year (gains + dividends + interest).
+    // Note: portfolioGrowth can be negative in down-market years.
     const annualTotalDividends = annualYourDividends + annualWifeDividends + monthlyYourDividendsDec + monthlyWifeDividendsDec;
     const annualTotalInterest = (annualYourInterest + annualWifeInterest) + (yourDecInterest + wifeDecInterest);
-    const rawPortfolioGrowth = annualPreTaxGrowth + annualRothGrowth + annualTaxableGrowth + annualTotalDividends + annualTotalInterest;
-    const portfolioGrowth = Math.max(0, rawPortfolioGrowth);
+    const portfolioGrowth = annualPreTaxGrowth + annualRothGrowth + annualTaxableGrowth + annualTotalDividends + annualTotalInterest;
+
+    // Charitable tithe calculation uses non-negative growth (no tithe on losses)
+    const tithableGrowth = Math.max(0, portfolioGrowth);
 
     // Charitable Giving & Tithe Calculation
     let charitableTithe = 0;
@@ -1200,7 +1203,7 @@ export function runRetirementSimulation(
 
     if (inputs.charitySettings?.enabled) {
       const growthPercentage = inputs.charitySettings.growthPercentage ?? 0.10;
-      let tithe = portfolioGrowth * growthPercentage;
+      let tithe = tithableGrowth * growthPercentage;
       if (inputs.charitySettings.minAnnualTithe !== null && inputs.charitySettings.minAnnualTithe !== undefined && inputs.charitySettings.minAnnualTithe > 0) {
         tithe = Math.max(tithe, inputs.charitySettings.minAnnualTithe);
       }

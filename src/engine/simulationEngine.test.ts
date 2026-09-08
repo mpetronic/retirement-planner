@@ -1195,6 +1195,35 @@ describe('runRetirementSimulation fixes', () => {
       expect(resultsWithFloor[0].charitableTithe).toBe(5000);
     });
 
+    it('should preserve negative portfolio growth in down-market years while keeping charitable tithe floored at zero', () => {
+      const inputs = getMockInputs();
+      // Configure portfolio assets to experience market returns
+      inputs.portfolio.yourPreTaxIRA = 500000;
+      inputs.portfolio.yourTaxableBrokerage = 200000;
+
+      // Configure negative market returns for equities and fixed income
+      inputs.growthAssumptions.equityReturnRate = -0.15;
+      inputs.growthAssumptions.fixedIncomeReturnRate = -0.05;
+      inputs.growthAssumptions.cashYieldRate = 0.0;
+      inputs.portfolio.taxableDividendYield = 0.0;
+
+      inputs.charitySettings = {
+        enabled: true,
+        growthPercentage: 0.10,
+        minAnnualTithe: null,
+        maxAnnualTithe: null,
+        useQCD: false,
+      };
+
+      const results = runRetirementSimulation(inputs);
+      const row1 = results[0];
+
+      // Portfolio growth must preserve true negative losses for display in the ledger
+      expect(row1.portfolioGrowth).toBeLessThan(0);
+      // Charitable tithe must be floored at $0 so users do not tithe on market losses
+      expect(row1.charitableTithe).toBe(0);
+    });
+
     it('should respect custom percentage and maximum annual cap', () => {
       const inputs = getMockInputs();
       inputs.charitySettings = {

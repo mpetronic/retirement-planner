@@ -396,17 +396,29 @@ export const LookbackLedgerTable: React.FC<LookbackLedgerTableProps> = ({
                   </td>
 
                   {/* Portfolio Growth Return */}
-                  <td className="px-2.5 py-2.5 font-mono text-emerald-400/90 relative group cursor-help">
+                  <td className={`px-2.5 py-2.5 font-mono relative group cursor-help ${
+                    (r.portfolioGrowth || 0) < 0
+                      ? 'text-rose-400 font-semibold'
+                      : (r.portfolioGrowth || 0) > 0
+                        ? 'text-emerald-400/90'
+                        : 'text-slate-500'
+                  }`}>
                     <span>{formatCurrency(r.portfolioGrowth || 0)}</span>
                     <div className={`absolute left-1/2 -translate-x-1/2 w-64 bg-slate-950/95 backdrop-blur-md border border-slate-800 rounded-2xl p-3.5 shadow-2xl opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 z-50 text-xs text-slate-300 pointer-events-none space-y-1.5 font-sans normal-case ${
                       isTopRow ? 'top-full mt-2' : 'bottom-full mb-2'
                     }`}>
                       <div className="flex items-center justify-between border-b border-slate-800/80 pb-1 mb-1">
-                        <span className="font-bold text-slate-200 uppercase tracking-wider text-[9px]">Portfolio Growth Return</span>
-                        <span className="font-bold text-emerald-400 font-mono text-[10px]">{formatCurrency(r.portfolioGrowth || 0)}</span>
+                        <span className="font-bold text-slate-200 uppercase tracking-wider text-[9px]">
+                          {(r.portfolioGrowth || 0) < 0 ? 'Portfolio Loss' : 'Portfolio Growth Return'}
+                        </span>
+                        <span className={`font-mono text-[10px] font-bold ${(r.portfolioGrowth || 0) < 0 ? 'text-rose-400' : 'text-emerald-400'}`}>
+                          {formatCurrency(r.portfolioGrowth || 0)}
+                        </span>
                       </div>
                       <div className="text-[10px] text-slate-400">
-                        Total investment gains, dividends, and interest generated across all portfolio accounts in {r.year}.
+                        {(r.portfolioGrowth || 0) < 0
+                          ? `Net investment loss across all portfolio accounts in ${r.year} due to market downturn.`
+                          : `Total investment gains, dividends, and interest generated across all portfolio accounts in ${r.year}.`}
                       </div>
                     </div>
                   </td>
