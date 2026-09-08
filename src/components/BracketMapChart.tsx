@@ -43,10 +43,11 @@ export const BracketMapChart: React.FC<BracketMapChartProps> = ({
 
   // Dynamic selected quick-fill guideline line calculator
   const quickFillLineData = useMemo(() => {
-    if (inputs.rothConversionStrategy !== 'fill-to-target') return null;
+    // If a guideline is selected from the dropdown, show it regardless of conversion strategy.
+    // Otherwise, fall back to the active fill-to-target limit if strategy is fill-to-target.
     const activeTarget = selectedQuickFill !== null
       ? selectedQuickFill
-      : inputs.rothConversionTargetValue;
+      : (inputs.rothConversionStrategy === 'fill-to-target' ? inputs.rothConversionTargetValue : null);
     if (!activeTarget) return null;
 
     const preset = getTargetPresetInfo(activeTarget);
@@ -202,6 +203,7 @@ export const BracketMapChart: React.FC<BracketMapChartProps> = ({
         borderDash: [5, 5],
         pointRadius: 0,
         fill: false,
+        yAxisID: 'y',
         order: 0,
         pointStyle: 'line',
         stack: 'line-quickfill',
