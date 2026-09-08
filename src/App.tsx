@@ -274,8 +274,11 @@ function App() {
   const [selectedPlanAId, setSelectedPlanAId] = useLocalStorage<string>('retirement_planner_selected_plan_a', '');
   const [selectedPlanBId, setSelectedPlanBId] = useLocalStorage<string>('retirement_planner_selected_plan_b', '');
 
-  // Persisted Quick Fill selection for Workspace 1 Bracket Map
+  // Persisted Quick Fill selection for Workspace 2 Roth optimization
   const [selectedQuickFill, setSelectedQuickFill] = useLocalStorage<number | null>('retirement_planner_selected_quick_fill', null);
+
+  // Dedicated persisted Guideline Overlay selection for Workspace 1 Bracket Map
+  const [chartGuidelineOverlay, setChartGuidelineOverlay] = useLocalStorage<number | null>('retirement_planner_chart_guideline_overlay', null);
 
   // Global root font size setting (affects all panels via root rem unit scaling)
   const [globalFontSize, setGlobalFontSize] = useLocalStorage<number>('retirement_planner_font_size', 16);
@@ -593,8 +596,8 @@ function App() {
             ledger={displayActiveLedger}
             inputs={inputs}
             simulateSurvivor={simulateSurvivor}
-            selectedQuickFill={selectedQuickFill}
-            setSelectedQuickFill={setSelectedQuickFill}
+            guidelineOverlay={chartGuidelineOverlay}
+            setGuidelineOverlay={setChartGuidelineOverlay}
           />
         )}
         {activeTab === 1 && (

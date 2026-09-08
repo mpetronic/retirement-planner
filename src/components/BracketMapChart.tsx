@@ -19,16 +19,16 @@ interface BracketMapChartProps {
   ledger: SimulationResultRow[];
   inputs: AppStateInputs;
   simulateSurvivor: boolean;
-  selectedQuickFill: number | null;
-  setSelectedQuickFill: (val: number | null) => void;
+  guidelineOverlay: number | null;
+  setGuidelineOverlay: (val: number | null) => void;
 }
 
 export const BracketMapChart: React.FC<BracketMapChartProps> = ({
   ledger,
   inputs,
   simulateSurvivor,
-  selectedQuickFill,
-  setSelectedQuickFill,
+  guidelineOverlay,
+  setGuidelineOverlay,
 }) => {
   const chartRef = useRef<ChartJS<'bar' | 'line'> | null>(null);
   const [hasHiddenDatasets, setHasHiddenDatasets] = useState(false);
@@ -43,13 +43,10 @@ export const BracketMapChart: React.FC<BracketMapChartProps> = ({
 
   // Dynamic selected quick-fill guideline line calculator
   const quickFillLineData = useMemo(() => {
-    // If a guideline is selected from the dropdown, show it regardless of conversion strategy.
-    // Otherwise, fall back to the active fill-to-target limit if strategy is fill-to-target.
-    const activeTarget = selectedQuickFill !== null
-      ? selectedQuickFill
-      : (inputs.rothConversionStrategy === 'fill-to-target' ? inputs.rothConversionTargetValue : null);
-    if (!activeTarget) return null;
+    // If no guideline is selected from the dropdown, do not draw a guideline line
+    if (!guidelineOverlay) return null;
 
+    const activeTarget = guidelineOverlay;
     const preset = getTargetPresetInfo(activeTarget);
     const isBracketTarget = preset?.type === 'bracket';
     const label = preset ? preset.description : `Target Limit ($${activeTarget.toLocaleString()})`;
@@ -83,7 +80,7 @@ export const BracketMapChart: React.FC<BracketMapChartProps> = ({
     });
 
     return { label, color, data: dataPoints };
-  }, [selectedQuickFill, ledger, simulateSurvivor, inputs]);
+  }, [guidelineOverlay, ledger, simulateSurvivor, inputs]);
 
   const chartData = useMemo(() => {
     const isDataPresent = (data: number[]) => data.some((v) => Math.abs(v) > 0.01);
@@ -446,11 +443,11 @@ export const BracketMapChart: React.FC<BracketMapChartProps> = ({
           <div className="flex items-center gap-2">
             <span className="text-xs text-slate-400 font-semibold uppercase tracking-wider">Guideline Overlay:</span>
             <select
-              value={selectedQuickFill !== null ? selectedQuickFill : ""}
+              value={guidelineOverlay !== null ? guidelineOverlay : ""}
               onChange={(e) => {
                 const val = e.target.value;
                 const valNum = val === "" ? null : Number(val);
-                setSelectedQuickFill(valNum);
+                setGuidelineOverlay(valNum);
               }}
               className="text-xs font-semibold px-3 py-2 bg-slate-900 text-slate-100 border border-slate-800 rounded-xl hover:border-slate-600 focus:outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 transition-all cursor-pointer"
             >
