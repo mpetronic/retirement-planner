@@ -6,6 +6,12 @@ import {
   runMonteCarloSimulation,
   computeHistoricalStats,
   applyStressTestToSequence,
+  EQUITY_RETURN_MIN,
+  EQUITY_RETURN_MAX,
+  BOND_RETURN_MIN,
+  BOND_RETURN_MAX,
+  INFLATION_RATE_MIN,
+  INFLATION_RATE_MAX,
 } from './monteCarloEngine';
 import { AppStateInputs } from '../types';
 
@@ -53,6 +59,33 @@ describe('generateSyntheticSequence', () => {
     expect(avgBond).toBeGreaterThan(0.01);
     expect(avgBond).toBeLessThan(0.07);
   });
+
+  it('should enforce realistic boundary clamps on equity, bond, and inflation returns even under extreme volatility', () => {
+    // Test across 100 trials using high volatility settings that would otherwise trigger fat-tail outliers
+    const rand = mulberry32(999);
+    for (let trial = 0; trial < 100; trial++) {
+      const sequence = generateSyntheticSequence(0.10, 0.50, 0.05, 0.30, 0.2, rand);
+
+      // Verify all equity returns fall within [-50%, +60%]
+      for (const eq of sequence.equityReturns) {
+        expect(eq).toBeGreaterThanOrEqual(EQUITY_RETURN_MIN);
+        expect(eq).toBeLessThanOrEqual(EQUITY_RETURN_MAX);
+      }
+
+      // Verify all bond returns fall within [-20%, +30%]
+      for (const fi of sequence.fixedIncomeReturns) {
+        expect(fi).toBeGreaterThanOrEqual(BOND_RETURN_MIN);
+        expect(fi).toBeLessThanOrEqual(BOND_RETURN_MAX);
+      }
+
+      // Verify all inflation rates fall within [-2%, +15%]
+      expect(sequence.inflationRates).toBeDefined();
+      for (const inf of sequence.inflationRates!) {
+        expect(inf).toBeGreaterThanOrEqual(INFLATION_RATE_MIN);
+        expect(inf).toBeLessThanOrEqual(INFLATION_RATE_MAX);
+      }
+    }
+  });
 });
 
 describe('generateHistoricalSequence', () => {
@@ -75,6 +108,27 @@ describe('generateHistoricalSequence', () => {
     // At index 10: stock and bond should match index 11 at next step, etc.
     // The sequence starts at index 10 of HISTORICAL_RETURNS
     expect(blockSeq.equityReturns[0]).toBeDefined();
+  });
+
+  it('should clamp calibrated historical returns within boundary limits when large shifts are applied', () => {
+    const rand = mulberry32(555);
+    // Calibrate with an extreme equity target mean (e.g. 50%) to verify clamping at maximum
+    const highSeq = generateHistoricalSequence(false, undefined, rand, true, null, true, 0.50, 0.25);
+
+    // Verify all shifted historical returns stay within boundary clamps
+    for (const eq of highSeq.equityReturns) {
+      expect(eq).toBeLessThanOrEqual(EQUITY_RETURN_MAX);
+      expect(eq).toBeGreaterThanOrEqual(EQUITY_RETURN_MIN);
+    }
+    for (const fi of highSeq.fixedIncomeReturns) {
+      expect(fi).toBeLessThanOrEqual(BOND_RETURN_MAX);
+      expect(fi).toBeGreaterThanOrEqual(BOND_RETURN_MIN);
+    }
+    expect(highSeq.inflationRates).toBeDefined();
+    for (const inf of highSeq.inflationRates!) {
+      expect(inf).toBeLessThanOrEqual(INFLATION_RATE_MAX);
+      expect(inf).toBeGreaterThanOrEqual(INFLATION_RATE_MIN);
+    }
   });
 });
 

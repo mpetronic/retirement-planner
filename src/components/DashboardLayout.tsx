@@ -47,7 +47,31 @@ export const DashboardLayout: React.FC<DashboardLayoutProps> = ({
   onOpenParamDrawer,
   children,
 }) => {
-  const [showKpiSummary, setShowKpiSummary] = React.useState(false);
+  // Persistent toggle for summary KPI panel
+  const [showKpiSummary, setShowKpiSummary] = React.useState<boolean>(() => {
+    try {
+      const saved = window.localStorage.getItem('retirement_planner_show_kpi_summary');
+      return saved !== null ? JSON.parse(saved) : false;
+    } catch {
+      return false;
+    }
+  });
+
+  /**
+   * Toggles summary KPI visibility and persists state to LocalStorage.
+   */
+  const handleToggleKpiSummary = () => {
+    setShowKpiSummary((prev) => {
+      const next = !prev;
+      try {
+        window.localStorage.setItem('retirement_planner_show_kpi_summary', JSON.stringify(next));
+      } catch {
+        // Ignore local storage write errors
+      }
+      return next;
+    });
+  };
+
   const formatCurrency = (val: number) => {
     return new Intl.NumberFormat('en-US', {
       style: 'currency',
@@ -193,7 +217,7 @@ export const DashboardLayout: React.FC<DashboardLayoutProps> = ({
           {/* Summary KPIs Toggle Button */}
           <button
             type="button"
-            onClick={() => setShowKpiSummary(!showKpiSummary)}
+            onClick={handleToggleKpiSummary}
             className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl text-xs font-semibold border transition-all cursor-pointer ${
               showKpiSummary
                 ? 'bg-slate-800 text-slate-100 border-slate-700'

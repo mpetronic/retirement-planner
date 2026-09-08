@@ -92,6 +92,26 @@ function nextGaussian(rand: () => number = Math.random): number {
 }
 
 /**
+ * Realistic institutional boundary clamps for synthetic and calibrated asset returns.
+ * Equity clamp: -50% to +60% (100-year historical extremes: 1931 was -43.3%, 1933 was +54.0%).
+ * Bond clamp: -20% to +30% (modern historical extreme: 2022 was -17.8%).
+ * Inflation clamp: -2% to +15% (1970-2025 extremes: 2009 was -0.36%, 1980 was +13.55%).
+ */
+export const EQUITY_RETURN_MIN = -0.50;
+export const EQUITY_RETURN_MAX = 0.60;
+export const BOND_RETURN_MIN = -0.20;
+export const BOND_RETURN_MAX = 0.30;
+export const INFLATION_RATE_MIN = -0.02;
+export const INFLATION_RATE_MAX = 0.15;
+
+/**
+ * Clamps a numeric value within specified minimum and maximum bounds.
+ */
+export function clamp(val: number, min: number, max: number): number {
+  return Math.max(min, Math.min(max, val));
+}
+
+/**
  * Generates joint stock/bond returns for 35 years using bivariate Student-t distribution
  * with optional 2-state Markov regime-switching and Ornstein-Uhlenbeck mean reversion.
  */
@@ -196,8 +216,12 @@ export function generateSyntheticSequence(
     const t1 = x1 * tScale;
     const t2 = x2 * tScale;
     
-    const equityReturn = effEquityMean + effEquityVol * t1;
-    const bondReturn = effBondMean + effBondVol * t2;
+    const rawEquityReturn = effEquityMean + effEquityVol * t1;
+    const rawBondReturn = effBondMean + effBondVol * t2;
+    
+    // Clamp to realistic historical boundaries
+    const equityReturn = clamp(rawEquityReturn, EQUITY_RETURN_MIN, EQUITY_RETURN_MAX);
+    const bondReturn = clamp(rawBondReturn, BOND_RETURN_MIN, BOND_RETURN_MAX);
     
     equityReturns.push(equityReturn);
     fixedIncomeReturns.push(bondReturn);
@@ -211,13 +235,13 @@ export function generateSyntheticSequence(
         // In crisis state, 40% probability of sampling elevated historical stagflation CPI
         const stagflationIndices = [3, 4, 10, 11, 51, 52]; // 1973, 1974, 1980, 1981, 2021, 2022
         const sIdx = stagflationIndices[Math.floor(rand() * stagflationIndices.length)];
-        inflationRates.push(HISTORICAL_RETURNS[sIdx].inflation);
+        inflationRates.push(clamp(HISTORICAL_RETURNS[sIdx].inflation, INFLATION_RATE_MIN, INFLATION_RATE_MAX));
       } else {
         const histIdx = Math.floor(rand() * HISTORICAL_RETURNS.length);
-        inflationRates.push(HISTORICAL_RETURNS[histIdx].inflation);
+        inflationRates.push(clamp(HISTORICAL_RETURNS[histIdx].inflation, INFLATION_RATE_MIN, INFLATION_RATE_MAX));
       }
     } else {
-      inflationRates.push(constantCPIRate ?? 0.025);
+      inflationRates.push(clamp(constantCPIRate ?? 0.025, INFLATION_RATE_MIN, INFLATION_RATE_MAX));
     }
   }
   
@@ -268,9 +292,10 @@ export function generateHistoricalSequence(
       
     for (let i = 0; i < 35; i++) {
       const yearData = HISTORICAL_RETURNS[idx];
-      equityReturns.push(yearData.stock + stockShift);
-      fixedIncomeReturns.push(yearData.bond + bondShift);
-      inflationRates.push(randomizeCPI ? yearData.inflation : (constantCPIRate ?? 0.025));
+      equityReturns.push(clamp(yearData.stock + stockShift, EQUITY_RETURN_MIN, EQUITY_RETURN_MAX));
+      fixedIncomeReturns.push(clamp(yearData.bond + bondShift, BOND_RETURN_MIN, BOND_RETURN_MAX));
+      const rawCpi = randomizeCPI ? yearData.inflation : (constantCPIRate ?? 0.025);
+      inflationRates.push(clamp(rawCpi, INFLATION_RATE_MIN, INFLATION_RATE_MAX));
       idx++;
     }
   } else {
@@ -278,9 +303,10 @@ export function generateHistoricalSequence(
     for (let i = 0; i < 35; i++) {
       const idx = Math.floor(rand() * HISTORICAL_RETURNS.length);
       const yearData = HISTORICAL_RETURNS[idx];
-      equityReturns.push(yearData.stock + stockShift);
-      fixedIncomeReturns.push(yearData.bond + bondShift);
-      inflationRates.push(randomizeCPI ? yearData.inflation : (constantCPIRate ?? 0.025));
+      equityReturns.push(clamp(yearData.stock + stockShift, EQUITY_RETURN_MIN, EQUITY_RETURN_MAX));
+      fixedIncomeReturns.push(clamp(yearData.bond + bondShift, BOND_RETURN_MIN, BOND_RETURN_MAX));
+      const rawCpi = randomizeCPI ? yearData.inflation : (constantCPIRate ?? 0.025);
+      inflationRates.push(clamp(rawCpi, INFLATION_RATE_MIN, INFLATION_RATE_MAX));
     }
   }
   
