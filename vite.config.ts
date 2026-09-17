@@ -26,7 +26,7 @@ function resolveScmVersionInfo() {
   let commitDate = buildIsoTime;
   let commitTimestamp = buildTimestamp;
   let branch = 'main';
-  let tag: string | null = null;
+
 
   try {
     const statusOutput = execSync('git status --porcelain', { encoding: 'utf-8' }).trim();
@@ -63,27 +63,54 @@ function resolveScmVersionInfo() {
     /* ignore */
   }
 
+  let exactTag: string | null = null;
+  let lastTag: string | null = null;
+  let tagDistance = 0;
+
   try {
     const tagOutput = execSync('git describe --tags --exact-match HEAD 2>/dev/null', { encoding: 'utf-8' }).trim();
     if (tagOutput) {
-      tag = tagOutput;
+      exactTag = tagOutput;
     }
   } catch {
-    tag = null;
+    exactTag = null;
   }
 
-  const baseIdentifier = tag ? tag : commitShort;
-  const commitPart = commitTimestamp ? `${baseIdentifier}-${commitTimestamp}` : baseIdentifier;
-  const displayVersion = isDirty
-    ? `${commitPart}-d${buildTimestamp}`
-    : commitPart;
+  try {
+    const describeLong = execSync('git describe --tags --long --always', { encoding: 'utf-8' }).trim();
+    const match = describeLong.match(/^(.+)-(\d+)-g([0-9a-f]+)$/i);
+    if (match) {
+      lastTag = match[1];
+      tagDistance = parseInt(match[2], 10);
+    }
+  } catch {
+    lastTag = null;
+    tagDistance = 0;
+  }
+
+  let displayVersion = '';
+  if (lastTag) {
+    if (tagDistance === 0) {
+      displayVersion = isDirty ? `${lastTag}-d${buildTimestamp}` : lastTag;
+    } else {
+      displayVersion = isDirty
+        ? `${lastTag}-${tagDistance}-g${commitShort}-d${buildTimestamp}`
+        : `${lastTag}-${tagDistance}-g${commitShort}`;
+    }
+  } else {
+    displayVersion = isDirty
+      ? `${commitShort}-d${buildTimestamp}`
+      : commitShort;
+  }
 
   return {
     appName: pkg.name || 'retirement-planner',
     appVersion: pkg.version || '2.0.0',
     displayVersion,
-    baseIdentifier,
-    tag,
+    baseIdentifier: lastTag || commitShort,
+    tag: exactTag,
+    lastTag,
+    tagDistance,
     commitShort,
     commitFull,
     commitDate,
@@ -95,15 +122,40 @@ function resolveScmVersionInfo() {
   };
 }
 
-const scmInfo = resolveScmVersionInfo();
+function versionPlugin() {
+  const virtualModuleId = 'virtual:version-info';
+  const resolvedVirtualModuleId = '\0' + virtualModuleId;
+
+  return {
+    name: 'vite-plugin-version-info',
+    resolveId(id: string) {
+      if (id === virtualModuleId) {
+        return resolvedVirtualModuleId;
+      }
+    },
+    load(id: string) {
+      if (id === resolvedVirtualModuleId) {
+        const scm = resolveScmVersionInfo();
+        return `export default ${JSON.stringify(scm)};`;
+      }
+    },
+    handleHotUpdate({ server }: { server: import('vite').ViteDevServer }) {
+      const mod = server.moduleGraph.getModuleById(resolvedVirtualModuleId);
+      if (mod) {
+        server.moduleGraph.invalidateModule(mod);
+      }
+    },
+  };
+}
 
 // https://vite.dev/config/
 export default defineConfig({
-  plugins: [react()],
+  plugins: [react(), versionPlugin()],
   define: {
-    __APP_VERSION_INFO__: JSON.stringify(scmInfo),
+    __APP_VERSION_INFO__: JSON.stringify(resolveScmVersionInfo()),
   },
   test: {
     environment: 'node',
   },
 });
+

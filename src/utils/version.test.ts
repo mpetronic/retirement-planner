@@ -22,7 +22,7 @@ describe('version utilities', () => {
   });
 
   describe('computeDisplayVersion', () => {
-    it('returns clean commit short hash when untagged and clean without commitTimestamp', () => {
+    it('returns clean commit short hash when untagged and clean', () => {
       const version = computeDisplayVersion({
         commitShort: 'aa1391b',
         isDirty: false,
@@ -30,44 +30,63 @@ describe('version utilities', () => {
       expect(version).toBe('aa1391b');
     });
 
-    it('returns commit short hash with commitTimestamp when untagged and clean', () => {
+    it('returns tag when on exact tag and clean', () => {
       const version = computeDisplayVersion({
+        lastTag: '0.0.7',
+        tagDistance: 0,
         commitShort: 'aa1391b',
-        commitTimestamp: '20260812080000',
         isDirty: false,
       });
-      expect(version).toBe('aa1391b-20260812080000');
+      expect(version).toBe('0.0.7');
     });
 
-    it('returns commit short hash with -dYYYYMMDDHHMMSS when untagged and dirty', () => {
+    it('returns tag with -dYYYYMMDDHHMMSS when on exact tag and dirty', () => {
       const version = computeDisplayVersion({
+        lastTag: '0.0.7',
+        tagDistance: 0,
         commitShort: 'aa1391b',
-        commitTimestamp: '20260812080000',
         isDirty: true,
         timestamp: '20260812080646',
       });
-      expect(version).toBe('aa1391b-20260812080000-d20260812080646');
+      expect(version).toBe('0.0.7-d20260812080646');
     });
 
-    it('prioritizes git release tag when tagged and clean', () => {
+    it('returns tag-distance-gcommit when ahead of tag and clean', () => {
       const version = computeDisplayVersion({
-        tag: 'v2.1.0',
-        commitShort: 'aa1391b',
-        commitTimestamp: '20260812080000',
+        lastTag: '0.0.7',
+        tagDistance: 3,
+        commitShort: 'ac2d10b',
         isDirty: false,
       });
-      expect(version).toBe('v2.1.0-20260812080000');
+      expect(version).toBe('0.0.7-3-gac2d10b');
     });
 
-    it('appends -dYYYYMMDDHHMMSS to tag when tagged and dirty', () => {
+    it('returns tag-distance-gcommit-dYYYYMMDDHHMMSS when ahead of tag and dirty', () => {
       const version = computeDisplayVersion({
-        tag: 'v2.1.0',
-        commitShort: 'aa1391b',
-        commitTimestamp: '20260812080000',
+        lastTag: '0.0.7',
+        tagDistance: 3,
+        commitShort: 'ac2d10b',
         isDirty: true,
         timestamp: '20260812080646',
       });
-      expect(version).toBe('v2.1.0-20260812080000-d20260812080646');
+      expect(version).toBe('0.0.7-3-gac2d10b-d20260812080646');
+    });
+
+    it('falls back to commitShort when no tag exists', () => {
+      const version = computeDisplayVersion({
+        commitShort: 'ac2d10b',
+        isDirty: false,
+      });
+      expect(version).toBe('ac2d10b');
+    });
+
+    it('falls back to commitShort-dYYYYMMDDHHMMSS when untagged and dirty', () => {
+      const version = computeDisplayVersion({
+        commitShort: 'ac2d10b',
+        isDirty: true,
+        timestamp: '20260812080646',
+      });
+      expect(version).toBe('ac2d10b-d20260812080646');
     });
 
     it('falls back to dev when no commit or tag is provided', () => {

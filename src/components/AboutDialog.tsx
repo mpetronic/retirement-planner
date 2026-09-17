@@ -37,7 +37,8 @@ export const AboutDialog: React.FC<AboutDialogProps> = ({
     const diagnosticData = [
       `Application: Retirement Planner 2.0`,
       `Display Version: ${versionInfo.displayVersion}`,
-      `Git Tag: ${versionInfo.tag || 'None'}`,
+      `Base Tag: ${versionInfo.lastTag || versionInfo.tag || 'None'}`,
+      `Tag Distance: ${versionInfo.tagDistance ?? 0}`,
       `Commit (Short): ${versionInfo.commitShort}`,
       `Commit (Full): ${versionInfo.commitFull}`,
       `Commit Date: ${versionInfo.commitDate}`,
@@ -134,6 +135,11 @@ export const AboutDialog: React.FC<AboutDialogProps> = ({
                   {versionInfo.tag && (
                     <span className="text-[9px] bg-indigo-500/20 text-indigo-300 px-1.5 py-0.2 rounded border border-indigo-500/30 font-medium">
                       Release Tag
+                    </span>
+                  )}
+                  {versionInfo.lastTag && !versionInfo.tag && versionInfo.tagDistance !== undefined && (
+                    <span className="text-[9px] bg-slate-800 text-slate-400 px-1.5 py-0.2 rounded border border-slate-700/60 font-medium">
+                      +{versionInfo.tagDistance} past {versionInfo.lastTag}
                     </span>
                   )}
                 </div>
