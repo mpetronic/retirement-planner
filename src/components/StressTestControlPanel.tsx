@@ -13,6 +13,7 @@ import {
   BookOpen,
   Check
 } from 'lucide-react';
+import { RangeSlider } from './RangeSlider';
 
 interface StressTestControlPanelProps {
   inputs: AppStateInputs;
@@ -380,39 +381,41 @@ export const StressTestControlPanel: React.FC<StressTestControlPanelProps> = ({
 
                   {/* Equity Return Slider & Input */}
                   <div className="flex-1 space-y-1">
-                    <div className="flex justify-between text-[11px]">
-                      <span className="text-slate-400 font-medium">Stock (Equity) Return:</span>
-                      <span className={`font-mono font-bold ${ov.equityReturn < 0 ? 'text-rose-400' : 'text-emerald-400'}`}>
-                        {ov.equityReturn > 0 ? '+' : ''}{formatPct(ov.equityReturn)}
-                      </span>
-                    </div>
-                    <input
-                      type="range"
-                      min="-0.60"
-                      max="0.50"
-                      step="0.01"
+                    <RangeSlider
+                      min={-0.60}
+                      max={0.50}
+                      step={0.01}
                       value={ov.equityReturn}
-                      onChange={(e) => updateYearOverride(index, 'equityReturn', Number(e.target.value))}
+                      onChange={(val) => updateYearOverride(index, 'equityReturn', val)}
                       className="w-full h-1.5 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-rose-500"
+                      renderLabel={(displayVal) => (
+                        <div className="flex justify-between text-[11px]">
+                          <span className="text-slate-400 font-medium">Stock (Equity) Return:</span>
+                          <span className={`font-mono font-bold ${displayVal < 0 ? 'text-rose-400' : 'text-emerald-400'}`}>
+                            {displayVal > 0 ? '+' : ''}{formatPct(displayVal)}
+                          </span>
+                        </div>
+                      )}
                     />
                   </div>
 
                   {/* Bond Return Slider & Input */}
                   <div className="flex-1 space-y-1">
-                    <div className="flex justify-between text-[11px]">
-                      <span className="text-slate-400 font-medium">Bond (Fixed Income) Return:</span>
-                      <span className={`font-mono font-bold ${ov.fixedIncomeReturn < 0 ? 'text-rose-400' : 'text-emerald-400'}`}>
-                        {ov.fixedIncomeReturn > 0 ? '+' : ''}{formatPct(ov.fixedIncomeReturn)}
-                      </span>
-                    </div>
-                    <input
-                      type="range"
-                      min="-0.30"
-                      max="0.30"
-                      step="0.01"
+                    <RangeSlider
+                      min={-0.30}
+                      max={0.30}
+                      step={0.01}
                       value={ov.fixedIncomeReturn}
-                      onChange={(e) => updateYearOverride(index, 'fixedIncomeReturn', Number(e.target.value))}
+                      onChange={(val) => updateYearOverride(index, 'fixedIncomeReturn', val)}
                       className="w-full h-1.5 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-rose-500"
+                      renderLabel={(displayVal) => (
+                        <div className="flex justify-between text-[11px]">
+                          <span className="text-slate-400 font-medium">Bond (Fixed Income) Return:</span>
+                          <span className={`font-mono font-bold ${displayVal < 0 ? 'text-rose-400' : 'text-emerald-400'}`}>
+                            {displayVal > 0 ? '+' : ''}{formatPct(displayVal)}
+                          </span>
+                        </div>
+                      )}
                     />
                   </div>
 

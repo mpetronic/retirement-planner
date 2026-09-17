@@ -14,13 +14,16 @@ import {
 import { runRetirementSimulation } from './engine/simulationEngine';
 import {
   runMonteCarloSimulation,
+  computeRepresentativeSequences,
   generateSyntheticSequence,
   generateHistoricalSequence,
-  mulberry32
+  mulberry32,
+  MonteCarloSummary,
 } from './engine/monteCarloEngine';
 import { DEFAULT_FILL_TO_TARGET_VALUE } from './engine/taxRates2026';
-import { InputControlSidebar } from './components/InputControlSidebar';
 import { DashboardLayout } from './components/DashboardLayout';
+import { ActiveViewType } from './components/SidebarNavigation';
+import { ParametersWorkspace } from './components/ParametersWorkspace';
 import { BracketMapChart } from './components/BracketMapChart';
 import { TaxableIncomeWorkspace } from './components/TaxableIncomeWorkspace';
 import { LookbackLedgerTable } from './components/LookbackLedgerTable';
@@ -28,6 +31,7 @@ import { MonteCarloWorkspace } from './components/MonteCarloWorkspace';
 import { PlanComparisonWorkspace } from './components/PlanComparisonWorkspace';
 import { ActualsWorkspace } from './components/ActualsWorkspace';
 import { DocumentationDialog } from './components/DocumentationDialog';
+import { AboutDialog } from './components/AboutDialog';
 import { OnboardingWizard } from './components/OnboardingWizard';
 
 // Default initial state matching specifications
@@ -121,7 +125,7 @@ function useLocalStorage<T>(key: string, initialValue: T): [T, (value: T | ((val
       const item = window.localStorage.getItem(key);
       if (item) {
         const parsed = JSON.parse(item);
-        
+
         // Robust deep merge to ensure new Monte Carlo fields are populated for users with old saved states
         if (key === 'retirement_planner_inputs') {
           const init = initialValue as unknown as AppStateInputs;
@@ -129,7 +133,12 @@ function useLocalStorage<T>(key: string, initialValue: T): [T, (value: T | ((val
           return {
             ...init,
             ...p,
-            simulationStartYear: p.simulationStartYear !== undefined ? p.simulationStartYear : (p.rothConversionStartYear ? p.rothConversionStartYear - 1 : 2026),
+            simulationStartYear:
+              p.simulationStartYear !== undefined
+                ? p.simulationStartYear
+                : p.rothConversionStartYear
+                ? p.rothConversionStartYear - 1
+                : 2026,
             growthAssumptions: {
               ...init.growthAssumptions,
               ...p.growthAssumptions,
@@ -175,10 +184,10 @@ function useLocalStorage<T>(key: string, initialValue: T): [T, (value: T | ((val
                 ...DEFAULT_GUARDRAIL_SETTINGS,
                 ...(p.inputs?.guardrailSettings || {}),
               },
-            }
+            },
           })) as unknown as T;
         }
-        
+
         return parsed;
       }
       return initialValue;
@@ -203,19 +212,36 @@ function useLocalStorage<T>(key: string, initialValue: T): [T, (value: T | ((val
   return [storedValue, setValue];
 }
 
+const TAB_INDEX_TO_VIEW: Record<number, ActiveViewType> = {
+  0: 'overview',
+  1: 'taxable-income',
+  2: 'lookback-ledger',
+  3: 'monte-carlo',
+  4: 'compare',
+  5: 'actuals',
+};
+
 function App() {
   const [inputs, setInputs] = useLocalStorage<AppStateInputs>('retirement_planner_inputs', DEFAULT_INPUTS);
-  const [activeTab, setActiveTab] = useState<number>(0);
+  const [activeView, setActiveView] = useLocalStorage<ActiveViewType>('retirement_planner_active_view', 'overview');
   const [simulateSurvivor, setSimulateSurvivor] = useLocalStorage<boolean>('retirement_planner_survivor', false);
   const [savedPlans, setSavedPlans] = useLocalStorage<SavedPlan[]>('retirement_planner_saved_plans', []);
   const [useTodayDollars, setUseTodayDollars] = useLocalStorage<boolean>('retirement_planner_use_today_dollars', false);
   const [showDocumentation, setShowDocumentation] = useState<boolean>(false);
+  const [showAboutDialog, setShowAboutDialog] = useState<boolean>(false);
   const [documentationSectionId, setDocumentationSectionId] = useState<string>('overview');
-  const [isParamDrawerOpen, setIsParamDrawerOpen] = useState<boolean>(false);
 
   const handleOpenDocumentation = (sectionId?: string) => {
     setDocumentationSectionId(sectionId || 'overview');
     setShowDocumentation(true);
+  };
+
+  const handleNavigate = (viewOrTab: ActiveViewType | number) => {
+    if (typeof viewOrTab === 'number') {
+      setActiveView(TAB_INDEX_TO_VIEW[viewOrTab] || 'overview');
+    } else {
+      setActiveView(viewOrTab);
+    }
   };
 
   // Synchronize inputs while seamlessly restoring simulateSurvivor if present in imported/loaded plan
@@ -236,18 +262,41 @@ function App() {
     }
   };
 
+  // Global focus auto-select: automatically select text on number/text inputs so typing replaces default/0 values immediately
+  useEffect(() => {
+    const handleGlobalFocus = (e: FocusEvent) => {
+      const target = e.target;
+      if (
+        target instanceof HTMLInputElement &&
+        (target.type === 'number' ||
+          target.type === 'text' ||
+          target.inputMode === 'numeric' ||
+          target.inputMode === 'decimal')
+      ) {
+        // Defer selection slightly to ensure cursor/focus settlement across all browsers
+        setTimeout(() => {
+          if (document.activeElement === target) {
+            target.select();
+          }
+        }, 10);
+      }
+    };
+    window.addEventListener('focusin', handleGlobalFocus);
+    return () => window.removeEventListener('focusin', handleGlobalFocus);
+  }, []);
+
   // Global keyboard shortcuts:
   // - '?' or 'Shift + /' to summon Documentation & User Guide
-  // - 'P' or 'p' to toggle Scenario Parameters side drawer
+  // - 'P' or 'p' to toggle between Parameters and Overview
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       const target = e.target as HTMLElement | null;
-      const isInput = target && (
-        target.tagName === 'INPUT' ||
-        target.tagName === 'TEXTAREA' ||
-        target.tagName === 'SELECT' ||
-        target.isContentEditable
-      );
+      const isInput =
+        target &&
+        (target.tagName === 'INPUT' ||
+          target.tagName === 'TEXTAREA' ||
+          target.tagName === 'SELECT' ||
+          target.isContentEditable);
       if (isInput) return;
 
       if (e.key === '?' || (e.shiftKey && e.key === '/')) {
@@ -255,30 +304,40 @@ function App() {
         setShowDocumentation((prev) => !prev);
       } else if (e.key === 'p' || e.key === 'P') {
         e.preventDefault();
-        setIsParamDrawerOpen((prev) => !prev);
+        setActiveView((prev) => (prev.startsWith('params-') ? 'overview' : 'params-profiles'));
       }
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, []);
+  }, [setActiveView]);
 
   // Defer heavy mathematical calculations to maintain 60+ FPS UI responsiveness during slider drag/typing
   const deferredInputs = useDeferredValue(inputs);
   const deferredSimulateSurvivor = useDeferredValue(simulateSurvivor);
-  const isSimulating = inputs !== deferredInputs || simulateSurvivor !== deferredSimulateSurvivor;
+  const [isSimulatingMC, setIsSimulatingMC] = useState(false);
+  const isSimulating = inputs !== deferredInputs || simulateSurvivor !== deferredSimulateSurvivor || isSimulatingMC;
 
   // Global persisted scenario for all worksheets
-  const [globalScenario, setGlobalScenario] = useLocalStorage<'flat' | 'p10' | 'p50' | 'p90'>('retirement_planner_global_scenario', 'p50');
+  const [globalScenario, setGlobalScenario] = useLocalStorage<'flat' | 'p10' | 'p50' | 'p90'>(
+    'retirement_planner_global_scenario',
+    'p50'
+  );
 
   // Persisted plan selections for Workspace 4 comparison
   const [selectedPlanAId, setSelectedPlanAId] = useLocalStorage<string>('retirement_planner_selected_plan_a', '');
   const [selectedPlanBId, setSelectedPlanBId] = useLocalStorage<string>('retirement_planner_selected_plan_b', '');
 
   // Persisted Quick Fill selection for Workspace 2 Roth optimization
-  const [selectedQuickFill, setSelectedQuickFill] = useLocalStorage<number | null>('retirement_planner_selected_quick_fill', null);
+  const [selectedQuickFill, setSelectedQuickFill] = useLocalStorage<number | null>(
+    'retirement_planner_selected_quick_fill',
+    null
+  );
 
   // Dedicated persisted Guideline Overlay selection for Workspace 1 Bracket Map
-  const [chartGuidelineOverlay, setChartGuidelineOverlay] = useLocalStorage<number | null>('retirement_planner_chart_guideline_overlay', null);
+  const [chartGuidelineOverlay, setChartGuidelineOverlay] = useLocalStorage<number | null>(
+    'retirement_planner_chart_guideline_overlay',
+    null
+  );
 
   // Global root font size setting (affects all panels via root rem unit scaling)
   const [globalFontSize, setGlobalFontSize] = useLocalStorage<number>('retirement_planner_font_size', 16);
@@ -287,13 +346,11 @@ function App() {
     document.documentElement.style.fontSize = `${globalFontSize}px`;
   }, [globalFontSize]);
 
-
   // 1. Generate 1,000 return sequences once, keyed ONLY on deferred volatility/correlation/seed/cpi.
-  // This preserves stable market return percentages while strategy slider variables are tweaked.
   const returnSequences = useMemo(() => {
     const trials = deferredInputs.monteCarloSettings?.trials || 1000;
     const mode = deferredInputs.monteCarloSettings?.mode || 'monte-carlo';
-    
+
     const equityMean = deferredInputs.growthAssumptions.equityReturnRate;
     const bondMean = deferredInputs.growthAssumptions.fixedIncomeReturnRate;
     const equityVol = deferredInputs.monteCarloSettings?.equityVolatility ?? 0.15;
@@ -301,34 +358,50 @@ function App() {
     const correlation = deferredInputs.monteCarloSettings?.correlation ?? 0.15;
     const seed = deferredInputs.monteCarloSettings?.seed;
     const nonce = deferredInputs.monteCarloSettings?.nonce ?? 0;
-    
+
     const isCpiRandomized = deferredInputs.monteCarloSettings?.randomizeCPI !== false;
-    const constantCpi = (deferredInputs.monteCarloSettings?.randomizeCPI === false && deferredInputs.monteCarloSettings?.constantCPIRate != null)
-      ? deferredInputs.monteCarloSettings.constantCPIRate
-      : deferredInputs.growthAssumptions.cpiInflationRate;
+    const constantCpi =
+      deferredInputs.monteCarloSettings?.randomizeCPI === false &&
+      deferredInputs.monteCarloSettings?.constantCPIRate != null
+        ? deferredInputs.monteCarloSettings.constantCPIRate
+        : deferredInputs.growthAssumptions.cpiInflationRate;
     const enableRegimeSwitching = deferredInputs.monteCarloSettings?.enableRegimeSwitching !== false;
     const historicalStrategy = deferredInputs.monteCarloSettings?.historicalSamplingStrategy ?? 'hybrid';
     const calibrateHistoricalMeans = deferredInputs.monteCarloSettings?.calibrateHistoricalMeans !== false;
-    
+
     const baseSeed = seed !== null && seed !== undefined ? seed : 12345;
     const rand = mulberry32(baseSeed + nonce);
-    
+
     const list: Omit<LockedReturnSequence, 'id'>[] = [];
     for (let t = 0; t < trials; t++) {
       if (mode === 'historical') {
         const isBlock = historicalStrategy === 'block' ? true : historicalStrategy === 'random' ? false : rand() < 0.35;
-        list.push(generateHistoricalSequence(
-          isBlock,
-          undefined,
-          rand,
-          isCpiRandomized,
-          constantCpi,
-          calibrateHistoricalMeans,
-          equityMean,
-          bondMean
-        ));
+        list.push(
+          generateHistoricalSequence(
+            isBlock,
+            undefined,
+            rand,
+            isCpiRandomized,
+            constantCpi,
+            calibrateHistoricalMeans,
+            equityMean,
+            bondMean
+          )
+        );
       } else {
-        list.push(generateSyntheticSequence(equityMean, equityVol, bondMean, bondVol, correlation, rand, isCpiRandomized, constantCpi, enableRegimeSwitching));
+        list.push(
+          generateSyntheticSequence(
+            equityMean,
+            equityVol,
+            bondMean,
+            bondVol,
+            correlation,
+            rand,
+            isCpiRandomized,
+            constantCpi,
+            enableRegimeSwitching
+          )
+        );
       }
     }
     return list;
@@ -350,28 +423,44 @@ function App() {
     deferredInputs.monteCarloSettings.calibrateHistoricalMeans,
   ]);
 
-  // 2. Reactively compute the Monte Carlo simulation on deferred inputs.
-  const monteCarloSummary = useMemo(() => {
-    return runMonteCarloSimulation(deferredInputs, deferredSimulateSurvivor, returnSequences);
-  }, [deferredInputs, deferredSimulateSurvivor, returnSequences]);
+  // 2. Compute representative market return sequences (P10, P50, P90) instantaneously (<0.1ms).
+  const representativeSequences = useMemo(() => {
+    return computeRepresentativeSequences(deferredInputs, returnSequences);
+  }, [deferredInputs, returnSequences]);
 
-  // 3. Compute parallel ledgers for flat expected returns and the representative percentiles.
+  // 3. Compute parallel ledgers for flat expected returns and the representative percentiles (~2ms total).
   const parallelLedgers = useMemo(() => {
     return {
       flat: runRetirementSimulation(deferredInputs, deferredSimulateSurvivor, null),
-      p10: runRetirementSimulation(deferredInputs, deferredSimulateSurvivor, monteCarloSummary.representativeSequences.worst),
-      p50: runRetirementSimulation(deferredInputs, deferredSimulateSurvivor, monteCarloSummary.representativeSequences.median),
-      p90: runRetirementSimulation(deferredInputs, deferredSimulateSurvivor, monteCarloSummary.representativeSequences.best),
+      p10: runRetirementSimulation(deferredInputs, deferredSimulateSurvivor, representativeSequences.worst),
+      p50: runRetirementSimulation(deferredInputs, deferredSimulateSurvivor, representativeSequences.median),
+      p90: runRetirementSimulation(deferredInputs, deferredSimulateSurvivor, representativeSequences.best),
     };
-  }, [deferredInputs, deferredSimulateSurvivor, monteCarloSummary]);
+  }, [deferredInputs, deferredSimulateSurvivor, representativeSequences]);
+
+  // 4. Asynchronously compute the 1,000-trial Monte Carlo batch simulation with debounce to keep UI interactions 100% fluid.
+  const [monteCarloSummary, setMonteCarloSummary] = useState<MonteCarloSummary>(() => {
+    return runMonteCarloSimulation(inputs, simulateSurvivor, returnSequences);
+  });
+
+  useEffect(() => {
+    setIsSimulatingMC(true);
+    const timer = setTimeout(() => {
+      const summary = runMonteCarloSimulation(deferredInputs, deferredSimulateSurvivor, returnSequences);
+      setMonteCarloSummary(summary);
+      setIsSimulatingMC(false);
+    }, 150);
+
+    return () => clearTimeout(timer);
+  }, [deferredInputs, deferredSimulateSurvivor, returnSequences]);
 
   // Active return sequence for optimizer/matrix sweeps depending on global scenario
   const activeSequence = useMemo(() => {
-    if (globalScenario === 'p10') return monteCarloSummary.representativeSequences.worst;
-    if (globalScenario === 'p50') return monteCarloSummary.representativeSequences.median;
-    if (globalScenario === 'p90') return monteCarloSummary.representativeSequences.best;
+    if (globalScenario === 'p10') return representativeSequences.worst;
+    if (globalScenario === 'p50') return representativeSequences.median;
+    if (globalScenario === 'p90') return representativeSequences.best;
     return null;
-  }, [globalScenario, monteCarloSummary]);
+  }, [globalScenario, representativeSequences]);
 
   // Compute active ledger depending on the global switcher state
   const activeLedger = useMemo(() => {
@@ -385,7 +474,7 @@ function App() {
 
     const discounted = { ...row };
     const nonCurrencyKeys = new Set(['year', 'yourAge', 'wifeAge', 'surchargeTier', 'cpiFactor']);
-    
+
     for (const key of Object.keys(discounted) as Array<keyof SimulationResultRow>) {
       const val = discounted[key];
       if (!nonCurrencyKeys.has(key as string) && typeof val === 'number') {
@@ -413,10 +502,12 @@ function App() {
 
   const displayMonteCarloSummary = useMemo(() => {
     if (!useTodayDollars) return monteCarloSummary;
-    const cpi = (deferredInputs.monteCarloSettings?.randomizeCPI === false && deferredInputs.monteCarloSettings?.constantCPIRate != null)
-      ? deferredInputs.monteCarloSettings.constantCPIRate
-      : deferredInputs.growthAssumptions.cpiInflationRate;
-    
+    const cpi =
+      deferredInputs.monteCarloSettings?.randomizeCPI === false &&
+      deferredInputs.monteCarloSettings?.constantCPIRate != null
+        ? deferredInputs.monteCarloSettings.constantCPIRate
+        : deferredInputs.growthAssumptions.cpiInflationRate;
+
     const simStartYear = getSimulationStartYear(deferredInputs);
     const discountedPercentiles = monteCarloSummary.percentiles.map((p) => {
       const yearsElapsed = p.year - simStartYear;
@@ -552,46 +643,47 @@ function App() {
     document.title = 'Retirement Planner - Tax, Medicare & SS Planner';
   }, []);
 
+  const isParamView = activeView.startsWith('params-');
+
   return (
     <div className="flex flex-col h-screen w-screen overflow-hidden bg-slate-950 text-slate-100 antialiased font-sans">
-      {!inputs.isConfigured && (
-        <OnboardingWizard onComplete={handleInputsChange} />
-      )}
+      {!inputs.isConfigured && <OnboardingWizard onComplete={handleInputsChange} />}
 
-      {/* Slide-Over Parameter Controls Drawer */}
-      <InputControlSidebar 
-        isOpen={isParamDrawerOpen}
-        onClose={() => setIsParamDrawerOpen(false)}
-        inputs={inputs} 
-        onChange={handleInputsChange} 
-        onReset={() => handleInputsChange(DEFAULT_INPUTS)} 
-        useTodayDollars={useTodayDollars}
-        setUseTodayDollars={setUseTodayDollars}
-        globalScenario={globalScenario}
-        simulateSurvivor={simulateSurvivor}
-        setSimulateSurvivor={setSimulateSurvivor}
-        ledger={displayActiveLedger}
-        globalFontSize={globalFontSize}
-        setGlobalFontSize={setGlobalFontSize}
-        onNavigateTab={setActiveTab}
-        onOpenDocumentation={handleOpenDocumentation}
-      />
-
-      {/* Main Orchestration Dashboard Layout */}
+      {/* Main Orchestration Dashboard Layout with Collapsible Sidebar */}
       <DashboardLayout
         ledger={displayActiveLedger}
         parallelLedgers={displayParallelLedgers}
         successRate={monteCarloSummary.successRate}
         inputs={inputs}
-        activeTab={activeTab}
-        setActiveTab={setActiveTab}
+        activeView={activeView}
+        onNavigate={handleNavigate}
         globalScenario={globalScenario}
         setGlobalScenario={setGlobalScenario}
         isSimulating={isSimulating}
         onOpenDocumentation={handleOpenDocumentation}
-        onOpenParamDrawer={() => setIsParamDrawerOpen(true)}
+        onOpenAbout={() => setShowAboutDialog(true)}
+        globalFontSize={globalFontSize}
+        setGlobalFontSize={setGlobalFontSize}
       >
-        {activeTab === 0 && (
+        {/* Render Parameters Workspace when activeView is a parameter section */}
+        {isParamView && (
+          <ParametersWorkspace
+            activeSection={activeView}
+            onNavigateSection={handleNavigate}
+            inputs={inputs}
+            onChange={handleInputsChange}
+            onReset={() => handleInputsChange(DEFAULT_INPUTS)}
+            useTodayDollars={useTodayDollars}
+            setUseTodayDollars={setUseTodayDollars}
+            simulateSurvivor={simulateSurvivor}
+            setSimulateSurvivor={setSimulateSurvivor}
+            ledger={displayActiveLedger}
+            globalScenario={globalScenario}
+          />
+        )}
+
+        {/* Workspace 1: Overview & Bracket Map */}
+        {activeView === 'overview' && (
           <BracketMapChart
             ledger={displayActiveLedger}
             inputs={inputs}
@@ -600,7 +692,9 @@ function App() {
             setGuidelineOverlay={setChartGuidelineOverlay}
           />
         )}
-        {activeTab === 1 && (
+
+        {/* Workspace 2: Taxable Income Planner */}
+        {activeView === 'taxable-income' && (
           <TaxableIncomeWorkspace
             ledger={displayActiveLedger}
             inputs={inputs}
@@ -617,17 +711,21 @@ function App() {
             setSelectedQuickFill={setSelectedQuickFill}
           />
         )}
-        {activeTab === 2 && (
+
+        {/* Workspace 3: Lookback Ledger */}
+        {activeView === 'lookback-ledger' && (
           <LookbackLedgerTable
             ledger={displayActiveLedger}
             inputs={inputs}
             simulateSurvivor={simulateSurvivor}
             onNavigateToActuals={() => {
-              setActiveTab(5);
+              setActiveView('actuals');
             }}
           />
         )}
-        {activeTab === 3 && (
+
+        {/* Workspace 4: Monte Carlo Analysis */}
+        {activeView === 'monte-carlo' && (
           <MonteCarloWorkspace
             inputs={inputs}
             onChangeInputs={handleInputsChange}
@@ -636,7 +734,9 @@ function App() {
             globalScenario={globalScenario}
           />
         )}
-        {activeTab === 4 && (
+
+        {/* Workspace 5: Plan Comparison */}
+        {activeView === 'compare' && (
           <PlanComparisonWorkspace
             inputs={inputs}
             onLoadPlan={handleInputsChange}
@@ -650,7 +750,9 @@ function App() {
             setSelectedPlanBId={setSelectedPlanBId}
           />
         )}
-        {activeTab === 5 && (
+
+        {/* Workspace 6: Actuals & Guardrails */}
+        {activeView === 'actuals' && (
           <ActualsWorkspace
             ledger={displayActiveLedger}
             inputs={inputs}
@@ -672,7 +774,7 @@ function App() {
                 annualLivingExpenses: newBudget,
               }));
             }}
-            onNavigateToTab={setActiveTab}
+            onNavigateToTab={(tabIdx) => handleNavigate(tabIdx)}
           />
         )}
       </DashboardLayout>
@@ -683,7 +785,19 @@ function App() {
           isOpen={showDocumentation}
           onClose={() => setShowDocumentation(false)}
           initialSectionId={documentationSectionId}
-          onNavigateTab={setActiveTab}
+          onNavigateTab={(tabIdx) => handleNavigate(tabIdx)}
+        />
+      )}
+
+      {/* About Application Modal */}
+      {showAboutDialog && (
+        <AboutDialog
+          isOpen={showAboutDialog}
+          onClose={() => setShowAboutDialog(false)}
+          onOpenDocumentation={() => {
+            setShowAboutDialog(false);
+            handleOpenDocumentation('overview');
+          }}
         />
       )}
     </div>

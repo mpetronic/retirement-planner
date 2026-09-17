@@ -4,6 +4,8 @@ import { Chart as ChartJS, registerables, ChartOptions, TooltipItem } from 'char
 import { AppStateInputs, MonteCarloSettings } from '../types';
 import { MonteCarloSummary } from '../engine/monteCarloEngine';
 import { StressTestControlPanel } from './StressTestControlPanel';
+import { RangeSlider } from './RangeSlider';
+import { NumericInput } from './NumericInput';
 import { 
   Sliders, 
   Info,
@@ -87,16 +89,11 @@ export const MonteCarloWorkspace: React.FC<MonteCarloWorkspaceProps> = ({
     });
   };
 
-  const eqRate = inputs.growthAssumptions.equityReturnRate;
   const fiRate = inputs.growthAssumptions.fixedIncomeReturnRate;
   const preTaxEq = inputs.growthAssumptions.preTaxEquityPortion ?? 0.50;
   const taxableEq = inputs.growthAssumptions.taxableEquityPortion ?? 0.60;
   const rothEq = inputs.growthAssumptions.rothEquityPortion ?? 1.00;
   const cashYield = inputs.growthAssumptions.cashYieldRate ?? fiRate;
-
-  const effectivePreTaxRate = preTaxEq * eqRate + (1 - preTaxEq) * fiRate;
-  const effectiveTaxableRate = taxableEq * eqRate + (1 - taxableEq) * fiRate;
-  const effectiveRothRate = rothEq * eqRate + (1 - rothEq) * fiRate;
 
   const handleRegenerate = () => {
     if (inputs.monteCarloSettings.seed !== null) {
@@ -301,7 +298,7 @@ export const MonteCarloWorkspace: React.FC<MonteCarloWorkspaceProps> = ({
       <div className="bg-slate-900/30 px-4 py-2.5 rounded-2xl border border-slate-800/60">
         <div>
           <h3 className="text-lg font-bold text-slate-100 flex items-center gap-2">
-            <Sliders className="w-5 h-5 text-emerald-400" />
+            <TrendingUp className="w-5 h-5 text-emerald-400" />
             Monte Carlo Analysis & Stress Testing
           </h3>
           <p className="text-xs text-slate-400">
@@ -420,72 +417,76 @@ export const MonteCarloWorkspace: React.FC<MonteCarloWorkspaceProps> = ({
                 {/* Equity Return Rate */}
                 <div className="space-y-1.5 p-2.5 bg-slate-900/60 rounded-lg border border-slate-800/80">
                   <label className="text-[10px] text-slate-400 font-bold uppercase tracking-wider block truncate">Equity Return (Mean)</label>
-                  <div className="flex justify-between items-center text-xs font-mono font-bold text-slate-200">
-                    <span>Rate:</span>
-                    <span className="text-emerald-400">{formatPercent(inputs.growthAssumptions.equityReturnRate)}</span>
-                  </div>
-                  <input
-                    type="range"
-                    min="0.00"
-                    max="0.15"
-                    step="0.005"
+                  <RangeSlider
+                    min={0.00}
+                    max={0.15}
+                    step={0.005}
                     value={inputs.growthAssumptions.equityReturnRate}
-                    onChange={(e) => updateGrowthAssumptions('equityReturnRate', Number(e.target.value))}
+                    onChange={(val) => updateGrowthAssumptions('equityReturnRate', val)}
                     className="w-full h-1 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-emerald-500"
+                    renderLabel={(displayVal) => (
+                      <div className="flex justify-between items-center text-xs font-mono font-bold text-slate-200">
+                        <span>Rate:</span>
+                        <span className="text-emerald-400">{formatPercent(displayVal)}</span>
+                      </div>
+                    )}
                   />
                 </div>
 
                 {/* Fixed Income Return Rate */}
                 <div className="space-y-1.5 p-2.5 bg-slate-900/60 rounded-lg border border-slate-800/80">
                   <label className="text-[10px] text-slate-400 font-bold uppercase tracking-wider block truncate">Fixed Income (Mean)</label>
-                  <div className="flex justify-between items-center text-xs font-mono font-bold text-slate-200">
-                    <span>Rate:</span>
-                    <span className="text-emerald-400">{formatPercent(inputs.growthAssumptions.fixedIncomeReturnRate)}</span>
-                  </div>
-                  <input
-                    type="range"
-                    min="0.00"
-                    max="0.10"
-                    step="0.005"
+                  <RangeSlider
+                    min={0.00}
+                    max={0.10}
+                    step={0.005}
                     value={inputs.growthAssumptions.fixedIncomeReturnRate}
-                    onChange={(e) => updateGrowthAssumptions('fixedIncomeReturnRate', Number(e.target.value))}
+                    onChange={(val) => updateGrowthAssumptions('fixedIncomeReturnRate', val)}
                     className="w-full h-1 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-emerald-500"
+                    renderLabel={(displayVal) => (
+                      <div className="flex justify-between items-center text-xs font-mono font-bold text-slate-200">
+                        <span>Rate:</span>
+                        <span className="text-emerald-400">{formatPercent(displayVal)}</span>
+                      </div>
+                    )}
                   />
                 </div>
 
                 {/* CPI Inflation Rate */}
                 <div className="space-y-1.5 p-2.5 bg-slate-900/60 rounded-lg border border-slate-800/80">
                   <label className="text-[10px] text-slate-400 font-bold uppercase tracking-wider block truncate">CPI Inflation</label>
-                  <div className="flex justify-between items-center text-xs font-mono font-bold text-slate-200">
-                    <span>Rate:</span>
-                    <span className="text-emerald-400">{formatPercent(inputs.growthAssumptions.cpiInflationRate)}</span>
-                  </div>
-                  <input
-                    type="range"
-                    min="0.00"
-                    max="0.08"
-                    step="0.002"
+                  <RangeSlider
+                    min={0.00}
+                    max={0.08}
+                    step={0.002}
                     value={inputs.growthAssumptions.cpiInflationRate}
-                    onChange={(e) => updateGrowthAssumptions('cpiInflationRate', Number(e.target.value))}
+                    onChange={(val) => updateGrowthAssumptions('cpiInflationRate', val)}
                     className="w-full h-1 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-emerald-500"
+                    renderLabel={(displayVal) => (
+                      <div className="flex justify-between items-center text-xs font-mono font-bold text-slate-200">
+                        <span>Rate:</span>
+                        <span className="text-emerald-400">{formatPercent(displayVal)}</span>
+                      </div>
+                    )}
                   />
                 </div>
 
                 {/* Healthcare Inflation Rate */}
                 <div className="space-y-1.5 p-2.5 bg-slate-900/60 rounded-lg border border-slate-800/80">
                   <label className="text-[10px] text-slate-400 font-bold uppercase tracking-wider block truncate">Healthcare Inflation</label>
-                  <div className="flex justify-between items-center text-xs font-mono font-bold text-slate-200">
-                    <span>Rate:</span>
-                    <span className="text-emerald-400">{formatPercent(inputs.growthAssumptions.healthcareInflationRate)}</span>
-                  </div>
-                  <input
-                    type="range"
-                    min="0.00"
-                    max="0.10"
-                    step="0.005"
+                  <RangeSlider
+                    min={0.00}
+                    max={0.10}
+                    step={0.005}
                     value={inputs.growthAssumptions.healthcareInflationRate}
-                    onChange={(e) => updateGrowthAssumptions('healthcareInflationRate', Number(e.target.value))}
+                    onChange={(val) => updateGrowthAssumptions('healthcareInflationRate', val)}
                     className="w-full h-1 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-emerald-500"
+                    renderLabel={(displayVal) => (
+                      <div className="flex justify-between items-center text-xs font-mono font-bold text-slate-200">
+                        <span>Rate:</span>
+                        <span className="text-emerald-400">{formatPercent(displayVal)}</span>
+                      </div>
+                    )}
                   />
                 </div>
               </div>
@@ -507,133 +508,136 @@ export const MonteCarloWorkspace: React.FC<MonteCarloWorkspaceProps> = ({
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
               {/* Pre-Tax Traditional IRA */}
               <div className="p-3 bg-slate-950/60 rounded-xl border border-slate-800 space-y-2">
-                <div className="flex justify-between items-center text-xs">
-                  <span className="font-semibold text-slate-200">Pre-Tax IRA</span>
-                  <span className="text-[10px] font-mono font-bold px-1.5 py-0.5 rounded bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
-                    {formatPercent(effectivePreTaxRate)} mean
-                  </span>
-                </div>
-                <div className="flex justify-between text-[10px] text-slate-400 font-mono">
-                  <span>{Math.round(preTaxEq * 100)}% Stocks</span>
-                  <span>{Math.round((1 - preTaxEq) * 100)}% Bonds</span>
-                </div>
-                <input
-                  type="range"
-                  min="0.00"
-                  max="1.00"
-                  step="0.05"
+                <RangeSlider
+                  min={0.00}
+                  max={1.00}
+                  step={0.05}
                   value={preTaxEq}
-                  onChange={(e) => updateGrowthAssumptions('preTaxEquityPortion', Number(e.target.value))}
+                  onChange={(val) => updateGrowthAssumptions('preTaxEquityPortion', val)}
                   className="w-full h-1.5 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-emerald-500"
+                  renderLabel={(displayVal) => (
+                    <>
+                      <div className="flex justify-between items-center text-xs">
+                        <span className="font-semibold text-slate-200">Pre-Tax IRA</span>
+                        <span className="text-[10px] font-mono font-bold px-1.5 py-0.5 rounded bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+                          {formatPercent(displayVal * inputs.growthAssumptions.equityReturnRate + (1 - displayVal) * inputs.growthAssumptions.fixedIncomeReturnRate)} mean
+                        </span>
+                      </div>
+                      <div className="flex justify-between text-[10px] text-slate-400 font-mono">
+                        <span>{Math.round(displayVal * 100)}% Stocks</span>
+                        <span>{Math.round((1 - displayVal) * 100)}% Bonds</span>
+                      </div>
+                    </>
+                  )}
                 />
               </div>
 
               {/* Taxable Brokerage */}
               <div className="p-3 bg-slate-950/60 rounded-xl border border-slate-800 space-y-2">
-                <div className="flex justify-between items-center text-xs">
-                  <span className="font-semibold text-slate-200">Taxable Brokerage</span>
-                  <span className="text-[10px] font-mono font-bold px-1.5 py-0.5 rounded bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
-                    {formatPercent(effectiveTaxableRate)} mean
-                  </span>
-                </div>
-                <div className="flex justify-between text-[10px] text-slate-400 font-mono">
-                  <span>{Math.round(taxableEq * 100)}% Stocks</span>
-                  <span>{Math.round((1 - taxableEq) * 100)}% Bonds</span>
-                </div>
-                <input
-                  type="range"
-                  min="0.00"
-                  max="1.00"
-                  step="0.05"
+                <RangeSlider
+                  min={0.00}
+                  max={1.00}
+                  step={0.05}
                   value={taxableEq}
-                  onChange={(e) => updateGrowthAssumptions('taxableEquityPortion', Number(e.target.value))}
+                  onChange={(val) => updateGrowthAssumptions('taxableEquityPortion', val)}
                   className="w-full h-1.5 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-emerald-500"
+                  renderLabel={(displayVal) => (
+                    <>
+                      <div className="flex justify-between items-center text-xs">
+                        <span className="font-semibold text-slate-200">Taxable Brokerage</span>
+                        <span className="text-[10px] font-mono font-bold px-1.5 py-0.5 rounded bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+                          {formatPercent(displayVal * inputs.growthAssumptions.equityReturnRate + (1 - displayVal) * inputs.growthAssumptions.fixedIncomeReturnRate)} mean
+                        </span>
+                      </div>
+                      <div className="flex justify-between text-[10px] text-slate-400 font-mono">
+                        <span>{Math.round(displayVal * 100)}% Stocks</span>
+                        <span>{Math.round((1 - displayVal) * 100)}% Bonds</span>
+                      </div>
+                    </>
+                  )}
                 />
               </div>
 
               {/* Roth IRA */}
               <div className="p-3 bg-slate-950/60 rounded-xl border border-slate-800 space-y-2">
-                <div className="flex justify-between items-center text-xs">
-                  <span className="font-semibold text-slate-200">Roth IRA</span>
-                  <span className="text-[10px] font-mono font-bold px-1.5 py-0.5 rounded bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
-                    {formatPercent(effectiveRothRate)} mean
-                  </span>
-                </div>
-                <div className="flex justify-between text-[10px] text-slate-400 font-mono">
-                  <span>{Math.round(rothEq * 100)}% Stocks</span>
-                  <span>{Math.round((1 - rothEq) * 100)}% Bonds</span>
-                </div>
-                <input
-                  type="range"
-                  min="0.00"
-                  max="1.00"
-                  step="0.05"
+                <RangeSlider
+                  min={0.00}
+                  max={1.00}
+                  step={0.05}
                   value={rothEq}
-                  onChange={(e) => updateGrowthAssumptions('rothEquityPortion', Number(e.target.value))}
+                  onChange={(val) => updateGrowthAssumptions('rothEquityPortion', val)}
                   className="w-full h-1.5 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-emerald-500"
+                  renderLabel={(displayVal) => (
+                    <>
+                      <div className="flex justify-between items-center text-xs">
+                        <span className="font-semibold text-slate-200">Roth IRA</span>
+                        <span className="text-[10px] font-mono font-bold px-1.5 py-0.5 rounded bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+                          {formatPercent(displayVal * inputs.growthAssumptions.equityReturnRate + (1 - displayVal) * inputs.growthAssumptions.fixedIncomeReturnRate)} mean
+                        </span>
+                      </div>
+                      <div className="flex justify-between text-[10px] text-slate-400 font-mono">
+                        <span>{Math.round(displayVal * 100)}% Stocks</span>
+                        <span>{Math.round((1 - displayVal) * 100)}% Bonds</span>
+                      </div>
+                    </>
+                  )}
                 />
               </div>
 
               {/* Cash Savings Yield */}
               <div className="p-3 bg-slate-950/60 rounded-xl border border-slate-800 space-y-2">
-                <div className="flex justify-between items-center text-xs">
-                  <span className="font-semibold text-slate-200">Cash Savings</span>
-                  <span className="text-[10px] font-mono font-bold px-1.5 py-0.5 rounded bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
-                    {formatPercent(cashYield)} yield
-                  </span>
-                </div>
-                <div className="flex justify-between text-[10px] text-slate-400 font-mono">
-                  <span>{inputs.growthAssumptions.cashYieldRate !== null && inputs.growthAssumptions.cashYieldRate !== undefined ? 'Custom' : 'Matches Bonds'}</span>
-                  <span>{formatPercent(cashYield)}</span>
-                </div>
-                <input
-                  type="range"
-                  min="0.00"
-                  max="0.08"
-                  step="0.005"
+                <RangeSlider
+                  min={0.00}
+                  max={0.08}
+                  step={0.005}
                   value={cashYield}
-                  onChange={(e) => updateGrowthAssumptions('cashYieldRate', Number(e.target.value))}
+                  onChange={(val) => updateGrowthAssumptions('cashYieldRate', val)}
                   className="w-full h-1.5 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-emerald-500"
+                  renderLabel={(displayVal) => (
+                    <>
+                      <div className="flex justify-between items-center text-xs">
+                        <span className="font-semibold text-slate-200">Cash Savings</span>
+                        <span className="text-[10px] font-mono font-bold px-1.5 py-0.5 rounded bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+                          {formatPercent(displayVal)} yield
+                        </span>
+                      </div>
+                      <div className="flex justify-between text-[10px] text-slate-400 font-mono">
+                        <span>{inputs.growthAssumptions.cashYieldRate !== null && inputs.growthAssumptions.cashYieldRate !== undefined ? 'Custom' : 'Matches Bonds'}</span>
+                        <span>{formatPercent(displayVal)}</span>
+                      </div>
+                    </>
+                  )}
                 />
               </div>
 
               {/* Minimum Cash Reserve Level Target */}
               <div className="p-3 bg-slate-950/60 rounded-xl border border-slate-800 space-y-2 col-span-1 sm:col-span-2">
-                <div className="flex justify-between items-center text-xs">
-                  <span className="font-semibold text-slate-200">Minimum Cash Reserve Floor ($)</span>
-                  <span className="text-[10px] font-mono font-bold px-1.5 py-0.5 rounded bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
-                    {formatCurrency(inputs.growthAssumptions.minCashReserveDollars ?? 100000)} (CPI-Indexed)
-                  </span>
-                </div>
-                <div className="flex justify-between text-[10px] text-slate-400 font-mono">
-                  <span>Protects cash from drawdowns (in today's dollars, grows with inflation)</span>
-                  <span>
-                    {((inputs.annualLivingExpenses ?? 100000) > 0 
-                      ? (((inputs.growthAssumptions.minCashReserveDollars ?? 100000) / (inputs.annualLivingExpenses ?? 100000)) * 12).toFixed(1)
-                      : '12.0')} mo of expenses
-                  </span>
-                </div>
-                <div className="flex items-center gap-3">
-                  <input
-                    type="range"
-                    min="0"
-                    max="500000"
-                    step="5000"
-                    value={inputs.growthAssumptions.minCashReserveDollars ?? 100000}
-                    onChange={(e) => updateGrowthAssumptions('minCashReserveDollars', Number(e.target.value))}
-                    className="w-full h-1.5 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-emerald-500"
-                    title="Minimum Cash Reserve Floor ($ in today's dollars)"
-                  />
-                  <input
-                    type="number"
-                    min="0"
-                    max="1000000"
-                    step="5000"
-                    value={inputs.growthAssumptions.minCashReserveDollars ?? 100000}
-                    onChange={(e) => updateGrowthAssumptions('minCashReserveDollars', Number(e.target.value))}
-                    className="w-28 bg-slate-900 border border-slate-800 rounded-lg px-2 py-1 text-xs text-right font-mono text-emerald-400 font-bold focus:outline-none focus:border-emerald-500"
-                  />
-                </div>
+                <RangeSlider
+                  min={0}
+                  max={500000}
+                  step={5000}
+                  value={inputs.growthAssumptions.minCashReserveDollars ?? 100000}
+                  onChange={(val) => updateGrowthAssumptions('minCashReserveDollars', val)}
+                  className="w-full h-1.5 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-emerald-500"
+                  renderLabel={(displayVal) => (
+                    <>
+                      <div className="flex justify-between items-center text-xs">
+                        <span className="font-semibold text-slate-200">Minimum Cash Reserve Floor ($)</span>
+                        <span className="text-[10px] font-mono font-bold px-1.5 py-0.5 rounded bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+                          {formatCurrency(displayVal)} (CPI-Indexed)
+                        </span>
+                      </div>
+                      <div className="flex justify-between text-[10px] text-slate-400 font-mono">
+                        <span>Protects cash from drawdowns (in today's dollars, grows with inflation)</span>
+                        <span>
+                          {((inputs.annualLivingExpenses ?? 100000) > 0 
+                            ? (((displayVal) / (inputs.annualLivingExpenses ?? 100000)) * 12).toFixed(1)
+                            : '12.0')} mo of expenses
+                        </span>
+                      </div>
+                    </>
+                  )}
+                />
               </div>
             </div>
           </div>
@@ -718,18 +722,19 @@ export const MonteCarloWorkspace: React.FC<MonteCarloWorkspaceProps> = ({
 
                 {/* Number of Trials */}
                 <div className="space-y-2">
-                  <label className="text-xs font-semibold text-slate-300 flex justify-between">
-                    <span>Simulated Sample Size</span>
-                    <span className="text-emerald-400 font-mono font-bold">{inputs.monteCarloSettings.trials} trials</span>
-                  </label>
-                  <input
-                    type="range"
-                    min="200"
-                    max="10000"
-                    step="100"
+                  <RangeSlider
+                    min={200}
+                    max={10000}
+                    step={100}
                     value={inputs.monteCarloSettings.trials}
-                    onChange={(e) => updateSettings('trials', Number(e.target.value))}
+                    onChange={(val) => updateSettings('trials', val)}
                     className="w-full h-1.5 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-emerald-500"
+                    renderLabel={(displayVal) => (
+                      <label className="text-xs font-semibold text-slate-300 flex justify-between">
+                        <span>Simulated Sample Size</span>
+                        <span className="text-emerald-400 font-mono font-bold">{displayVal} trials</span>
+                      </label>
+                    )}
                   />
                   <div className="flex justify-between text-[9px] text-slate-500 font-mono">
                     <span>200 (Draft)</span>
@@ -761,14 +766,11 @@ export const MonteCarloWorkspace: React.FC<MonteCarloWorkspaceProps> = ({
                     
                     {inputs.monteCarloSettings.seed !== null && (
                       <div className="flex items-center gap-1.5 flex-1">
-                        <input
-                          type="number"
+                        <NumericInput
                           value={inputs.monteCarloSettings.seed}
-                          onChange={(e) => {
-                            const val = e.target.value === '' ? 42 : Number(e.target.value);
-                            updateSettings('seed', val);
+                          onChange={(val) => {
+                            updateSettings('seed', val ?? 42);
                           }}
-                          className="w-full text-xs font-mono font-bold px-2.5 py-1 bg-slate-950 text-slate-100 border border-slate-800 rounded-lg focus:outline-none focus:border-emerald-500"
                           placeholder="e.g. 42"
                         />
                         <button
@@ -794,52 +796,55 @@ export const MonteCarloWorkspace: React.FC<MonteCarloWorkspaceProps> = ({
                   <>
                     {/* Equity Volatility */}
                     <div className="space-y-1">
-                      <label className="text-xs font-semibold text-slate-300 flex justify-between">
-                        <span>Equity Return Volatility (Std Dev)</span>
-                        <span className="text-emerald-400 font-mono font-semibold">{formatPercent(inputs.monteCarloSettings.equityVolatility)}</span>
-                      </label>
-                      <input
-                        type="range"
-                        min="0.05"
-                        max="0.30"
-                        step="0.005"
+                      <RangeSlider
+                        min={0.05}
+                        max={0.30}
+                        step={0.005}
                         value={inputs.monteCarloSettings.equityVolatility}
-                        onChange={(e) => updateSettings('equityVolatility', Math.round(Number(e.target.value) * 1000) / 1000)}
+                        onChange={(val) => updateSettings('equityVolatility', Math.round(val * 1000) / 1000)}
                         className="w-full h-1 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-emerald-500"
+                        renderLabel={(displayVal) => (
+                          <label className="text-xs font-semibold text-slate-300 flex justify-between">
+                            <span>Equity Return Volatility (Std Dev)</span>
+                            <span className="text-emerald-400 font-mono font-semibold">{formatPercent(displayVal)}</span>
+                          </label>
+                        )}
                       />
                     </div>
 
                     {/* Bond Volatility */}
                     <div className="space-y-1">
-                      <label className="text-xs font-semibold text-slate-300 flex justify-between">
-                        <span>Bond Return Volatility (Std Dev)</span>
-                        <span className="text-emerald-400 font-mono font-semibold">{formatPercent(inputs.monteCarloSettings.fixedIncomeVolatility)}</span>
-                      </label>
-                      <input
-                        type="range"
-                        min="0.005"
-                        max="0.15"
-                        step="0.005"
+                      <RangeSlider
+                        min={0.005}
+                        max={0.15}
+                        step={0.005}
                         value={inputs.monteCarloSettings.fixedIncomeVolatility}
-                        onChange={(e) => updateSettings('fixedIncomeVolatility', Math.round(Number(e.target.value) * 1000) / 1000)}
+                        onChange={(val) => updateSettings('fixedIncomeVolatility', Math.round(val * 1000) / 1000)}
                         className="w-full h-1 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-emerald-500"
+                        renderLabel={(displayVal) => (
+                          <label className="text-xs font-semibold text-slate-300 flex justify-between">
+                            <span>Bond Return Volatility (Std Dev)</span>
+                            <span className="text-emerald-400 font-mono font-semibold">{formatPercent(displayVal)}</span>
+                          </label>
+                        )}
                       />
                     </div>
 
                     {/* Asset Correlation */}
                     <div className="space-y-1">
-                      <label className="text-xs font-semibold text-slate-300 flex justify-between">
-                        <span>Asset Correlation Coefficient (ρ)</span>
-                        <span className="text-emerald-400 font-mono font-semibold">{(inputs.monteCarloSettings.correlation).toFixed(2)}</span>
-                      </label>
-                      <input
-                        type="range"
-                        min="-0.50"
-                        max="0.80"
-                        step="0.05"
+                      <RangeSlider
+                        min={-0.50}
+                        max={0.80}
+                        step={0.05}
                         value={inputs.monteCarloSettings.correlation}
-                        onChange={(e) => updateSettings('correlation', Number(e.target.value))}
+                        onChange={(val) => updateSettings('correlation', val)}
                         className="w-full h-1 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-emerald-500"
+                        renderLabel={(displayVal) => (
+                          <label className="text-xs font-semibold text-slate-300 flex justify-between">
+                            <span>Asset Correlation Coefficient (ρ)</span>
+                            <span className="text-emerald-400 font-mono font-semibold">{(displayVal).toFixed(2)}</span>
+                          </label>
+                        )}
                       />
                     </div>
                   </>
@@ -1003,27 +1008,24 @@ export const MonteCarloWorkspace: React.FC<MonteCarloWorkspaceProps> = ({
                   </span>
                 </div>
                 <div className="flex items-center gap-3">
-                  <input
-                    type="range"
-                    min="0.00"
-                    max="0.08"
-                    step="0.002"
+                  <RangeSlider
+                    min={0.00}
+                    max={0.08}
+                    step={0.002}
                     value={inputs.monteCarloSettings.constantCPIRate ?? inputs.growthAssumptions.cpiInflationRate}
-                    onChange={(e) => updateSettings('constantCPIRate', Number(e.target.value))}
+                    onChange={(val) => updateSettings('constantCPIRate', val)}
                     className="w-full h-1.5 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-amber-500"
                   />
-                  <div className="w-24">
-                    <input
-                      type="number"
-                      min="0"
-                      max="15"
-                      step="0.1"
+                  <div className="w-28">
+                    <NumericInput
+                      suffix="%"
+                      allowDecimals={true}
+                      min={0}
+                      max={15}
                       value={Number(((inputs.monteCarloSettings.constantCPIRate ?? inputs.growthAssumptions.cpiInflationRate) * 100).toFixed(2))}
-                      onChange={(e) => updateSettings('constantCPIRate', Number(e.target.value) / 100)}
-                      className="w-full text-xs font-mono font-bold px-2 py-1 bg-slate-900 text-amber-300 border border-slate-700 rounded-lg focus:outline-none focus:border-amber-500 text-right"
+                      onChange={(val) => updateSettings('constantCPIRate', val === null ? null : val / 100)}
                     />
                   </div>
-                  <span className="text-xs text-slate-400 font-mono">%</span>
                 </div>
                 <p className="text-[10px] text-slate-400 leading-relaxed">
                   <span className="text-amber-400 font-semibold">Deterministic Constant CPI:</span> Inflation is fixed at exactly {formatPercent(inputs.monteCarloSettings.constantCPIRate ?? inputs.growthAssumptions.cpiInflationRate)}/year across every trial and year. This matches the standard convention of financial advisor software (e.g. eMoney, RightCapital, MoneyGuidePro).

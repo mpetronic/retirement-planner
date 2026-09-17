@@ -1,6 +1,6 @@
 import React, { useState, useMemo } from 'react';
 import { createPortal } from 'react-dom';
-import { X, Check, HelpCircle, Shield, Heart } from 'lucide-react';
+import { X, Check, HelpCircle, Shield, Heart, Calendar, CalendarCheck } from 'lucide-react';
 import { HealthcareConfig, StateHealthcareConfig } from '../types';
 
 interface HealthcareConfigDialogProps {
@@ -84,6 +84,14 @@ export const HealthcareConfigDialog: React.FC<HealthcareConfigDialogProps> = ({
     return healthcareConfig?.fileSSA44LifeChangingEvent !== false;
   });
 
+  const [medicareStartMode, setMedicareStartMode] = useState<'age65' | 'customDate'>(() => {
+    return healthcareConfig?.medicareStartMode ?? 'age65';
+  });
+
+  const [medicareStartDate, setMedicareStartDate] = useState<string>(() => {
+    return healthcareConfig?.medicareStartDate ?? '';
+  });
+
   const [mdConfig, setMdConfig] = useState<StateHealthcareConfig>(() => {
     return healthcareConfig?.MD ? { ...healthcareConfig.MD } : createDefaultStateConfig();
   });
@@ -106,6 +114,8 @@ export const HealthcareConfigDialog: React.FC<HealthcareConfigDialogProps> = ({
     onSave({
       medicarePartBPremium: partBPremium,
       fileSSA44LifeChangingEvent: fileSSA44,
+      medicareStartMode,
+      medicareStartDate: medicareStartMode === 'customDate' ? (medicareStartDate || null) : null,
       MD: mdConfig,
       FL: flConfig
     });
@@ -145,7 +155,7 @@ export const HealthcareConfigDialog: React.FC<HealthcareConfigDialogProps> = ({
                   value={config.pre65MedicalPremium === null ? '' : config.pre65MedicalPremium}
                   onChange={(e) => updateField('pre65MedicalPremium', e.target.value)}
                   onWheel={(e) => e.currentTarget.blur()}
-                  placeholder="e.g. COBRA / ACA Marketplace"
+                  placeholder="0"
                   className="w-full bg-slate-900 border border-slate-800 rounded-lg pl-7 pr-2.5 py-1.5 text-xs text-slate-100 font-mono focus:outline-none focus:border-emerald-500"
                 />
               </div>
@@ -432,6 +442,96 @@ export const HealthcareConfigDialog: React.FC<HealthcareConfigDialogProps> = ({
         {/* Modal Body */}
         <div className="p-6 overflow-y-auto space-y-6 flex-1 custom-scrollbar">
           
+          {/* Medicare Transition Timing: Choice (a) Defined Date vs (b) When turning 65 */}
+          <div className="p-4 bg-slate-950/40 rounded-xl border border-slate-800/60 space-y-3">
+            <div className="flex items-center justify-between border-b border-slate-850 pb-2">
+              <div className="flex items-center gap-2">
+                <Calendar className="w-4 h-4 text-emerald-400" />
+                <h4 className="text-xs font-bold text-slate-300 uppercase tracking-wider">
+                  Medicare Transition Timing & Eligibility
+                </h4>
+              </div>
+              <span className={`text-[10px] font-mono font-bold px-2 py-0.5 rounded ${
+                medicareStartMode === 'customDate'
+                  ? 'bg-amber-500/10 text-amber-300 border border-amber-500/20'
+                  : 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20'
+              }`}>
+                {medicareStartMode === 'customDate' ? 'Defined Start Date' : 'Turn Age 65 (Standard)'}
+              </span>
+            </div>
+
+            <div className="space-y-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <button
+                  type="button"
+                  onClick={() => setMedicareStartMode('age65')}
+                  className={`flex items-center gap-2.5 p-3 rounded-xl border text-left transition-all cursor-pointer ${
+                    medicareStartMode !== 'customDate'
+                      ? 'bg-emerald-500/15 border-emerald-500/50 text-slate-100 shadow-sm'
+                      : 'bg-slate-900/50 border-slate-800/80 text-slate-400 hover:text-slate-200 hover:bg-slate-900'
+                  }`}
+                >
+                  <div className={`w-4 h-4 rounded-full border flex items-center justify-center shrink-0 ${
+                    medicareStartMode !== 'customDate' ? 'border-emerald-400 bg-emerald-500' : 'border-slate-600'
+                  }`}>
+                    {medicareStartMode !== 'customDate' && <div className="w-1.5 h-1.5 rounded-full bg-slate-950" />}
+                  </div>
+                  <div>
+                    <span className="text-xs font-bold block text-slate-100">When Turning Age 65</span>
+                    <span className="text-[10px] text-slate-400 block">Automatic standard enrollment ({age65Year})</span>
+                  </div>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    setMedicareStartMode('customDate');
+                    if (!medicareStartDate) {
+                      setMedicareStartDate(`${age65Year}-01-01`);
+                    }
+                  }}
+                  className={`flex items-center gap-2.5 p-3 rounded-xl border text-left transition-all cursor-pointer ${
+                    medicareStartMode === 'customDate'
+                      ? 'bg-emerald-500/15 border-emerald-500/50 text-slate-100 shadow-sm'
+                      : 'bg-slate-900/50 border-slate-800/80 text-slate-400 hover:text-slate-200 hover:bg-slate-900'
+                  }`}
+                >
+                  <div className={`w-4 h-4 rounded-full border flex items-center justify-center shrink-0 ${
+                    medicareStartMode === 'customDate' ? 'border-emerald-400 bg-emerald-500' : 'border-slate-600'
+                  }`}>
+                    {medicareStartMode === 'customDate' && <div className="w-1.5 h-1.5 rounded-full bg-slate-950" />}
+                  </div>
+                  <div>
+                    <span className="text-xs font-bold block text-slate-100">Specific Defined Date</span>
+                    <span className="text-[10px] text-slate-400 block">Working past 65 or employer coverage delay</span>
+                  </div>
+                </button>
+              </div>
+
+              {medicareStartMode === 'customDate' && (
+                <div className="p-3 bg-slate-900/70 rounded-xl border border-slate-800 space-y-2 animate-in fade-in duration-150">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
+                    <div className="space-y-0.5">
+                      <label className="text-[11px] font-semibold text-slate-200 flex items-center gap-1.5">
+                        <CalendarCheck className="w-3.5 h-3.5 text-amber-400" />
+                        Medicare Enrollment Start Date
+                      </label>
+                      <span className="text-[10px] text-slate-400 block">
+                        Medicare Part B, Part D, Supplement plans & IRMAA surcharges begin on this date.
+                      </span>
+                    </div>
+                    <input
+                      type="date"
+                      value={medicareStartDate}
+                      onChange={(e) => setMedicareStartDate(e.target.value)}
+                      className="bg-slate-950 border border-slate-700 rounded-lg px-2.5 py-1.5 text-xs text-slate-100 font-mono focus:outline-none focus:border-emerald-500"
+                    />
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+
           {/* Shared Medicare Part B Field (State Independent) */}
           <div className="p-4 bg-slate-950/40 rounded-xl border border-slate-800/60 space-y-3">
             <div className="flex items-center justify-between border-b border-slate-850 pb-2">

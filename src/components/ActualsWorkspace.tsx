@@ -28,6 +28,7 @@ import {
   ChevronUp,
   RotateCcw,
 } from 'lucide-react';
+import { RangeSlider } from './RangeSlider';
 import { Chart } from 'react-chartjs-2';
 import { Chart as ChartJS, registerables } from 'chart.js';
 
@@ -346,67 +347,70 @@ export const ActualsWorkspace: React.FC<ActualsWorkspaceProps> = ({
           </div>
           <div className="grid grid-cols-1 md:grid-cols-4 gap-4 text-xs">
             <div className="bg-slate-950/80 p-3 rounded-xl border border-slate-800 space-y-1.5">
-              <label className="text-slate-300 font-semibold flex items-center justify-between">
-                Upper Guardrail (+%)
-                <span className="text-emerald-400 font-mono">+{((guardrailSettings.upperGuardrailPct || 0.15) * 100).toFixed(0)}%</span>
-              </label>
-              <input
-                type="range"
-                min="0.05"
-                max="0.40"
-                step="0.01"
+              <RangeSlider
+                min={0.05}
+                max={0.40}
+                step={0.01}
                 value={guardrailSettings.upperGuardrailPct}
-                onChange={(e) =>
+                onChange={(val) =>
                   onUpdateGuardrailSettings({
                     ...guardrailSettings,
-                    upperGuardrailPct: parseFloat(e.target.value),
+                    upperGuardrailPct: val,
                   })
                 }
                 className="w-full accent-emerald-400"
+                renderLabel={(displayVal) => (
+                  <label className="text-slate-300 font-semibold flex items-center justify-between">
+                    Upper Guardrail (+%)
+                    <span className="text-emerald-400 font-mono">+{(displayVal * 100).toFixed(0)}%</span>
+                  </label>
+                )}
               />
               <p className="text-[11px] text-slate-500">Maximum allowable budget surge in boom years.</p>
             </div>
 
             <div className="bg-slate-950/80 p-3 rounded-xl border border-slate-800 space-y-1.5">
-              <label className="text-slate-300 font-semibold flex items-center justify-between">
-                Lower Guardrail (-%)
-                <span className="text-rose-400 font-mono">-{((guardrailSettings.lowerGuardrailPct || 0.15) * 100).toFixed(0)}%</span>
-              </label>
-              <input
-                type="range"
-                min="0.05"
-                max="0.40"
-                step="0.01"
+              <RangeSlider
+                min={0.05}
+                max={0.40}
+                step={0.01}
                 value={guardrailSettings.lowerGuardrailPct}
-                onChange={(e) =>
+                onChange={(val) =>
                   onUpdateGuardrailSettings({
                     ...guardrailSettings,
-                    lowerGuardrailPct: parseFloat(e.target.value),
+                    lowerGuardrailPct: val,
                   })
                 }
                 className="w-full accent-rose-400"
+                renderLabel={(displayVal) => (
+                  <label className="text-slate-300 font-semibold flex items-center justify-between">
+                    Lower Guardrail (-%)
+                    <span className="text-rose-400 font-mono">-{(displayVal * 100).toFixed(0)}%</span>
+                  </label>
+                )}
               />
               <p className="text-[11px] text-slate-500">Maximum recommended belt-tightening floor.</p>
             </div>
 
             <div className="bg-slate-950/80 p-3 rounded-xl border border-slate-800 space-y-1.5">
-              <label className="text-slate-300 font-semibold flex items-center justify-between">
-                Market Surplus Share
-                <span className="text-sky-400 font-mono">{((guardrailSettings.marketSurplusSharePct || 0.10) * 100).toFixed(0)}%</span>
-              </label>
-              <input
-                type="range"
-                min="0.02"
-                max="0.25"
-                step="0.01"
+              <RangeSlider
+                min={0.02}
+                max={0.25}
+                step={0.01}
                 value={guardrailSettings.marketSurplusSharePct}
-                onChange={(e) =>
+                onChange={(val) =>
                   onUpdateGuardrailSettings({
                     ...guardrailSettings,
-                    marketSurplusSharePct: parseFloat(e.target.value),
+                    marketSurplusSharePct: val,
                   })
                 }
                 className="w-full accent-sky-400"
+                renderLabel={(displayVal) => (
+                  <label className="text-slate-300 font-semibold flex items-center justify-between">
+                    Market Surplus Share
+                    <span className="text-sky-400 font-mono">{(displayVal * 100).toFixed(0)}%</span>
+                  </label>
+                )}
               />
               <p className="text-[11px] text-slate-500">Share of market excess allocated to spending bonus.</p>
             </div>

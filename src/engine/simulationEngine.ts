@@ -461,8 +461,25 @@ export function runRetirementSimulation(
       ? (wifeBirthYear + inputs.wife.targetSSClaimingAge - simStartYear) * 12 + wifeBirthMonth
       : Infinity;
 
-    const yourMedicareMonthIdx = (yourBirthYear + 65 - simStartYear) * 12 + yourBirthMonth;
-    const wifeMedicareMonthIdx = (wifeBirthYear + 65 - simStartYear) * 12 + wifeBirthMonth;
+    let yourMedicareMonthIdx = (yourBirthYear + 65 - simStartYear) * 12 + yourBirthMonth;
+    if (inputs.you.healthcare?.medicareStartMode === 'customDate' && inputs.you.healthcare?.medicareStartDate) {
+      const parts = inputs.you.healthcare.medicareStartDate.split('-');
+      const customYear = parseInt(parts[0], 10);
+      const customMonth = parts.length > 1 ? parseInt(parts[1], 10) - 1 : 0;
+      if (!isNaN(customYear)) {
+        yourMedicareMonthIdx = (customYear - simStartYear) * 12 + (isNaN(customMonth) ? 0 : customMonth);
+      }
+    }
+
+    let wifeMedicareMonthIdx = (wifeBirthYear + 65 - simStartYear) * 12 + wifeBirthMonth;
+    if (inputs.wife.healthcare?.medicareStartMode === 'customDate' && inputs.wife.healthcare?.medicareStartDate) {
+      const parts = inputs.wife.healthcare.medicareStartDate.split('-');
+      const customYear = parseInt(parts[0], 10);
+      const customMonth = parts.length > 1 ? parseInt(parts[1], 10) - 1 : 0;
+      if (!isNaN(customYear)) {
+        wifeMedicareMonthIdx = (customYear - simStartYear) * 12 + (isNaN(customMonth) ? 0 : customMonth);
+      }
+    }
     const wifeSurvivorMonthIdx = (wifeBirthYear + 60 - simStartYear) * 12 + wifeBirthMonth;
 
     const yourRmdStartAge = getRMDStartAge(yourBirthYear);
@@ -501,8 +518,8 @@ export function runRetirementSimulation(
     let wifeWorkingMonthsThisYear = 0;
     for (let m = 0; m < 12; m++) {
       const mIdx = (year - simStartYear) * 12 + m;
-      if (!youDeceased && mIdx < yourRetireMonthIdx) yourWorkingMonthsThisYear++;
-      if (!wifeDeceased && !inputs.isSingleFiler && mIdx < wifeRetireMonthIdx) wifeWorkingMonthsThisYear++;
+      if (!youDeceased && mIdx < yourRetireMonthIdx && ((inputs.you.activeSalary ?? 0) > 0)) yourWorkingMonthsThisYear++;
+      if (!wifeDeceased && !inputs.isSingleFiler && mIdx < wifeRetireMonthIdx && ((inputs.wife.activeSalary ?? 0) > 0)) wifeWorkingMonthsThisYear++;
     }
 
     let annualYourGrossSalary = 0;
@@ -598,7 +615,8 @@ export function runRetirementSimulation(
     let yourMedicareOOP = 0;
     if (inputs.you.healthcare) {
       const stateHc = inputs.you.healthcare[activeState];
-      yourPreMedicareAnnual = ((stateHc?.pre65MedicalPremium ?? 0) + (stateHc?.pre65DentalPremium ?? 0) + (stateHc?.pre65VisionPremium ?? 0)) * 12 * healthcareFactor;
+      const itemizedPre65 = ((stateHc?.pre65MedicalPremium ?? 0) + (stateHc?.pre65DentalPremium ?? 0) + (stateHc?.pre65VisionPremium ?? 0));
+      yourPreMedicareAnnual = (itemizedPre65 > 0 ? itemizedPre65 : (inputs.you.preMedicareMonthlyPremium ?? 0)) * 12 * healthcareFactor;
       yourPreMedicareOOP = ((stateHc?.pre65MedicalOOP ?? 0) + (stateHc?.pre65DentalOOP ?? 0) + (stateHc?.pre65VisionOOP ?? 0)) * healthcareFactor;
       
       const customB = inputs.you.healthcare.medicarePartBPremium;
@@ -622,7 +640,8 @@ export function runRetirementSimulation(
     if (!wifeDeceased) {
       if (inputs.wife.healthcare) {
         const stateHc = inputs.wife.healthcare[activeState];
-        wifePreMedicareAnnual = ((stateHc?.pre65MedicalPremium ?? 0) + (stateHc?.pre65DentalPremium ?? 0) + (stateHc?.pre65VisionPremium ?? 0)) * 12 * healthcareFactor;
+        const itemizedPre65 = ((stateHc?.pre65MedicalPremium ?? 0) + (stateHc?.pre65DentalPremium ?? 0) + (stateHc?.pre65VisionPremium ?? 0));
+        wifePreMedicareAnnual = (itemizedPre65 > 0 ? itemizedPre65 : (inputs.wife.preMedicareMonthlyPremium ?? 0)) * 12 * healthcareFactor;
         wifePreMedicareOOP = ((stateHc?.pre65MedicalOOP ?? 0) + (stateHc?.pre65DentalOOP ?? 0) + (stateHc?.pre65VisionOOP ?? 0)) * healthcareFactor;
         
         const customB = inputs.wife.healthcare.medicarePartBPremium;
@@ -921,8 +940,8 @@ export function runRetirementSimulation(
       const monthIdx = (year - simStartYear) * 12 + month;
 
       // Working flags
-      const isYouWorking = !youDeceased && (monthIdx < yourRetireMonthIdx);
-      const isWifeWorking = !wifeDeceased && (monthIdx < wifeRetireMonthIdx);
+      const isYouWorking = !youDeceased && (monthIdx < yourRetireMonthIdx) && ((inputs.you.activeSalary ?? 0) > 0);
+      const isWifeWorking = !wifeDeceased && !inputs.isSingleFiler && (monthIdx < wifeRetireMonthIdx) && ((inputs.wife.activeSalary ?? 0) > 0);
 
       // In working months, deposit 401(k) pre-tax contribution into pre-tax accounts
       if (isYouWorking && monthlyYour401k > 0) {
@@ -989,19 +1008,19 @@ export function runRetirementSimulation(
       // 6. Base expenses
       const monthlyBaseExpenses = (baseLivingExpensesAnnual * cpiFactor) / 12;
       let monthlyYourOOP = 0;
-      if (!youDeceased) {
+      if (!youDeceased && !isYouWorking) {
         if (monthIdx < yourMedicareMonthIdx) {
-          if (!isYouWorking) monthlyYourOOP = yourPreMedicareOOP / 12;
+          monthlyYourOOP = yourPreMedicareOOP / 12;
         } else {
-          if (!isYouWorking) monthlyYourOOP = yourMedicareOOP / 12;
+          monthlyYourOOP = yourMedicareOOP / 12;
         }
       }
       let monthlyWifeOOP = 0;
-      if (!wifeDeceased) {
+      if (!wifeDeceased && !isWifeWorking) {
         if (monthIdx < wifeMedicareMonthIdx) {
-          if (!isWifeWorking) monthlyWifeOOP = wifePreMedicareOOP / 12;
+          monthlyWifeOOP = wifePreMedicareOOP / 12;
         } else {
-          if (!isWifeWorking) monthlyWifeOOP = wifeMedicareOOP / 12;
+          monthlyWifeOOP = wifeMedicareOOP / 12;
         }
       }
       const monthlyLiving = monthlyBaseExpenses + (month === 0 ? oneTimeCosts * cpiFactor : 0) + monthlyYourOOP + monthlyWifeOOP;
@@ -1009,25 +1028,21 @@ export function runRetirementSimulation(
 
       // 7. Premiums
       let monthlyYourPremium = 0;
-      if (!youDeceased) {
+      if (!youDeceased && !isYouWorking) {
         if (monthIdx < yourMedicareMonthIdx) {
-          if (!isYouWorking) monthlyYourPremium = yourPreMedicareAnnual / 12;
+          monthlyYourPremium = yourPreMedicareAnnual / 12;
         } else {
-          if (!isYouWorking) {
-            monthlyYourPremium = yourMedicarePremiums / 12;
-            yourMedicareMonthCount++; // tally for pro-rated surcharge at year end
-          }
+          monthlyYourPremium = yourMedicarePremiums / 12;
+          yourMedicareMonthCount++; // tally for pro-rated surcharge at year end
         }
       }
       let monthlyWifePremium = 0;
-      if (!wifeDeceased) {
+      if (!wifeDeceased && !isWifeWorking) {
         if (monthIdx < wifeMedicareMonthIdx) {
-          if (!isWifeWorking) monthlyWifePremium = wifePreMedicareAnnual / 12;
+          monthlyWifePremium = wifePreMedicareAnnual / 12;
         } else {
-          if (!isWifeWorking) {
-            monthlyWifePremium = wifeMedicarePremiums / 12;
-            wifeMedicareMonthCount++; // tally for pro-rated surcharge at year end
-          }
+          monthlyWifePremium = wifeMedicarePremiums / 12;
+          wifeMedicareMonthCount++; // tally for pro-rated surcharge at year end
         }
       }
 
@@ -1040,7 +1055,7 @@ export function runRetirementSimulation(
       // Monthly cash inflows available to spend (take-home salary + SS + RMD + dividends)
       const monthlyTakeHomeInflow = (isYouWorking ? monthlyYourNetSalary : 0) + (isWifeWorking ? monthlyWifeNetSalary : 0);
       const totalInflows = monthlyTakeHomeInflow + monthlyYourSS + monthlyWifeSS + monthlyYourRmdDraw + monthlyWifeRmdDraw + monthlyYourDividends + monthlyWifeDividends;
-      const totalOutflows = monthlyLiving + monthlyPreMed + monthlyMedicare + (monthIdx >= yourMedicareMonthIdx && !isYouWorking ? yourPartBSurcharge + yourPartDSurcharge : 0) + (!wifeDeceased && monthIdx >= wifeMedicareMonthIdx && !isWifeWorking ? wifePartBSurcharge + wifePartDSurcharge : 0);
+      const totalOutflows = monthlyLiving + monthlyPreMed + monthlyMedicare + (monthIdx >= yourMedicareMonthIdx ? yourPartBSurcharge + yourPartDSurcharge : 0) + (!wifeDeceased && monthIdx >= wifeMedicareMonthIdx ? wifePartBSurcharge + wifePartDSurcharge : 0);
 
       const netMonthlyCash = totalInflows - totalOutflows;
       if (netMonthlyCash > 0) {
@@ -1266,8 +1281,8 @@ export function runRetirementSimulation(
     const isSingle = (simulateSurvivor && (year > (inputs.isSingleFiler ? DEATH_YEAR : firstDeathYear))) || inputs.isSingleFiler;
 
     // isYouWorkingDec / isWifeWorkingDec depend only on decMonthIdx (constant), so hoist above conversion and solver.
-    const isYouWorkingDec = !youDeceased && (decMonthIdx < yourRetireMonthIdx);
-    const isWifeWorkingDec = !wifeDeceased && (decMonthIdx < wifeRetireMonthIdx);
+    const isYouWorkingDec = !youDeceased && (decMonthIdx < yourRetireMonthIdx) && ((inputs.you.activeSalary ?? 0) > 0);
+    const isWifeWorkingDec = !wifeDeceased && !inputs.isSingleFiler && (decMonthIdx < wifeRetireMonthIdx) && ((inputs.wife.activeSalary ?? 0) > 0);
 
     // Deposit December 401(k) if working
     if (isYouWorkingDec && monthlyYour401k > 0) {
@@ -1526,31 +1541,31 @@ export function runRetirementSimulation(
         }
       }
 
-      const monthlyYourOOPDec = !youDeceased ? (decMonthIdx < yourMedicareMonthIdx ? (isYouWorkingDec ? 0 : yourPreMedicareOOP / 12) : (isYouWorkingDec ? 0 : yourMedicareOOP / 12)) : 0;
-      const monthlyWifeOOPDec = !wifeDeceased ? (decMonthIdx < wifeMedicareMonthIdx ? (isWifeWorkingDec ? 0 : wifePreMedicareOOP / 12) : (isWifeWorkingDec ? 0 : wifeMedicareOOP / 12)) : 0;
+      const monthlyYourOOPDec = (!youDeceased && !isYouWorkingDec) ? (decMonthIdx < yourMedicareMonthIdx ? yourPreMedicareOOP / 12 : yourMedicareOOP / 12) : 0;
+      const monthlyWifeOOPDec = (!wifeDeceased && !isWifeWorkingDec) ? (decMonthIdx < wifeMedicareMonthIdx ? wifePreMedicareOOP / 12 : wifeMedicareOOP / 12) : 0;
       decLiving = (baseLivingExpensesAnnual * cpiFactor) / 12 + monthlyYourOOPDec + monthlyWifeOOPDec;
 
       monthlyYourPremDec = 0;
-      if (!youDeceased) {
+      if (!youDeceased && !isYouWorkingDec) {
         if (decMonthIdx < yourMedicareMonthIdx) {
-          if (!isYouWorkingDec) monthlyYourPremDec = yourPreMedicareAnnual / 12;
+          monthlyYourPremDec = yourPreMedicareAnnual / 12;
         } else {
-          if (!isYouWorkingDec) monthlyYourPremDec = yourMedicarePremiums / 12;
+          monthlyYourPremDec = yourMedicarePremiums / 12;
         }
       }
       monthlyWifePremDec = 0;
-      if (!wifeDeceased) {
+      if (!wifeDeceased && !isWifeWorkingDec) {
         if (decMonthIdx < wifeMedicareMonthIdx) {
-          if (!isWifeWorkingDec) monthlyWifePremDec = wifePreMedicareAnnual / 12;
+          monthlyWifePremDec = wifePreMedicareAnnual / 12;
         } else {
-          if (!isWifeWorkingDec) monthlyWifePremDec = wifeMedicarePremiums / 12;
+          monthlyWifePremDec = wifeMedicarePremiums / 12;
         }
       }
 
       const decPreMed = (decMonthIdx < yourMedicareMonthIdx ? monthlyYourPremDec : 0) + (!wifeDeceased && decMonthIdx < wifeMedicareMonthIdx ? monthlyWifePremDec : 0);
       const decMed = (decMonthIdx >= yourMedicareMonthIdx ? monthlyYourPremDec : 0) + (!wifeDeceased && decMonthIdx >= wifeMedicareMonthIdx ? monthlyWifePremDec : 0);
 
-      const decOutflows = decLiving + nonQcdTithe + decPreMed + decMed + (decMonthIdx >= yourMedicareMonthIdx && !isYouWorkingDec ? yourPartBSurcharge + yourPartDSurcharge : 0) + (!wifeDeceased && decMonthIdx >= wifeMedicareMonthIdx && !isWifeWorkingDec ? wifePartBSurcharge + wifePartDSurcharge : 0) + netDecTaxDue;
+      const decOutflows = decLiving + nonQcdTithe + decPreMed + decMed + (decMonthIdx >= yourMedicareMonthIdx ? yourPartBSurcharge + yourPartDSurcharge : 0) + (!wifeDeceased && decMonthIdx >= wifeMedicareMonthIdx ? wifePartBSurcharge + wifePartDSurcharge : 0) + netDecTaxDue;
       const decInflows = (isYouWorkingDec ? monthlyYourNetSalary : 0) + (isWifeWorkingDec ? monthlyWifeNetSalary : 0) + monthlyYourSSDec + monthlyWifeSSDec + decDistributeYourRMD + decDistributeWifeRMD + monthlyYourDividendsDec + monthlyWifeDividendsDec;
 
       const decNetCash = decInflows - decOutflows;

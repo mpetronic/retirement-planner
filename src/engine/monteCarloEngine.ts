@@ -389,6 +389,90 @@ export function applyStressTestToSequence<T extends Omit<LockedReturnSequence, '
 }
 
 /**
+ * Computes representative return sequences (worst P10, median P50, best P90) based on market ranking.
+ * This runs in < 0.1ms without executing 1,000 full retirement simulations.
+ */
+export function computeRepresentativeSequences(
+  inputs: AppStateInputs,
+  rawSequences: Omit<LockedReturnSequence, 'id'>[]
+): {
+  worst: LockedReturnSequence;
+  median: LockedReturnSequence;
+  best: LockedReturnSequence;
+} {
+  const trials = rawSequences.length;
+  if (trials === 0) {
+    const emptySeq = { mode: 'monte-carlo' as const, equityReturns: [], fixedIncomeReturns: [], inflationRates: [] };
+    return {
+      worst: { ...emptySeq, id: 'empty_worst' },
+      median: { ...emptySeq, id: 'empty_median' },
+      best: { ...emptySeq, id: 'empty_best' },
+    };
+  }
+
+  const taxableEquity = inputs.growthAssumptions?.taxableEquityPortion ?? 0.60;
+  const preTaxEquity = inputs.growthAssumptions?.preTaxEquityPortion ?? 0.50;
+  const rothEquity = inputs.growthAssumptions?.rothEquityPortion ?? 1.00;
+  const benchmarkEquityWeight = (taxableEquity + preTaxEquity + rothEquity) / 3;
+
+  const marketRankings: { trialIndex: number; cumulativeReturn: number }[] = [];
+  for (let t = 0; t < trials; t++) {
+    const seq = rawSequences[t];
+    let cumulativeFactor = 1.0;
+    const count = seq.equityReturns.length;
+    for (let y = 0; y < count; y++) {
+      const eq = seq.equityReturns[y] ?? 0.07;
+      const fi = seq.fixedIncomeReturns[y] ?? 0.04;
+      const blended = benchmarkEquityWeight * eq + (1 - benchmarkEquityWeight) * fi;
+      cumulativeFactor *= (1 + blended);
+    }
+    marketRankings.push({ trialIndex: t, cumulativeReturn: cumulativeFactor });
+  }
+
+  marketRankings.sort((a, b) => a.cumulativeReturn - b.cumulativeReturn);
+
+  const marketWorstIdx = marketRankings[Math.floor(trials * 0.10)]?.trialIndex ?? 0;
+  const marketMedianIdx = marketRankings[Math.floor(trials * 0.50)]?.trialIndex ?? Math.floor(trials / 2);
+  const marketBestIdx = marketRankings[Math.floor(trials * 0.90)]?.trialIndex ?? trials - 1;
+
+  const simStartYear = getSimulationStartYear(inputs);
+  const isStressTestActive = inputs.monteCarloSettings?.stressTest?.enabled &&
+    (inputs.monteCarloSettings.stressTest.overrides?.length ?? 0) > 0;
+
+  if (isStressTestActive) {
+    return {
+      worst: {
+        ...applyStressTestToSequence(rawSequences[marketWorstIdx], inputs.monteCarloSettings?.stressTest, simStartYear),
+        id: `trial_${marketWorstIdx}_matched_worst`,
+      },
+      median: {
+        ...applyStressTestToSequence(rawSequences[marketMedianIdx], inputs.monteCarloSettings?.stressTest, simStartYear),
+        id: `trial_${marketMedianIdx}_matched_median`,
+      },
+      best: {
+        ...applyStressTestToSequence(rawSequences[marketBestIdx], inputs.monteCarloSettings?.stressTest, simStartYear),
+        id: `trial_${marketBestIdx}_matched_best`,
+      },
+    };
+  }
+
+  return {
+    worst: {
+      ...rawSequences[marketWorstIdx],
+      id: `trial_${marketWorstIdx}_p10_market`,
+    },
+    median: {
+      ...rawSequences[marketMedianIdx],
+      id: `trial_${marketMedianIdx}_p50_market`,
+    },
+    best: {
+      ...rawSequences[marketBestIdx],
+      id: `trial_${marketBestIdx}_p90_market`,
+    },
+  };
+}
+
+/**
  * Runs a batch Monte Carlo simulation of N trials and compiles statistics.
  */
 export function runMonteCarloSimulation(
@@ -413,9 +497,6 @@ export function runMonteCarloSimulation(
     ? inputs.monteCarloSettings.constantCPIRate
     : inputs.growthAssumptions.cpiInflationRate;
   const enableRegimeSwitching = inputs.monteCarloSettings?.enableRegimeSwitching !== false;
-  
-  const isStressTestActive = inputs.monteCarloSettings?.stressTest?.enabled &&
-    (inputs.monteCarloSettings.stressTest.overrides?.length ?? 0) > 0;
 
   // Compile raw sequences across all trials
   const rawSequences: Omit<LockedReturnSequence, 'id'>[] = [];
@@ -441,36 +522,8 @@ export function runMonteCarloSimulation(
     }
   }
 
-  // 1. Rank the underlying market return sequences by cumulative compound asset-allocation growth.
-  // This ensures representative market sequences (P10, P50, P90) are 100% stable and invariant to changes
-  // in living expenses, relocations, or tax draws, providing a true apples-to-apples scenario baseline.
-  const taxableEquity = inputs.growthAssumptions?.taxableEquityPortion ?? 0.60;
-  const preTaxEquity = inputs.growthAssumptions?.preTaxEquityPortion ?? 0.50;
-  const rothEquity = inputs.growthAssumptions?.rothEquityPortion ?? 1.00;
-  const benchmarkEquityWeight = (taxableEquity + preTaxEquity + rothEquity) / 3;
-
-  const marketRankings: { trialIndex: number; cumulativeReturn: number }[] = [];
-  for (let t = 0; t < trials; t++) {
-    const seq = rawSequences[t];
-    let cumulativeFactor = 1.0;
-    const count = seq.equityReturns.length;
-    for (let y = 0; y < count; y++) {
-      const eq = seq.equityReturns[y] ?? 0.07;
-      const fi = seq.fixedIncomeReturns[y] ?? 0.04;
-      const blended = benchmarkEquityWeight * eq + (1 - benchmarkEquityWeight) * fi;
-      cumulativeFactor *= (1 + blended);
-    }
-    marketRankings.push({ trialIndex: t, cumulativeReturn: cumulativeFactor });
-  }
-
-  // Sort by pure market performance from worst to best
-  marketRankings.sort((a, b) => a.cumulativeReturn - b.cumulativeReturn);
-
-  const marketWorstIdx = marketRankings[Math.floor(trials * 0.10)]?.trialIndex ?? 0;
-  const marketMedianIdx = marketRankings[Math.floor(trials * 0.50)]?.trialIndex ?? Math.floor(trials / 2);
-  const marketBestIdx = marketRankings[Math.floor(trials * 0.90)]?.trialIndex ?? trials - 1;
-
   const simStartYear = getSimulationStartYear(inputs);
+  const representativeSequences = computeRepresentativeSequences(inputs, rawSequences);
 
   // 2. Run the full Monte Carlo simulation across all trials (with stress testing applied if active)
   const results: MonteCarloTrialResult[] = [];
@@ -523,40 +576,6 @@ export function runMonteCarloSimulation(
       : (survivalYears[mid - 1] + survivalYears[mid]) / 2;
   }
 
-  let worstSequence: LockedReturnSequence;
-  let medianSequence: LockedReturnSequence;
-  let bestSequence: LockedReturnSequence;
-
-  if (isStressTestActive) {
-    // Matched-Pair Approach: Take the exact baseline representative sequence and overlay stress overrides in-place.
-    // This guarantees all non-stressed years remain 100% fixed and comparable.
-    worstSequence = {
-      ...applyStressTestToSequence(rawSequences[marketWorstIdx], inputs.monteCarloSettings?.stressTest, simStartYear),
-      id: `trial_${marketWorstIdx}_matched_worst`,
-    };
-    medianSequence = {
-      ...applyStressTestToSequence(rawSequences[marketMedianIdx], inputs.monteCarloSettings?.stressTest, simStartYear),
-      id: `trial_${marketMedianIdx}_matched_median`,
-    };
-    bestSequence = {
-      ...applyStressTestToSequence(rawSequences[marketBestIdx], inputs.monteCarloSettings?.stressTest, simStartYear),
-      id: `trial_${marketBestIdx}_matched_best`,
-    };
-  } else {
-    worstSequence = {
-      ...rawSequences[marketWorstIdx],
-      id: `trial_${marketWorstIdx}_p10_market`,
-    };
-    medianSequence = {
-      ...rawSequences[marketMedianIdx],
-      id: `trial_${marketMedianIdx}_p50_market`,
-    };
-    bestSequence = {
-      ...rawSequences[marketBestIdx],
-      id: `trial_${marketBestIdx}_p90_market`,
-    };
-  }
-  
   // Compile annual percentile values
   const percentiles: MonteCarloSummary['percentiles'] = [];
   for (let yearIdx = 0; yearIdx < 35; yearIdx++) {
@@ -580,11 +599,7 @@ export function runMonteCarloSimulation(
     successRate,
     trialsRun: trials,
     percentiles,
-    representativeSequences: {
-      worst: worstSequence,
-      median: medianSequence,
-      best: bestSequence,
-    },
+    representativeSequences,
     medianSurvivalYears,
   };
 }
