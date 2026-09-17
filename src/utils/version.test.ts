@@ -22,7 +22,7 @@ describe('version utilities', () => {
   });
 
   describe('computeDisplayVersion', () => {
-    it('returns clean commit short hash when untagged and clean', () => {
+    it('returns clean commit short hash when untagged and clean without commitTimestamp', () => {
       const version = computeDisplayVersion({
         commitShort: 'aa1391b',
         isDirty: false,
@@ -30,32 +30,44 @@ describe('version utilities', () => {
       expect(version).toBe('aa1391b');
     });
 
+    it('returns commit short hash with commitTimestamp when untagged and clean', () => {
+      const version = computeDisplayVersion({
+        commitShort: 'aa1391b',
+        commitTimestamp: '20260812080000',
+        isDirty: false,
+      });
+      expect(version).toBe('aa1391b-20260812080000');
+    });
+
     it('returns commit short hash with -dYYYYMMDDHHMMSS when untagged and dirty', () => {
       const version = computeDisplayVersion({
         commitShort: 'aa1391b',
+        commitTimestamp: '20260812080000',
         isDirty: true,
         timestamp: '20260812080646',
       });
-      expect(version).toBe('aa1391b-d20260812080646');
+      expect(version).toBe('aa1391b-20260812080000-d20260812080646');
     });
 
     it('prioritizes git release tag when tagged and clean', () => {
       const version = computeDisplayVersion({
         tag: 'v2.1.0',
         commitShort: 'aa1391b',
+        commitTimestamp: '20260812080000',
         isDirty: false,
       });
-      expect(version).toBe('v2.1.0');
+      expect(version).toBe('v2.1.0-20260812080000');
     });
 
     it('appends -dYYYYMMDDHHMMSS to tag when tagged and dirty', () => {
       const version = computeDisplayVersion({
         tag: 'v2.1.0',
         commitShort: 'aa1391b',
+        commitTimestamp: '20260812080000',
         isDirty: true,
         timestamp: '20260812080646',
       });
-      expect(version).toBe('v2.1.0-d20260812080646');
+      expect(version).toBe('v2.1.0-20260812080000-d20260812080646');
     });
 
     it('falls back to dev when no commit or tag is provided', () => {

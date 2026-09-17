@@ -24,6 +24,7 @@ function resolveScmVersionInfo() {
   let commitShort = 'dev';
   let commitFull = 'dev';
   let commitDate = buildIsoTime;
+  let commitTimestamp = buildTimestamp;
   let branch = 'main';
   let tag: string | null = null;
 
@@ -48,6 +49,15 @@ function resolveScmVersionInfo() {
   }
 
   try {
+    const rawCommitTs = execSync('git log -1 --format=%cd --date=format:%Y%m%d%H%M%S', { encoding: 'utf-8' }).trim();
+    if (rawCommitTs) {
+      commitTimestamp = rawCommitTs;
+    }
+  } catch {
+    commitTimestamp = buildTimestamp;
+  }
+
+  try {
     branch = execSync('git rev-parse --abbrev-ref HEAD', { encoding: 'utf-8' }).trim();
   } catch {
     /* ignore */
@@ -63,9 +73,10 @@ function resolveScmVersionInfo() {
   }
 
   const baseIdentifier = tag ? tag : commitShort;
+  const commitPart = commitTimestamp ? `${baseIdentifier}-${commitTimestamp}` : baseIdentifier;
   const displayVersion = isDirty
-    ? `${baseIdentifier}-d${buildTimestamp}`
-    : baseIdentifier;
+    ? `${commitPart}-d${buildTimestamp}`
+    : commitPart;
 
   return {
     appName: pkg.name || 'retirement-planner',
@@ -76,6 +87,7 @@ function resolveScmVersionInfo() {
     commitShort,
     commitFull,
     commitDate,
+    commitTimestamp,
     branch,
     isDirty,
     buildTimestamp,

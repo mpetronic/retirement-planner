@@ -7,6 +7,7 @@ export interface AppVersionInfo {
   commitShort: string;
   commitFull: string;
   commitDate: string;
+  commitTimestamp: string;
   branch: string;
   isDirty: boolean;
   buildTimestamp: string;
@@ -27,15 +28,17 @@ export function formatTimestampYYYYMMDDHHMMSS(date: Date = new Date()): string {
 export function computeDisplayVersion(params: {
   tag?: string | null;
   commitShort?: string;
+  commitTimestamp?: string;
   isDirty?: boolean;
   timestamp?: string;
 }): string {
   const base = params.tag || params.commitShort || 'dev';
+  const commitPart = params.commitTimestamp ? `${base}-${params.commitTimestamp}` : base;
   if (params.isDirty) {
     const ts = params.timestamp || formatTimestampYYYYMMDDHHMMSS();
-    return `${base}-d${ts}`;
+    return `${commitPart}-d${ts}`;
   }
-  return base;
+  return commitPart;
 }
 
 declare const __APP_VERSION_INFO__: AppVersionInfo | undefined;
@@ -49,6 +52,7 @@ export const DEFAULT_VERSION_INFO: AppVersionInfo = {
   commitShort: 'dev',
   commitFull: 'development-build',
   commitDate: new Date().toISOString(),
+  commitTimestamp: formatTimestampYYYYMMDDHHMMSS(),
   branch: 'main',
   isDirty: false,
   buildTimestamp: formatTimestampYYYYMMDDHHMMSS(),
@@ -61,3 +65,4 @@ export function getVersionInfo(): AppVersionInfo {
   }
   return DEFAULT_VERSION_INFO;
 }
+
