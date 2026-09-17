@@ -941,7 +941,7 @@ export const ParametersWorkspace: React.FC<ParametersWorkspaceProps> = ({
             )}
           </div>
 
-          {/* Healthcare Inflation & System Rules Card */}
+          {/* Healthcare Modeling & Transition Rules Card */}
           <div className="glass-panel bg-slate-900/80 border border-slate-800 rounded-2xl p-5 space-y-4 shadow-lg">
             <div className="flex items-center justify-between border-b border-slate-800 pb-3">
               <div className="flex items-center gap-2.5">
@@ -949,46 +949,22 @@ export const ParametersWorkspace: React.FC<ParametersWorkspaceProps> = ({
                   <Activity className="w-4 h-4" />
                 </div>
                 <div>
-                  <h3 className="text-sm font-bold text-slate-100">Healthcare Inflation & Modeling Parameters</h3>
-                  <p className="text-[10px] text-slate-400">Medical cost escalation and Medicare transition rules</p>
+                  <h3 className="text-sm font-bold text-slate-100">Healthcare Modeling & Transition Rules</h3>
+                  <p className="text-[10px] text-slate-400">Medicare transition rules, escalation notes & cashflow mechanics</p>
                 </div>
               </div>
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              <div className="space-y-3">
-                <div className="space-y-1.5 p-2.5 bg-slate-900/60 rounded-lg border border-slate-800/80">
-                  <label className="text-[10px] text-slate-400 font-bold uppercase tracking-wider block truncate">
-                    Healthcare Cost Inflation Rate (% / Year)
-                  </label>
-                  <RangeSlider
-                    min={0.01}
-                    max={0.12}
-                    step={0.005}
-                    value={inputs.growthAssumptions.healthcareInflationRate}
-                    onChange={(val) => updateNestedState('growthAssumptions', 'healthcareInflationRate', val)}
-                    className="w-full h-1 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-emerald-500"
-                    renderLabel={(displayVal) => (
-                      <div className="flex justify-between items-center text-xs font-mono font-bold text-slate-200">
-                        <span>Rate:</span>
-                        <span className="text-emerald-400">{(displayVal * 100).toFixed(1)}%</span>
-                      </div>
-                    )}
-                  />
-                </div>
-                <p className="text-[10px] text-slate-500">
-                  Medical costs typically escalate 2-3% faster than general CPI inflation.
-                </p>
-              </div>
-
-              <div className="bg-slate-950/50 p-4 rounded-xl border border-slate-800/80 space-y-2 text-xs text-slate-400">
-                <span className="font-semibold text-slate-200 block">How Healthcare Cashflows Flow into the Simulation</span>
-                <ul className="list-disc list-inside space-y-1 text-[11px] text-slate-400">
-                  <li><strong className="text-slate-300">Pre-65:</strong> Uses either itemized ACA plan premiums + out-of-pocket costs, or the quick monthly flat rate.</li>
-                  <li><strong className="text-slate-300">Age 65+ Transition:</strong> Automatically switches to Medicare Part B + Part D + Medigap Supplement.</li>
-                  <li><strong className="text-slate-300">IRMAA Surcharges:</strong> Evaluated dynamically based on MAGI from 2 years prior on tax returns.</li>
-                </ul>
-              </div>
+            <div className="bg-slate-950/50 p-4 rounded-xl border border-slate-800/80 space-y-2 text-xs text-slate-400">
+              <span className="font-semibold text-slate-200 block">How Healthcare Cashflows Flow into the Simulation</span>
+              <ul className="list-disc list-inside space-y-1.5 text-[11px] text-slate-400">
+                <li>
+                  <strong className="text-slate-300">Healthcare Cost Inflation:</strong> Controlled globally in <strong className="text-emerald-400">Monte Carlo Analysis &rarr; Model Estimation Config Panel</strong> (Active rate: <span className="font-mono text-emerald-400 font-bold">{(inputs.growthAssumptions.healthcareInflationRate * 100).toFixed(1)}%</span>/yr).
+                </li>
+                <li><strong className="text-slate-300">Pre-65 / Pre-Medicare:</strong> Uses itemized state plan premiums + out-of-pocket costs, or flat rate.</li>
+                <li><strong className="text-slate-300">Medicare Transition:</strong> Switches to Medicare Part B + Part D + Medigap Supplement when turning 65 or on your specified start date.</li>
+                <li><strong className="text-slate-300">IRMAA Surcharges:</strong> Evaluated dynamically based on MAGI from 2 years prior on tax returns.</li>
+              </ul>
             </div>
           </div>
         </div>
