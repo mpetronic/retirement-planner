@@ -9,7 +9,7 @@ The strategy divides retirement wealth into three distinct temporal horizons, ea
 2. **Bucket 2: Income Bucket (Intermediate-Term: 3–7 Years)** → Mapped to **Tax-Deferred Pre-Tax IRA**.
 3. **Bucket 3: Growth Bucket (Long-Term: 8+ Years)** → Mapped to **Roth IRA**.
 
-The workspace serves as an interactive advisory, visualization, and projection engine. It mirrors real-world brokerage activity (e.g., Fidelity bond ladders and checking transfers), generates actionable transaction recommendations for the current year, and projects multi-year bucket mechanics across historical actuals and Monte Carlo / deterministic simulations.
+The workspace serves as an interactive advisory, visualization, and projection engine. It mirrors real-world brokerage activity (e.g., custodian bond ladders and checking transfers), generates actionable transaction recommendations for the current year, and projects multi-year bucket mechanics across historical actuals and Monte Carlo / deterministic simulations.
 
 ---
 
@@ -106,7 +106,7 @@ The Bucket Management feature lives in its own dedicated top-level workspace acc
     - IRA → Roth Conversion
 - **Action Center & Transaction Ledger (Current Year)**:
   - List of actionable recommendations for the active year (e.g., *"Rung 1 matures Oct 15 ($100k) -> Confirm Distribution to Taxable Cash"*, *"Transfer $8,333/month to Checking"*, *"Rebuild Year 5 Rung ($105k) from IRA Equities"*).
-  - **[Mark as Done]** action buttons allowing the user to record completed real-world Fidelity actions into the application's actuals ledger.
+  - **[Mark as Done]** action buttons allowing the user to record completed real-world brokerage actions into the application's actuals ledger.
 
 #### Tab 2: Rules & Strategy Configuration
 - **Reserve & Target Settings**:

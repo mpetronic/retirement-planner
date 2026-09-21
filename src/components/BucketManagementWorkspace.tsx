@@ -165,14 +165,16 @@ export const BucketManagementWorkspace: React.FC<BucketManagementWorkspaceProps>
 
   // Save holding modal
   const handleSaveHolding = () => {
+    const rawPrincipal = Number(holdingForm.principal) || 0;
+    const rawCoupon = Number(holdingForm.couponRate) || 0;
     const newHolding: BondLadderHolding = {
       id: editingHolding?.id || `holding-${Date.now()}`,
       rungNumber: holdingForm.rungNumber,
       targetYear: holdingForm.targetYear,
       cusipOrName: holdingForm.cusipOrName || undefined,
       assetType: holdingForm.assetType,
-      principal: Number(holdingForm.principal) || 0,
-      couponRate: (Number(holdingForm.couponRate) || 0) / 100,
+      principal: Math.round((rawPrincipal + Number.EPSILON) * 100) / 100,
+      couponRate: Math.round((rawCoupon / 100 + Number.EPSILON) * 10000) / 10000,
       maturityDate: holdingForm.maturityDate || undefined,
       notes: holdingForm.notes || undefined,
       status: 'active',
@@ -213,8 +215,8 @@ export const BucketManagementWorkspace: React.FC<BucketManagementWorkspaceProps>
       targetYear: holding.targetYear,
       cusipOrName: holding.cusipOrName || '',
       assetType: holding.assetType,
-      principal: holding.principal,
-      couponRate: holding.couponRate * 100,
+      principal: Math.round((holding.principal + Number.EPSILON) * 100) / 100,
+      couponRate: Math.round((holding.couponRate * 100 + Number.EPSILON) * 100) / 100,
       maturityDate: holding.maturityDate || '',
       notes: holding.notes || '',
     });
@@ -224,12 +226,13 @@ export const BucketManagementWorkspace: React.FC<BucketManagementWorkspaceProps>
   // Open create modal for holding
   const handleOpenCreateHolding = (rungNum: number, yr: number) => {
     setEditingHolding(null);
+    const defaultPrincipal = currentCalc.bucket2.rungs.find((r) => r.rungNumber === rungNum)?.principal || 100000;
     setHoldingForm({
       rungNumber: rungNum,
       targetYear: yr,
       cusipOrName: '',
       assetType: 'treasury',
-      principal: currentCalc.bucket2.rungs.find((r) => r.rungNumber === rungNum)?.principal || 100000,
+      principal: Math.round((defaultPrincipal + Number.EPSILON) * 100) / 100,
       couponRate: 4.25,
       maturityDate: `${yr}-10-15`,
       notes: '',
@@ -259,7 +262,7 @@ export const BucketManagementWorkspace: React.FC<BucketManagementWorkspaceProps>
               <div>
                 <h1 className="text-2xl font-bold text-white tracking-tight">3-Bucket Strategy Workspace</h1>
                 <p className="text-sm text-slate-400">
-                  Manage temporal cashflow buffers, Fidelity bond ladder mirroring, and market protection rules.
+                  Manage temporal cashflow buffers, custodian bond ladder tracking, and market protection rules.
                 </p>
               </div>
             </div>
@@ -762,7 +765,7 @@ export const BucketManagementWorkspace: React.FC<BucketManagementWorkspaceProps>
                   Action Center: {selectedYear} Recommended Actions
                 </h3>
                 <p className="text-xs text-slate-400">
-                  Mirroring your Fidelity accounts: execute these actions in real life and mark them as done here.
+                  Mirroring your custodian brokerage accounts: execute these actions in real life and mark them as done here.
                 </p>
               </div>
               <span className="text-xs font-semibold px-2.5 py-1 rounded-lg bg-slate-800 text-slate-300">
@@ -1041,10 +1044,10 @@ export const BucketManagementWorkspace: React.FC<BucketManagementWorkspaceProps>
               <div>
                 <h3 className="font-bold text-white text-base flex items-center gap-2">
                   <ListOrdered className="w-5 h-5 text-blue-400" />
-                  Detailed Bond Ladder Holdings (Fidelity Mirroring)
+                  Detailed Bond Ladder Holdings (Custodian Tracking)
                 </h3>
                 <p className="text-xs text-slate-400">
-                  Input individual Treasuries, CDs, or Agency bonds to match your Fidelity statement.
+                  Input individual Treasuries, CDs, or Agency bonds to match your brokerage statement.
                 </p>
               </div>
 
@@ -1299,8 +1302,14 @@ export const BucketManagementWorkspace: React.FC<BucketManagementWorkspaceProps>
                   <label className="block font-semibold text-slate-300 mb-1">Principal ($)</label>
                   <input
                     type="number"
+                    step="0.01"
                     value={holdingForm.principal}
-                    onChange={(e) => setHoldingForm({ ...holdingForm, principal: Number(e.target.value) })}
+                    onChange={(e) =>
+                      setHoldingForm({
+                        ...holdingForm,
+                        principal: e.target.value === '' ? ('' as unknown as number) : Number(e.target.value),
+                      })
+                    }
                     className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-white"
                   />
                 </div>
@@ -1323,7 +1332,7 @@ export const BucketManagementWorkspace: React.FC<BucketManagementWorkspaceProps>
                     type="date"
                     value={holdingForm.maturityDate}
                     onChange={(e) => setHoldingForm({ ...holdingForm, maturityDate: e.target.value })}
-                    className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-white"
+                    className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-white [color-scheme:dark] cursor-pointer"
                   />
                 </div>
               </div>
