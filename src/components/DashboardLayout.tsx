@@ -40,6 +40,7 @@ const VIEW_TITLES: Record<ActiveViewType, { title: string; category?: string }> 
   'monte-carlo': { title: 'Monte Carlo Stochastic Analysis', category: 'Workspaces' },
   compare: { title: 'Plan Scenario Comparison', category: 'Workspaces' },
   actuals: { title: 'Actuals & Guardrails Governance', category: 'Workspaces' },
+  'bucket-management': { title: '3-Bucket Strategy Management', category: 'Workspaces' },
   'params-profiles': { title: 'Profiles & Family', category: 'Edit Parameters' },
   'params-filing-status': { title: 'Tax Filing Status', category: 'Edit Parameters' },
   'params-residency': { title: 'Tax Residency & States', category: 'Edit Parameters' },

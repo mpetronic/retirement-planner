@@ -36,6 +36,7 @@ export type ActiveViewType =
   | 'monte-carlo'
   | 'compare'
   | 'actuals'
+  | 'bucket-management'
   | 'params-profiles'
   | 'params-filing-status'
   | 'params-residency'
@@ -98,6 +99,13 @@ const PRIMARY_NAV_ITEMS: NavItem[] = [
     shortLabel: 'Actuals',
     icon: ClipboardCheck,
     description: 'Reconciliation & spending rules',
+  },
+  {
+    id: 'bucket-management',
+    label: 'Bucket Management',
+    shortLabel: 'Buckets',
+    icon: Layers,
+    description: '3-Bucket strategy & bond ladder',
   },
 ];
 

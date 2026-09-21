@@ -7,6 +7,7 @@ import {
   DEFAULT_DETAILED_EXPENSES_STATE,
   DEFAULT_CHARITY_SETTINGS,
   DEFAULT_GUARDRAIL_SETTINGS,
+  DEFAULT_BUCKET_STRATEGY_SETTINGS,
   CustomRothScenario,
   normalizeDetailedExpenses,
   getSimulationStartYear,
@@ -30,6 +31,7 @@ import { LookbackLedgerTable } from './components/LookbackLedgerTable';
 import { MonteCarloWorkspace } from './components/MonteCarloWorkspace';
 import { PlanComparisonWorkspace } from './components/PlanComparisonWorkspace';
 import { ActualsWorkspace } from './components/ActualsWorkspace';
+import { BucketManagementWorkspace } from './components/BucketManagementWorkspace';
 import { DocumentationDialog } from './components/DocumentationDialog';
 import { AboutDialog } from './components/AboutDialog';
 import { OnboardingWizard } from './components/OnboardingWizard';
@@ -116,6 +118,7 @@ const DEFAULT_INPUTS: AppStateInputs = {
   charitySettings: DEFAULT_CHARITY_SETTINGS,
   actualTracking: {},
   guardrailSettings: DEFAULT_GUARDRAIL_SETTINGS,
+  bucketSettings: DEFAULT_BUCKET_STRATEGY_SETTINGS,
 };
 
 // Custom hook for LocalStorage persistence with defensive deep merge schema protection
@@ -170,6 +173,23 @@ function useLocalStorage<T>(key: string, initialValue: T): [T, (value: T | ((val
               ...DEFAULT_GUARDRAIL_SETTINGS,
               ...(p.guardrailSettings || {}),
             },
+            bucketSettings: {
+              ...DEFAULT_BUCKET_STRATEGY_SETTINGS,
+              ...(p.bucketSettings || {}),
+              cash: {
+                ...DEFAULT_BUCKET_STRATEGY_SETTINGS.cash,
+                ...(p.bucketSettings?.cash || {}),
+              },
+              income: {
+                ...DEFAULT_BUCKET_STRATEGY_SETTINGS.income,
+                ...(p.bucketSettings?.income || {}),
+              },
+              growth: {
+                ...DEFAULT_BUCKET_STRATEGY_SETTINGS.growth,
+                ...(p.bucketSettings?.growth || {}),
+              },
+              actionLedger: p.bucketSettings?.actionLedger || {},
+            },
           } as unknown as T;
         }
 
@@ -183,6 +203,23 @@ function useLocalStorage<T>(key: string, initialValue: T): [T, (value: T | ((val
               guardrailSettings: {
                 ...DEFAULT_GUARDRAIL_SETTINGS,
                 ...(p.inputs?.guardrailSettings || {}),
+              },
+              bucketSettings: {
+                ...DEFAULT_BUCKET_STRATEGY_SETTINGS,
+                ...(p.inputs?.bucketSettings || {}),
+                cash: {
+                  ...DEFAULT_BUCKET_STRATEGY_SETTINGS.cash,
+                  ...(p.inputs?.bucketSettings?.cash || {}),
+                },
+                income: {
+                  ...DEFAULT_BUCKET_STRATEGY_SETTINGS.income,
+                  ...(p.inputs?.bucketSettings?.income || {}),
+                },
+                growth: {
+                  ...DEFAULT_BUCKET_STRATEGY_SETTINGS.growth,
+                  ...(p.inputs?.bucketSettings?.growth || {}),
+                },
+                actionLedger: p.inputs?.bucketSettings?.actionLedger || {},
               },
             },
           })) as unknown as T;
@@ -775,6 +812,16 @@ function App() {
               }));
             }}
             onNavigateToTab={(tabIdx) => handleNavigate(tabIdx)}
+          />
+        )}
+
+        {/* Workspace 7: 3-Bucket Strategy Management */}
+        {activeView === 'bucket-management' && (
+          <BucketManagementWorkspace
+            ledger={displayActiveLedger}
+            inputs={inputs}
+            onInputsChange={handleInputsChange}
+            simulateSurvivor={simulateSurvivor}
           />
         )}
       </DashboardLayout>
