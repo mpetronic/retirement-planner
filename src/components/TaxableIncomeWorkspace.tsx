@@ -16,6 +16,7 @@ import {
   CustomRothScenario,
   getSimulationStartYear,
 } from '../types';
+import { RangeSlider } from './RangeSlider';
 import { 
   Calculator,
   Sliders,
@@ -804,24 +805,24 @@ export const TaxableIncomeWorkspace: React.FC<TaxableIncomeWorkspaceProps> = ({
             <div className="flex items-center justify-between w-full">
               <div className="flex items-center gap-3 bg-slate-950/80 px-3 py-1.5 rounded-xl border border-slate-800 text-[11px] font-mono text-slate-300">
                 <span className="text-[10px] font-sans text-slate-400 font-bold uppercase tracking-wider">Annual Flat Amount:</span>
-                <input
-                  type="range"
-                  min="0"
-                  max="500000"
-                  step="5000"
+                <RangeSlider
+                  min={0}
+                  max={500000}
+                  step={5000}
                   value={inputs.annualRothConversion}
-                  onChange={(e) => {
-                    const val = Number(e.target.value);
+                  onChange={(val) => {
                     if (onInputsChange) {
                       onInputsChange({ ...inputs, annualRothConversion: val });
                     }
                   }}
                   className="w-48 h-1.5 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-amber-500"
                   title="Annual Flat Conversion Amount"
+                  renderLabel={(displayVal) => (
+                    <span className="text-amber-400 font-black font-mono text-xs inline-block min-w-[90px] text-right">
+                      {formatCurrency(displayVal)}/yr
+                    </span>
+                  )}
                 />
-                <span className="text-amber-400 font-black font-mono text-xs inline-block min-w-[90px] text-right">
-                  {formatCurrency(inputs.annualRothConversion)}/yr
-                </span>
               </div>
               <div className="flex items-center gap-3">
                 <span className="text-[10px] text-slate-500 font-mono hidden md:inline">

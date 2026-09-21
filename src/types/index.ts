@@ -24,6 +24,8 @@ export interface StateHealthcareConfig {
 export interface HealthcareConfig {
   medicarePartBPremium: number | null;
   fileSSA44LifeChangingEvent?: boolean; // Form SSA-44 Life-Changing Event (Work Stoppage / Wage Reduction)
+  medicareStartMode?: 'age65' | 'customDate'; // 'age65' (default) or 'customDate'
+  medicareStartDate?: string | null; // YYYY-MM-DD or YYYY-MM when customDate mode is chosen
   MD: StateHealthcareConfig;
   FL: StateHealthcareConfig;
 }

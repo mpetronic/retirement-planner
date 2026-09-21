@@ -10,7 +10,7 @@ import {
   ChartEvent,
 } from 'chart.js';
 import { SimulationResultRow, AppStateInputs } from '../types';
-import { Award, Check } from 'lucide-react';
+import { Coins, Check } from 'lucide-react';
 import { getTargetPresetInfo, CONVERSION_TARGET_PRESETS } from '../engine/taxRates2026';
 
 ChartJS.register(...registerables);
@@ -430,7 +430,7 @@ export const BracketMapChart: React.FC<BracketMapChartProps> = ({
       <div className="flex flex-col md:flex-row md:justify-between md:items-center gap-4">
         <div>
           <h3 className="text-lg font-bold text-slate-100 flex items-center gap-2">
-            <Award className="w-5 h-5 text-emerald-400" />
+            <Coins className="w-5 h-5 text-emerald-400" />
             Interactive Tax and IRMAA Bracket Map
           </h3>
           <p className="text-xs text-slate-400">

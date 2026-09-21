@@ -1,6 +1,8 @@
 import React from 'react';
 import { HeartHandshake, Sparkles, ShieldCheck, DollarSign, Percent } from 'lucide-react';
 import { CharitySettings, DEFAULT_CHARITY_SETTINGS } from '../types';
+import { RangeSlider } from './RangeSlider';
+import { NumericInput } from './NumericInput';
 
 interface CharityControlPanelProps {
   settings?: CharitySettings;
@@ -39,16 +41,14 @@ export const CharityControlPanel: React.FC<CharityControlPanelProps> = ({
     });
   };
 
-  const handleMinChange = (val: string) => {
-    const num = val === '' ? null : Math.max(0, parseFloat(val) || 0);
+  const handleMinChange = (num: number | null) => {
     onChange({
       ...currentSettings,
       minAnnualTithe: num,
     });
   };
 
-  const handleMaxChange = (val: string) => {
-    const num = val === '' ? null : Math.max(0, parseFloat(val) || 0);
+  const handleMaxChange = (num: number | null) => {
     onChange({
       ...currentSettings,
       maxAnnualTithe: num,
@@ -97,24 +97,24 @@ export const CharityControlPanel: React.FC<CharityControlPanelProps> = ({
         <div className="p-4 bg-slate-800/50 rounded-xl border border-slate-700/60 space-y-4 text-xs animate-in fade-in duration-200">
           {/* Growth Percentage Slider */}
           <div className="space-y-2">
-            <div className="flex justify-between items-center text-slate-300">
-              <span className="font-medium flex items-center gap-1">
-                <Percent className="w-3.5 h-3.5 text-rose-400" />
-                Tithe Percentage of Portfolio Growth:
-              </span>
-              <span className="text-sm font-bold text-rose-400 bg-rose-500/10 px-2 py-0.5 rounded border border-rose-500/20">
-                {(currentSettings.growthPercentage * 100).toFixed(1)}%
-              </span>
-            </div>
-
-            <input
-              type="range"
-              min="0.01"
-              max="0.50"
-              step="0.005"
+            <RangeSlider
+              min={0.01}
+              max={0.50}
+              step={0.005}
               value={currentSettings.growthPercentage}
-              onChange={(e) => handleGrowthPctChange(parseFloat(e.target.value))}
+              onChange={(val) => handleGrowthPctChange(val)}
               className="w-full h-1.5 bg-slate-700 rounded-lg appearance-none cursor-pointer accent-rose-500"
+              renderLabel={(displayVal) => (
+                <div className="flex justify-between items-center text-slate-300">
+                  <span className="font-medium flex items-center gap-1">
+                    <Percent className="w-3.5 h-3.5 text-rose-400" />
+                    Tithe Percentage of Portfolio Growth:
+                  </span>
+                  <span className="text-sm font-bold text-rose-400 bg-rose-500/10 px-2 py-0.5 rounded border border-rose-500/20">
+                    {(displayVal * 100).toFixed(1)}%
+                  </span>
+                </div>
+              )}
             />
             <div className="flex justify-between text-[10px] text-slate-400">
               <span>1%</span>
@@ -131,17 +131,13 @@ export const CharityControlPanel: React.FC<CharityControlPanelProps> = ({
                 <DollarSign className="w-3 h-3 text-emerald-400" />
                 Annual Floor (Min):
               </label>
-              <div className="relative">
-                <input
-                  type="number"
-                  min="0"
-                  step="500"
-                  placeholder="None ($0 in down yrs)"
-                  value={currentSettings.minAnnualTithe ?? ''}
-                  onChange={(e) => handleMinChange(e.target.value)}
-                  className="w-full bg-slate-900/80 border border-slate-700 rounded-lg px-2.5 py-1.5 text-slate-100 placeholder-slate-500 text-xs focus:ring-1 focus:ring-rose-500 focus:border-rose-500"
-                />
-              </div>
+              <NumericInput
+                prefix="$"
+                min={0}
+                placeholder="None ($0 in down yrs)"
+                value={currentSettings.minAnnualTithe}
+                onChange={handleMinChange}
+              />
               <p className="text-[10px] text-slate-400 mt-0.5">Guaranteed minimum gift</p>
             </div>
 
@@ -150,17 +146,13 @@ export const CharityControlPanel: React.FC<CharityControlPanelProps> = ({
                 <DollarSign className="w-3 h-3 text-amber-400" />
                 Annual Cap (Max):
               </label>
-              <div className="relative">
-                <input
-                  type="number"
-                  min="0"
-                  step="1000"
-                  placeholder="No ceiling"
-                  value={currentSettings.maxAnnualTithe ?? ''}
-                  onChange={(e) => handleMaxChange(e.target.value)}
-                  className="w-full bg-slate-900/80 border border-slate-700 rounded-lg px-2.5 py-1.5 text-slate-100 placeholder-slate-500 text-xs focus:ring-1 focus:ring-rose-500 focus:border-rose-500"
-                />
-              </div>
+              <NumericInput
+                prefix="$"
+                min={0}
+                placeholder="No ceiling"
+                value={currentSettings.maxAnnualTithe}
+                onChange={handleMaxChange}
+              />
               <p className="text-[10px] text-slate-400 mt-0.5">Upper limit per year</p>
             </div>
           </div>

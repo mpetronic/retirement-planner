@@ -1,7 +1,7 @@
 import React, { useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { SimulationResultRow, AppStateInputs, getSimulationStartYear } from '../types';
-import { ShieldAlert, Info, AlertTriangle, X } from 'lucide-react';
+import { TableProperties, Info, AlertTriangle, X } from 'lucide-react';
 import { IRMAA_TIERS_MFJ, IRMAA_TIERS_SINGLE, MD_PENSION_EXCLUSION_BASE_CAP } from '../engine/taxRates2026';
 import { calculateFedTaxWithLTCG, calculateTaxableSS, calculateMDStateTax } from '../engine/simulationEngine';
 import { RowInspectionDialog } from './RowInspectionDialog';
@@ -78,7 +78,14 @@ export const LookbackLedgerTable: React.FC<LookbackLedgerTableProps> = ({
           const currentTier = tiers[currentTierIdx];
           const prevTier = tiers[currentTierIdx - 1];
           
-          const numOnMedicare = (r.yourAge >= 65 ? 1 : 0) + (r.wifeAge >= 65 ? 1 : 0);
+          const yourMedStartYear = inputs.you.healthcare?.medicareStartMode === 'customDate' && inputs.you.healthcare?.medicareStartDate
+            ? parseInt(inputs.you.healthcare.medicareStartDate.split('-')[0], 10)
+            : (inputs.you.birthDate ? parseInt(inputs.you.birthDate.split('-')[0], 10) + 65 : 1960 + 65);
+          const wifeMedStartYear = inputs.wife.healthcare?.medicareStartMode === 'customDate' && inputs.wife.healthcare?.medicareStartDate
+            ? parseInt(inputs.wife.healthcare.medicareStartDate.split('-')[0], 10)
+            : (inputs.wife.birthDate ? parseInt(inputs.wife.birthDate.split('-')[0], 10) + 65 : 1964 + 65);
+          const affectedYear = year + 2;
+          const numOnMedicare = (affectedYear >= yourMedStartYear ? 1 : 0) + (!inputs.isSingleFiler && affectedYear >= wifeMedStartYear ? 1 : 0);
           const monthlyDiff = (currentTier.partBSurcharge + currentTier.partDSurcharge) - 
                               (prevTier.partBSurcharge + prevTier.partDSurcharge);
           
@@ -108,7 +115,7 @@ export const LookbackLedgerTable: React.FC<LookbackLedgerTableProps> = ({
       <div className="flex flex-col md:flex-row md:justify-between md:items-center gap-4">
         <div>
           <h3 className="text-lg font-bold text-slate-100 flex items-center gap-2">
-            <ShieldAlert className="w-5 h-5 text-amber-500 animate-pulse" />
+            <TableProperties className="w-5 h-5 text-emerald-400" />
             Lookback Linkage Ledger Table
           </h3>
           <p className="text-xs text-slate-400">

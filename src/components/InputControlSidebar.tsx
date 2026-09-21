@@ -29,6 +29,8 @@ import { ExportFormatType } from '../utils/exportHelpers';
 import { AboutDialog } from './AboutDialog';
 import { DocumentationDialog } from './DocumentationDialog';
 import { getVersionInfo } from '../utils/version';
+import { NumericInput } from './NumericInput';
+import { RangeSlider } from './RangeSlider';
 
 const getBirthMonth = (dateStr: string | undefined): number => {
   if (!dateStr) return 1;
@@ -75,7 +77,9 @@ export const InputControlSidebar: React.FC<InputControlSidebarProps> = ({
 }) => {
   const [activeTab, setActiveTab] = useState<'profiles' | 'portfolio' | 'assumptions' | 'expenses'>('profiles');
   const [isEditingYou, setIsEditingYou] = useState(false);
+  const [tempYouName, setTempYouName] = useState(inputs.you.name || '');
   const [isEditingWife, setIsEditingWife] = useState(false);
+  const [tempWifeName, setTempWifeName] = useState(inputs.wife.name || '');
   const [showExpensesDialog, setShowExpensesDialog] = useState(false);
   const [editingHealthcarePerson, setEditingHealthcarePerson] = useState<'you' | 'wife' | null>(null);
   const [showResetConfirm, setShowResetConfirm] = useState(false);
@@ -343,17 +347,40 @@ export const InputControlSidebar: React.FC<InputControlSidebarProps> = ({
                       <span className="text-xs text-slate-400 font-bold uppercase whitespace-nowrap">Primary User:</span>
                       <input
                         type="text"
-                        value={inputs.you.name || ''}
-                        onChange={(e) => updateNestedState('you', 'name', e.target.value)}
-                        onBlur={() => setIsEditingYou(false)}
-                        onKeyDown={(e) => { if (e.key === 'Enter') setIsEditingYou(false); }}
+                        value={tempYouName}
+                        onChange={(e) => setTempYouName(e.target.value)}
+                        onBlur={() => {
+                          setIsEditingYou(false);
+                          const trimmed = tempYouName.trim();
+                          if (trimmed !== (inputs.you.name || '')) {
+                            updateNestedState('you', 'name', trimmed);
+                          }
+                        }}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') {
+                            setIsEditingYou(false);
+                            const trimmed = tempYouName.trim();
+                            if (trimmed !== (inputs.you.name || '')) {
+                              updateNestedState('you', 'name', trimmed);
+                            }
+                          } else if (e.key === 'Escape') {
+                            setIsEditingYou(false);
+                            setTempYouName(inputs.you.name || '');
+                          }
+                        }}
                         placeholder="Enter name"
                         autoFocus
                         className="bg-slate-900 border border-emerald-500/50 rounded px-2 py-0.5 text-xs text-slate-100 font-semibold focus:outline-none w-full focus:ring-1 focus:ring-emerald-500"
                       />
                     </div>
                     <button
-                      onClick={() => setIsEditingYou(false)}
+                      onClick={() => {
+                        setIsEditingYou(false);
+                        const trimmed = tempYouName.trim();
+                        if (trimmed !== (inputs.you.name || '')) {
+                          updateNestedState('you', 'name', trimmed);
+                        }
+                      }}
                       className="text-emerald-400 hover:text-emerald-300 p-0.5 hover:bg-slate-800 rounded transition-colors"
                       title="Save name"
                     >
@@ -362,7 +389,13 @@ export const InputControlSidebar: React.FC<InputControlSidebarProps> = ({
                   </div>
                 ) : (
                   <div className="flex justify-between items-center">
-                    <div className="flex items-center gap-2 group cursor-pointer" onClick={() => setIsEditingYou(true)}>
+                    <div
+                      className="flex items-center gap-2 group cursor-pointer"
+                      onClick={() => {
+                        setTempYouName(inputs.you.name || '');
+                        setIsEditingYou(true);
+                      }}
+                    >
                       <span className="text-sm font-semibold text-slate-200 hover:text-emerald-400 transition-colors">
                         Primary User ({inputs.you.name || 'You'})
                       </span>
@@ -374,31 +407,27 @@ export const InputControlSidebar: React.FC<InputControlSidebarProps> = ({
                 
                 <div className="space-y-1">
                   <label className="text-xs text-slate-400">Estimated SS Monthly PIA (at Age 67)</label>
-                  <div className="relative">
-                    <span className="absolute left-3 top-1 text-slate-500 text-xs font-semibold">$</span>
-                    <input
-                      type="number"
-                      value={inputs.you.estimatedPIA === null ? '' : inputs.you.estimatedPIA}
-                      onChange={(e) => updateNestedState('you', 'estimatedPIA', e.target.value === '' ? null : Number(e.target.value))}
-                      placeholder="e.g. 3000"
-                      className="w-full bg-slate-900 border border-slate-800 rounded-lg pl-6 pr-2.5 py-1 text-xs text-slate-100 font-mono focus:outline-none focus:border-emerald-500"
-                    />
-                  </div>
+                  <NumericInput
+                    prefix="$"
+                    value={inputs.you.estimatedPIA}
+                    onChange={(val) => updateNestedState('you', 'estimatedPIA', val)}
+                    placeholder="e.g. 3000"
+                  />
                 </div>
 
                 <div className="space-y-1">
-                  <label className="text-xs text-slate-400 flex justify-between">
-                    <span>Target Social Security Claiming Age</span>
-                    <span className="text-emerald-400 font-bold font-mono">Age {inputs.you.targetSSClaimingAge ?? 67}</span>
-                  </label>
-                  <input
-                    type="range"
-                    min="62"
-                    max="70"
-                    step="1"
+                  <RangeSlider
+                    min={62}
+                    max={70}
+                    step={1}
                     value={inputs.you.targetSSClaimingAge ?? 67}
-                    onChange={(e) => updateNestedState('you', 'targetSSClaimingAge', Number(e.target.value))}
-                    className="w-full h-1.5 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-emerald-500"
+                    onChange={(val) => updateNestedState('you', 'targetSSClaimingAge', val)}
+                    renderLabel={(val) => (
+                      <label className="text-xs text-slate-400 flex justify-between">
+                        <span>Target Social Security Claiming Age</span>
+                        <span className="text-emerald-400 font-bold font-mono">Age {val}</span>
+                      </label>
+                    )}
                   />
                   <div className="flex justify-between text-[10px] text-slate-500 font-mono px-1">
                     <span>62 (Reduced)</span>
@@ -417,24 +446,28 @@ export const InputControlSidebar: React.FC<InputControlSidebarProps> = ({
                       const sliderVal = (age - 55) * 12 + (mon - 1);
                       return (
                         <>
-                          <label className="text-[10px] text-slate-400 font-bold uppercase tracking-wider flex justify-between">
-                            <span>Retire Age</span>
-                            <span className="text-emerald-400 font-mono font-semibold">
-                              Age {age} · {MONTHS[mon - 1]}
-                            </span>
-                          </label>
-                          <input
-                            type="range"
-                            min="0"
-                            max="239"
-                            step="1"
+                          <RangeSlider
+                            min={0}
+                            max={239}
+                            step={1}
                             value={sliderVal}
-                            onChange={(e) => {
-                              const v = Number(e.target.value);
+                            onChange={(v) => {
                               const newAge = 55 + Math.floor(v / 12);
                               const newMon = (v % 12) + 1;
                               const next = { ...inputs, you: { ...inputs.you, plannedRetirementAge: newAge, plannedRetirementMonth: newMon } };
                               onChange(next);
+                            }}
+                            renderLabel={(v) => {
+                              const newAge = 55 + Math.floor(v / 12);
+                              const newMon = (v % 12) + 1;
+                              return (
+                                <label className="text-[10px] text-slate-400 font-bold uppercase tracking-wider flex justify-between">
+                                  <span>Retire Age</span>
+                                  <span className="text-emerald-400 font-mono font-semibold">
+                                    Age {newAge} · {MONTHS[newMon - 1]}
+                                  </span>
+                                </label>
+                              );
                             }}
                             className="w-full h-1 bg-slate-800 rounded appearance-none cursor-pointer accent-emerald-500"
                           />
@@ -451,30 +484,26 @@ export const InputControlSidebar: React.FC<InputControlSidebarProps> = ({
                   </div>
                   <div className="space-y-1">
                     <label className="text-[10px] text-slate-400 font-bold uppercase tracking-wider block">Salary</label>
-                    <div className="relative">
-                      <span className="absolute left-3 top-1 text-slate-500 text-xs font-semibold">$</span>
-                      <input
-                        type="number"
-                        value={inputs.you.activeSalary === null ? '' : inputs.you.activeSalary}
-                        onChange={(e) => updateNestedState('you', 'activeSalary', e.target.value === '' ? null : Number(e.target.value))}
-                        placeholder="e.g. 150000"
-                        className="w-full bg-slate-900 border border-slate-800 rounded-lg pl-6 pr-2.5 py-1 text-xs text-slate-100 font-mono focus:outline-none focus:border-emerald-500"
-                      />
-                    </div>
+                    <NumericInput
+                      prefix="$"
+                      value={inputs.you.activeSalary}
+                      onChange={(val) => updateNestedState('you', 'activeSalary', val)}
+                      placeholder="e.g. 150000"
+                    />
                   </div>
                   <div className="space-y-1 pt-1.5 border-t border-slate-800/30">
-                    <label className="text-[10px] text-slate-400 font-bold uppercase tracking-wider flex justify-between">
-                      <span>Longevity Age</span>
-                      <span className="text-emerald-400 font-mono font-semibold">Age {inputs.you.longevityAge ?? 85}</span>
-                    </label>
-                    <input
-                      type="range"
-                      min="50"
-                      max="110"
-                      step="1"
+                    <RangeSlider
+                      min={50}
+                      max={110}
+                      step={1}
                       value={inputs.you.longevityAge ?? 85}
-                      onChange={(e) => updateNestedState('you', 'longevityAge', Number(e.target.value))}
-                      className="w-full h-1.5 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-emerald-500"
+                      onChange={(val) => updateNestedState('you', 'longevityAge', val)}
+                      renderLabel={(val) => (
+                        <label className="text-[10px] text-slate-400 font-bold uppercase tracking-wider flex justify-between">
+                          <span>Longevity Age</span>
+                          <span className="text-emerald-400 font-mono font-semibold">Age {val}</span>
+                        </label>
+                      )}
                     />
                     <div className="flex justify-between text-[10px] text-slate-500 font-mono px-0.5">
                       <span>50</span>
@@ -507,17 +536,40 @@ export const InputControlSidebar: React.FC<InputControlSidebarProps> = ({
                         <span className="text-xs text-slate-400 font-bold uppercase whitespace-nowrap">Spouse:</span>
                         <input
                           type="text"
-                          value={inputs.wife.name || ''}
-                          onChange={(e) => updateNestedState('wife', 'name', e.target.value)}
-                          onBlur={() => setIsEditingWife(false)}
-                          onKeyDown={(e) => { if (e.key === 'Enter') setIsEditingWife(false); }}
+                          value={tempWifeName}
+                          onChange={(e) => setTempWifeName(e.target.value)}
+                          onBlur={() => {
+                            setIsEditingWife(false);
+                            const trimmed = tempWifeName.trim();
+                            if (trimmed !== (inputs.wife.name || '')) {
+                              updateNestedState('wife', 'name', trimmed);
+                            }
+                          }}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter') {
+                              setIsEditingWife(false);
+                              const trimmed = tempWifeName.trim();
+                              if (trimmed !== (inputs.wife.name || '')) {
+                                updateNestedState('wife', 'name', trimmed);
+                              }
+                            } else if (e.key === 'Escape') {
+                              setIsEditingWife(false);
+                              setTempWifeName(inputs.wife.name || '');
+                            }
+                          }}
                           placeholder="Enter name"
                           autoFocus
                           className="bg-slate-900 border border-emerald-500/50 rounded px-2 py-0.5 text-xs text-slate-100 font-semibold focus:outline-none w-full focus:ring-1 focus:ring-emerald-500"
                         />
                       </div>
                       <button
-                        onClick={() => setIsEditingWife(false)}
+                        onClick={() => {
+                          setIsEditingWife(false);
+                          const trimmed = tempWifeName.trim();
+                          if (trimmed !== (inputs.wife.name || '')) {
+                            updateNestedState('wife', 'name', trimmed);
+                          }
+                        }}
                         className="text-emerald-400 hover:text-emerald-300 p-0.5 hover:bg-slate-800 rounded transition-colors"
                         title="Save name"
                       >
@@ -526,7 +578,13 @@ export const InputControlSidebar: React.FC<InputControlSidebarProps> = ({
                     </div>
                   ) : (
                     <div className="flex justify-between items-center">
-                      <div className="flex items-center gap-2 group cursor-pointer" onClick={() => setIsEditingWife(true)}>
+                      <div
+                        className="flex items-center gap-2 group cursor-pointer"
+                        onClick={() => {
+                          setTempWifeName(inputs.wife.name || '');
+                          setIsEditingWife(true);
+                        }}
+                      >
                         <span className="text-sm font-semibold text-slate-200 hover:text-emerald-400 transition-colors">
                           Spouse ({inputs.wife.name || 'Spouse'})
                         </span>
@@ -538,31 +596,27 @@ export const InputControlSidebar: React.FC<InputControlSidebarProps> = ({
                   
                   <div className="space-y-1">
                     <label className="text-xs text-slate-400">Estimated SS Monthly PIA (at Age 67)</label>
-                    <div className="relative">
-                      <span className="absolute left-3 top-1 text-slate-500 text-xs font-semibold">$</span>
-                      <input
-                        type="number"
-                        value={inputs.wife.estimatedPIA === null ? '' : inputs.wife.estimatedPIA}
-                        onChange={(e) => updateNestedState('wife', 'estimatedPIA', e.target.value === '' ? null : Number(e.target.value))}
-                        placeholder="e.g. 2800"
-                        className="w-full bg-slate-900 border border-slate-800 rounded-lg pl-6 pr-2.5 py-1 text-xs text-slate-100 font-mono focus:outline-none focus:border-emerald-500"
-                      />
-                    </div>
+                    <NumericInput
+                      prefix="$"
+                      value={inputs.wife.estimatedPIA}
+                      onChange={(val) => updateNestedState('wife', 'estimatedPIA', val)}
+                      placeholder="e.g. 2800"
+                    />
                   </div>
 
                   <div className="space-y-1">
-                    <label className="text-xs text-slate-400 flex justify-between">
-                      <span>Target Social Security Claiming Age</span>
-                      <span className="text-emerald-400 font-bold font-mono">Age {inputs.wife.targetSSClaimingAge ?? 67}</span>
-                    </label>
-                    <input
-                      type="range"
-                      min="62"
-                      max="70"
-                      step="1"
+                    <RangeSlider
+                      min={62}
+                      max={70}
+                      step={1}
                       value={inputs.wife.targetSSClaimingAge ?? 67}
-                      onChange={(e) => updateNestedState('wife', 'targetSSClaimingAge', Number(e.target.value))}
-                      className="w-full h-1.5 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-emerald-500"
+                      onChange={(val) => updateNestedState('wife', 'targetSSClaimingAge', val)}
+                      renderLabel={(val) => (
+                        <label className="text-xs text-slate-400 flex justify-between">
+                          <span>Target Social Security Claiming Age</span>
+                          <span className="text-emerald-400 font-bold font-mono">Age {val}</span>
+                        </label>
+                      )}
                     />
                     <div className="flex justify-between text-[10px] text-slate-500 font-mono px-1">
                       <span>62 (Reduced)</span>
@@ -581,24 +635,28 @@ export const InputControlSidebar: React.FC<InputControlSidebarProps> = ({
                         const sliderVal = (age - 55) * 12 + (mon - 1);
                         return (
                           <>
-                            <label className="text-[10px] text-slate-400 font-bold uppercase tracking-wider flex justify-between">
-                              <span>Retire Age</span>
-                              <span className="text-emerald-400 font-mono font-semibold">
-                                Age {age} · {MONTHS[mon - 1]}
-                              </span>
-                            </label>
-                            <input
-                              type="range"
-                              min="0"
-                              max="239"
-                              step="1"
+                            <RangeSlider
+                              min={0}
+                              max={239}
+                              step={1}
                               value={sliderVal}
-                              onChange={(e) => {
-                                const v = Number(e.target.value);
+                              onChange={(v) => {
                                 const newAge = 55 + Math.floor(v / 12);
                                 const newMon = (v % 12) + 1;
                                 const next = { ...inputs, wife: { ...inputs.wife, plannedRetirementAge: newAge, plannedRetirementMonth: newMon } };
                                 onChange(next);
+                              }}
+                              renderLabel={(v) => {
+                                const newAge = 55 + Math.floor(v / 12);
+                                const newMon = (v % 12) + 1;
+                                return (
+                                  <label className="text-[10px] text-slate-400 font-bold uppercase tracking-wider flex justify-between">
+                                    <span>Retire Age</span>
+                                    <span className="text-emerald-400 font-mono font-semibold">
+                                      Age {newAge} · {MONTHS[newMon - 1]}
+                                    </span>
+                                  </label>
+                                );
                               }}
                               className="w-full h-1 bg-slate-800 rounded appearance-none cursor-pointer accent-emerald-500"
                             />
@@ -615,30 +673,26 @@ export const InputControlSidebar: React.FC<InputControlSidebarProps> = ({
                     </div>
                     <div className="space-y-1">
                       <label className="text-[10px] text-slate-400 font-bold uppercase tracking-wider block">Salary</label>
-                      <div className="relative">
-                        <span className="absolute left-3 top-1 text-slate-500 text-xs font-semibold">$</span>
-                        <input
-                          type="number"
-                          value={inputs.wife.activeSalary === null ? '' : inputs.wife.activeSalary}
-                          onChange={(e) => updateNestedState('wife', 'activeSalary', e.target.value === '' ? null : Number(e.target.value))}
-                          placeholder="e.g. 100000"
-                          className="w-full bg-slate-900 border border-slate-800 rounded-lg pl-6 pr-2.5 py-1 text-xs text-slate-100 font-mono focus:outline-none focus:border-emerald-500"
-                        />
-                      </div>
+                      <NumericInput
+                        prefix="$"
+                        value={inputs.wife.activeSalary}
+                        onChange={(val) => updateNestedState('wife', 'activeSalary', val)}
+                        placeholder="e.g. 100000"
+                      />
                     </div>
                     <div className="space-y-1 pt-1.5 border-t border-slate-800/30">
-                      <label className="text-[10px] text-slate-400 font-bold uppercase tracking-wider flex justify-between">
-                        <span>Longevity Age</span>
-                        <span className="text-emerald-400 font-mono font-semibold">Age {inputs.wife.longevityAge ?? 95}</span>
-                      </label>
-                      <input
-                        type="range"
-                        min="50"
-                        max="110"
-                        step="1"
+                      <RangeSlider
+                        min={50}
+                        max={110}
+                        step={1}
                         value={inputs.wife.longevityAge ?? 95}
-                        onChange={(e) => updateNestedState('wife', 'longevityAge', Number(e.target.value))}
-                        className="w-full h-1.5 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-emerald-500"
+                        onChange={(val) => updateNestedState('wife', 'longevityAge', val)}
+                        renderLabel={(val) => (
+                          <label className="text-[10px] text-slate-400 font-bold uppercase tracking-wider flex justify-between">
+                            <span>Longevity Age</span>
+                            <span className="text-emerald-400 font-mono font-semibold">Age {val}</span>
+                          </label>
+                        )}
                       />
                       <div className="flex justify-between text-[10px] text-slate-500 font-mono px-0.5">
                         <span>50</span>
@@ -704,20 +758,18 @@ export const InputControlSidebar: React.FC<InputControlSidebarProps> = ({
               <div className="grid grid-cols-2 gap-2">
                 <div className="space-y-1">
                   <label className="text-[10px] text-slate-400 block truncate" title="Traditional IRA">Traditional IRA</label>
-                  <input
-                    type="number"
-                    value={inputs.portfolio.yourPreTaxIRA ?? ''}
-                    onChange={(e) => updateNestedState('portfolio', 'yourPreTaxIRA', e.target.value === '' ? null : Number(e.target.value))}
-                    className="w-full bg-slate-900 border border-slate-800 rounded-lg px-2.5 py-1 text-xs text-slate-100 font-mono focus:outline-none focus:border-emerald-500"
+                  <NumericInput
+                    prefix="$"
+                    value={inputs.portfolio.yourPreTaxIRA}
+                    onChange={(val) => updateNestedState('portfolio', 'yourPreTaxIRA', val)}
                   />
                 </div>
                 <div className="space-y-1">
                   <label className="text-[10px] text-slate-400 block truncate" title="Roth IRA Balance">Roth IRA</label>
-                  <input
-                    type="number"
-                    value={inputs.portfolio.yourRothIRA ?? ''}
-                    onChange={(e) => updateNestedState('portfolio', 'yourRothIRA', e.target.value === '' ? null : Number(e.target.value))}
-                    className="w-full bg-slate-900 border border-slate-800 rounded-lg px-2.5 py-1 text-xs text-slate-100 font-mono focus:outline-none focus:border-emerald-500"
+                  <NumericInput
+                    prefix="$"
+                    value={inputs.portfolio.yourRothIRA}
+                    onChange={(val) => updateNestedState('portfolio', 'yourRothIRA', val)}
                   />
                 </div>
               </div>
@@ -725,20 +777,18 @@ export const InputControlSidebar: React.FC<InputControlSidebarProps> = ({
               <div className="grid grid-cols-2 gap-2">
                 <div className="space-y-1">
                   <label className="text-[10px] text-slate-400 block truncate" title="Brokerage Assets (Taxable)">Brokerage Assets</label>
-                  <input
-                    type="number"
-                    value={inputs.portfolio.yourTaxableBrokerage ?? ''}
-                    onChange={(e) => updateNestedState('portfolio', 'yourTaxableBrokerage', e.target.value === '' ? null : Number(e.target.value))}
-                    className="w-full bg-slate-900 border border-slate-800 rounded-lg px-2.5 py-1 text-xs text-slate-100 font-mono focus:outline-none focus:border-emerald-500"
+                  <NumericInput
+                    prefix="$"
+                    value={inputs.portfolio.yourTaxableBrokerage}
+                    onChange={(val) => updateNestedState('portfolio', 'yourTaxableBrokerage', val)}
                   />
                 </div>
                 <div className="space-y-1">
                   <label className="text-[10px] text-slate-400 block truncate" title="Brokerage Cost Basis">Cost Basis</label>
-                  <input
-                    type="number"
-                    value={inputs.portfolio.yourTaxableBasis ?? ''}
-                    onChange={(e) => updateNestedState('portfolio', 'yourTaxableBasis', e.target.value === '' ? null : Number(e.target.value))}
-                    className="w-full bg-slate-900 border border-slate-800 rounded-lg px-2.5 py-1 text-xs text-slate-100 font-mono focus:outline-none focus:border-emerald-500"
+                  <NumericInput
+                    prefix="$"
+                    value={inputs.portfolio.yourTaxableBasis}
+                    onChange={(val) => updateNestedState('portfolio', 'yourTaxableBasis', val)}
                   />
                 </div>
               </div>
@@ -746,11 +796,10 @@ export const InputControlSidebar: React.FC<InputControlSidebarProps> = ({
               <div className="grid grid-cols-2 gap-2">
                 <div className="space-y-1">
                   <label className="text-[10px] text-slate-400 block truncate" title="Cash Assets Balance">Cash Assets</label>
-                  <input
-                    type="number"
-                    value={inputs.portfolio.yourCash ?? ''}
-                    onChange={(e) => updateNestedState('portfolio', 'yourCash', e.target.value === '' ? null : Number(e.target.value))}
-                    className="w-full bg-slate-900 border border-slate-800 rounded-lg px-2.5 py-1 text-xs text-slate-100 font-mono focus:outline-none focus:border-emerald-500"
+                  <NumericInput
+                    prefix="$"
+                    value={inputs.portfolio.yourCash}
+                    onChange={(val) => updateNestedState('portfolio', 'yourCash', val)}
                   />
                 </div>
               </div>
@@ -765,20 +814,18 @@ export const InputControlSidebar: React.FC<InputControlSidebarProps> = ({
                 <div className="grid grid-cols-2 gap-2">
                   <div className="space-y-1">
                     <label className="text-[10px] text-slate-400 block truncate" title="Traditional IRA">Traditional IRA</label>
-                    <input
-                      type="number"
-                      value={inputs.portfolio.wifePreTaxIRA ?? ''}
-                      onChange={(e) => updateNestedState('portfolio', 'wifePreTaxIRA', e.target.value === '' ? null : Number(e.target.value))}
-                      className="w-full bg-slate-900 border border-slate-800 rounded-lg px-2.5 py-1 text-xs text-slate-100 font-mono focus:outline-none focus:border-emerald-500"
+                    <NumericInput
+                      prefix="$"
+                      value={inputs.portfolio.wifePreTaxIRA}
+                      onChange={(val) => updateNestedState('portfolio', 'wifePreTaxIRA', val)}
                     />
                   </div>
                   <div className="space-y-1">
                     <label className="text-[10px] text-slate-400 block truncate" title="Roth IRA Balance">Roth IRA</label>
-                    <input
-                      type="number"
-                      value={inputs.portfolio.wifeRothIRA ?? ''}
-                      onChange={(e) => updateNestedState('portfolio', 'wifeRothIRA', e.target.value === '' ? null : Number(e.target.value))}
-                      className="w-full bg-slate-900 border border-slate-800 rounded-lg px-2.5 py-1 text-xs text-slate-100 font-mono focus:outline-none focus:border-emerald-500"
+                    <NumericInput
+                      prefix="$"
+                      value={inputs.portfolio.wifeRothIRA}
+                      onChange={(val) => updateNestedState('portfolio', 'wifeRothIRA', val)}
                     />
                   </div>
                 </div>
@@ -786,20 +833,18 @@ export const InputControlSidebar: React.FC<InputControlSidebarProps> = ({
                 <div className="grid grid-cols-2 gap-2">
                   <div className="space-y-1">
                     <label className="text-[10px] text-slate-400 block truncate" title="Brokerage Assets (Taxable)">Brokerage Assets</label>
-                    <input
-                      type="number"
-                      value={inputs.portfolio.wifeTaxableBrokerage ?? ''}
-                      onChange={(e) => updateNestedState('portfolio', 'wifeTaxableBrokerage', e.target.value === '' ? null : Number(e.target.value))}
-                      className="w-full bg-slate-900 border border-slate-800 rounded-lg px-2.5 py-1 text-xs text-slate-100 font-mono focus:outline-none focus:border-emerald-500"
+                    <NumericInput
+                      prefix="$"
+                      value={inputs.portfolio.wifeTaxableBrokerage}
+                      onChange={(val) => updateNestedState('portfolio', 'wifeTaxableBrokerage', val)}
                     />
                   </div>
                   <div className="space-y-1">
                     <label className="text-[10px] text-slate-400 block truncate" title="Brokerage Cost Basis">Cost Basis</label>
-                    <input
-                      type="number"
-                      value={inputs.portfolio.wifeTaxableBasis ?? ''}
-                      onChange={(e) => updateNestedState('portfolio', 'wifeTaxableBasis', e.target.value === '' ? null : Number(e.target.value))}
-                      className="w-full bg-slate-900 border border-slate-800 rounded-lg px-2.5 py-1 text-xs text-slate-100 font-mono focus:outline-none focus:border-emerald-500"
+                    <NumericInput
+                      prefix="$"
+                      value={inputs.portfolio.wifeTaxableBasis}
+                      onChange={(val) => updateNestedState('portfolio', 'wifeTaxableBasis', val)}
                     />
                   </div>
                 </div>
@@ -807,11 +852,10 @@ export const InputControlSidebar: React.FC<InputControlSidebarProps> = ({
                 <div className="grid grid-cols-2 gap-2">
                   <div className="space-y-1">
                     <label className="text-[10px] text-slate-400 block truncate" title="Cash Assets Balance">Cash Assets</label>
-                    <input
-                      type="number"
-                      value={inputs.portfolio.wifeCash ?? ''}
-                      onChange={(e) => updateNestedState('portfolio', 'wifeCash', e.target.value === '' ? null : Number(e.target.value))}
-                      className="w-full bg-slate-900 border border-slate-800 rounded-lg px-2.5 py-1 text-xs text-slate-100 font-mono focus:outline-none focus:border-emerald-500"
+                    <NumericInput
+                      prefix="$"
+                      value={inputs.portfolio.wifeCash}
+                      onChange={(val) => updateNestedState('portfolio', 'wifeCash', val)}
                     />
                   </div>
                 </div>
@@ -833,28 +877,26 @@ export const InputControlSidebar: React.FC<InputControlSidebarProps> = ({
               <div className="grid grid-cols-2 gap-2">
                 <div className="space-y-1">
                   <label className="text-[10px] text-slate-400 block truncate" title="Annual Dividend/Interest Yield">Annual Yield (%)</label>
-                  <input
-                    type="number"
-                    step="0.1"
-                    min="0"
-                    max="20"
-                    value={inputs.portfolio.taxableDividendYield !== null && inputs.portfolio.taxableDividendYield !== undefined ? inputs.portfolio.taxableDividendYield * 100 : ''}
-                    onChange={(e) => updateNestedState('portfolio', 'taxableDividendYield', e.target.value === '' ? null : Number(e.target.value) / 100)}
+                  <NumericInput
+                    suffix="%"
+                    allowDecimals={true}
+                    min={0}
+                    max={20}
+                    value={inputs.portfolio.taxableDividendYield !== null && inputs.portfolio.taxableDividendYield !== undefined ? inputs.portfolio.taxableDividendYield * 100 : null}
+                    onChange={(val) => updateNestedState('portfolio', 'taxableDividendYield', val === null ? null : val / 100)}
                     placeholder="2.0"
-                    className="w-full bg-slate-900 border border-slate-800 rounded-lg px-2.5 py-1 text-xs text-slate-100 font-mono focus:outline-none focus:border-emerald-500"
                   />
                 </div>
                 <div className="space-y-1">
                   <label className="text-[10px] text-slate-400 block truncate" title="Portion of yield taxed at ordinary income rate">Non-Qualified (%)</label>
-                  <input
-                    type="number"
-                    step="1"
-                    min="0"
-                    max="100"
-                    value={inputs.portfolio.taxableNonQualifiedPortion !== null && inputs.portfolio.taxableNonQualifiedPortion !== undefined ? inputs.portfolio.taxableNonQualifiedPortion * 100 : ''}
-                    onChange={(e) => updateNestedState('portfolio', 'taxableNonQualifiedPortion', e.target.value === '' ? null : Number(e.target.value) / 100)}
+                  <NumericInput
+                    suffix="%"
+                    allowDecimals={true}
+                    min={0}
+                    max={100}
+                    value={inputs.portfolio.taxableNonQualifiedPortion !== null && inputs.portfolio.taxableNonQualifiedPortion !== undefined ? inputs.portfolio.taxableNonQualifiedPortion * 100 : null}
+                    onChange={(val) => updateNestedState('portfolio', 'taxableNonQualifiedPortion', val === null ? null : val / 100)}
                     placeholder="30"
-                    className="w-full bg-slate-900 border border-slate-800 rounded-lg px-2.5 py-1 text-xs text-slate-100 font-mono focus:outline-none focus:border-emerald-500"
                   />
                 </div>
               </div>
@@ -927,16 +969,11 @@ export const InputControlSidebar: React.FC<InputControlSidebarProps> = ({
                       </button>
                     )}
                   </div>
-                  <input
-                    type="number"
-                    min="1990"
-                    max="2100"
+                  <NumericInput
+                    min={1990}
+                    max={2100}
                     value={inputs.simulationStartYear ?? simStartYear}
-                    onChange={(e) => {
-                      const val = e.target.value === '' ? null : Number(e.target.value);
-                      updateNestedState('simulationStartYear', '', val);
-                    }}
-                    className="w-full bg-slate-900 border border-slate-800 rounded-lg px-3 py-1.5 text-xs text-slate-100 font-mono font-bold focus:outline-none focus:border-emerald-500"
+                    onChange={(val) => updateNestedState('simulationStartYear', '', val)}
                   />
                 </div>
                 <p className="text-[10px] text-slate-400 leading-normal flex items-start gap-1.5">
@@ -1045,15 +1082,13 @@ export const InputControlSidebar: React.FC<InputControlSidebarProps> = ({
                     </span>
                   </label>
                   <div className="flex items-center gap-3">
-                    <input
-                      type="range"
+                    <RangeSlider
                       min={simStartYear}
                       max={simStartYear + 34}
-                      step="1"
+                      step={1}
                       disabled={inputs.jurisdiction.relocationYear === null}
                       value={inputs.jurisdiction.relocationYear ?? lastRelocationYear.current}
-                      onChange={(e) => {
-                        const val = Number(e.target.value);
+                      onChange={(val) => {
                         lastRelocationYear.current = val;
                         updateNestedState('jurisdiction', 'relocationYear', val);
                       }}
@@ -1158,17 +1193,18 @@ export const InputControlSidebar: React.FC<InputControlSidebarProps> = ({
                 ) : (
                   <div className="space-y-3">
                     <div className="space-y-1">
-                      <label className="text-xs text-slate-400 flex justify-between">
-                        <span>Expenses (Today's Dollars)</span>
-                        <span className="text-emerald-400 font-bold font-mono">{formatCurrency(inputs.annualLivingExpenses)}</span>
-                      </label>
-                      <input
-                        type="range"
-                        min="40000"
-                        max="300000"
-                        step="5000"
+                      <RangeSlider
+                        min={40000}
+                        max={300000}
+                        step={5000}
                         value={inputs.annualLivingExpenses ?? 100000}
-                        onChange={(e) => updateNestedState('annualLivingExpenses', '', Number(e.target.value))}
+                        onChange={(val) => updateNestedState('annualLivingExpenses', '', val)}
+                        renderLabel={(val) => (
+                          <label className="text-xs text-slate-400 flex justify-between">
+                            <span>Expenses (Today's Dollars)</span>
+                            <span className="text-emerald-400 font-bold font-mono">{formatCurrency(val)}</span>
+                          </label>
+                        )}
                         className="w-full h-1.5 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-emerald-500"
                       />
                       <div className="flex justify-between text-[10px] text-slate-500 font-mono px-1">
