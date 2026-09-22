@@ -592,7 +592,14 @@ export interface BucketActionItem {
   completedDate?: string;
 }
 
+export type InitialFundingSource = 'cash-savings' | 'selling-equities';
+export type InitialEquityAccount = 'taxable' | 'pre-tax' | 'roth';
+
 export interface BucketStrategySettings {
+  strategyStartYear?: number; // e.g. 2027 (first full calendar year of 3-bucket strategy)
+  initialFundingSource?: InitialFundingSource;
+  initialEquitySourceAccount?: InitialEquityAccount;
+  initialStagedAmount?: number | null;
   cash: CashBucketConfig;
   income: BondLadderConfig;
   growth: GrowthBucketConfig;
@@ -600,6 +607,10 @@ export interface BucketStrategySettings {
 }
 
 export const DEFAULT_BUCKET_STRATEGY_SETTINGS: BucketStrategySettings = {
+  strategyStartYear: 2026,
+  initialFundingSource: 'cash-savings',
+  initialEquitySourceAccount: 'taxable',
+  initialStagedAmount: null,
   cash: {
     targetRunwayMonths: 24,
     customLivingReserveAmount: null,

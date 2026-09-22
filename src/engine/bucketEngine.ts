@@ -4,6 +4,9 @@ import {
   BucketStrategySettings,
   BucketActionItem,
   BondLadderHolding,
+  InitialFundingSource,
+  InitialEquityAccount,
+  getSimulationStartYear,
 } from '../types';
 
 export interface CalculatedRung {
@@ -52,11 +55,55 @@ export interface Bucket3State {
 export interface BucketYearCalculation {
   year: number;
   isActual: boolean;
+  isTransitionYear: boolean;
+  isInitialStrategyYear: boolean;
+  strategyStartYear: number;
+  initialFundingSource: InitialFundingSource;
+  initialEquitySourceAccount: InitialEquityAccount;
+  initialStagedAmount: number;
   totalPortfolio: number;
+  transitionWorkingMonths?: number;
+  transitionPostRetirementMonths?: number;
+  transitionExpense?: number;
   bucket1: Bucket1State;
   bucket2: Bucket2State;
   bucket3: Bucket3State;
   actions: BucketActionItem[];
+}
+
+/**
+ * Computes working months vs post-retirement months in a given year.
+ */
+export function getPostRetirementMonthsInYear(
+  year: number,
+  inputs: AppStateInputs
+): { workingMonths: number; postRetirementMonths: number; retireMonthName: string } {
+  const simStartYear = getSimulationStartYear(inputs);
+  const yearOffset = year - simStartYear;
+  const yearStartMonthIdx = yearOffset * 12;
+
+  const yourBirthYear = parseInt(inputs.you.birthDate?.split('-')[0] || '1960', 10);
+  const yourBirthMonth = Math.max(0, parseInt(inputs.you.birthDate?.split('-')[1] || '1', 10) - 1);
+  const youRetireAge = inputs.you.plannedRetirementAge ?? 65;
+  const youRetireMonth =
+    inputs.you.plannedRetirementMonth != null
+      ? inputs.you.plannedRetirementMonth - 1
+      : yourBirthMonth;
+
+  const yourRetireMonthIdx = (yourBirthYear + youRetireAge - simStartYear) * 12 + youRetireMonth;
+  const hasSalary = (inputs.you.activeSalary ?? 0) > 0;
+
+  const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+  const retireMonthName = monthNames[Math.min(11, Math.max(0, youRetireMonth))] || 'Oct';
+
+  if (!hasSalary) {
+    return { workingMonths: 0, postRetirementMonths: 12, retireMonthName };
+  }
+
+  const workingMonths = Math.max(0, Math.min(12, yourRetireMonthIdx - yearStartMonthIdx));
+  const postRetirementMonths = Math.max(0, 12 - workingMonths);
+
+  return { workingMonths, postRetirementMonths, retireMonthName };
 }
 
 /**
@@ -71,6 +118,14 @@ export function calculateBucketYearState(
   const cashCfg = bucketSettings.cash;
   const incomeCfg = bucketSettings.income;
   const growthCfg = bucketSettings.growth;
+
+  const simStartYear = getSimulationStartYear(inputs);
+  const strategyStartYear = bucketSettings.strategyStartYear || simStartYear;
+  const isTransitionYear = selectedYear < strategyStartYear;
+  const isInitialStrategyYear = selectedYear === strategyStartYear;
+
+  const initialFundingSource = bucketSettings.initialFundingSource || 'cash-savings';
+  const initialEquitySourceAccount = bucketSettings.initialEquitySourceAccount || 'taxable';
 
   // Resolve balances from ledgerRow or inputs fallback
   const isActual = !!ledgerRow?.isActual;
@@ -115,7 +170,7 @@ export function calculateBucketYearState(
   if (cashCfg.rothTaxReserveMode === 'manual' && cashCfg.customRothTaxReserveAmount) {
     targetRothTaxReserve = cashCfg.customRothTaxReserveAmount;
   } else if (rothConversionAmount > 0) {
-    // Estimate effective tax rate for conversion (e.g. 24% baseline or derived from simulation)
+    // Estimate effective tax rate for conversion
     const effectiveTaxRate =
       ledgerRow && ledgerRow.taxableIncome > 0
         ? Math.min(0.35, Math.max(0.12, ledgerRow.totalIncomeTax / ledgerRow.taxableIncome))
@@ -124,6 +179,11 @@ export function calculateBucketYearState(
   }
 
   const totalTargetReserve = targetLivingReserve + targetRothTaxReserve;
+
+  const initialStagedAmount =
+    bucketSettings.initialStagedAmount !== null && bucketSettings.initialStagedAmount !== undefined && bucketSettings.initialStagedAmount > 0
+      ? bucketSettings.initialStagedAmount
+      : totalTargetReserve;
   
   // Cash reserve in Taxable Brokerage
   const cashReserve = Math.min(taxableBalance, totalTargetReserve);
@@ -155,7 +215,14 @@ export function calculateBucketYearState(
   let maturingPrincipalThisYear = 0;
 
   for (let i = 1; i <= rungsCount; i++) {
-    const targetRungYear = selectedYear + (i - 1);
+    // In transition years or the initial strategy launch year, Rung 1 matures in (strategyStartYear + 1)
+    // because the initial year (strategyStartYear) is funded by the staged cash reserve.
+    // In steady-state years (selectedYear > strategyStartYear), Rung 1 matures in selectedYear.
+    const targetRungYear =
+      selectedYear <= strategyStartYear
+        ? strategyStartYear + i
+        : selectedYear + (i - 1);
+
     const rungHoldings = (incomeCfg.holdings || []).filter((h) => h.rungNumber === i || h.targetYear === targetRungYear);
 
     let rungPrincipal = defaultRungAmount;
@@ -167,7 +234,8 @@ export function calculateBucketYearState(
       rungYield = rungPrincipal > 0 ? totalWeightedYield / rungPrincipal : rungYield;
     }
 
-    const isMaturingThisYear = i === 1;
+    // A rung matures in the selectedYear only if the strategy is past its launch year and it is Rung 1
+    const isMaturingThisYear = !isTransitionYear && !isInitialStrategyYear && i === 1;
     if (isMaturingThisYear) {
       maturingPrincipalThisYear = rungPrincipal;
     }
@@ -198,77 +266,154 @@ export function calculateBucketYearState(
   // 4. Generate Action Items for the active year
   const rawActions: BucketActionItem[] = [];
 
-  // Action 1: Maturing rung distribution
-  if (maturingPrincipalThisYear > 0) {
+  let transitionWorkingMonths = 0;
+  let transitionPostRetirementMonths = 12;
+  let transitionExpense = annualLivingExpense;
+
+  if (isTransitionYear) {
+    const retirementInfo = getPostRetirementMonthsInYear(selectedYear, inputs);
+    transitionWorkingMonths = retirementInfo.workingMonths;
+    transitionPostRetirementMonths = retirementInfo.postRetirementMonths;
+    transitionExpense =
+      transitionPostRetirementMonths > 0
+        ? Math.round((annualLivingExpense * transitionPostRetirementMonths) / 12)
+        : 0;
+
+    const monthRangeText =
+      transitionPostRetirementMonths === 12
+        ? 'Full Year'
+        : transitionPostRetirementMonths > 0
+        ? `${retirementInfo.retireMonthName}–Dec (${transitionPostRetirementMonths} mo)`
+        : '0 mo (worked full year)';
+
+    // Transition year prior to systematic strategy launch: only post-retirement months are funded from savings
     rawActions.push({
-      id: `rung-maturity-${selectedYear}`,
+      id: `transition-funding-${selectedYear}`,
       year: selectedYear,
-      type: 'rung-maturity-distribute',
-      title: `Distribute Matured Rung 1 ($${Math.round(maturingPrincipalThisYear).toLocaleString()})`,
-      description: `Rung 1 matures in ${selectedYear}. Execute taxable IRA distribution to refill Bucket 1 (Taxable Cash).`,
-      amount: maturingPrincipalThisYear,
-      sourceBucket: 2,
+      type: 'external-checking-transfer',
+      title: `Transition Funding: Post-Retirement Living Expenses ($${transitionExpense.toLocaleString()})`,
+      description: `Year ${selectedYear} is a pre-retirement / transition year. Post-retirement living expenses for ${monthRangeText} are funded from staged work savings after active salary ceases, without liquidating bond ladder rungs.`,
+      amount: transitionExpense,
+      sourceBucket: 'none',
+      destBucket: 'checking',
+      status: 'completed',
+    });
+
+    const runwayMo = cashCfg.targetRunwayMonths || 24;
+    const livingItemization = `living expenses reserve of $${Math.round(targetLivingReserve).toLocaleString()} (${runwayMo} mo @ $${Math.round(annualLivingExpense).toLocaleString()}/yr)`;
+    const rothTaxItemization = targetRothTaxReserve > 0 ? ` + estimated Roth conversion tax reserve of $${Math.round(targetRothTaxReserve).toLocaleString()}` : '';
+    const itemizedBreakdown = `Itemization: covers ${livingItemization}${rothTaxItemization}.`;
+
+    rawActions.push({
+      id: `stage-initial-reserve-${strategyStartYear}`,
+      year: selectedYear,
+      type: 'ladder-rebuild',
+      title: `Stage Initial Year 1 (${strategyStartYear}) Reserve ($${Math.round(initialStagedAmount).toLocaleString()})`,
+      description: `Stage $${Math.round(initialStagedAmount).toLocaleString()} into Bucket 1 Cash from ${
+        initialFundingSource === 'cash-savings'
+          ? 'Cash Savings / Active Work Buffer'
+          : `Selling Equities in ${initialEquitySourceAccount === 'taxable' ? 'Taxable Brokerage' : initialEquitySourceAccount === 'pre-tax' ? 'Pre-Tax IRA' : 'Roth IRA'}`
+      } to prepare for strategy launch on Jan 1, ${strategyStartYear}. ${itemizedBreakdown}`,
+      amount: initialStagedAmount,
+      sourceBucket: initialFundingSource === 'cash-savings' ? 1 : initialEquitySourceAccount === 'taxable' ? 1 : initialEquitySourceAccount === 'pre-tax' ? 2 : 3,
       destBucket: 1,
       status: 'pending',
     });
-  }
+  } else {
+    // Strategy is actively running in selectedYear
 
-  // Action 2: Periodic checking transfer
-  rawActions.push({
-    id: `checking-transfer-${selectedYear}`,
-    year: selectedYear,
-    type: 'external-checking-transfer',
-    title: `Transfer Living Expenses to External Bank ($${Math.round(annualLivingExpense).toLocaleString()}/yr)`,
-    description: `Disburse $${Math.round(externalCheckingMonthlyAmount).toLocaleString()}/month from Bucket 1 (Taxable Cash) to personal checking account.`,
-    amount: annualLivingExpense,
-    sourceBucket: 1,
-    destBucket: 'checking',
-    status: 'pending',
-  });
+    // If Year 1 of strategy, include initial staged funding item with itemized breakdown
+    if (isInitialStrategyYear) {
+      const runwayMo = cashCfg.targetRunwayMonths || 24;
+      const livingItemization = `living expenses of $${Math.round(annualLivingExpense).toLocaleString()}/yr (${runwayMo} mo target reserve: $${Math.round(targetLivingReserve).toLocaleString()})`;
+      const rothTaxItemization = targetRothTaxReserve > 0 ? ` + Roth conversion tax reserve of $${Math.round(targetRothTaxReserve).toLocaleString()}` : '';
+      const itemizedBreakdown = `Itemization: covers ${livingItemization}${rothTaxItemization}.`;
 
-  // Action 3: Roth Conversion Tax Payment
-  if (targetRothTaxReserve > 0) {
+      rawActions.push({
+        id: `initial-launch-staged-${selectedYear}`,
+        year: selectedYear,
+        type: 'external-checking-transfer',
+        title: `Strategy Launch: Initial Staged Cash (${initialFundingSource === 'cash-savings' ? 'Cash Savings' : 'Equity Liquidation'})`,
+        description: `Strategy active as of Jan 1, ${selectedYear}. Bucket 1 initialized with $${Math.round(initialStagedAmount).toLocaleString()} staged reserve. ${itemizedBreakdown}`,
+        amount: initialStagedAmount,
+        sourceBucket: 1,
+        destBucket: 1,
+        status: 'completed',
+      });
+    }
+
+    // Action 1: Maturing rung distribution
+    if (maturingPrincipalThisYear > 0) {
+      rawActions.push({
+        id: `rung-maturity-${selectedYear}`,
+        year: selectedYear,
+        type: 'rung-maturity-distribute',
+        title: `Distribute Matured Rung 1 ($${Math.round(maturingPrincipalThisYear).toLocaleString()})`,
+        description: `Rung 1 matures in ${selectedYear}. Execute taxable IRA distribution to refill Bucket 1 (Taxable Cash).`,
+        amount: maturingPrincipalThisYear,
+        sourceBucket: 2,
+        destBucket: 1,
+        status: 'pending',
+      });
+    }
+
+    // Action 2: Periodic checking transfer
     rawActions.push({
-      id: `roth-tax-payment-${selectedYear}`,
+      id: `checking-transfer-${selectedYear}`,
       year: selectedYear,
-      type: 'roth-tax-payment',
-      title: `Pay Roth Conversion Taxes ($${Math.round(targetRothTaxReserve).toLocaleString()})`,
-      description: `Pay estimated tax liability on $${Math.round(rothConversionAmount).toLocaleString()} Roth conversion from Bucket 1 tax reserve.`,
-      amount: targetRothTaxReserve,
+      type: 'external-checking-transfer',
+      title: `Transfer Living Expenses to External Bank ($${Math.round(annualLivingExpense).toLocaleString()}/yr)`,
+      description: `Disburse $${Math.round(externalCheckingMonthlyAmount).toLocaleString()}/month from Bucket 1 (Taxable Cash) to personal checking account.`,
+      amount: annualLivingExpense,
       sourceBucket: 1,
-      destBucket: 'tax-authority',
+      destBucket: 'checking',
       status: 'pending',
     });
-  }
 
-  // Action 4: Ladder Rebuild Action
-  if (incomeCfg.rebuildMode === 'active') {
-    rawActions.push({
-      id: `ladder-rebuild-${selectedYear}`,
-      year: selectedYear,
-      type: 'ladder-rebuild',
-      title: `Rebuild Year ${rungsCount} Rung ($${Math.round(rebuildTargetAmount).toLocaleString()})`,
-      description: `Sell $${Math.round(rebuildTargetAmount).toLocaleString()} of equities/funds within Pre-Tax IRA to buy new far-end ${selectedYear + rungsCount - 1} bond rung.`,
-      amount: rebuildTargetAmount,
-      sourceBucket: 2,
-      destBucket: 2,
-      status: 'pending',
-    });
-  }
+    // Action 3: Roth Conversion Tax Payment
+    if (targetRothTaxReserve > 0) {
+      rawActions.push({
+        id: `roth-tax-payment-${selectedYear}`,
+        year: selectedYear,
+        type: 'roth-tax-payment',
+        title: `Pay Roth Conversion Taxes ($${Math.round(targetRothTaxReserve).toLocaleString()})`,
+        description: `Pay estimated tax liability on $${Math.round(rothConversionAmount).toLocaleString()} Roth conversion from Bucket 1 tax reserve.`,
+        amount: targetRothTaxReserve,
+        sourceBucket: 1,
+        destBucket: 'tax-authority',
+        status: 'pending',
+      });
+    }
 
-  // Action 5: Roth Conversion Execution
-  if (rothConversionAmount > 0) {
-    rawActions.push({
-      id: `roth-conversion-${selectedYear}`,
-      year: selectedYear,
-      type: 'roth-conversion',
-      title: `Execute Roth Conversion ($${Math.round(rothConversionAmount).toLocaleString()})`,
-      description: `Convert $${Math.round(rothConversionAmount).toLocaleString()} from Pre-Tax IRA (Bucket 2) to Roth IRA (Bucket 3).`,
-      amount: rothConversionAmount,
-      sourceBucket: 2,
-      destBucket: 3,
-      status: 'pending',
-    });
+    // Action 4: Ladder Rebuild Action
+    if (incomeCfg.rebuildMode === 'active') {
+      rawActions.push({
+        id: `ladder-rebuild-${selectedYear}`,
+        year: selectedYear,
+        type: 'ladder-rebuild',
+        title: `Rebuild Year ${rungsCount} Rung ($${Math.round(rebuildTargetAmount).toLocaleString()})`,
+        description: `Sell $${Math.round(rebuildTargetAmount).toLocaleString()} of equities/funds within Pre-Tax IRA to buy new far-end ${selectedYear + rungsCount - 1} bond rung.`,
+        amount: rebuildTargetAmount,
+        sourceBucket: 2,
+        destBucket: 2,
+        status: 'pending',
+      });
+    }
+
+    // Action 5: Roth Conversion Execution
+    if (rothConversionAmount > 0) {
+      rawActions.push({
+        id: `roth-conversion-${selectedYear}`,
+        year: selectedYear,
+        type: 'roth-conversion',
+        title: `Execute Roth Conversion ($${Math.round(rothConversionAmount).toLocaleString()})`,
+        description: `Convert $${Math.round(rothConversionAmount).toLocaleString()} from Pre-Tax IRA (Bucket 2) to Roth IRA (Bucket 3).`,
+        amount: rothConversionAmount,
+        sourceBucket: 2,
+        destBucket: 3,
+        status: 'pending',
+      });
+    }
   }
 
   // Merge with any persisted action statuses in actionLedger
@@ -288,7 +433,16 @@ export function calculateBucketYearState(
   return {
     year: selectedYear,
     isActual,
+    isTransitionYear,
+    isInitialStrategyYear,
+    strategyStartYear,
+    initialFundingSource,
+    initialEquitySourceAccount,
+    initialStagedAmount,
     totalPortfolio,
+    transitionWorkingMonths,
+    transitionPostRetirementMonths,
+    transitionExpense,
     bucket1: {
       totalBalance: taxableBalance,
       cashReserve,

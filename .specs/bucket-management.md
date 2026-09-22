@@ -41,6 +41,20 @@ The workspace serves as an interactive advisory, visualization, and projection e
     - Receives inflows via annual **Roth Conversions from Bucket 2 (Pre-Tax IRA)**.
     - Conversion taxes are disbursed from Bucket 1's Roth Conversion Tax Reserve.
 
+### 2.2 Strategy Timeline, Transition Phase & Multi-Phase Funding Lifecycle
+- **Calendar Year Operation (Jan 1 – Dec 31)**: The 3-Bucket management strategy operates over standard calendar years to maintain 100% synchronization with IRS tax years, 1099-R distribution rules, Roth conversion deadlines, and RMD schedules.
+- **Configurable Strategy Start Year (`strategyStartYear`)**:
+  - The user can configure when the formal 3-Bucket management strategy begins (e.g., 2027).
+- **Three-Phase Funding Lifecycle (e.g. Retiring Oct 2026, Strategy Starts 2027)**:
+  1. *Phase 1: Pre-Retirement Transition (2026)*: Active months are funded by salary. Remaining post-retirement months in 2026 (Oct–Dec) are funded from work earnings and staged cash savings without liquidating bond ladder rungs.
+  2. *Phase 2: Strategy Launch Year (2027 / `strategyStartYear`)*: All Year 1 living expenses and Roth conversion taxes are funded 100% from the staged Bucket 1 cash reserve ($100k–$200k staged from cash savings or equity liquidation). No bond ladder rungs mature in 2027.
+  3. *Phase 3: Systematic Ladder Refills (2028+ / `strategyStartYear + 1`)*: The 5-year bond ladder in Bucket 2 begins maturing its rungs: Rung 1 matures in 2028 to refill Bucket 1 for Year 2, Rung 2 matures in 2029 for Year 3, Rung 3 in 2030, etc.
+- **Initial Year 1 Funding Source**:
+  - For Year 1 (`strategyStartYear`), the user specifies where the initial cash reserve is staged from:
+    - *Option 1: Cash Savings / Work Earnings* (default): Funded from pre-accumulated cash buffers.
+    - *Option 2: Selling Equities*: Liquidates starting funds from a designated account (Taxable Brokerage, Pre-Tax IRA, or Roth IRA).
+  - The staged amount automatically synchronizes with inflation-adjusted living expenses for that starting year.
+
 ---
 
 ## 3. Money Flow & Refill Rules

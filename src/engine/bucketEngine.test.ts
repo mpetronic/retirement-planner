@@ -112,31 +112,68 @@ const mockLedgerRow: SimulationResultRow = {
 
 describe('bucketEngine', () => {
   it('calculates bucket states accurately for a given year', () => {
-    const calc = calculateBucketYearState(2026, mockLedgerRow, mockInputs, DEFAULT_BUCKET_STRATEGY_SETTINGS);
+    // Initial launch year (2026): funded from staged reserve
+    const calcLaunch = calculateBucketYearState(2026, mockLedgerRow, mockInputs, DEFAULT_BUCKET_STRATEGY_SETTINGS);
 
-    expect(calc.year).toBe(2026);
+    expect(calcLaunch.year).toBe(2026);
+    expect(calcLaunch.isInitialStrategyYear).toBe(true);
     // Bucket 1 (Taxable Brokerage: 380k + 100k + 40k + 25k = 545,000)
-    expect(calc.bucket1.totalBalance).toBe(545000);
+    expect(calcLaunch.bucket1.totalBalance).toBe(545000);
     // Target living reserve for 24 months at 120k/yr = 240,000
-    expect(calc.bucket1.targetLivingReserve).toBe(240000);
-    expect(calc.bucket1.runwayMonths).toBeGreaterThan(24);
-    expect(calc.bucket1.status).toBe('healthy');
+    expect(calcLaunch.bucket1.targetLivingReserve).toBe(240000);
+    expect(calcLaunch.bucket1.runwayMonths).toBeGreaterThan(24);
+    expect(calcLaunch.bucket1.status).toBe('healthy');
 
     // Bucket 2 (Pre-Tax IRA: 950k + 500k = 1,450,000)
-    expect(calc.bucket2.totalBalance).toBe(1450000);
-    expect(calc.bucket2.rungs.length).toBe(5);
-    expect(calc.bucket2.rungs[0].isMaturingThisYear).toBe(true);
-    expect(calc.bucket2.maturingPrincipalThisYear).toBe(120000);
+    expect(calcLaunch.bucket2.totalBalance).toBe(1450000);
+    expect(calcLaunch.bucket2.rungs.length).toBe(5);
+    // In launch year, Rung 1 matures in 2027
+    expect(calcLaunch.bucket2.rungs[0].targetYear).toBe(2027);
+    expect(calcLaunch.bucket2.rungs[0].isMaturingThisYear).toBe(false);
+    expect(calcLaunch.bucket2.maturingPrincipalThisYear).toBe(0);
 
     // Bucket 3 (Roth IRA: 350k + 200k = 550,000)
-    expect(calc.bucket3.totalBalance).toBe(550000);
-    expect(calc.bucket3.equityPercentage).toBe(1.0);
+    expect(calcLaunch.bucket3.totalBalance).toBe(550000);
+    expect(calcLaunch.bucket3.equityPercentage).toBe(1.0);
 
-    // Action items generated
-    expect(calc.actions.length).toBeGreaterThan(0);
-    const maturityAction = calc.actions.find((a) => a.type === 'rung-maturity-distribute');
+    // Year 2 of strategy (2027): First bond ladder rung matures to refill Bucket 1
+    const row2027 = { ...mockLedgerRow, year: 2027 };
+    const calcYear2 = calculateBucketYearState(2027, row2027, mockInputs, DEFAULT_BUCKET_STRATEGY_SETTINGS);
+    expect(calcYear2.bucket2.rungs[0].isMaturingThisYear).toBe(true);
+    expect(calcYear2.bucket2.maturingPrincipalThisYear).toBe(120000);
+
+    const maturityAction = calcYear2.actions.find((a) => a.type === 'rung-maturity-distribute');
     expect(maturityAction).toBeDefined();
     expect(maturityAction?.amount).toBe(120000);
+  });
+
+  it('respects strategyStartYear transition phase', () => {
+    const settingsWith2027Start = {
+      ...DEFAULT_BUCKET_STRATEGY_SETTINGS,
+      strategyStartYear: 2027,
+      initialFundingSource: 'cash-savings' as const,
+    };
+
+    // Inspecting 2026 (Transition Year prior to 2027 launch)
+    const calc2026 = calculateBucketYearState(2026, mockLedgerRow, mockInputs, settingsWith2027Start);
+    expect(calc2026.isTransitionYear).toBe(true);
+    expect(calc2026.isInitialStrategyYear).toBe(false);
+    expect(calc2026.strategyStartYear).toBe(2027);
+
+    // Should include transition funding and initial staging action items
+    const transitionAction = calc2026.actions.find((a) => a.id.startsWith('transition-funding'));
+    expect(transitionAction).toBeDefined();
+
+    const stageAction = calc2026.actions.find((a) => a.id.startsWith('stage-initial-reserve'));
+    expect(stageAction).toBeDefined();
+
+    // Inspecting 2027 (Initial Launch Year)
+    const row2027 = { ...mockLedgerRow, year: 2027 };
+    const calc2027 = calculateBucketYearState(2027, row2027, mockInputs, settingsWith2027Start);
+    expect(calc2027.isTransitionYear).toBe(false);
+    expect(calc2027.isInitialStrategyYear).toBe(true);
+    const initialLaunchItem = calc2027.actions.find((a) => a.id.startsWith('initial-launch-staged'));
+    expect(initialLaunchItem).toBeDefined();
   });
 
   it('respects pause rebuild mode for bond ladder', () => {

@@ -390,6 +390,45 @@ export const BucketManagementWorkspace: React.FC<BucketManagementWorkspaceProps>
       {/* TAB 1: DASHBOARD & FLOW VISUALIZATION */}
       {activeTab === 'dashboard' && (
         <div className="space-y-6">
+          {/* Transition / Launch Status Banner */}
+          {currentCalc.isTransitionYear && (
+            <div className="bg-amber-500/10 border border-amber-500/25 rounded-2xl p-4 flex items-start gap-3.5 shadow-md">
+              <div className="p-2 rounded-xl bg-amber-500/20 text-amber-400 mt-0.5">
+                <Calendar className="w-5 h-5" />
+              </div>
+              <div className="flex-1">
+                <div className="flex flex-wrap items-center gap-2">
+                  <h3 className="text-sm font-bold text-white">Retirement Transition Year ({selectedYear})</h3>
+                  <span className="text-[10px] px-2 py-0.5 rounded-full font-semibold bg-amber-500/20 text-amber-300 border border-amber-500/30">
+                    3-Bucket Strategy Launches Jan 1, {currentCalc.strategyStartYear}
+                  </span>
+                </div>
+                <p className="text-xs text-slate-300 mt-1 leading-relaxed">
+                  Year {selectedYear} is a transition year. Remaining living expenses after your retirement start date in {selectedYear} are funded from active work earnings and staged cash savings without liquidating bond ladder rungs. The 3-Bucket system begins on <strong>January 1, {currentCalc.strategyStartYear}</strong>: Year 1 ({currentCalc.strategyStartYear}) is pre-funded by your staged Bucket 1 cash reserve, and Ladder Rung 1 will mature on <strong>January 1, {currentCalc.strategyStartYear + 1}</strong> to start systematic refills.
+                </p>
+              </div>
+            </div>
+          )}
+
+          {currentCalc.isInitialStrategyYear && (
+            <div className="bg-emerald-500/10 border border-emerald-500/25 rounded-2xl p-4 flex items-start gap-3.5 shadow-md">
+              <div className="p-2 rounded-xl bg-emerald-500/20 text-emerald-400 mt-0.5">
+                <Sparkles className="w-5 h-5" />
+              </div>
+              <div className="flex-1">
+                <div className="flex flex-wrap items-center gap-2">
+                  <h3 className="text-sm font-bold text-white">Strategy Launch Year ({selectedYear})</h3>
+                  <span className="text-[10px] px-2 py-0.5 rounded-full font-semibold bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
+                    Initial Reserve Staged from {currentCalc.initialFundingSource === 'cash-savings' ? 'Cash Savings / Work Buffer' : `Selling Equities (${currentCalc.initialEquitySourceAccount})`}
+                  </span>
+                </div>
+                <p className="text-xs text-slate-300 mt-1 leading-relaxed">
+                  The 3-Bucket management strategy is officially active as of January 1, {selectedYear}. All {selectedYear} living expenses and Roth conversion taxes are funded from your staged <strong>${Math.round(currentCalc.initialStagedAmount).toLocaleString()}</strong> Bucket 1 cash reserve. Your 5-year bond ladder in Bucket 2 will mature its first rung on <strong>January 1, {selectedYear + 1}</strong> to refill Bucket 1 for Year 2.
+                </p>
+              </div>
+            </div>
+          )}
+
           {/* Three Interactive Bucket Cards */}
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
             {/* BUCKET 1: CASH (Taxable Brokerage) */}
@@ -683,18 +722,28 @@ export const BucketManagementWorkspace: React.FC<BucketManagementWorkspaceProps>
                 <div className="flex items-center justify-between text-xs mb-2">
                   <span className="font-semibold text-blue-400">1. Ladder Maturity</span>
                   <span className="text-[10px] px-2 py-0.5 rounded bg-blue-500/10 text-blue-300">
-                    IRA Distribution
+                    {currentCalc.isInitialStrategyYear ? 'Staged Pre-Funded' : 'IRA Distribution'}
                   </span>
                 </div>
                 <div className="my-2">
                   <span className="text-xl font-bold text-white block">
                     ${Math.round(currentCalc.bucket2.maturingPrincipalThisYear).toLocaleString()}
                   </span>
-                  <span className="text-xs text-slate-400">Disperses from Pre-Tax IRA Rung 1</span>
+                  <span className="text-xs text-slate-400">
+                    {currentCalc.isInitialStrategyYear
+                      ? `Year 1 pre-funded; Rung 1 ($${Math.round(currentCalc.bucket2.rungs[0]?.principal || 100000).toLocaleString()}) matures in ${selectedYear + 1}`
+                      : currentCalc.isTransitionYear
+                      ? `Transition period; Rung 1 matures in ${currentCalc.strategyStartYear + 1}`
+                      : 'Disperses from Pre-Tax IRA Rung 1'}
+                  </span>
                 </div>
                 <div className="text-xs text-slate-400 flex items-center gap-1.5 pt-2 border-t border-slate-800">
                   <ArrowRight className="w-3.5 h-3.5 text-emerald-400" />
-                  <span>Refills Bucket 1 (Taxable Cash)</span>
+                  <span>
+                    {currentCalc.isInitialStrategyYear
+                      ? `First ladder refill triggers Jan 1, ${selectedYear + 1}`
+                      : 'Refills Bucket 1 (Taxable Cash)'}
+                  </span>
                 </div>
               </div>
 
@@ -703,20 +752,26 @@ export const BucketManagementWorkspace: React.FC<BucketManagementWorkspaceProps>
                 <div className="flex items-center justify-between text-xs mb-2">
                   <span className="font-semibold text-emerald-400">2. External Living Spend</span>
                   <span className="text-[10px] px-2 py-0.5 rounded bg-emerald-500/10 text-emerald-300">
-                    Checking Dump
+                    {currentCalc.isTransitionYear ? 'Transition Outflow' : 'Checking Dump'}
                   </span>
                 </div>
                 <div className="my-2">
                   <span className="text-xl font-bold text-white block">
-                    ${Math.round(currentCalc.bucket1.annualLivingExpense).toLocaleString()}
+                    ${Math.round(currentCalc.isTransitionYear && currentCalc.transitionExpense !== undefined ? currentCalc.transitionExpense : currentCalc.bucket1.annualLivingExpense).toLocaleString()}
                   </span>
                   <span className="text-xs text-slate-400">
-                    ${Math.round(currentCalc.bucket1.externalCheckingMonthlyAmount).toLocaleString()}/month
+                    {currentCalc.isTransitionYear && currentCalc.transitionPostRetirementMonths !== undefined && currentCalc.transitionPostRetirementMonths < 12
+                      ? `${currentCalc.transitionPostRetirementMonths} post-retirement mo funded from work savings`
+                      : `$${Math.round(currentCalc.bucket1.externalCheckingMonthlyAmount).toLocaleString()}/month`}
                   </span>
                 </div>
                 <div className="text-xs text-slate-400 flex items-center gap-1.5 pt-2 border-t border-slate-800">
                   <ArrowRight className="w-3.5 h-3.5 text-blue-400" />
-                  <span>Deposits to Personal Bank Account</span>
+                  <span>
+                    {currentCalc.isTransitionYear && currentCalc.transitionWorkingMonths !== undefined && currentCalc.transitionWorkingMonths > 0
+                      ? `Prior ${currentCalc.transitionWorkingMonths} mo covered by active salary`
+                      : 'Deposits to Personal Bank Account'}
+                  </span>
                 </div>
               </div>
 
@@ -836,6 +891,106 @@ export const BucketManagementWorkspace: React.FC<BucketManagementWorkspaceProps>
       {/* TAB 2: RULES & STRATEGY CONFIGURATION */}
       {activeTab === 'rules' && (
         <div className="space-y-6">
+          {/* Strategy Timeline & Initial Funding Card */}
+          <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-xl space-y-5">
+            <div className="flex items-center gap-2.5 pb-4 border-b border-slate-800">
+              <Calendar className="w-5 h-5 text-emerald-400" />
+              <div>
+                <h3 className="font-bold text-white text-base">Strategy Timeline & Initial Year 1 Staging</h3>
+                <p className="text-xs text-slate-400">Configure when the 3-Bucket strategy commences and how Year 1 cash reserves are staged</p>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              <div>
+                <label className="block text-xs font-semibold text-slate-300 mb-1">
+                  Bucket Strategy Start Year
+                </label>
+                <select
+                  value={bucketSettings.strategyStartYear || simStartYear}
+                  onChange={(e) =>
+                    handleUpdateBucketSettings((prev) => ({
+                      ...prev,
+                      strategyStartYear: Number(e.target.value),
+                    }))
+                  }
+                  className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-emerald-500 cursor-pointer [color-scheme:dark]"
+                >
+                  {availableYears.slice(0, 10).map((yr) => (
+                    <option key={yr} value={yr} className="bg-slate-900 text-slate-200">
+                      {yr} {yr === simStartYear ? '(Simulation Start Year)' : yr === simStartYear + 1 ? '(First Full Retirement Year)' : ''}
+                    </option>
+                  ))}
+                </select>
+                <p className="text-[11px] text-slate-400 mt-1.5 leading-relaxed">
+                  If retiring mid-year (e.g. late {simStartYear}), set this to {simStartYear + 1} to run the 3-Bucket system over full calendar years starting January 1.
+                </p>
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-300 mb-1">
+                  Initial Year 1 Funding Source
+                </label>
+                <div className="grid grid-cols-2 gap-2">
+                  <button
+                    onClick={() =>
+                      handleUpdateBucketSettings((prev) => ({
+                        ...prev,
+                        initialFundingSource: 'cash-savings',
+                      }))
+                    }
+                    className={`py-2 px-3 text-xs font-semibold rounded-lg border text-left transition-all ${
+                      (bucketSettings.initialFundingSource || 'cash-savings') === 'cash-savings'
+                        ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30'
+                        : 'bg-slate-950 text-slate-400 border-slate-800 hover:bg-slate-800'
+                    }`}
+                  >
+                    <span className="font-bold block">Cash Savings</span>
+                    <span className="text-[10px] text-slate-400">Work income / cash buffer</span>
+                  </button>
+                  <button
+                    onClick={() =>
+                      handleUpdateBucketSettings((prev) => ({
+                        ...prev,
+                        initialFundingSource: 'selling-equities',
+                      }))
+                    }
+                    className={`py-2 px-3 text-xs font-semibold rounded-lg border text-left transition-all ${
+                      bucketSettings.initialFundingSource === 'selling-equities'
+                        ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30'
+                        : 'bg-slate-950 text-slate-400 border-slate-800 hover:bg-slate-800'
+                    }`}
+                  >
+                    <span className="font-bold block">Selling Equities</span>
+                    <span className="text-[10px] text-slate-400">Liquidate starting funds</span>
+                  </button>
+                </div>
+
+                {bucketSettings.initialFundingSource === 'selling-equities' && (
+                  <div className="mt-3">
+                    <label className="block text-[11px] font-semibold text-slate-300 mb-1">
+                      Source Account for Initial Equity Liquidation
+                    </label>
+                    <select
+                      value={bucketSettings.initialEquitySourceAccount || 'taxable'}
+                      onChange={(e) =>
+                        handleUpdateBucketSettings((prev) => ({
+                          ...prev,
+                          initialEquitySourceAccount: e.target.value as 'taxable' | 'pre-tax' | 'roth',
+                        }))
+                      }
+                      className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-emerald-500 cursor-pointer [color-scheme:dark]"
+                    >
+                      <option value="taxable">Taxable Brokerage Account</option>
+                      <option value="pre-tax">Pre-Tax Traditional IRA</option>
+                      <option value="roth">Roth IRA</option>
+                    </select>
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
             {/* Cash Bucket Configuration */}
             <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-xl space-y-5">
