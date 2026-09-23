@@ -113,7 +113,8 @@ export function calculateBucketYearState(
   selectedYear: number,
   ledgerRow: SimulationResultRow | undefined,
   inputs: AppStateInputs,
-  bucketSettings: BucketStrategySettings
+  bucketSettings: BucketStrategySettings,
+  fullLedger?: SimulationResultRow[]
 ): BucketYearCalculation {
   const cashCfg = bucketSettings.cash;
   const incomeCfg = bucketSettings.income;
@@ -204,12 +205,21 @@ export function calculateBucketYearState(
       ? cashCfg.customMonthlyTransferAmount
       : annualLivingExpense / 12;
 
+  // Helper to lookup or project inflation-adjusted living expenses for a target maturity year
+  const getTargetYearLivingExpense = (targetYear: number): number => {
+    if (fullLedger && fullLedger.length > 0) {
+      const match = fullLedger.find((r) => r.year === targetYear);
+      if (match && match.livingExpenses > 0) {
+        return match.livingExpenses;
+      }
+    }
+    const inflationRate = inputs.growthAssumptions?.cpiInflationRate ?? 0.025;
+    const yearsAhead = Math.max(0, targetYear - selectedYear);
+    return annualLivingExpense * Math.pow(1 + inflationRate, yearsAhead);
+  };
+
   // 2. Calculate Bucket 2 (Income / Pre-Tax IRA Bond Ladder)
   const rungsCount = incomeCfg.rungsCount || 5;
-  const defaultRungAmount =
-    incomeCfg.targetRungFundingMode === 'custom' && incomeCfg.customRungAmount && incomeCfg.customRungAmount > 0
-      ? incomeCfg.customRungAmount
-      : annualLivingExpense;
 
   const rungs: CalculatedRung[] = [];
   let maturingPrincipalThisYear = 0;
@@ -225,7 +235,14 @@ export function calculateBucketYearState(
 
     const rungHoldings = (incomeCfg.holdings || []).filter((h) => h.rungNumber === i || h.targetYear === targetRungYear);
 
-    let rungPrincipal = defaultRungAmount;
+    // Each rung replaces 1 year of living expenses at targetRungYear, adjusted for inflation
+    const inflationAdjustedTarget = getTargetYearLivingExpense(targetRungYear);
+
+    let rungPrincipal =
+      incomeCfg.targetRungFundingMode === 'custom' && incomeCfg.customRungAmount && incomeCfg.customRungAmount > 0
+        ? incomeCfg.customRungAmount
+        : inflationAdjustedTarget;
+
     let rungYield = incomeCfg.defaultYieldRate || 0.04;
 
     if (rungHoldings.length > 0) {
@@ -256,7 +273,16 @@ export function calculateBucketYearState(
   const cappedBondLadderTotal = Math.min(preTaxBalance, bondLadderTotal);
   const equitiesTotal = Math.max(0, preTaxBalance - cappedBondLadderTotal);
   
-  const rebuildTargetAmount = defaultRungAmount;
+  const rebuildTargetYear =
+    selectedYear <= strategyStartYear
+      ? strategyStartYear + rungsCount
+      : selectedYear + (rungsCount - 1) + 1;
+
+  const rebuildTargetAmount =
+    incomeCfg.targetRungFundingMode === 'custom' && incomeCfg.customRungAmount && incomeCfg.customRungAmount > 0
+      ? incomeCfg.customRungAmount
+      : getTargetYearLivingExpense(rebuildTargetYear);
+
   const ladderRunwayYears = annualLivingExpense > 0 ? Math.round((cappedBondLadderTotal / annualLivingExpense) * 10) / 10 : 0;
 
   // 3. Calculate Bucket 3 (Growth / Roth IRA)
@@ -486,8 +512,8 @@ export function generateBucketMultiYearProjection(
 ): BucketYearCalculation[] {
   if (!ledger || ledger.length === 0) {
     const baseYear = inputs.simulationStartYear || new Date().getFullYear();
-    return [calculateBucketYearState(baseYear, undefined, inputs, bucketSettings)];
+    return [calculateBucketYearState(baseYear, undefined, inputs, bucketSettings, ledger)];
   }
 
-  return ledger.map((row) => calculateBucketYearState(row.year, row, inputs, bucketSettings));
+  return ledger.map((row) => calculateBucketYearState(row.year, row, inputs, bucketSettings, ledger));
 }

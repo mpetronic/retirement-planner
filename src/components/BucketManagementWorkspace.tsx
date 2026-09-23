@@ -13,6 +13,7 @@ import {
   calculateBucketYearState,
   generateBucketMultiYearProjection,
 } from '../engine/bucketEngine';
+import { NumericInput } from './NumericInput';
 import {
   Layers,
   Shield,
@@ -34,6 +35,7 @@ import {
   Sparkles,
   BarChart3,
   ListOrdered,
+  Info,
 } from 'lucide-react';
 
 interface BucketManagementWorkspaceProps {
@@ -96,8 +98,8 @@ export const BucketManagementWorkspace: React.FC<BucketManagementWorkspaceProps>
 
   // Calculate bucket calculation for selected year
   const currentCalc = useMemo(() => {
-    return calculateBucketYearState(selectedYear, activeLedgerRow, inputs, bucketSettings);
-  }, [selectedYear, activeLedgerRow, inputs, bucketSettings]);
+    return calculateBucketYearState(selectedYear, activeLedgerRow, inputs, bucketSettings, ledger);
+  }, [selectedYear, activeLedgerRow, inputs, bucketSettings, ledger]);
 
   // Multi-year projection
   const multiYearProjections = useMemo(() => {
@@ -243,7 +245,7 @@ export const BucketManagementWorkspace: React.FC<BucketManagementWorkspaceProps>
   // Bear market resilience metrics
   const totalGuaranteedRunwayYears = useMemo(() => {
     const cashYears = currentCalc.bucket1.runwayMonths / 12;
-    const ladderYears = currentCalc.bucket2.ladderRunwayYears;
+    const ladderYears = currentCalc.bucket2.rungs.length;
     return Math.round((cashYears + ladderYears) * 10) / 10;
   }, [currentCalc]);
 
@@ -271,7 +273,8 @@ export const BucketManagementWorkspace: React.FC<BucketManagementWorkspaceProps>
           {/* Health & Status Badges */}
           <div className="flex flex-wrap items-center gap-3">
             <div
-              className={`px-3 py-1.5 rounded-xl border text-xs font-semibold flex items-center gap-2 ${
+              title={`Cash Runway: Total Bucket 1 liquid cash ($${Math.round(currentCalc.bucket1.totalBalance).toLocaleString()}) covers ${currentCalc.bucket1.runwayMonths} months of living expenses ($${Math.round(currentCalc.bucket1.annualLivingExpense).toLocaleString()}/yr).`}
+              className={`px-3 py-1.5 rounded-xl border text-xs font-semibold flex items-center gap-2 cursor-help ${
                 currentCalc.bucket1.status === 'healthy'
                   ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20'
                   : currentCalc.bucket1.status === 'caution'
@@ -285,6 +288,11 @@ export const BucketManagementWorkspace: React.FC<BucketManagementWorkspaceProps>
 
             <button
               onClick={handleTogglePause}
+              title={
+                bucketSettings.income.rebuildMode === 'active'
+                  ? 'Ladder Rebuild Active: Sells equities to purchase new far-end bond ladder rungs each year.'
+                  : 'Ladder Rebuild Paused (Bear Market Protection): Halts equity selling during downturns, allowing the bond ladder to naturally shorten.'
+              }
               className={`px-3 py-1.5 rounded-xl border text-xs font-semibold flex items-center gap-2 transition-colors ${
                 bucketSettings.income.rebuildMode === 'active'
                   ? 'bg-blue-500/10 text-blue-400 border-blue-500/20 hover:bg-blue-500/20'
@@ -304,7 +312,10 @@ export const BucketManagementWorkspace: React.FC<BucketManagementWorkspaceProps>
               )}
             </button>
 
-            <div className="px-3 py-1.5 rounded-xl bg-purple-500/10 text-purple-400 border border-purple-500/20 text-xs font-semibold flex items-center gap-2">
+            <div
+              title={`Protected Runway: Total years of living expenses shielded from stock market downturns across Bucket 1 cash (${currentCalc.bucket1.runwayMonths} mo) and Bucket 2 bond ladder (${currentCalc.bucket2.ladderRunwayYears} yrs).`}
+              className="px-3 py-1.5 rounded-xl bg-purple-500/10 text-purple-400 border border-purple-500/20 text-xs font-semibold flex items-center gap-2 cursor-help"
+            >
               <Sparkles className="w-3.5 h-3.5" />
               <span>Protected Runway: {totalGuaranteedRunwayYears} Yrs</span>
             </div>
@@ -562,15 +573,22 @@ export const BucketManagementWorkspace: React.FC<BucketManagementWorkspaceProps>
 
                 {/* Bond Ladder Tiered Rung Visualizer */}
                 <div className="mt-4">
-                  <div className="flex items-center justify-between mb-2">
+                  <div className="flex items-center justify-between mb-1">
                     <span className="text-xs font-semibold text-slate-300 flex items-center gap-1.5">
                       <ListOrdered className="w-3.5 h-3.5 text-blue-400" />
-                      5-Year Ladder Rungs
+                      {bucketSettings.income.rungsCount || 5}-Year Ladder Rungs
                     </span>
-                    <span className="text-[11px] text-blue-400 font-medium">
-                      {currentCalc.bucket2.ladderRunwayYears} Yrs Runway
-                    </span>
+                    <div
+                      className="text-[10px] text-slate-400 flex items-center gap-1 cursor-help hover:text-slate-300 transition-colors"
+                      title="Each rung holds fixed-income bonds (Treasuries, CDs) set to mature in that specific year to refill Bucket 1 cash for living expenses. While held in your IRA, each rung generates annual coupon interest."
+                    >
+                      <span>Maturities & Yields</span>
+                      <Info className="w-3 h-3 text-blue-400/80" />
+                    </div>
                   </div>
+                  <p className="text-[11px] text-slate-400 mb-2.5 leading-normal">
+                    Each rung matures in a designated year to refill Bucket 1 cash, earning coupon interest while held in the IRA.
+                  </p>
 
                   <div className="space-y-1.5">
                     {currentCalc.bucket2.rungs.map((rung) => (
@@ -594,19 +612,27 @@ export const BucketManagementWorkspace: React.FC<BucketManagementWorkspaceProps>
                             <span className="font-semibold block">{rung.targetYear} Rung</span>
                             <span className="text-[10px] text-slate-400">
                               {rung.holdings.length > 0
-                                ? `${rung.holdings.length} holding(s)`
-                                : `${(rung.yieldRate * 100).toFixed(1)}% yield`}
+                                ? `${rung.holdings.length} holding(s) • ${(rung.yieldRate * 100).toFixed(2)}% yield`
+                                : `${(rung.yieldRate * 100).toFixed(2)}% default yield`}
                             </span>
                           </div>
                         </div>
 
                         <div className="text-right">
-                          <span className="font-bold block">${Math.round(rung.principal).toLocaleString()}</span>
+                          <span
+                            className="font-bold block cursor-help"
+                            title={`Maturity Principal: $${Math.round(rung.principal).toLocaleString()} disperses to Bucket 1 Cash on Jan 1, ${rung.targetYear} to replace 1 year of living expenses.`}
+                          >
+                            ${Math.round(rung.principal).toLocaleString()}
+                          </span>
                           {rung.isMaturingThisYear ? (
                             <span className="text-[10px] text-emerald-400 font-medium">Matures This Year</span>
                           ) : (
-                            <span className="text-[10px] text-slate-400">
-                              +${Math.round(rung.annualIncome).toLocaleString()}/yr
+                            <span
+                              className="text-[10px] text-slate-400 cursor-help block"
+                              title={`Annual Coupon Income: Generates $${Math.round(rung.annualIncome).toLocaleString()}/yr in bond interest that accumulates inside your Pre-Tax IRA prior to maturity.`}
+                            >
+                              +${Math.round(rung.annualIncome).toLocaleString()}/yr interest
                             </span>
                           )}
                         </div>
@@ -1171,22 +1197,22 @@ export const BucketManagementWorkspace: React.FC<BucketManagementWorkspaceProps>
 
                 <div>
                   <label className="block text-xs font-semibold text-slate-300 mb-1">Default Bond/CD Yield Rate (%)</label>
-                  <input
-                    type="number"
-                    step="0.1"
-                    min="0"
-                    max="15"
-                    value={((bucketSettings.income.defaultYieldRate || 0.04) * 100).toFixed(1)}
-                    onChange={(e) =>
+                  <NumericInput
+                    min={0}
+                    max={15}
+                    step={0.1}
+                    allowDecimals
+                    suffix="%"
+                    value={bucketSettings.income.defaultYieldRate != null ? bucketSettings.income.defaultYieldRate * 100 : 4}
+                    onChange={(val) =>
                       handleUpdateBucketSettings((prev) => ({
                         ...prev,
                         income: {
                           ...prev.income,
-                          defaultYieldRate: (Number(e.target.value) || 4) / 100,
+                          defaultYieldRate: val !== null ? val / 100 : 0.04,
                         },
                       }))
                     }
-                    className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-blue-500"
                   />
                 </div>
               </div>

@@ -9,16 +9,28 @@ export interface NumericInputProps extends Omit<React.InputHTMLAttributes<HTMLIn
   max?: number;
   step?: number;
   allowDecimals?: boolean;
+  decimalPlaces?: number;
   className?: string;
   wrapperClassName?: string;
   placeholder?: string;
 }
 
+const formatValue = (val: number | null | undefined, allowDec: boolean, maxDecimals: number = 2): string => {
+  if (val === null || val === undefined || isNaN(val)) return '';
+  if (!allowDec) {
+    return String(Math.round(val));
+  }
+  // Round to maxDecimals places without floating point precision issues (e.g. 2.5000000000000004 -> 2.5)
+  const factor = Math.pow(10, maxDecimals);
+  const rounded = Math.round((val + Number.EPSILON) * factor) / factor;
+  return String(rounded);
+};
+
 /**
  * Standardized NumericInput component that:
  * 1. Automatically highlights text on focus so typing immediately replaces the existing number.
  * 2. Allows clearing the field without forcing a rigid '0' character.
- * 3. Gracefully formats number strings while maintaining responsive editing.
+ * 3. Gracefully formats number strings to at most specified decimal places (default 2) without floating point artifacts.
  */
 export const NumericInput: React.FC<NumericInputProps> = ({
   value,
@@ -28,6 +40,7 @@ export const NumericInput: React.FC<NumericInputProps> = ({
   min,
   max,
   allowDecimals = false,
+  decimalPlaces = 2,
   className = '',
   wrapperClassName = '',
   placeholder,
@@ -36,21 +49,16 @@ export const NumericInput: React.FC<NumericInputProps> = ({
 }) => {
   // Local string state to allow fluent typing (e.g. typing decimals or negative sign, or empty string)
   const [localStr, setLocalStr] = useState<string>(() => {
-    if (value === null || value === undefined) return '';
-    return String(value);
+    return formatValue(value, allowDecimals, decimalPlaces);
   });
   const isFocusedRef = useRef(false);
 
   // Sync external value changes when not actively focused
   useEffect(() => {
     if (!isFocusedRef.current) {
-      if (value === null || value === undefined) {
-        setLocalStr('');
-      } else {
-        setLocalStr(String(value));
-      }
+      setLocalStr(formatValue(value, allowDecimals, decimalPlaces));
     }
-  }, [value]);
+  }, [value, allowDecimals, decimalPlaces]);
 
   const commitValue = () => {
     const trimmed = localStr.trim();
@@ -61,12 +69,18 @@ export const NumericInput: React.FC<NumericInputProps> = ({
       setLocalStr('');
     } else {
       let num = Number(trimmed);
+      if (allowDecimals) {
+        const factor = Math.pow(10, decimalPlaces);
+        num = Math.round((num + Number.EPSILON) * factor) / factor;
+      } else {
+        num = Math.round(num);
+      }
       if (min !== undefined && num < min) num = min;
       if (max !== undefined && num > max) num = max;
       if (num !== value) {
         onChange(num);
       }
-      setLocalStr(String(num));
+      setLocalStr(formatValue(num, allowDecimals, decimalPlaces));
     }
   };
 
@@ -93,7 +107,7 @@ export const NumericInput: React.FC<NumericInputProps> = ({
       e.currentTarget.blur();
     } else if (e.key === 'Escape') {
       isFocusedRef.current = false;
-      setLocalStr(value === null || value === undefined ? '' : String(value));
+      setLocalStr(formatValue(value, allowDecimals, decimalPlaces));
       e.currentTarget.blur();
     }
     if (rest.onKeyDown) rest.onKeyDown(e);

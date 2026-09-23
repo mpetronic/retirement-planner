@@ -46,7 +46,6 @@ const VIEW_TITLES: Record<ActiveViewType, { title: string; category?: string }> 
   'params-residency': { title: 'Tax Residency & States', category: 'Edit Parameters' },
   'params-healthcare': { title: 'Healthcare & Medicare', category: 'Edit Parameters' },
   'params-accounts': { title: 'Accounts & Balances', category: 'Edit Parameters' },
-  'params-assumptions': { title: 'Assumptions & Growth', category: 'Edit Parameters' },
   'params-expenses': { title: 'Living Expenses & Budget', category: 'Edit Parameters' },
   'params-charity': { title: 'Charitable Giving & QCD', category: 'Edit Parameters' },
   'params-data': { title: 'Backup & Portability', category: 'Edit Parameters' },

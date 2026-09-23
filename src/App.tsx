@@ -710,8 +710,6 @@ function App() {
             inputs={inputs}
             onChange={handleInputsChange}
             onReset={() => handleInputsChange(DEFAULT_INPUTS)}
-            useTodayDollars={useTodayDollars}
-            setUseTodayDollars={setUseTodayDollars}
             simulateSurvivor={simulateSurvivor}
             setSimulateSurvivor={setSimulateSurvivor}
             ledger={displayActiveLedger}
@@ -769,6 +767,8 @@ function App() {
             simulateSurvivor={simulateSurvivor}
             summary={displayMonteCarloSummary}
             globalScenario={globalScenario}
+            useTodayDollars={useTodayDollars}
+            setUseTodayDollars={setUseTodayDollars}
           />
         )}
 

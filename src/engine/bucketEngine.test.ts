@@ -192,6 +192,37 @@ describe('bucketEngine', () => {
     expect(rebuildAction).toBeUndefined();
   });
 
+  it('sizes future bond ladder rungs with inflation progression', () => {
+    const customInflationInputs = {
+      ...mockInputs,
+      growthAssumptions: {
+        ...mockInputs.growthAssumptions,
+        cpiInflationRate: 0.03, // 3% inflation
+      },
+    };
+
+    const calc = calculateBucketYearState(2027, { ...mockLedgerRow, year: 2027 }, customInflationInputs, DEFAULT_BUCKET_STRATEGY_SETTINGS);
+    const rungs = calc.bucket2.rungs;
+
+    expect(rungs.length).toBe(5);
+    // Rung 1: 2027 (0 years ahead): 120,000
+    expect(rungs[0].targetYear).toBe(2027);
+    expect(rungs[0].principal).toBe(120000);
+
+    // Rung 2: 2028 (1 year ahead): 120,000 * 1.03 = 123,600
+    expect(rungs[1].targetYear).toBe(2028);
+    expect(rungs[1].principal).toBe(123600);
+
+    // Rung 3: 2029 (2 years ahead): 120,000 * 1.03^2 = 127,308
+    expect(rungs[2].targetYear).toBe(2029);
+    expect(rungs[2].principal).toBe(127308);
+
+    // Each subsequent rung principal should strictly increase
+    for (let i = 1; i < rungs.length; i++) {
+      expect(rungs[i].principal).toBeGreaterThan(rungs[i - 1].principal);
+    }
+  });
+
   it('generates multi-year projections across simulation ledger', () => {
     const ledger = [
       mockLedgerRow,

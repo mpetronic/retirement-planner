@@ -14,7 +14,6 @@ import {
   PanelLeftOpen,
   Users,
   Wallet,
-  LineChart,
   Flame,
   FileSpreadsheet,
   RefreshCw,
@@ -42,7 +41,6 @@ export type ActiveViewType =
   | 'params-residency'
   | 'params-healthcare'
   | 'params-accounts'
-  | 'params-assumptions'
   | 'params-expenses'
   | 'params-charity'
   | 'params-data'
@@ -144,13 +142,6 @@ const PARAMETER_NAV_ITEMS: NavItem[] = [
     shortLabel: 'Accounts',
     icon: Wallet,
     description: 'Pre-tax, Roth, Taxable, Cash',
-  },
-  {
-    id: 'params-assumptions',
-    label: 'Assumptions & Growth',
-    shortLabel: 'Assumptions',
-    icon: LineChart,
-    description: 'Returns, Inflation & Valuation',
   },
   {
     id: 'params-expenses',

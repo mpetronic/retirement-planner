@@ -30,8 +30,9 @@ The workspace serves as an interactive advisory, visualization, and projection e
     - *Bond Ladder*: A multi-rung fixed-income ladder (e.g., 5 annual rungs) consisting of Treasuries, CDs, or high-grade bonds.
     - *IRA Equities & Core Buffer*: Equities and money market reserves held within the IRA.
   - **Ladder Mechanics**:
+    - *Inflation-Adjusted Sizing*: Each future rung is dynamically sized to replace 1 year of projected living expenses at its specific maturity year, accounting for cumulative CPI inflation, healthcare inflation, and scheduled one-time capital expenditures.
     - *Maturity Distribution*: Ladder rungs do **not** auto-roll. When a rung matures, its principal disperses directly into Bucket 1 (Taxable Cash) as a modeled IRA distribution.
-    - *Ladder Replenishment*: In normal markets, a new far-end rung (e.g., Year 5) is purchased by selling IRA equities (supplemented by accumulated IRA cash/coupons).
+    - *Ladder Replenishment*: In normal markets, a new far-end rung (e.g., Year 5) is purchased by selling IRA equities (supplemented by accumulated IRA cash/coupons), sized to meet that far-end year's inflation-adjusted living expenses.
     - *Pause Rebuilding Mode (Market Down Protection)*: The user can pause ladder replenishment during market downturns. In this mode, the ladder naturally shortens as rungs mature, drawing down fixed income without liquidating depressed equity holdings.
 
 - **Bucket 3 (Growth) = Roth IRA**
