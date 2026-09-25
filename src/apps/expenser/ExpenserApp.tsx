@@ -24,10 +24,13 @@ import {
   Search,
   ChevronDown,
   Delete,
+  Cloud,
 } from 'lucide-react';
 import { getStorageAdapter } from '../../shared/storage';
 import { ActualExpense, ExpenseCategory } from '../../shared/types/expenses';
 import { getPlannerProfileNames } from '../../shared/utils/profileNames';
+import { AuthService } from '../../shared/auth/AuthService';
+import { CloudAuthModal } from '../../components/CloudAuthModal';
 import {
   getPlannerExpenseCatalog,
   mergeWithCustomCategories,
@@ -86,6 +89,8 @@ export const ExpenserApp: React.FC = () => {
   const [showCategoryModal, setShowCategoryModal] = useState<boolean>(false);
   const [showDateModal, setShowDateModal] = useState<boolean>(false);
   const [showNotesDrawer, setShowNotesDrawer] = useState<boolean>(false);
+  const [showCloudModal, setShowCloudModal] = useState<boolean>(false);
+  const [isAuthenticated, setIsAuthenticated] = useState<boolean>(() => AuthService.isAuthenticated());
 
   // New Category Modal form
   const [newCatGroup, setNewCatGroup] = useState<string>('Living');
@@ -215,19 +220,33 @@ export const ExpenserApp: React.FC = () => {
     loadData();
   }, [loadData]);
 
-  // Online / Offline Listeners
+  // Online / Offline & Cloud Sync Listeners
   useEffect(() => {
     const handleOnline = () => setIsOnline(true);
     const handleOffline = () => setIsOnline(false);
+    const handleCloudSync = () => {
+      loadData();
+    };
+    const unsubscribeAuth = AuthService.subscribe(s => {
+      setIsAuthenticated(Boolean(s));
+      loadData();
+    });
 
     window.addEventListener('online', handleOnline);
     window.addEventListener('offline', handleOffline);
+    window.addEventListener('cloud_categories_synced', handleCloudSync);
+    window.addEventListener('cloud_expenses_synced', handleCloudSync);
+    window.addEventListener('cloud_sync_completed', handleCloudSync);
 
     return () => {
       window.removeEventListener('online', handleOnline);
       window.removeEventListener('offline', handleOffline);
+      window.removeEventListener('cloud_categories_synced', handleCloudSync);
+      window.removeEventListener('cloud_expenses_synced', handleCloudSync);
+      window.removeEventListener('cloud_sync_completed', handleCloudSync);
+      unsubscribeAuth();
     };
-  }, []);
+  }, [loadData]);
 
   // Haptic feedback helper
   const triggerHaptic = (ms = 10) => {
@@ -426,7 +445,26 @@ export const ExpenserApp: React.FC = () => {
         </div>
 
         {/* Status & Feed Actions */}
-        <div className="flex items-center space-x-2">
+        <div className="flex items-center space-x-1.5">
+          {/* Cloud Auth / Sync Button */}
+          <button
+            type="button"
+            onClick={() => setShowCloudModal(true)}
+            className={`p-1.5 rounded-xl border flex items-center gap-1 transition-all ${
+              isAuthenticated
+                ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-400 hover:bg-emerald-500/20'
+                : 'bg-slate-800/80 border-slate-700 text-slate-400 hover:text-white hover:bg-slate-700'
+            }`}
+            title={isAuthenticated ? 'Household Cloud Connected' : 'Sign in to Household Cloud'}
+          >
+            <Cloud className="w-3.5 h-3.5" />
+            {isAuthenticated ? (
+              <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
+            ) : (
+              <span className="text-[10px] font-semibold">Sign in</span>
+            )}
+          </button>
+
           {/* Sync / Offline Pill */}
           <div
             className={`flex items-center space-x-1 px-2.5 py-1 rounded-full text-xs font-medium border ${
@@ -1086,6 +1124,13 @@ export const ExpenserApp: React.FC = () => {
           </div>
         </div>
       )}
+
+      {/* Cloud Authentication & Sync Modal */}
+      <CloudAuthModal
+        isOpen={showCloudModal}
+        onClose={() => setShowCloudModal(false)}
+        onSyncComplete={loadData}
+      />
     </div>
   );
 };
