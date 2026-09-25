@@ -89,4 +89,46 @@ describe('PlanSyncService', () => {
     expect(result).toBe(true);
     expect(mockFetch).toHaveBeenCalled();
   });
+
+  it('correctly detects meaningful vs empty plan data', () => {
+    expect(PlanSyncService.hasMeaningfulPlanData(null)).toBe(false);
+    expect(
+      PlanSyncService.hasMeaningfulPlanData({
+        isConfigured: false,
+      } as unknown as AppStateInputs)
+    ).toBe(false);
+
+    const emptyConfigured: Partial<AppStateInputs> = {
+      isConfigured: true,
+      annualLivingExpenses: 100000,
+      portfolio: {
+        yourPreTaxIRA: 0,
+        yourRothIRA: 0,
+        yourTaxableBrokerage: 0,
+        yourTaxableBasis: 0,
+        yourCash: 0,
+        wifePreTaxIRA: 0,
+        wifeRothIRA: 0,
+        wifeTaxableBrokerage: 0,
+        wifeTaxableBasis: 0,
+        wifeCash: 0,
+        taxableDividendYield: 0,
+        taxableNonQualifiedPortion: 0,
+      },
+      you: { name: 'You', birthDate: '1960-01-01', plannedRetirementAge: 67, targetSSClaimingAge: 67, estimatedPIA: 0, activeSalary: 0, preMedicareMonthlyPremium: null },
+      wife: { name: 'Spouse', birthDate: '1960-01-01', plannedRetirementAge: 67, targetSSClaimingAge: 67, estimatedPIA: 0, activeSalary: 0, preMedicareMonthlyPremium: null },
+    };
+
+    expect(PlanSyncService.hasMeaningfulPlanData(emptyConfigured as AppStateInputs)).toBe(false);
+
+    const populatedPlan = {
+      ...emptyConfigured,
+      portfolio: {
+        ...emptyConfigured.portfolio!,
+        yourPreTaxIRA: 500000,
+      },
+    };
+    expect(PlanSyncService.hasMeaningfulPlanData(populatedPlan as AppStateInputs)).toBe(true);
+  });
 });
+

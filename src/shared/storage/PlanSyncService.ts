@@ -160,10 +160,73 @@ class PlanSyncServiceSingleton {
   }
 
   /**
+   * Determine if a plan contains real user data rather than being unconfigured / default zeros.
+   */
+  public hasMeaningfulPlanData(inputs?: AppStateInputs | null): boolean {
+    if (!inputs) return false;
+    if (!inputs.isConfigured) return false;
+
+    const p = inputs.portfolio;
+    const totalAssets =
+      (p?.yourPreTaxIRA || 0) +
+      (p?.yourRothIRA || 0) +
+      (p?.yourTaxableBrokerage || 0) +
+      (p?.yourCash || 0) +
+      (p?.wifePreTaxIRA || 0) +
+      (p?.wifeRothIRA || 0) +
+      (p?.wifeTaxableBrokerage || 0) +
+      (p?.wifeCash || 0);
+
+    const totalIncome =
+      (inputs.you?.activeSalary || 0) +
+      (inputs.you?.estimatedPIA || 0) +
+      (inputs.wife?.activeSalary || 0) +
+      (inputs.wife?.estimatedPIA || 0);
+
+    const hasCatalogExpenses = (inputs.detailedExpenses?.catalog?.items?.length || 0) > 0;
+    const hasCustomLiving =
+      typeof inputs.annualLivingExpenses === 'number' &&
+      inputs.annualLivingExpenses > 0 &&
+      inputs.annualLivingExpenses !== 100000;
+
+    return totalAssets > 0 || totalIncome > 0 || hasCatalogExpenses || hasCustomLiving;
+  }
+
+  private applyRemotePlan(remote: RemotePlanDocument): void {
+    if (typeof window === 'undefined') return;
+
+    const normalizedInputs = {
+      ...remote.inputs,
+      isConfigured: true,
+      detailedExpenses: normalizeDetailedExpenses(remote.inputs.detailedExpenses),
+    };
+
+    window.localStorage.setItem('retirement_planner_inputs', JSON.stringify(normalizedInputs));
+    if (remote.savedPlans) {
+      window.localStorage.setItem('retirement_planner_saved_plans', JSON.stringify(remote.savedPlans));
+    }
+    if (remote.customScenarios) {
+      window.localStorage.setItem('retirement_planner_custom_roth_scenarios', JSON.stringify(remote.customScenarios));
+    }
+
+    this.lastSyncedAt = remote.updatedAt;
+    this.lastUpdatedBy = remote.updatedBy;
+    window.localStorage.setItem('retirement_planner_plan_synced_at', remote.updatedAt);
+    window.localStorage.setItem('retirement_planner_plan_updated_by', remote.updatedBy);
+    window.localStorage.setItem('retirement_planner_plan_local_modified_at', remote.updatedAt);
+
+    // Dispatch event to re-render App state instantly
+    window.dispatchEvent(new Event('storage'));
+    window.dispatchEvent(new CustomEvent('retirement_planner_inputs_updated', { detail: normalizedInputs }));
+    window.dispatchEvent(new CustomEvent('retirement_planner_plan_synced', { detail: remote }));
+  }
+
+  /**
    * Complete 2-way cloud plan sync:
    * 1. Fetches cloud plan.
-   * 2. If cloud plan exists: applies to local state and LocalStorage if remote is newer or local is default.
-   * 3. If cloud plan is empty or local is newer: uploads local plan.
+   * 2. If cloud has populated data and local does not: downloads and applies cloud plan.
+   * 3. If local has populated data and cloud does not: uploads local plan to cloud.
+   * 4. If both have populated data: compares timestamps to resolve newer version.
    */
   public async syncPlanNow(): Promise<{ action: 'downloaded' | 'uploaded' | 'up-to-date'; updatedBy?: string }> {
     if (!AuthService.isAuthenticated()) {
@@ -190,45 +253,45 @@ class PlanSyncServiceSingleton {
       const localInputs = localRaw ? (JSON.parse(localRaw) as AppStateInputs) : null;
       const localSavedPlans = localSavedPlansRaw ? (JSON.parse(localSavedPlansRaw) as SavedPlan[]) : [];
 
-      if (remote && remote.inputs) {
-        // Compare remote updatedAt vs local modification time
+      const isRemoteMeaningful = this.hasMeaningfulPlanData(remote?.inputs);
+      const isLocalMeaningful = this.hasMeaningfulPlanData(localInputs);
+
+      // Case 1: Remote cloud has real plan data, local is empty/unconfigured -> Download remote
+      if (isRemoteMeaningful && !isLocalMeaningful && remote) {
+        this.applyRemotePlan(remote);
+        this.isSyncing = false;
+        this.notify();
+        return { action: 'downloaded', updatedBy: remote.updatedBy };
+      }
+
+      // Case 2: Local has real plan data, remote cloud is empty/unconfigured -> Upload local
+      if (isLocalMeaningful && !isRemoteMeaningful && localInputs) {
+        await this.saveRemotePlan(localInputs, localSavedPlans);
+        this.isSyncing = false;
+        this.notify();
+        return { action: 'uploaded' };
+      }
+
+      // Case 3: Both have meaningful data -> Compare timestamps
+      if (isRemoteMeaningful && isLocalMeaningful && remote && localInputs) {
         const remoteTime = new Date(remote.updatedAt).getTime();
         const localTime = localModifiedAt ? new Date(localModifiedAt).getTime() : 0;
-        const isLocalFreshConfig = !localInputs || !localInputs.isConfigured;
 
-        if (isLocalFreshConfig || remoteTime >= localTime) {
-          // Ingest remote plan into local storage and notify React state
-          const normalizedInputs = {
-            ...remote.inputs,
-            detailedExpenses: normalizeDetailedExpenses(remote.inputs.detailedExpenses),
-          };
-
-          window.localStorage.setItem('retirement_planner_inputs', JSON.stringify(normalizedInputs));
-          if (remote.savedPlans) {
-            window.localStorage.setItem('retirement_planner_saved_plans', JSON.stringify(remote.savedPlans));
-          }
-          if (remote.customScenarios) {
-            window.localStorage.setItem('retirement_planner_custom_roth_scenarios', JSON.stringify(remote.customScenarios));
-          }
-
-          this.lastSyncedAt = remote.updatedAt;
-          this.lastUpdatedBy = remote.updatedBy;
-          window.localStorage.setItem('retirement_planner_plan_synced_at', remote.updatedAt);
-          window.localStorage.setItem('retirement_planner_plan_updated_by', remote.updatedBy);
-
-          // Dispatch event to re-render App state instantly
-          window.dispatchEvent(new Event('storage'));
-          window.dispatchEvent(new CustomEvent('retirement_planner_inputs_updated', { detail: normalizedInputs }));
-          window.dispatchEvent(new CustomEvent('retirement_planner_plan_synced', { detail: remote }));
-
+        if (remoteTime > localTime) {
+          this.applyRemotePlan(remote);
           this.isSyncing = false;
           this.notify();
           return { action: 'downloaded', updatedBy: remote.updatedBy };
+        } else {
+          await this.saveRemotePlan(localInputs, localSavedPlans);
+          this.isSyncing = false;
+          this.notify();
+          return { action: 'uploaded' };
         }
       }
 
-      // If remote is empty or local is newer, push local plan to cloud
-      if (localInputs && localInputs.isConfigured) {
+      // Case 4: Neither is meaningful, but local is configured -> Upload if local configured
+      if (localInputs && localInputs.isConfigured && !remote) {
         await this.saveRemotePlan(localInputs, localSavedPlans);
         this.isSyncing = false;
         this.notify();
