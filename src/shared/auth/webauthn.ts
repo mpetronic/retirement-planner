@@ -3,6 +3,29 @@
  * and Cognito payload transformation.
  */
 
+function getAuthenticatorAttachment(cred: PublicKeyCredential): string | undefined {
+  if ('authenticatorAttachment' in cred) {
+    const val = (cred as { authenticatorAttachment?: unknown }).authenticatorAttachment;
+    if (typeof val === 'string') {
+      return val;
+    }
+  }
+  return undefined;
+}
+
+function getTransports(response: AuthenticatorAttestationResponse): string[] | undefined {
+  if ('getTransports' in response) {
+    const fn = (response as { getTransports?: unknown }).getTransports;
+    if (typeof fn === 'function') {
+      const res = fn.call(response);
+      if (Array.isArray(res)) {
+        return res as string[];
+      }
+    }
+  }
+  return undefined;
+}
+
 export function bufferToBase64Url(buffer: ArrayBuffer | Uint8Array): string {
   const bytes = buffer instanceof Uint8Array ? buffer : new Uint8Array(buffer);
   let binary = '';
@@ -29,39 +52,33 @@ export function base64UrlToBuffer(base64url: string): Uint8Array {
 }
 
 export interface CognitoCredentialCreationOptions {
-  challenge: string;
-  rp: {
-    id?: string;
-    name: string;
-  };
+  challenge: string | BufferSource;
+  rp: PublicKeyCredentialRpEntity;
   user: {
-    id: string;
+    id: string | BufferSource;
     name: string;
     displayName: string;
   };
-  pubKeyCredParams: Array<{
-    type: 'public-key';
-    alg: number;
-  }>;
+  pubKeyCredParams: PublicKeyCredentialParameters[];
   authenticatorSelection?: AuthenticatorSelectionCriteria;
   timeout?: number;
   attestation?: AttestationConveyancePreference;
   excludeCredentials?: Array<{
-    id: string;
-    type: 'public-key';
+    id: string | BufferSource;
+    type: PublicKeyCredentialType;
     transports?: AuthenticatorTransport[];
   }>;
   extensions?: AuthenticationExtensionsClientInputs;
 }
 
 export interface CognitoCredentialRequestOptions {
-  challenge: string;
+  challenge: string | BufferSource;
   rpId?: string;
   timeout?: number;
   userVerification?: UserVerificationRequirement;
   allowCredentials?: Array<{
-    id: string;
-    type: 'public-key';
+    id: string | BufferSource;
+    type: PublicKeyCredentialType;
     transports?: AuthenticatorTransport[];
   }>;
   extensions?: AuthenticationExtensionsClientInputs;
@@ -74,24 +91,25 @@ export interface CognitoCredentialRequestOptions {
 export function prepareCredentialCreationOptions(
   options: CognitoCredentialCreationOptions
 ): PublicKeyCredentialCreationOptions {
-  const challenge = typeof options.challenge === 'string'
+  const challenge = (typeof options.challenge === 'string'
     ? base64UrlToBuffer(options.challenge)
-    : (options.challenge as unknown as BufferSource);
+    : options.challenge) as BufferSource;
 
-  const userId = typeof options.user.id === 'string'
+  const userId = (typeof options.user.id === 'string'
     ? base64UrlToBuffer(options.user.id)
-    : (options.user.id as unknown as BufferSource);
+    : options.user.id) as BufferSource;
 
   const excludeCredentials: PublicKeyCredentialDescriptor[] | undefined = options.excludeCredentials?.map(cred => ({
     type: cred.type,
-    id: typeof cred.id === 'string' ? base64UrlToBuffer(cred.id) : (cred.id as unknown as BufferSource),
-    ...(cred.transports ? { transports: cred.transports } : {}),
+    id: (typeof cred.id === 'string' ? base64UrlToBuffer(cred.id) : cred.id) as BufferSource,
+    ...(cred.transports ? { transports: cred.transports as AuthenticatorTransport[] } : {}),
   }));
 
   const result: PublicKeyCredentialCreationOptions = {
     rp: options.rp,
     user: {
-      ...options.user,
+      name: options.user.name,
+      displayName: options.user.displayName,
       id: userId,
     },
     challenge,
@@ -113,14 +131,14 @@ export function prepareCredentialCreationOptions(
 export function prepareCredentialRequestOptions(
   options: CognitoCredentialRequestOptions
 ): PublicKeyCredentialRequestOptions {
-  const challenge = typeof options.challenge === 'string'
+  const challenge = (typeof options.challenge === 'string'
     ? base64UrlToBuffer(options.challenge)
-    : (options.challenge as unknown as BufferSource);
+    : options.challenge) as BufferSource;
 
   const allowCredentials: PublicKeyCredentialDescriptor[] | undefined = options.allowCredentials?.map(cred => ({
     type: cred.type,
-    id: typeof cred.id === 'string' ? base64UrlToBuffer(cred.id) : (cred.id as unknown as BufferSource),
-    ...(cred.transports ? { transports: cred.transports } : {}),
+    id: (typeof cred.id === 'string' ? base64UrlToBuffer(cred.id) : cred.id) as BufferSource,
+    ...(cred.transports ? { transports: cred.transports as AuthenticatorTransport[] } : {}),
   }));
 
   const result: PublicKeyCredentialRequestOptions = {
@@ -141,8 +159,8 @@ export function prepareCredentialRequestOptions(
  */
 export function serializeCreationCredential(credential: PublicKeyCredential) {
   const response = credential.response as AuthenticatorAttestationResponse;
-  const transports = typeof response.getTransports === 'function' ? response.getTransports() : undefined;
-  const authenticatorAttachment = (credential as unknown as { authenticatorAttachment?: string }).authenticatorAttachment;
+  const transports = getTransports(response);
+  const authenticatorAttachment = getAuthenticatorAttachment(credential);
 
   return {
     id: credential.id,
@@ -163,7 +181,7 @@ export function serializeCreationCredential(credential: PublicKeyCredential) {
  */
 export function serializeAssertionCredential(assertion: PublicKeyCredential) {
   const response = assertion.response as AuthenticatorAssertionResponse;
-  const authenticatorAttachment = (assertion as unknown as { authenticatorAttachment?: string }).authenticatorAttachment;
+  const authenticatorAttachment = getAuthenticatorAttachment(assertion);
 
   return {
     id: assertion.id,

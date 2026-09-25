@@ -6,7 +6,6 @@ import {
   FileText,
   CheckCircle2,
   RefreshCw,
-  Wifi,
   WifiOff,
   History,
   X,
@@ -25,12 +24,19 @@ import {
   ChevronDown,
   Delete,
   Cloud,
+  Menu,
+  User,
+  LogIn,
+  LogOut,
+  Info,
 } from 'lucide-react';
 import { getStorageAdapter } from '../../shared/storage';
 import { ActualExpense, ExpenseCategory } from '../../shared/types/expenses';
 import { resolveLoggedInPayerName } from '../../shared/utils/profileNames';
 import { AuthService } from '../../shared/auth/AuthService';
 import { CloudAuthModal } from '../../components/CloudAuthModal';
+import { AboutDialog } from '../../components/AboutDialog';
+import { getVersionInfo } from '../../utils/version';
 import {
   getPlannerExpenseCatalog,
   mergeWithCustomCategories,
@@ -88,7 +94,11 @@ export const ExpenserApp: React.FC = () => {
   const [showDateModal, setShowDateModal] = useState<boolean>(false);
   const [showNotesDrawer, setShowNotesDrawer] = useState<boolean>(false);
   const [showCloudModal, setShowCloudModal] = useState<boolean>(false);
+  const [showAboutModal, setShowAboutModal] = useState<boolean>(false);
+  const [isMenuOpen, setIsMenuOpen] = useState<boolean>(false);
+  const [currentUserEmail, setCurrentUserEmail] = useState<string>(() => AuthService.getSession()?.email || '');
   const [isAuthenticated, setIsAuthenticated] = useState<boolean>(() => AuthService.isAuthenticated());
+  const versionInfo = useMemo(() => getVersionInfo(), []);
 
   // New Category Modal form
   const [newCatGroup, setNewCatGroup] = useState<string>('Living');
@@ -228,6 +238,7 @@ export const ExpenserApp: React.FC = () => {
     };
     const unsubscribeAuth = AuthService.subscribe(s => {
       setIsAuthenticated(Boolean(s));
+      setCurrentUserEmail(s?.email || '');
       setPayerName(resolveLoggedInPayerName());
       loadData();
     });
@@ -438,42 +449,23 @@ export const ExpenserApp: React.FC = () => {
     <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col justify-between select-none font-sans antialiased max-w-md mx-auto shadow-2xl relative border-x border-slate-800/60 pb-safe">
       {/* Top App Header */}
       <header className="px-4 py-3 bg-slate-900/90 backdrop-blur border-b border-slate-800/80 sticky top-0 z-30 flex items-center justify-between">
-        <div className="flex items-center space-x-2">
+        <div className="flex items-center space-x-2.5">
           <div className="w-8 h-8 rounded-xl bg-gradient-to-tr from-emerald-600 to-teal-400 flex items-center justify-center shadow-lg shadow-emerald-900/30">
             <Sparkles className="w-4 h-4 text-white" />
           </div>
           <div>
-            <h1 className="text-sm font-bold tracking-tight text-white flex items-center gap-1.5">
-              Expenser <span className="text-[10px] uppercase font-semibold tracking-wider px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">PWA</span>
+            <h1 className="text-base font-bold tracking-tight text-white">
+              Expenser
             </h1>
             <p className="text-[11px] text-slate-400">Retirement Actuals Tracker</p>
           </div>
         </div>
 
-        {/* Status & Feed Actions */}
-        <div className="flex items-center space-x-1.5">
-          {/* Cloud Auth / Sync Button */}
-          <button
-            type="button"
-            onClick={() => setShowCloudModal(true)}
-            className={`p-1.5 rounded-xl border flex items-center gap-1 transition-all ${
-              isAuthenticated
-                ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-400 hover:bg-emerald-500/20'
-                : 'bg-slate-800/80 border-slate-700 text-slate-400 hover:text-white hover:bg-slate-700'
-            }`}
-            title={isAuthenticated ? 'Household Cloud Connected' : 'Sign in to Household Cloud'}
-          >
-            <Cloud className="w-3.5 h-3.5" />
-            {isAuthenticated ? (
-              <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
-            ) : (
-              <span className="text-[10px] font-semibold">Sign in</span>
-            )}
-          </button>
-
+        {/* Status & Hamburger Action */}
+        <div className="flex items-center space-x-2">
           {/* Sync / Offline Pill */}
           <div
-            className={`flex items-center space-x-1 px-2.5 py-1 rounded-full text-xs font-medium border ${
+            className={`flex items-center space-x-1.5 px-2.5 py-1 rounded-full text-xs font-medium border ${
               isOnline
                 ? pendingCount > 0
                   ? 'bg-amber-500/10 text-amber-400 border-amber-500/30'
@@ -483,30 +475,155 @@ export const ExpenserApp: React.FC = () => {
           >
             {isOnline ? (
               <>
-                <Wifi className="w-3 h-3" />
-                <span>{pendingCount > 0 ? `${pendingCount} Queue` : 'Synced'}</span>
+                <span className={`w-1.5 h-1.5 rounded-full ${pendingCount > 0 ? 'bg-amber-400 animate-pulse' : 'bg-emerald-400'}`} />
+                <span>{pendingCount > 0 ? `${pendingCount} Queued` : 'Synced'}</span>
               </>
             ) : (
               <>
-                <WifiOff className="w-3 h-3" />
+                <WifiOff className="w-3 h-3 text-rose-400" />
                 <span>Offline</span>
               </>
             )}
           </div>
 
-          {/* History Drawer Trigger */}
+          {/* Hamburger Menu Toggle Button */}
           <button
-            onClick={() => setShowRecentModal(true)}
-            className="p-2 rounded-xl bg-slate-800/80 hover:bg-slate-700 text-slate-300 hover:text-white transition-colors relative"
-            title="Recent Expenses"
+            type="button"
+            onClick={() => setIsMenuOpen(prev => !prev)}
+            className="p-2 rounded-xl bg-slate-800/80 hover:bg-slate-700 text-slate-200 hover:text-white border border-slate-700/60 transition-colors relative"
+            aria-label="Toggle navigation menu"
+            aria-expanded={isMenuOpen}
           >
-            <History className="w-4 h-4" />
-            {recentExpenses.length > 0 && (
-              <span className="absolute -top-1 -right-1 w-2 h-2 rounded-full bg-emerald-500 ring-2 ring-slate-900" />
+            {isMenuOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
+            {recentExpenses.length > 0 && !isMenuOpen && (
+              <span className="absolute 1 top-1.5 right-1.5 w-2 h-2 rounded-full bg-emerald-500 ring-2 ring-slate-900" />
             )}
           </button>
         </div>
       </header>
+
+      {/* Hamburger Navigation Menu Dropdown */}
+      {isMenuOpen && (
+        <div
+          className="fixed inset-0 z-40 bg-slate-950/70 backdrop-blur-xs flex flex-col justify-start max-w-md mx-auto pt-16 px-4 animate-in fade-in duration-150"
+          onClick={() => setIsMenuOpen(false)}
+        >
+          <div
+            className="bg-slate-900 border border-slate-800 rounded-2xl shadow-2xl p-3 space-y-1.5 backdrop-blur-md"
+            onClick={e => e.stopPropagation()}
+          >
+            {/* Account Status Header */}
+            {isAuthenticated ? (
+              <div className="px-3.5 py-2.5 bg-slate-950/60 rounded-xl border border-slate-800 mb-1 flex items-center justify-between">
+                <div className="min-w-0">
+                  <div className="flex items-center gap-1.5 text-xs font-semibold text-emerald-400">
+                    <span className="w-2 h-2 rounded-full bg-emerald-400" />
+                    <span>Household Cloud Active</span>
+                  </div>
+                  <p className="text-[11px] text-slate-300 truncate mt-0.5">
+                    {currentUserEmail || 'Signed in'}
+                  </p>
+                </div>
+              </div>
+            ) : (
+              <div className="px-3.5 py-2.5 bg-amber-500/10 rounded-xl border border-amber-500/20 mb-1">
+                <div className="text-xs font-semibold text-amber-300">
+                  Local Storage Mode
+                </div>
+                <p className="text-[11px] text-amber-200/70 truncate mt-0.5">
+                  Sign in to sync with planner & passkeys
+                </p>
+              </div>
+            )}
+
+            {/* Menu Item 1: Recent Expenses */}
+            <button
+              type="button"
+              onClick={() => {
+                setIsMenuOpen(false);
+                setShowRecentModal(true);
+              }}
+              className="w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl bg-slate-800/40 hover:bg-slate-800 text-slate-200 hover:text-white transition-colors text-left"
+            >
+              <div className="flex items-center space-x-3">
+                <div className="w-8 h-8 rounded-lg bg-emerald-500/10 text-emerald-400 flex items-center justify-center border border-emerald-500/20">
+                  <History className="w-4 h-4" />
+                </div>
+                <div>
+                  <div className="text-sm font-medium">Recent Expenses</div>
+                  <div className="text-[11px] text-slate-400">View logged history & delete records</div>
+                </div>
+              </div>
+              {recentExpenses.length > 0 && (
+                <span className="px-2 py-0.5 rounded-full text-xs font-semibold bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
+                  {recentExpenses.length}
+                </span>
+              )}
+            </button>
+
+            {/* Menu Item 2: Sign In / Cloud Account & Passkeys */}
+            <button
+              type="button"
+              onClick={() => {
+                setIsMenuOpen(false);
+                setShowCloudModal(true);
+              }}
+              className="w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl bg-slate-800/40 hover:bg-slate-800 text-slate-200 hover:text-white transition-colors text-left"
+            >
+              <div className="flex items-center space-x-3">
+                <div className="w-8 h-8 rounded-lg bg-teal-500/10 text-teal-400 flex items-center justify-center border border-teal-500/20">
+                  {isAuthenticated ? <User className="w-4 h-4" /> : <LogIn className="w-4 h-4" />}
+                </div>
+                <div>
+                  <div className="text-sm font-medium">
+                    {isAuthenticated ? 'Cloud Account & Passkeys' : 'Sign In to Cloud'}
+                  </div>
+                  <div className="text-[11px] text-slate-400">
+                    {isAuthenticated ? 'Manage devices, passkeys & sync' : 'Connect AWS Cognito household sync'}
+                  </div>
+                </div>
+              </div>
+            </button>
+
+            {/* Menu Item 3: About Expenser */}
+            <button
+              type="button"
+              onClick={() => {
+                setIsMenuOpen(false);
+                setShowAboutModal(true);
+              }}
+              className="w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl bg-slate-800/40 hover:bg-slate-800 text-slate-200 hover:text-white transition-colors text-left"
+            >
+              <div className="flex items-center space-x-3">
+                <div className="w-8 h-8 rounded-lg bg-indigo-500/10 text-indigo-400 flex items-center justify-center border border-indigo-500/20">
+                  <Info className="w-4 h-4" />
+                </div>
+                <div>
+                  <div className="text-sm font-medium">About Expenser</div>
+                  <div className="text-[11px] text-slate-400">Version & build details ({versionInfo.displayVersion})</div>
+                </div>
+              </div>
+            </button>
+
+            {/* Menu Item 4: Sign Out (if authenticated) */}
+            {isAuthenticated && (
+              <button
+                type="button"
+                onClick={() => {
+                  setIsMenuOpen(false);
+                  AuthService.signOut();
+                }}
+                className="w-full flex items-center space-x-3 px-3.5 py-2 rounded-xl hover:bg-rose-500/10 text-rose-400 hover:text-rose-300 transition-colors text-left"
+              >
+                <div className="w-8 h-8 rounded-lg bg-rose-500/10 text-rose-400 flex items-center justify-center border border-rose-500/20">
+                  <LogOut className="w-4 h-4" />
+                </div>
+                <div className="text-sm font-medium">Sign Out</div>
+              </button>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* Unauthenticated / Connect Cloud Callout Banner */}
       {!isAuthenticated && (
@@ -1126,6 +1243,14 @@ export const ExpenserApp: React.FC = () => {
         isOpen={showCloudModal}
         onClose={() => setShowCloudModal(false)}
         onSyncComplete={loadData}
+      />
+
+      {/* About & Version Details Dialog */}
+      <AboutDialog
+        isOpen={showAboutModal}
+        onClose={() => setShowAboutModal(false)}
+        title="Expenser"
+        subtitle="Retirement Actuals Tracker & Mobile Companion"
       />
     </div>
   );

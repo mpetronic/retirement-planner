@@ -114,11 +114,9 @@ export const CloudAuthModal: React.FC<CloudAuthModalProps> = ({ isOpen, onClose,
       setSuccessMsg(`Welcome, ${newSession.email}!`);
       setPassword('');
 
-      // Trigger initial cloud sync immediately upon login
+      // Trigger initial cloud sync immediately upon login and close modal
       await handleSyncNow();
-      setTimeout(() => {
-        setSuccessMsg('');
-      }, 2000);
+      onClose();
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'Sign in failed';
       setErrorMsg(msg);
@@ -143,11 +141,9 @@ export const CloudAuthModal: React.FC<CloudAuthModalProps> = ({ isOpen, onClose,
       const newSession = await AuthService.signInWithPasskey(targetEmail);
       setSuccessMsg(`Welcome, ${newSession.email}!`);
 
-      // Trigger initial cloud sync
+      // Trigger initial cloud sync and close modal
       await handleSyncNow();
-      setTimeout(() => {
-        setSuccessMsg('');
-      }, 2000);
+      onClose();
     } catch (err: unknown) {
       if (err instanceof Error && err.name === 'NotAllowedError') {
         setErrorMsg('Passkey prompt was cancelled or timed out.');
