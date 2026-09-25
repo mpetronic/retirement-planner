@@ -18,7 +18,7 @@ import {
 } from 'lucide-react';
 import { AuthService, AuthSession, WebAuthnCredentialInfo } from '../shared/auth/AuthService';
 import { getCloudConfig, saveCloudConfig, CloudConfig } from '../shared/auth/config';
-import { getStorageAdapter, AwsCloudStorageAdapter } from '../shared/storage';
+import { getStorageAdapter, AwsCloudStorageAdapter, PlanSyncService } from '../shared/storage';
 
 interface CloudAuthModalProps {
   isOpen: boolean;
@@ -78,14 +78,21 @@ export const CloudAuthModal: React.FC<CloudAuthModalProps> = ({ isOpen, onClose,
     setIsSyncing(true);
     setErrorMsg('');
     try {
+      // 1. Sync Household Retirement Plan
+      await PlanSyncService.syncPlanNow();
+
+      // 2. Sync Expenses & Categories
       const adapter = getStorageAdapter();
       if (adapter instanceof AwsCloudStorageAdapter) {
         await adapter.getCategories();
         const currentYear = new Date().getFullYear();
         await adapter.getExpenses(currentYear);
         const { syncedCount } = await adapter.flushPendingExpenses();
-        setSuccessMsg(syncedCount > 0 ? `Synced ${syncedCount} pending expenses to cloud!` : 'Cloud sync up to date.');
+        setSuccessMsg(syncedCount > 0 ? `Synced plan & ${syncedCount} pending expenses to cloud!` : 'Household plan & expenses up to date.');
+      } else {
+        setSuccessMsg('Household plan synced with cloud.');
       }
+
       if (onSyncComplete) {
         onSyncComplete();
       }

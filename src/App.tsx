@@ -37,7 +37,7 @@ import { AboutDialog } from './components/AboutDialog';
 import { OnboardingWizard } from './components/OnboardingWizard';
 import { CloudAuthModal } from './components/CloudAuthModal';
 import { AuthService } from './shared/auth/AuthService';
-import { getStorageAdapter } from './shared/storage';
+import { getStorageAdapter, PlanSyncService } from './shared/storage';
 import { syncPlannerCatalogToCloudStorage } from './shared/utils/plannerCategories';
 
 // Default initial state matching specifications
@@ -298,14 +298,45 @@ function App() {
   const [showAboutDialog, setShowAboutDialog] = useState<boolean>(false);
   const [showCloudModal, setShowCloudModal] = useState<boolean>(false);
   const [isAuthenticated, setIsAuthenticated] = useState<boolean>(() => AuthService.isAuthenticated());
+  const [currentUserEmail, setCurrentUserEmail] = useState<string>(() => AuthService.getSession()?.email || '');
+  const [isPlanSyncing, setIsPlanSyncing] = useState<boolean>(false);
   const [documentationSectionId, setDocumentationSectionId] = useState<string>('overview');
 
-  // Listen to Cognito auth state changes
+  // Listen to Cognito auth state changes and initialize 2-way cloud plan sync
   useEffect(() => {
-    return AuthService.subscribe((session) => {
-      setIsAuthenticated(Boolean(session));
+    const unsubAuth = AuthService.subscribe((session) => {
+      const auth = Boolean(session);
+      setIsAuthenticated(auth);
+      setCurrentUserEmail(session?.email || '');
+      if (auth) {
+        PlanSyncService.syncPlanNow().catch((err) => {
+          console.warn('Background plan cloud sync failed:', err);
+        });
+      }
     });
+
+    const unsubSync = PlanSyncService.subscribe((status) => {
+      setIsPlanSyncing(status.isSyncing);
+    });
+
+    if (AuthService.isAuthenticated()) {
+      PlanSyncService.syncPlanNow().catch((err) => {
+        console.warn('Initial mount plan cloud sync failed:', err);
+      });
+    }
+
+    return () => {
+      unsubAuth();
+      unsubSync();
+    };
   }, []);
+
+  // Debounced auto-save to cloud DynamoDB whenever plan inputs or saved plans change
+  useEffect(() => {
+    if (isAuthenticated && inputs.isConfigured) {
+      PlanSyncService.scheduleAutoSave(inputs, savedPlans);
+    }
+  }, [inputs, savedPlans, isAuthenticated]);
 
   // Automatically sync planner line items & profile names to cloud DynamoDB when authenticated or when inputs change
   useEffect(() => {
@@ -738,7 +769,12 @@ function App() {
 
   return (
     <div className="flex flex-col h-screen w-screen overflow-hidden bg-slate-950 text-slate-100 antialiased font-sans">
-      {!inputs.isConfigured && <OnboardingWizard onComplete={handleInputsChange} />}
+      {!inputs.isConfigured && (
+        <OnboardingWizard
+          onComplete={handleInputsChange}
+          onOpenCloudModal={() => setShowCloudModal(true)}
+        />
+      )}
 
       {/* Main Orchestration Dashboard Layout with Collapsible Sidebar */}
       <DashboardLayout
@@ -755,6 +791,8 @@ function App() {
         onOpenAbout={() => setShowAboutDialog(true)}
         onOpenCloudModal={() => setShowCloudModal(true)}
         isAuthenticated={isAuthenticated}
+        currentUserEmail={currentUserEmail}
+        isSyncing={isPlanSyncing}
         globalFontSize={globalFontSize}
         setGlobalFontSize={setGlobalFontSize}
       >

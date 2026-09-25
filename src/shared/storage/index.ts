@@ -25,3 +25,4 @@ export * from './defaultCategories';
 export * from './IndexedDbStorageAdapter';
 export * from './InMemoryStorageAdapter';
 export * from './AwsCloudStorageAdapter';
+export * from './PlanSyncService';

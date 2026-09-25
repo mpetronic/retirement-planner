@@ -185,6 +185,8 @@ interface SidebarNavigationProps {
   onOpenDisplaySettings?: () => void;
   onOpenCloudModal?: () => void;
   isAuthenticated?: boolean;
+  currentUserEmail?: string;
+  isSyncing?: boolean;
 }
 
 export const SidebarNavigation: React.FC<SidebarNavigationProps> = ({
@@ -197,6 +199,8 @@ export const SidebarNavigation: React.FC<SidebarNavigationProps> = ({
   onOpenDisplaySettings,
   onOpenCloudModal,
   isAuthenticated = false,
+  currentUserEmail,
+  isSyncing = false,
 }) => {
   const versionInfo = getVersionInfo();
   const isParamViewActive = activeView.startsWith('params-');
@@ -521,25 +525,41 @@ export const SidebarNavigation: React.FC<SidebarNavigationProps> = ({
           <button
             type="button"
             onClick={onOpenCloudModal}
-            title={isCollapsed ? (isAuthenticated ? 'Household Cloud Connected' : 'Connect Household Cloud') : undefined}
+            title={
+              isCollapsed
+                ? isAuthenticated
+                  ? `Household Cloud: ${currentUserEmail || 'Connected'}`
+                  : 'Connect Household Cloud'
+                : undefined
+            }
             className={`w-full flex items-center gap-2.5 px-2.5 py-1.5 text-xs rounded-xl transition-all cursor-pointer border ${
               isAuthenticated
                 ? 'bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-300 border-emerald-500/30'
                 : 'bg-slate-800/40 hover:bg-slate-800 text-amber-300 border-amber-500/30'
             } ${isCollapsed ? 'justify-center px-0' : ''}`}
           >
-            <Cloud className={`w-4 h-4 shrink-0 ${isAuthenticated ? 'text-emerald-400' : 'text-amber-400'}`} />
+            <Cloud
+              className={`w-4 h-4 shrink-0 ${
+                isAuthenticated
+                  ? isSyncing
+                    ? 'text-emerald-300 animate-pulse'
+                    : 'text-emerald-400'
+                  : 'text-amber-400'
+              }`}
+            />
             {!isCollapsed && (
               <span className="truncate flex items-center justify-between w-full font-medium">
-                <span>{isAuthenticated ? 'Cloud Synced' : 'Sign in to Cloud'}</span>
+                <span className="truncate pr-1">
+                  {isAuthenticated ? (currentUserEmail ? currentUserEmail.split('@')[0] : 'Cloud Synced') : 'Sign in to Cloud'}
+                </span>
                 <span
-                  className={`text-[9px] uppercase font-bold px-1.5 py-0.5 rounded border ${
+                  className={`text-[9px] uppercase font-bold px-1.5 py-0.5 rounded border shrink-0 ${
                     isAuthenticated
                       ? 'bg-emerald-500/20 text-emerald-400 border-emerald-500/30'
                       : 'bg-amber-500/20 text-amber-300 border-amber-500/30'
                   }`}
                 >
-                  {isAuthenticated ? 'LIVE' : 'OFFLINE'}
+                  {isAuthenticated ? (isSyncing ? 'SYNC' : 'LIVE') : 'OFFLINE'}
                 </span>
               </span>
             )}

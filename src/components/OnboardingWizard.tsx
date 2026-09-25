@@ -9,11 +9,14 @@ import {
   ChevronLeft,
   Heart,
   Smile,
-  Upload
+  Upload,
+  Cloud,
+  Fingerprint,
 } from 'lucide-react';
 
 interface OnboardingWizardProps {
   onComplete: (configuredInputs: AppStateInputs) => void;
+  onOpenCloudModal?: () => void;
 }
 
 const getBirthMonth = (dateStr: string | undefined): number => {
@@ -24,7 +27,7 @@ const getBirthMonth = (dateStr: string | undefined): number => {
   return isNaN(m) ? 1 : m;
 };
 
-export const OnboardingWizard: React.FC<OnboardingWizardProps> = ({ onComplete }) => {
+export const OnboardingWizard: React.FC<OnboardingWizardProps> = ({ onComplete, onOpenCloudModal }) => {
   const [step, setStep] = useState(1);
 
   const handleImportJSON = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -283,7 +286,17 @@ export const OnboardingWizard: React.FC<OnboardingWizardProps> = ({ onComplete }
               <p className="text-xs text-slate-400">Initialize your baseline scenario constraints</p>
             </div>
           </div>
-          <div className="z-10">
+          <div className="z-10 flex items-center gap-2">
+            {onOpenCloudModal && (
+              <button
+                type="button"
+                onClick={onOpenCloudModal}
+                className="cursor-pointer px-3.5 py-2 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 shadow-lg shadow-emerald-950/40"
+              >
+                <Cloud className="w-3.5 h-3.5" />
+                <span>Sign In to Household</span>
+              </button>
+            )}
             <label
               htmlFor="wizard-plan-input"
               className="cursor-pointer px-3.5 py-2 bg-slate-800 hover:bg-slate-750 border border-slate-700/60 text-slate-300 hover:text-slate-100 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5"
@@ -350,6 +363,27 @@ export const OnboardingWizard: React.FC<OnboardingWizardProps> = ({ onComplete }
             {/* STEP 1: Your Profile */}
             {step === 1 && (
               <div className="space-y-4 animate-fadeIn">
+                {onOpenCloudModal && (
+                  <div className="p-3.5 bg-emerald-500/10 border border-emerald-500/30 rounded-2xl flex items-center justify-between gap-3">
+                    <div className="flex items-center gap-2.5">
+                      <div className="w-9 h-9 rounded-xl bg-emerald-500/20 border border-emerald-500/30 flex items-center justify-center shrink-0">
+                        <Cloud className="w-4.5 h-4.5 text-emerald-400" />
+                      </div>
+                      <div>
+                        <h4 className="text-xs font-bold text-white">Already have an active household plan?</h4>
+                        <p className="text-[11px] text-slate-400">Sign in with your passkey or password to load your shared household plan immediately.</p>
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={onOpenCloudModal}
+                      className="px-3 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs font-bold shrink-0 transition-all flex items-center gap-1.5 shadow-md shadow-emerald-950/40 cursor-pointer"
+                    >
+                      <Fingerprint className="w-3.5 h-3.5" />
+                      <span>Sign In</span>
+                    </button>
+                  </div>
+                )}
                 <div className="p-4 bg-emerald-950/20 border border-emerald-900/30 rounded-2xl flex items-center gap-3">
                   <Smile className="w-8 h-8 text-emerald-400 shrink-0" />
                   <p className="text-xs text-slate-300 leading-relaxed">

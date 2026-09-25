@@ -9,6 +9,7 @@ import {
   Settings,
   X,
   Cloud,
+  Fingerprint,
 } from 'lucide-react';
 import { SidebarNavigation, ActiveViewType } from './SidebarNavigation';
 
@@ -31,6 +32,8 @@ interface DashboardLayoutProps {
   onOpenAbout?: () => void;
   onOpenCloudModal?: () => void;
   isAuthenticated?: boolean;
+  currentUserEmail?: string;
+  isSyncing?: boolean;
   globalFontSize: number;
   setGlobalFontSize: (size: number) => void;
   children: React.ReactNode;
@@ -69,6 +72,8 @@ export const DashboardLayout: React.FC<DashboardLayoutProps> = ({
   onOpenAbout,
   onOpenCloudModal,
   isAuthenticated = false,
+  currentUserEmail,
+  isSyncing = false,
   globalFontSize,
   setGlobalFontSize,
   children,
@@ -181,6 +186,8 @@ export const DashboardLayout: React.FC<DashboardLayoutProps> = ({
         onOpenDisplaySettings={() => setShowDisplaySettings(true)}
         onOpenCloudModal={onOpenCloudModal}
         isAuthenticated={isAuthenticated}
+        currentUserEmail={currentUserEmail}
+        isSyncing={isSyncing}
       />
 
       {/* Main Viewport & Layout */}
@@ -207,20 +214,48 @@ export const DashboardLayout: React.FC<DashboardLayoutProps> = ({
               <button
                 type="button"
                 onClick={onOpenCloudModal}
-                className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl text-xs font-semibold border transition-all cursor-pointer ${
+                className={`flex items-center gap-2 px-3 py-1.5 rounded-xl text-xs font-semibold border transition-all cursor-pointer ${
                   isAuthenticated
                     ? 'bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-300 border-emerald-500/30'
-                    : 'bg-slate-900/80 hover:bg-slate-800 text-amber-300 border-amber-500/30'
+                    : 'bg-emerald-600 hover:bg-emerald-500 text-white border-emerald-500/50 shadow-md shadow-emerald-950/40'
                 }`}
-                title={isAuthenticated ? 'Household Cloud Synced (AWS us-east-1)' : 'Connect Household Cloud (Sign In)'}
+                title={
+                  isAuthenticated
+                    ? `Household Cloud Synced: ${currentUserEmail || 'Active'}. Click to manage passkeys / sync.`
+                    : 'Sign into Household Cloud with Passkey or Password'
+                }
               >
-                <Cloud className={`w-3.5 h-3.5 ${isAuthenticated ? 'text-emerald-400' : 'text-amber-400'}`} />
-                <span className="hidden sm:inline font-bold">
-                  {isAuthenticated ? 'Cloud Synced' : 'Sign in to Cloud'}
+                <Cloud
+                  className={`w-3.5 h-3.5 ${
+                    isAuthenticated
+                      ? isSyncing
+                        ? 'text-emerald-300 animate-pulse'
+                        : 'text-emerald-400'
+                      : 'text-white'
+                  }`}
+                />
+                <span className="font-bold">
+                  {isAuthenticated ? (
+                    <span className="flex items-center gap-1.5">
+                      <span className="hidden sm:inline">
+                        {currentUserEmail ? currentUserEmail.split('@')[0] : 'Cloud Synced'}
+                      </span>
+                      <span className="sm:hidden">Cloud</span>
+                    </span>
+                  ) : (
+                    <span className="flex items-center gap-1.5">
+                      <span>Sign In</span>
+                      <Fingerprint className="w-3.5 h-3.5 hidden sm:inline text-emerald-200" />
+                    </span>
+                  )}
                 </span>
                 <span
                   className={`w-2 h-2 rounded-full ${
-                    isAuthenticated ? 'bg-emerald-400' : 'bg-amber-400 animate-pulse'
+                    isAuthenticated
+                      ? isSyncing
+                        ? 'bg-emerald-300 animate-ping'
+                        : 'bg-emerald-400'
+                      : 'bg-white animate-pulse'
                   }`}
                 />
               </button>
