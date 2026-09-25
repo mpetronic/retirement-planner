@@ -166,7 +166,8 @@ export const CloudAuthModal: React.FC<CloudAuthModalProps> = ({ isOpen, onClose,
     setSuccessMsg('');
     try {
       const isMobile = typeof navigator !== 'undefined' && /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
-      const defaultDeviceName = isMobile ? 'Mobile Phone' : 'Desktop / Laptop';
+      const savedDeviceName = AuthService.getRegisteredDeviceName();
+      const defaultDeviceName = savedDeviceName || (isMobile ? 'Mobile Phone' : 'Desktop / Laptop');
       const deviceName = window.prompt('Enter a nickname for this device (optional):', defaultDeviceName) || defaultDeviceName;
 
       const result = await AuthService.registerPasskey(deviceName);
@@ -377,19 +378,33 @@ export const CloudAuthModal: React.FC<CloudAuthModalProps> = ({ isOpen, onClose,
                 </p>
 
                 {AuthService.supportsPasskeys() && (
-                  <button
-                    type="button"
-                    disabled={isRegisteringPasskey}
-                    onClick={handleRegisterPasskey}
-                    className="w-full py-2 bg-emerald-950/40 hover:bg-emerald-900/50 text-emerald-300 border border-emerald-500/40 rounded-xl text-xs font-semibold flex items-center justify-center gap-2 transition-all active:scale-[0.98] disabled:opacity-50"
-                  >
-                    {isRegisteringPasskey ? (
-                      <RefreshCw className="w-3.5 h-3.5 animate-spin" />
-                    ) : (
-                      <Smartphone className="w-3.5 h-3.5" />
+                  <div className="space-y-2">
+                    {AuthService.getRegisteredDeviceName() && (
+                      <div className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-emerald-500/10 border border-emerald-500/20 text-emerald-300 text-[11px]">
+                        <CheckCircle2 className="w-3.5 h-3.5 shrink-0 text-emerald-400" />
+                        <span>This device is registered as: <strong className="text-white font-medium">{AuthService.getRegisteredDeviceName()}</strong></span>
+                      </div>
                     )}
-                    <span>{isRegisteringPasskey ? 'Registering with Biometrics...' : 'Register This Device (Face ID / Passkey)'}</span>
-                  </button>
+                    <button
+                      type="button"
+                      disabled={isRegisteringPasskey}
+                      onClick={handleRegisterPasskey}
+                      className="w-full py-2 bg-emerald-950/40 hover:bg-emerald-900/50 text-emerald-300 border border-emerald-500/40 rounded-xl text-xs font-semibold flex items-center justify-center gap-2 transition-all active:scale-[0.98] disabled:opacity-50"
+                    >
+                      {isRegisteringPasskey ? (
+                        <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                      ) : (
+                        <Smartphone className="w-3.5 h-3.5" />
+                      )}
+                      <span>
+                        {isRegisteringPasskey
+                          ? 'Registering with Biometrics...'
+                          : AuthService.getRegisteredDeviceName()
+                          ? 'Re-register / Update Device Passkey'
+                          : 'Register This Device (Face ID / Passkey)'}
+                      </span>
+                    </button>
+                  </div>
                 )}
 
                 {/* Registered passkeys list */}

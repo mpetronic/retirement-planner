@@ -136,6 +136,28 @@ class AuthServiceClass {
     }
   }
 
+  public getRegisteredDeviceName(): string | null {
+    if (typeof window === 'undefined') return null;
+    try {
+      return window.localStorage.getItem('retirement_planner_device_name');
+    } catch {
+      return null;
+    }
+  }
+
+  public setRegisteredDeviceName(name: string): void {
+    if (typeof window === 'undefined') return;
+    try {
+      if (name) {
+        window.localStorage.setItem('retirement_planner_device_name', name.trim());
+      } else {
+        window.localStorage.removeItem('retirement_planner_device_name');
+      }
+    } catch (err) {
+      console.warn('Failed to save device name:', err);
+    }
+  }
+
   public supportsPasskeys(): boolean {
     return typeof window !== 'undefined' && Boolean(window.PublicKeyCredential);
   }
@@ -289,7 +311,6 @@ class AuthServiceClass {
       body: JSON.stringify({
         AccessToken: this.currentSession.accessToken,
         Credential: serializedCredential,
-        FriendlyDeviceName: friendlyDeviceName || (typeof navigator !== 'undefined' ? `${navigator.userAgent.slice(0, 30)}` : 'Household Device'),
       }),
     });
 
@@ -298,6 +319,10 @@ class AuthServiceClass {
       const errorType = completeData.__type || completeData.name || 'WebAuthnCompletionError';
       const message = completeData.message || 'Failed to complete passkey registration with Cognito';
       throw new Error(`[${errorType}] ${message}`);
+    }
+
+    if (friendlyDeviceName) {
+      this.setRegisteredDeviceName(friendlyDeviceName);
     }
 
     return {
