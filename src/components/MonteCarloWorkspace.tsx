@@ -12,7 +12,8 @@ import {
   Calendar,
   RefreshCw,
   TrendingUp,
-  PieChart
+  PieChart,
+  DollarSign
 } from 'lucide-react';
 
 ChartJS.register(...registerables);
@@ -23,6 +24,8 @@ interface MonteCarloWorkspaceProps {
   simulateSurvivor: boolean;
   summary: MonteCarloSummary;
   globalScenario: 'flat' | 'p10' | 'p50' | 'p90';
+  useTodayDollars?: boolean;
+  setUseTodayDollars?: (val: boolean) => void;
 }
 
 export const MonteCarloWorkspace: React.FC<MonteCarloWorkspaceProps> = ({
@@ -30,6 +33,8 @@ export const MonteCarloWorkspace: React.FC<MonteCarloWorkspaceProps> = ({
   onChangeInputs,
   summary,
   globalScenario,
+  useTodayDollars = false,
+  setUseTodayDollars,
 }) => {
   const successRate = summary.successRate;
 
@@ -65,7 +70,8 @@ export const MonteCarloWorkspace: React.FC<MonteCarloWorkspaceProps> = ({
   };
 
   const formatPercent = (val: number) => {
-    return `${(val * 100).toFixed(1)}%`;
+    const rounded = Math.round((val * 100 + Number.EPSILON) * 100) / 100;
+    return `${rounded}%`;
   };
 
   // State update helpers
@@ -395,6 +401,48 @@ export const MonteCarloWorkspace: React.FC<MonteCarloWorkspaceProps> = ({
               <span>Regenerate Predictions</span>
             </button>
           </div>
+
+          {/* Valuation Currency Mode */}
+          {setUseTodayDollars && (
+            <div className="p-3.5 bg-slate-950/70 border border-slate-800/90 rounded-xl flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+              <div className="flex items-center gap-2.5">
+                <div className="p-1.5 rounded-lg bg-emerald-500/20 text-emerald-400">
+                  <DollarSign className="w-4 h-4" />
+                </div>
+                <div>
+                  <h4 className="text-xs font-bold text-slate-100">Valuation Currency Mode</h4>
+                  <p className="text-[11px] text-slate-400">
+                    Display simulations, percentiles, and ledgers in future nominal dollars or real purchasing power (discounted by CPI inflation).
+                  </p>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-1.5 bg-slate-900 p-1 rounded-xl border border-slate-800 shrink-0">
+                <button
+                  type="button"
+                  onClick={() => setUseTodayDollars(false)}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                    !useTodayDollars
+                      ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 shadow-sm'
+                      : 'text-slate-400 hover:text-slate-200'
+                  }`}
+                >
+                  Future Nominal $
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setUseTodayDollars(true)}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                    useTodayDollars
+                      ? 'bg-indigo-500/20 text-indigo-300 border border-indigo-500/40 shadow-sm'
+                      : 'text-slate-400 hover:text-slate-200'
+                  }`}
+                >
+                  Real Today's $ (Inflation Discounted)
+                </button>
+              </div>
+            </div>
+          )}
 
           {/* Section 1: Baseline Market Returns & Inflation (Expected Means) */}
           <div className="space-y-3">
@@ -899,7 +947,7 @@ export const MonteCarloWorkspace: React.FC<MonteCarloWorkspaceProps> = ({
                     <div className="p-2.5 bg-slate-900/60 rounded-lg border border-slate-800/80 text-[10px] text-slate-300 leading-normal">
                       {(inputs.monteCarloSettings.historicalSamplingStrategy ?? 'hybrid') === 'hybrid' && (
                         <span>
-                          <strong className="text-emerald-400">Hybrid (Recommended):</strong> ~350 trials replay 35-year contiguous chronological blocks (e.g. 1973–2007) to preserve exact historic bear market clusters, while ~650 trials resample random individual years to test novel sequence permutations.
+                          <strong className="text-emerald-400">Hybrid (Recommended):</strong> 35% of the configured trials replay 35-year contiguous chronological blocks (e.g. 1973–2007) to preserve exact historic bear market clusters, while 65% of the trials resample random individual years to test novel sequence permutations.
                         </span>
                       )}
                       {inputs.monteCarloSettings.historicalSamplingStrategy === 'block' && (

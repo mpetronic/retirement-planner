@@ -7,11 +7,9 @@ import {
 } from '../types';
 import {
   Wallet,
-  LineChart,
   Flame,
   FileSpreadsheet,
   RefreshCw,
-  DollarSign,
   User,
   Heart,
   HeartPulse,
@@ -25,7 +23,6 @@ import {
   Download,
   Upload,
   FileText,
-  Layers,
   Percent,
   Building,
 } from 'lucide-react';
@@ -44,8 +41,6 @@ interface ParametersWorkspaceProps {
   inputs: AppStateInputs;
   onChange: (newInputs: AppStateInputs | ((prev: AppStateInputs) => AppStateInputs)) => void;
   onReset: () => void;
-  useTodayDollars: boolean;
-  setUseTodayDollars: (val: boolean) => void;
   simulateSurvivor: boolean;
   setSimulateSurvivor: (val: boolean) => void;
   ledger: SimulationResultRow[];
@@ -57,8 +52,6 @@ export const ParametersWorkspace: React.FC<ParametersWorkspaceProps> = ({
   inputs,
   onChange,
   onReset,
-  useTodayDollars,
-  setUseTodayDollars,
   simulateSurvivor,
   setSimulateSurvivor,
   ledger,
@@ -959,7 +952,7 @@ export const ParametersWorkspace: React.FC<ParametersWorkspaceProps> = ({
               <span className="font-semibold text-slate-200 block">How Healthcare Cashflows Flow into the Simulation</span>
               <ul className="list-disc list-inside space-y-1.5 text-[11px] text-slate-400">
                 <li>
-                  <strong className="text-slate-300">Healthcare Cost Inflation:</strong> Controlled globally in <strong className="text-emerald-400">Monte Carlo Analysis &rarr; Model Estimation Config Panel</strong> (Active rate: <span className="font-mono text-emerald-400 font-bold">{(inputs.growthAssumptions.healthcareInflationRate * 100).toFixed(1)}%</span>/yr).
+                  <strong className="text-slate-300">Healthcare Cost Inflation:</strong> Controlled globally in <strong className="text-emerald-400">Monte Carlo Analysis &rarr; Model Estimation Config Panel</strong> (Active rate: <span className="font-mono text-emerald-400 font-bold">{(Math.round((inputs.growthAssumptions.healthcareInflationRate * 100 + Number.EPSILON) * 100) / 100)}%</span>/yr).
                 </li>
                 <li><strong className="text-slate-300">Pre-65 / Pre-Medicare:</strong> Uses itemized state plan premiums + out-of-pocket costs, or flat rate.</li>
                 <li><strong className="text-slate-300">Medicare Transition:</strong> Switches to Medicare Part B + Part D + Medigap Supplement when turning 65 or on your specified start date.</li>
@@ -1158,217 +1151,6 @@ export const ParametersWorkspace: React.FC<ParametersWorkspaceProps> = ({
                   step={1}
                 />
                 <span className="text-[10px] text-slate-500">Portion taxed at ordinary rates vs preferential LTCG</span>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* SECTION 3: ASSUMPTIONS & GROWTH */}
-      {activeSection === 'params-assumptions' && (
-        <div className="space-y-4 animate-in fade-in duration-200">
-          <div className="flex items-center justify-between pb-2 border-b border-slate-800">
-            <div className="flex items-center gap-2.5">
-              <div className="p-2 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-emerald-400">
-                <LineChart className="w-4 h-4" />
-              </div>
-              <div>
-                <h2 className="text-sm font-bold text-slate-100">Assumptions & Growth</h2>
-                <p className="text-[11px] text-slate-400">Market returns, inflation rates, asset allocation & valuation currency mode</p>
-              </div>
-            </div>
-          </div>
-
-          {/* Real vs Nominal Valuation Toggle (User Requested in Assumptions) */}
-          <div className="glass-panel bg-slate-900/80 border border-slate-800 rounded-2xl p-5 shadow-lg flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-            <div className="flex items-center gap-2.5">
-              <div className="p-1.5 rounded-lg bg-emerald-500/20 text-emerald-400">
-                <DollarSign className="w-4 h-4" />
-              </div>
-              <div>
-                <h3 className="text-sm font-bold text-slate-100">Valuation Currency Mode</h3>
-                <p className="text-xs text-slate-400">
-                  Display ledgers, charts, and estates in future nominal dollars or discounted real purchasing power.
-                </p>
-              </div>
-            </div>
-
-            <div className="flex items-center gap-1.5 bg-slate-950 p-1 rounded-xl border border-slate-800">
-              <button
-                type="button"
-                onClick={() => setUseTodayDollars(false)}
-                className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
-                  !useTodayDollars
-                    ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 shadow-sm'
-                    : 'text-slate-400 hover:text-slate-200'
-                }`}
-              >
-                Future Nominal $
-              </button>
-              <button
-                type="button"
-                onClick={() => setUseTodayDollars(true)}
-                className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
-                  useTodayDollars
-                    ? 'bg-indigo-500/20 text-indigo-300 border border-indigo-500/40 shadow-sm'
-                    : 'text-slate-400 hover:text-slate-200'
-                }`}
-              >
-                Real Today's $ (Inflation Discounted)
-              </button>
-            </div>
-          </div>
-
-          {/* Return & Inflation Rates */}
-          <div className="glass-panel bg-slate-900/80 border border-slate-800 rounded-2xl p-5 space-y-4 shadow-lg">
-            <div className="flex items-center justify-between border-b border-slate-800 pb-3">
-              <div className="flex items-center gap-2.5">
-                <div className="p-1.5 rounded-lg bg-emerald-500/20 text-emerald-400">
-                  <LineChart className="w-4 h-4" />
-                </div>
-                <div>
-                  <h3 className="text-sm font-bold text-slate-100">Expected Annual Returns & Inflation</h3>
-                  <p className="text-[10px] text-slate-400">Macroeconomic assumptions, CPI inflation & equity return rates</p>
-                </div>
-              </div>
-            </div>
-
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-              <div className="space-y-1">
-                <label className="text-xs text-slate-400 font-medium">Equity Mean Return Rate</label>
-                <NumericInput
-                  value={inputs.growthAssumptions.equityReturnRate * 100}
-                  onChange={(val) => updateNestedState('growthAssumptions', 'equityReturnRate', val !== null ? val / 100 : 0.07)}
-                  suffix="%"
-                  allowDecimals
-                  step={0.1}
-                />
-              </div>
-
-              <div className="space-y-1">
-                <label className="text-xs text-slate-400 font-medium">Fixed Income / Bond Return</label>
-                <NumericInput
-                  value={inputs.growthAssumptions.fixedIncomeReturnRate * 100}
-                  onChange={(val) => updateNestedState('growthAssumptions', 'fixedIncomeReturnRate', val !== null ? val / 100 : 0.04)}
-                  suffix="%"
-                  allowDecimals
-                  step={0.1}
-                />
-              </div>
-
-              <div className="space-y-1">
-                <label className="text-xs text-slate-400 font-medium">CPI Inflation Rate</label>
-                <NumericInput
-                  value={inputs.growthAssumptions.cpiInflationRate * 100}
-                  onChange={(val) => updateNestedState('growthAssumptions', 'cpiInflationRate', val !== null ? val / 100 : 0.025)}
-                  suffix="%"
-                  allowDecimals
-                  step={0.1}
-                />
-              </div>
-
-              <div className="space-y-1">
-                <label className="text-xs text-slate-400 font-medium">Healthcare Inflation Rate</label>
-                <NumericInput
-                  value={inputs.growthAssumptions.healthcareInflationRate * 100}
-                  onChange={(val) => updateNestedState('growthAssumptions', 'healthcareInflationRate', val !== null ? val / 100 : 0.05)}
-                  suffix="%"
-                  allowDecimals
-                  step={0.1}
-                />
-              </div>
-            </div>
-
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-2 border-t border-slate-800/80">
-              <div className="space-y-1">
-                <label className="text-xs text-slate-400 font-medium">Cash Yield Rate</label>
-                <NumericInput
-                  value={inputs.growthAssumptions.cashYieldRate != null ? inputs.growthAssumptions.cashYieldRate * 100 : 3.5}
-                  onChange={(val) => updateNestedState('growthAssumptions', 'cashYieldRate', val !== null ? val / 100 : 0.035)}
-                  suffix="%"
-                  allowDecimals
-                  step={0.1}
-                />
-              </div>
-
-              <div className="space-y-1">
-                <label className="text-xs text-slate-400 font-medium">Minimum Cash Reserve Buffer</label>
-                <NumericInput
-                  value={inputs.growthAssumptions.minCashReserveDollars !== undefined ? inputs.growthAssumptions.minCashReserveDollars : 100000}
-                  onChange={(val) => updateNestedState('growthAssumptions', 'minCashReserveDollars', val ?? 100000)}
-                  prefix="$"
-                />
-              </div>
-            </div>
-          </div>
-
-          {/* Asset Allocation Weights */}
-          <div className="glass-panel bg-slate-900/80 border border-slate-800 rounded-2xl p-5 space-y-4 shadow-lg">
-            <div className="flex items-center justify-between border-b border-slate-800 pb-3">
-              <div className="flex items-center gap-2.5">
-                <div className="p-1.5 rounded-lg bg-teal-500/20 text-teal-400">
-                  <Layers className="w-4 h-4" />
-                </div>
-                <div>
-                  <h3 className="text-sm font-bold text-slate-100">Asset Allocation (Equity Portion)</h3>
-                  <p className="text-[10px] text-slate-400">Equity vs Fixed Income allocation across account buckets</p>
-                </div>
-              </div>
-            </div>
-
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-              <div className="space-y-1.5">
-                <RangeSlider
-                  min={0}
-                  max={1}
-                  step={0.05}
-                  value={inputs.growthAssumptions.preTaxEquityPortion ?? 0.6}
-                  onChange={(val) => updateNestedState('growthAssumptions', 'preTaxEquityPortion', val)}
-                  renderLabel={(displayVal) => (
-                    <div className="flex justify-between text-xs font-semibold">
-                      <span className="text-slate-400">Pre-Tax IRA Equity %</span>
-                      <span className="text-emerald-400 font-mono">
-                        {Math.round(displayVal * 100)}%
-                      </span>
-                    </div>
-                  )}
-                />
-              </div>
-
-              <div className="space-y-1.5">
-                <RangeSlider
-                  min={0}
-                  max={1}
-                  step={0.05}
-                  value={inputs.growthAssumptions.taxableEquityPortion ?? 0.8}
-                  onChange={(val) => updateNestedState('growthAssumptions', 'taxableEquityPortion', val)}
-                  renderLabel={(displayVal) => (
-                    <div className="flex justify-between text-xs font-semibold">
-                      <span className="text-slate-400">Taxable Brokerage Equity %</span>
-                      <span className="text-emerald-400 font-mono">
-                        {Math.round(displayVal * 100)}%
-                      </span>
-                    </div>
-                  )}
-                />
-              </div>
-
-              <div className="space-y-1.5">
-                <RangeSlider
-                  min={0}
-                  max={1}
-                  step={0.05}
-                  value={inputs.growthAssumptions.rothEquityPortion ?? 1.0}
-                  onChange={(val) => updateNestedState('growthAssumptions', 'rothEquityPortion', val)}
-                  renderLabel={(displayVal) => (
-                    <div className="flex justify-between text-xs font-semibold">
-                      <span className="text-slate-400">Roth IRA Equity %</span>
-                      <span className="text-emerald-400 font-mono">
-                        {Math.round(displayVal * 100)}%
-                      </span>
-                    </div>
-                  )}
-                />
               </div>
             </div>
           </div>

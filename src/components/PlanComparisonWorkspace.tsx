@@ -237,19 +237,19 @@ export const PlanComparisonWorkspace: React.FC<PlanComparisonWorkspaceProps> = (
               <div className="grid grid-cols-2 sm:grid-cols-5 gap-2 bg-slate-950/50 border border-slate-800/60 p-3 rounded-xl text-[11px]">
                 <div>
                   <span className="text-slate-400 block">Equity Return:</span>
-                  <strong className="text-emerald-400 font-mono">{(pGrowth.equityReturnRate * 100).toFixed(1)}%</strong>
+                  <strong className="text-emerald-400 font-mono">{(Math.round((pGrowth.equityReturnRate * 100 + Number.EPSILON) * 100) / 100)}%</strong>
                 </div>
                 <div>
                   <span className="text-slate-400 block">Fixed Income:</span>
-                  <strong className="text-sky-400 font-mono">{(pGrowth.fixedIncomeReturnRate * 100).toFixed(1)}%</strong>
+                  <strong className="text-sky-400 font-mono">{(Math.round((pGrowth.fixedIncomeReturnRate * 100 + Number.EPSILON) * 100) / 100)}%</strong>
                 </div>
                 <div>
                   <span className="text-slate-400 block">CPI Inflation:</span>
-                  <strong className="text-amber-400 font-mono">{(pGrowth.cpiInflationRate * 100).toFixed(1)}%</strong>
+                  <strong className="text-amber-400 font-mono">{(Math.round((pGrowth.cpiInflationRate * 100 + Number.EPSILON) * 100) / 100)}%</strong>
                 </div>
                 <div>
                   <span className="text-slate-400 block">Healthcare Infl:</span>
-                  <strong className="text-rose-400 font-mono">{(pGrowth.healthcareInflationRate * 100).toFixed(1)}%</strong>
+                  <strong className="text-rose-400 font-mono">{(Math.round((pGrowth.healthcareInflationRate * 100 + Number.EPSILON) * 100) / 100)}%</strong>
                 </div>
                 <div>
                   <span className="text-slate-400 block">Min Cash Reserve:</span>

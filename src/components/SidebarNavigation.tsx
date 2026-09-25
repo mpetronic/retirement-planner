@@ -14,7 +14,6 @@ import {
   PanelLeftOpen,
   Users,
   Wallet,
-  LineChart,
   Flame,
   FileSpreadsheet,
   RefreshCw,
@@ -36,12 +35,12 @@ export type ActiveViewType =
   | 'monte-carlo'
   | 'compare'
   | 'actuals'
+  | 'bucket-management'
   | 'params-profiles'
   | 'params-filing-status'
   | 'params-residency'
   | 'params-healthcare'
   | 'params-accounts'
-  | 'params-assumptions'
   | 'params-expenses'
   | 'params-charity'
   | 'params-data'
@@ -99,6 +98,13 @@ const PRIMARY_NAV_ITEMS: NavItem[] = [
     icon: ClipboardCheck,
     description: 'Reconciliation & spending rules',
   },
+  {
+    id: 'bucket-management',
+    label: 'Bucket Management',
+    shortLabel: 'Buckets',
+    icon: Layers,
+    description: '3-Bucket strategy & bond ladder',
+  },
 ];
 
 const PARAMETER_NAV_ITEMS: NavItem[] = [
@@ -136,13 +142,6 @@ const PARAMETER_NAV_ITEMS: NavItem[] = [
     shortLabel: 'Accounts',
     icon: Wallet,
     description: 'Pre-tax, Roth, Taxable, Cash',
-  },
-  {
-    id: 'params-assumptions',
-    label: 'Assumptions & Growth',
-    shortLabel: 'Assumptions',
-    icon: LineChart,
-    description: 'Returns, Inflation & Valuation',
   },
   {
     id: 'params-expenses',

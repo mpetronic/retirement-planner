@@ -413,6 +413,7 @@ export interface AppStateInputs {
   fileSSA44LifeChangingEvent?: boolean; // Form SSA-44 Life-Changing Event (Work Stoppage / Wage Reduction)
   actualTracking?: ActualTrackingState;
   guardrailSettings?: GuardrailSettings;
+  bucketSettings?: BucketStrategySettings;
 }
 
 /**
@@ -533,3 +534,103 @@ export interface SavedPlan {
   inputs: AppStateInputs;
   createdAt: string;
 }
+
+export type BondLadderAssetType = 'treasury' | 'cd' | 'corporate' | 'agency' | 'other';
+
+export interface BondLadderHolding {
+  id: string;
+  rungNumber: number; // 1 to N
+  targetYear: number;
+  cusipOrName?: string;
+  assetType: BondLadderAssetType;
+  principal: number;
+  couponRate: number; // e.g. 0.045 for 4.5%
+  maturityDate?: string; // YYYY-MM-DD
+  status?: 'active' | 'matured' | 'paused';
+  notes?: string;
+}
+
+export interface BondLadderConfig {
+  rungsCount: number; // default: 5
+  rebuildMode: 'active' | 'paused';
+  targetRungFundingMode: 'match-expenses' | 'custom';
+  customRungAmount?: number | null;
+  defaultYieldRate: number; // e.g. 0.04 (4%)
+  holdings: BondLadderHolding[];
+}
+
+export interface CashBucketConfig {
+  targetRunwayMonths: number; // default: 24 (2 years)
+  customLivingReserveAmount?: number | null;
+  useDynamicExpenses: boolean; // default: true
+  rothTaxReserveMode: 'auto' | 'manual'; // default: 'auto'
+  customRothTaxReserveAmount?: number | null;
+  externalCheckingTransferFrequency: 'monthly' | 'quarterly' | 'annual';
+  customMonthlyTransferAmount?: number | null;
+}
+
+export interface GrowthBucketConfig {
+  targetEquityPercentage: number; // default: 1.0 (100%)
+  unencumberedHorizonYears: number; // default: 8
+}
+
+export interface BucketActionItem {
+  id: string;
+  year: number;
+  type:
+    | 'rung-maturity-distribute'
+    | 'external-checking-transfer'
+    | 'roth-tax-payment'
+    | 'ladder-rebuild'
+    | 'roth-conversion';
+  title: string;
+  description: string;
+  amount: number;
+  sourceBucket: 1 | 2 | 3 | 'none';
+  destBucket: 1 | 2 | 3 | 'checking' | 'tax-authority';
+  status: 'pending' | 'completed' | 'skipped';
+  completedDate?: string;
+}
+
+export type InitialFundingSource = 'cash-savings' | 'selling-equities';
+export type InitialEquityAccount = 'taxable' | 'pre-tax' | 'roth';
+
+export interface BucketStrategySettings {
+  strategyStartYear?: number; // e.g. 2027 (first full calendar year of 3-bucket strategy)
+  initialFundingSource?: InitialFundingSource;
+  initialEquitySourceAccount?: InitialEquityAccount;
+  initialStagedAmount?: number | null;
+  cash: CashBucketConfig;
+  income: BondLadderConfig;
+  growth: GrowthBucketConfig;
+  actionLedger: Record<number, BucketActionItem[]>;
+}
+
+export const DEFAULT_BUCKET_STRATEGY_SETTINGS: BucketStrategySettings = {
+  strategyStartYear: 2026,
+  initialFundingSource: 'cash-savings',
+  initialEquitySourceAccount: 'taxable',
+  initialStagedAmount: null,
+  cash: {
+    targetRunwayMonths: 24,
+    customLivingReserveAmount: null,
+    useDynamicExpenses: true,
+    rothTaxReserveMode: 'auto',
+    customRothTaxReserveAmount: null,
+    externalCheckingTransferFrequency: 'monthly',
+    customMonthlyTransferAmount: null,
+  },
+  income: {
+    rungsCount: 5,
+    rebuildMode: 'active',
+    targetRungFundingMode: 'match-expenses',
+    customRungAmount: null,
+    defaultYieldRate: 0.04,
+    holdings: [],
+  },
+  growth: {
+    targetEquityPercentage: 1.0,
+    unencumberedHorizonYears: 8,
+  },
+  actionLedger: {},
+};

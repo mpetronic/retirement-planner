@@ -205,7 +205,8 @@ export const InputControlSidebar: React.FC<InputControlSidebarProps> = ({
   };
 
   const formatPercent = (val: number) => {
-    return `${(val * 100).toFixed(1)}%`;
+    const rounded = Math.round((val * 100 + Number.EPSILON) * 100) / 100;
+    return `${rounded}%`;
   };
 
   React.useEffect(() => {
@@ -997,9 +998,9 @@ export const InputControlSidebar: React.FC<InputControlSidebarProps> = ({
                 </div>
                 <button
                   type="button"
-                  onClick={() => onNavigateTab?.(2)}
+                  onClick={() => onNavigateTab?.(3)}
                   className="p-1 text-slate-400 hover:text-emerald-400 hover:bg-slate-900 rounded-lg transition-colors cursor-pointer"
-                  title="Configure Model Assumptions & Allocations in Workspace 3"
+                  title="Configure Model Assumptions & Allocations in Monte Carlo Analysis"
                 >
                   <Settings className="w-4 h-4" />
                 </button>
