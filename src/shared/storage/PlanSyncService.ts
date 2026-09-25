@@ -202,6 +202,9 @@ class PlanSyncServiceSingleton {
     };
 
     window.localStorage.setItem('retirement_planner_inputs', JSON.stringify(normalizedInputs));
+    if (typeof remote.inputs.simulateSurvivor === 'boolean') {
+      window.localStorage.setItem('retirement_planner_survivor', JSON.stringify(remote.inputs.simulateSurvivor));
+    }
     if (remote.savedPlans) {
       window.localStorage.setItem('retirement_planner_saved_plans', JSON.stringify(remote.savedPlans));
     }

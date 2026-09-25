@@ -331,12 +331,12 @@ function App() {
     };
   }, []);
 
-  // Debounced auto-save to cloud DynamoDB whenever plan inputs or saved plans change
+  // Debounced auto-save to cloud DynamoDB whenever plan inputs, survivor toggle, or saved plans change
   useEffect(() => {
     if (isAuthenticated && inputs.isConfigured) {
-      PlanSyncService.scheduleAutoSave(inputs, savedPlans);
+      PlanSyncService.scheduleAutoSave({ ...inputs, simulateSurvivor }, savedPlans);
     }
-  }, [inputs, savedPlans, isAuthenticated]);
+  }, [inputs, savedPlans, isAuthenticated, simulateSurvivor]);
 
   // Automatically sync planner line items & profile names to cloud DynamoDB when authenticated or when inputs change
   useEffect(() => {
