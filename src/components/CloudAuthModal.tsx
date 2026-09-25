@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   Cloud,
   Lock,
@@ -12,8 +12,11 @@ import {
   Settings,
   X,
   ShieldCheck,
+  Smartphone,
+  Trash2,
+  Key,
 } from 'lucide-react';
-import { AuthService, AuthSession } from '../shared/auth/AuthService';
+import { AuthService, AuthSession, WebAuthnCredentialInfo } from '../shared/auth/AuthService';
 import { getCloudConfig, saveCloudConfig, CloudConfig } from '../shared/auth/config';
 import { getStorageAdapter, AwsCloudStorageAdapter } from '../shared/storage';
 
@@ -25,27 +28,75 @@ interface CloudAuthModalProps {
 
 export const CloudAuthModal: React.FC<CloudAuthModalProps> = ({ isOpen, onClose, onSyncComplete }) => {
   const [session, setSession] = useState<AuthSession | null>(() => AuthService.getSession());
-  const [email, setEmail] = useState<string>('');
+  const [email, setEmail] = useState<string>(() => AuthService.getLastUsedEmail() || '');
   const [password, setPassword] = useState<string>('');
   const [isLoading, setIsLoading] = useState<boolean>(false);
+  const [isPasskeyLoading, setIsPasskeyLoading] = useState<boolean>(false);
+  const [isRegisteringPasskey, setIsRegisteringPasskey] = useState<boolean>(false);
   const [isSyncing, setIsSyncing] = useState<boolean>(false);
   const [errorMsg, setErrorMsg] = useState<string>('');
   const [successMsg, setSuccessMsg] = useState<string>('');
   const [showConfig, setShowConfig] = useState<boolean>(false);
+  const [passkeys, setPasskeys] = useState<WebAuthnCredentialInfo[]>([]);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
 
   // Cloud Config state for overrides
   const [configForm, setConfigForm] = useState<CloudConfig>(() => getCloudConfig());
 
+  const fetchPasskeys = useCallback(async () => {
+    if (!session) return;
+    try {
+      const keys = await AuthService.listPasskeys();
+      setPasskeys(keys);
+    } catch {
+      // Ignored for UI fallback
+    }
+  }, [session]);
+
   useEffect(() => {
-    return AuthService.subscribe(s => {
+    const unsub = AuthService.subscribe(s => {
       setSession(s);
-      if (s) {
+      if (s?.email) {
         setEmail(s.email);
+      } else if (!email) {
+        const last = AuthService.getLastUsedEmail();
+        if (last) setEmail(last);
       }
     });
-  }, []);
+    return () => unsub();
+  }, [email]);
+
+  useEffect(() => {
+    if (isOpen && session) {
+      fetchPasskeys();
+    }
+  }, [isOpen, session, fetchPasskeys]);
 
   if (!isOpen) return null;
+
+  const handleSyncNow = async () => {
+    setIsSyncing(true);
+    setErrorMsg('');
+    try {
+      const adapter = getStorageAdapter();
+      if (adapter instanceof AwsCloudStorageAdapter) {
+        await adapter.getCategories();
+        const currentYear = new Date().getFullYear();
+        await adapter.getExpenses(currentYear);
+        const { syncedCount } = await adapter.flushPendingExpenses();
+        setSuccessMsg(syncedCount > 0 ? `Synced ${syncedCount} pending expenses to cloud!` : 'Cloud sync up to date.');
+      }
+      if (onSyncComplete) {
+        onSyncComplete();
+      }
+      setTimeout(() => setSuccessMsg(''), 2500);
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Sync failed';
+      setErrorMsg(msg);
+    } finally {
+      setIsSyncing(false);
+    }
+  };
 
   const handleSignIn = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -77,50 +128,87 @@ export const CloudAuthModal: React.FC<CloudAuthModalProps> = ({ isOpen, onClose,
   };
 
   const handlePasskeySignIn = async () => {
-    setIsLoading(true);
+    setIsPasskeyLoading(true);
+    setErrorMsg('');
+    setSuccessMsg('');
+    try {
+      if (!AuthService.supportsPasskeys()) {
+        throw new Error('Passkeys / Biometrics are not supported on this browser or platform.');
+      }
+      const targetEmail = email.trim() || AuthService.getLastUsedEmail() || '';
+      if (!targetEmail) {
+        throw new Error('Please enter your account email address above to sign in with your passkey.');
+      }
+
+      const newSession = await AuthService.signInWithPasskey(targetEmail);
+      setSuccessMsg(`Welcome, ${newSession.email}!`);
+
+      // Trigger initial cloud sync
+      await handleSyncNow();
+      setTimeout(() => {
+        setSuccessMsg('');
+      }, 2000);
+    } catch (err: unknown) {
+      if (err instanceof Error && err.name === 'NotAllowedError') {
+        setErrorMsg('Passkey prompt was cancelled or timed out.');
+      } else {
+        const msg = err instanceof Error ? err.message : 'Passkey sign-in failed';
+        setErrorMsg(msg);
+      }
+    } finally {
+      setIsPasskeyLoading(false);
+    }
+  };
+
+  const handleRegisterPasskey = async () => {
+    setIsRegisteringPasskey(true);
+    setErrorMsg('');
+    setSuccessMsg('');
+    try {
+      const isMobile = typeof navigator !== 'undefined' && /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
+      const defaultDeviceName = isMobile ? 'Mobile Phone' : 'Desktop / Laptop';
+      const deviceName = window.prompt('Enter a nickname for this device (optional):', defaultDeviceName) || defaultDeviceName;
+
+      const result = await AuthService.registerPasskey(deviceName);
+      setSuccessMsg(result.message);
+      await fetchPasskeys();
+      setTimeout(() => setSuccessMsg(''), 4000);
+    } catch (err: unknown) {
+      if (err instanceof Error && err.name === 'NotAllowedError') {
+        setErrorMsg('Passkey registration was cancelled or timed out.');
+      } else {
+        const msg = err instanceof Error ? err.message : 'Failed to register passkey';
+        setErrorMsg(msg);
+      }
+    } finally {
+      setIsRegisteringPasskey(false);
+    }
+  };
+
+  const handleDeletePasskey = async (credentialId: string) => {
+    if (!window.confirm('Are you sure you want to remove this passkey from your account?')) {
+      return;
+    }
+    setDeletingId(credentialId);
     setErrorMsg('');
     try {
-      if (!window.PublicKeyCredential) {
-        throw new Error('Passkeys are not supported on this browser or device.');
-      }
-      // Informative helper for Passkey authentication
-      setErrorMsg('Passkey sign-in requires an initial password sign-in to register this device.');
+      await AuthService.deletePasskey(credentialId);
+      setSuccessMsg('Passkey removed.');
+      await fetchPasskeys();
+      setTimeout(() => setSuccessMsg(''), 2000);
     } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : 'Passkey sign-in failed';
+      const msg = err instanceof Error ? err.message : 'Failed to delete passkey';
       setErrorMsg(msg);
     } finally {
-      setIsLoading(false);
+      setDeletingId(null);
     }
   };
 
   const handleSignOut = () => {
     AuthService.signOut();
+    setPasskeys([]);
     setSuccessMsg('Signed out of household cloud.');
     setTimeout(() => setSuccessMsg(''), 2000);
-  };
-
-  const handleSyncNow = async () => {
-    setIsSyncing(true);
-    setErrorMsg('');
-    try {
-      const adapter = getStorageAdapter();
-      if (adapter instanceof AwsCloudStorageAdapter) {
-        await adapter.getCategories();
-        const currentYear = new Date().getFullYear();
-        await adapter.getExpenses(currentYear);
-        const { syncedCount } = await adapter.flushPendingExpenses();
-        setSuccessMsg(syncedCount > 0 ? `Synced ${syncedCount} pending expenses to cloud!` : 'Cloud sync up to date.');
-      }
-      if (onSyncComplete) {
-        onSyncComplete();
-      }
-      setTimeout(() => setSuccessMsg(''), 2500);
-    } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : 'Sync failed';
-      setErrorMsg(msg);
-    } finally {
-      setIsSyncing(false);
-    }
   };
 
   const handleSaveConfig = (e: React.FormEvent) => {
@@ -173,7 +261,7 @@ export const CloudAuthModal: React.FC<CloudAuthModalProps> = ({ isOpen, onClose,
           {errorMsg && (
             <div className="p-3 bg-rose-500/10 border border-rose-500/30 rounded-xl text-rose-300 text-xs flex items-start gap-2 animate-in fade-in">
               <AlertCircle className="w-4 h-4 shrink-0 mt-0.5 text-rose-400" />
-              <div className="flex-1 font-medium">{errorMsg}</div>
+              <div className="flex-1 font-medium leading-relaxed">{errorMsg}</div>
             </div>
           )}
 
@@ -272,6 +360,81 @@ export const CloudAuthModal: React.FC<CloudAuthModalProps> = ({ isOpen, onClose,
                 </div>
               </div>
 
+              {/* Passkey & Biometric Device Registration */}
+              <div className="bg-slate-950/60 border border-slate-800 rounded-xl p-4 space-y-3">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-semibold text-slate-200 flex items-center gap-1.5">
+                    <Fingerprint className="w-4 h-4 text-emerald-400" />
+                    Passkeys & Biometrics
+                  </span>
+                  <span className="text-[11px] text-slate-400">
+                    {AuthService.supportsPasskeys() ? 'Supported on this device' : 'Unsupported'}
+                  </span>
+                </div>
+
+                <p className="text-[11px] text-slate-400 leading-relaxed">
+                  Register this phone or computer to sign in seamlessly using Face ID, Touch ID, or your device passcode without typing your password.
+                </p>
+
+                {AuthService.supportsPasskeys() && (
+                  <button
+                    type="button"
+                    disabled={isRegisteringPasskey}
+                    onClick={handleRegisterPasskey}
+                    className="w-full py-2 bg-emerald-950/40 hover:bg-emerald-900/50 text-emerald-300 border border-emerald-500/40 rounded-xl text-xs font-semibold flex items-center justify-center gap-2 transition-all active:scale-[0.98] disabled:opacity-50"
+                  >
+                    {isRegisteringPasskey ? (
+                      <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                    ) : (
+                      <Smartphone className="w-3.5 h-3.5" />
+                    )}
+                    <span>{isRegisteringPasskey ? 'Registering with Biometrics...' : 'Register This Device (Face ID / Passkey)'}</span>
+                  </button>
+                )}
+
+                {/* Registered passkeys list */}
+                {passkeys.length > 0 && (
+                  <div className="pt-2 border-t border-slate-800/80 space-y-2">
+                    <span className="text-[11px] font-semibold text-slate-400 block">Registered Devices ({passkeys.length})</span>
+                    <div className="space-y-1.5">
+                      {passkeys.map(pk => (
+                        <div
+                          key={pk.credentialId}
+                          className="flex items-center justify-between p-2 rounded-lg bg-slate-900/90 border border-slate-800 text-xs text-slate-300"
+                        >
+                          <div className="flex items-center gap-2 overflow-hidden pr-2">
+                            <Key className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+                            <div className="truncate">
+                              <span className="font-medium text-white block truncate">
+                                {pk.friendlyCredentialName || 'Device Passkey'}
+                              </span>
+                              {pk.createdAt && (
+                                <span className="text-[10px] text-slate-500">
+                                  Added {new Date(pk.createdAt).toLocaleDateString()}
+                                </span>
+                              )}
+                            </div>
+                          </div>
+                          <button
+                            type="button"
+                            disabled={deletingId === pk.credentialId}
+                            onClick={() => handleDeletePasskey(pk.credentialId)}
+                            className="p-1.5 text-slate-500 hover:text-rose-400 hover:bg-rose-500/10 rounded-md transition-colors shrink-0"
+                            title="Remove Passkey"
+                          >
+                            {deletingId === pk.credentialId ? (
+                              <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                            ) : (
+                              <Trash2 className="w-3.5 h-3.5" />
+                            )}
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+
               {/* Action Buttons */}
               <div className="space-y-2">
                 <button
@@ -316,13 +479,34 @@ export const CloudAuthModal: React.FC<CloudAuthModalProps> = ({ isOpen, onClose,
                 </div>
               </div>
 
+              {/* Passkey Fast Sign-In Option */}
+              <button
+                type="button"
+                disabled={isPasskeyLoading || isLoading}
+                onClick={handlePasskeySignIn}
+                className="w-full py-2.5 bg-emerald-600/20 hover:bg-emerald-600/30 text-emerald-300 border border-emerald-500/40 rounded-xl text-xs font-semibold flex items-center justify-center gap-2 transition-all active:scale-[0.98] disabled:opacity-50"
+              >
+                {isPasskeyLoading ? (
+                  <RefreshCw className="w-4 h-4 animate-spin" />
+                ) : (
+                  <Fingerprint className="w-4 h-4 text-emerald-400" />
+                )}
+                <span>{isPasskeyLoading ? 'Authenticating with Biometrics...' : 'Sign in with Passkey / Face ID'}</span>
+              </button>
+
+              <div className="relative flex items-center justify-center my-2">
+                <div className="border-t border-slate-800 w-full" />
+                <span className="bg-slate-900 px-2 text-[10px] text-slate-500 uppercase tracking-widest font-semibold absolute">
+                  or with password
+                </span>
+              </div>
+
               <div className="space-y-1">
                 <label className="block text-xs font-medium text-slate-300">Password</label>
                 <div className="relative flex items-center">
                   <Lock className="w-4 h-4 text-slate-500 absolute left-3 pointer-events-none" />
                   <input
                     type="password"
-                    required
                     placeholder="••••••••"
                     value={password}
                     onChange={e => setPassword(e.target.value)}
@@ -333,34 +517,17 @@ export const CloudAuthModal: React.FC<CloudAuthModalProps> = ({ isOpen, onClose,
 
               <button
                 type="submit"
-                disabled={isLoading}
-                className="w-full py-2.5 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white rounded-xl text-xs font-bold flex items-center justify-center gap-2 shadow-lg shadow-emerald-950/40 transition-all disabled:opacity-50"
+                disabled={isLoading || isPasskeyLoading}
+                className="w-full py-2.5 bg-slate-800 hover:bg-slate-700 text-white border border-slate-700 rounded-xl text-xs font-semibold flex items-center justify-center gap-2 shadow-lg shadow-emerald-950/40 transition-all disabled:opacity-50"
               >
                 {isLoading ? (
                   <RefreshCw className="w-4 h-4 animate-spin" />
                 ) : (
                   <>
                     <User className="w-4 h-4" />
-                    <span>Sign In to Household</span>
+                    <span>Sign In with Password</span>
                   </>
                 )}
-              </button>
-
-              <div className="relative flex items-center justify-center my-2">
-                <div className="border-t border-slate-800 w-full" />
-                <span className="bg-slate-900 px-2 text-[10px] text-slate-500 uppercase tracking-widest font-semibold absolute">
-                  or
-                </span>
-              </div>
-
-              <button
-                type="button"
-                disabled={isLoading}
-                onClick={handlePasskeySignIn}
-                className="w-full py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 rounded-xl text-xs font-semibold flex items-center justify-center gap-2 transition-all active:scale-[0.98]"
-              >
-                <Fingerprint className="w-4 h-4 text-emerald-400" />
-                <span>Sign in with Passkey / Face ID</span>
               </button>
             </form>
           )}
