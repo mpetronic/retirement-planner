@@ -37,9 +37,18 @@ import { AboutDialog } from './components/AboutDialog';
 import { OnboardingWizard } from './components/OnboardingWizard';
 import { CloudAuthModal } from './components/CloudAuthModal';
 import { LandingPage } from './components/LandingPage';
+import { NotFoundPage } from './components/NotFoundPage';
 import { AuthService } from './shared/auth/AuthService';
 import { getStorageAdapter, PlanSyncService } from './shared/storage';
 import { syncPlannerCatalogToCloudStorage } from './shared/utils/plannerCategories';
+import { SAMPLE_DEMO_PLAN } from './shared/utils/sampleDemoPlan';
+import { isLocalhostEnvironment, resolveAppMode } from './shared/utils/appMode';
+
+const VALID_PLANNER_PATHS = new Set(['', '/', '/planner', '/planner/', '/index.html']);
+
+function isKnownPlannerPath(pathname: string): boolean {
+  return VALID_PLANNER_PATHS.has(pathname.trim().toLowerCase());
+}
 
 // Default initial state matching specifications
 const DEFAULT_INPUTS: AppStateInputs = {
@@ -291,6 +300,7 @@ const TAB_INDEX_TO_VIEW: Record<number, ActiveViewType> = {
 
 function App() {
   const [inputs, setInputs] = useLocalStorage<AppStateInputs>('retirement_planner_inputs', DEFAULT_INPUTS);
+  const [demoInputs, setDemoInputs] = useState<AppStateInputs>(() => JSON.parse(JSON.stringify(SAMPLE_DEMO_PLAN)));
   const [activeView, setActiveView] = useLocalStorage<ActiveViewType>('retirement_planner_active_view', 'overview');
   const [simulateSurvivor, setSimulateSurvivor] = useLocalStorage<boolean>('retirement_planner_survivor', false);
   const [savedPlans, setSavedPlans] = useLocalStorage<SavedPlan[]>('retirement_planner_saved_plans', []);
@@ -304,6 +314,20 @@ function App() {
   const [isPlanSyncing, setIsPlanSyncing] = useState<boolean>(false);
   const [documentationSectionId, setDocumentationSectionId] = useState<string>('overview');
 
+  const handleEnterDemo = () => {
+    setDemoInputs(JSON.parse(JSON.stringify(SAMPLE_DEMO_PLAN)));
+    setIsDemoMode(true);
+    PlanSyncService.setDemoMode(true);
+  };
+
+  const handleExitDemo = () => {
+    setIsDemoMode(false);
+    PlanSyncService.setDemoMode(false);
+  };
+
+  // Active inputs: isolated in-memory sample plan for Demo Sandbox, or real plan otherwise
+  const activeInputs = isDemoMode ? demoInputs : inputs;
+
   // Listen to Cognito auth state changes and initialize 2-way cloud plan sync
   useEffect(() => {
     const unsubAuth = AuthService.subscribe((session) => {
@@ -312,6 +336,7 @@ function App() {
       setCurrentUserEmail(session?.email || '');
       if (auth) {
         setIsDemoMode(false);
+        PlanSyncService.setDemoMode(false);
         PlanSyncService.syncPlanNow().catch((err) => {
           console.warn('Background plan cloud sync failed:', err);
         });
@@ -336,25 +361,25 @@ function App() {
 
   // Debounced auto-save to cloud DynamoDB whenever plan inputs, survivor toggle, or saved plans change
   useEffect(() => {
-    if (isAuthenticated && inputs.isConfigured) {
+    if (!isDemoMode && isAuthenticated && inputs.isConfigured) {
       PlanSyncService.scheduleAutoSave({ ...inputs, simulateSurvivor }, savedPlans);
     }
-  }, [inputs, savedPlans, isAuthenticated, simulateSurvivor]);
+  }, [inputs, savedPlans, isAuthenticated, simulateSurvivor, isDemoMode]);
 
   // Automatically sync planner line items & profile names to cloud DynamoDB when authenticated or when inputs change
   useEffect(() => {
-    if (inputs.detailedExpenses && inputs.detailedExpenses.catalog) {
+    if (!isDemoMode && activeInputs.detailedExpenses && activeInputs.detailedExpenses.catalog) {
       const adapter = getStorageAdapter();
       const profileNames = {
-        primaryName: inputs.you?.name || 'Primary',
-        spouseName: inputs.wife?.name || 'Spouse',
-        isSingleFiler: Boolean(inputs.isSingleFiler),
+        primaryName: activeInputs.you?.name || 'Primary',
+        spouseName: activeInputs.wife?.name || 'Spouse',
+        isSingleFiler: Boolean(activeInputs.isSingleFiler),
       };
-      syncPlannerCatalogToCloudStorage(inputs.detailedExpenses, adapter, profileNames).catch((err) => {
+      syncPlannerCatalogToCloudStorage(activeInputs.detailedExpenses, adapter, profileNames).catch((err) => {
         console.warn('Failed to background sync catalog to storage:', err);
       });
     }
-  }, [inputs.detailedExpenses, inputs.you?.name, inputs.wife?.name, inputs.isSingleFiler, isAuthenticated]);
+  }, [activeInputs.detailedExpenses, activeInputs.you?.name, activeInputs.wife?.name, activeInputs.isSingleFiler, isAuthenticated, isDemoMode]);
 
   const handleOpenDocumentation = (sectionId?: string) => {
     setDocumentationSectionId(sectionId || 'overview');
@@ -371,6 +396,24 @@ function App() {
 
   // Synchronize inputs while seamlessly restoring simulateSurvivor if present in imported/loaded plan
   const handleInputsChange = (newInputs: AppStateInputs | ((prev: AppStateInputs) => AppStateInputs)) => {
+    if (isDemoMode) {
+      if (typeof newInputs === 'function') {
+        setDemoInputs((prev) => {
+          const next = newInputs(prev);
+          if (typeof next.simulateSurvivor === 'boolean') {
+            setSimulateSurvivor(next.simulateSurvivor);
+          }
+          return next;
+        });
+      } else {
+        if (typeof newInputs.simulateSurvivor === 'boolean') {
+          setSimulateSurvivor(newInputs.simulateSurvivor);
+        }
+        setDemoInputs(newInputs);
+      }
+      return;
+    }
+
     if (typeof newInputs === 'function') {
       setInputs((prev) => {
         const next = newInputs(prev);
@@ -437,10 +480,10 @@ function App() {
   }, [setActiveView]);
 
   // Defer heavy mathematical calculations to maintain 60+ FPS UI responsiveness during slider drag/typing
-  const deferredInputs = useDeferredValue(inputs);
+  const deferredInputs = useDeferredValue(activeInputs);
   const deferredSimulateSurvivor = useDeferredValue(simulateSurvivor);
   const [isSimulatingMC, setIsSimulatingMC] = useState(false);
-  const isSimulating = inputs !== deferredInputs || simulateSurvivor !== deferredSimulateSurvivor || isSimulatingMC;
+  const isSimulating = activeInputs !== deferredInputs || simulateSurvivor !== deferredSimulateSurvivor || isSimulatingMC;
 
   // Global persisted scenario for all worksheets
   const [globalScenario, setGlobalScenario] = useLocalStorage<'flat' | 'p10' | 'p50' | 'p90'>(
@@ -661,10 +704,10 @@ function App() {
     wifeAge: number,
     strategy?: 'flat' | 'fill-to-target'
   ) => {
-    const finalStrategy = strategy || inputs.rothConversionStrategy;
-    const finalTargetValue = targetValue !== null ? targetValue : inputs.rothConversionTargetValue;
+    const finalStrategy = strategy || activeInputs.rothConversionStrategy;
+    const finalTargetValue = targetValue !== null ? targetValue : activeInputs.rothConversionTargetValue;
 
-    setInputs((prev) => ({
+    handleInputsChange((prev) => ({
       ...prev,
       rothConversionStrategy: finalStrategy,
       annualRothConversion: annualConversion,
@@ -679,7 +722,7 @@ function App() {
 
   // Handle changing conversion strategy while preserving last selected target values and active scenario IDs
   const handleUpdateStrategy = (strategy: 'flat' | 'fill-to-target' | 'custom') => {
-    setInputs((prev) => {
+    handleInputsChange((prev) => {
       let targetValue = prev.rothConversionTargetValue;
       if (strategy === 'fill-to-target' && !targetValue) {
         targetValue = selectedQuickFill || DEFAULT_FILL_TO_TARGET_VALUE;
@@ -699,7 +742,7 @@ function App() {
 
   // Handle saving a custom Roth scenario
   const handleSaveCustomRothScenario = (scenario: CustomRothScenario, applyImmediately: boolean = true) => {
-    setInputs((prev) => {
+    handleInputsChange((prev) => {
       const existing = prev.customRothScenarios || [];
       const index = existing.findIndex((s) => s.id === scenario.id);
       let updated: CustomRothScenario[];
@@ -721,7 +764,7 @@ function App() {
 
   // Handle deleting a custom Roth scenario
   const handleDeleteCustomRothScenario = (scenarioId: string) => {
-    setInputs((prev) => {
+    handleInputsChange((prev) => {
       const existing = prev.customRothScenarios || [];
       const updated = existing.filter((s) => s.id !== scenarioId);
       const isDeletingActive = prev.activeCustomScenarioId === scenarioId;
@@ -738,7 +781,7 @@ function App() {
 
   // Handle selecting active custom Roth scenario
   const handleSelectCustomRothScenario = (scenarioId: string) => {
-    setInputs((prev) => ({
+    handleInputsChange((prev) => ({
       ...prev,
       rothConversionStrategy: 'custom',
       activeCustomScenarioId: scenarioId,
@@ -747,7 +790,7 @@ function App() {
 
   // Handle changing target MAGI threshold limit
   const handleUpdateTargetValue = (val: number | null) => {
-    setInputs((prev) => ({
+    handleInputsChange((prev) => ({
       ...prev,
       rothConversionTargetValue: val,
     }));
@@ -758,10 +801,10 @@ function App() {
 
   // Keep selectedQuickFill synchronized with rothConversionStrategy & rothConversionTargetValue
   useEffect(() => {
-    if (inputs.rothConversionStrategy === 'fill-to-target' && inputs.rothConversionTargetValue !== null) {
-      setSelectedQuickFill(inputs.rothConversionTargetValue);
+    if (activeInputs.rothConversionStrategy === 'fill-to-target' && activeInputs.rothConversionTargetValue !== null) {
+      setSelectedQuickFill(activeInputs.rothConversionTargetValue);
     }
-  }, [inputs.rothConversionStrategy, inputs.rothConversionTargetValue, setSelectedQuickFill]);
+  }, [activeInputs.rothConversionStrategy, activeInputs.rothConversionTargetValue, setSelectedQuickFill]);
 
   // Sync title and head tags for SEO best practices
   useEffect(() => {
@@ -770,12 +813,25 @@ function App() {
 
   const isParamView = activeView.startsWith('params-');
 
-  if (!isAuthenticated && !isDemoMode) {
+  // Check for unknown bogus paths (e.g. /abc, /whatever) and render 404 page
+  const currentPath = typeof window !== 'undefined' ? window.location.pathname : '/';
+  if (!isKnownPlannerPath(currentPath)) {
+    return (
+      <NotFoundPage
+        onNavigateHome={() => {
+          window.location.href = '/planner';
+        }}
+      />
+    );
+  }
+
+  // If not authenticated and not in demo mode, and on production (not localhost dev mode), show Landing Page
+  if (!isAuthenticated && !isDemoMode && !isLocalhostEnvironment()) {
     return (
       <div className="min-h-screen w-screen bg-slate-950 text-slate-100 antialiased font-sans">
         <LandingPage
           onSignIn={() => setShowCloudModal(true)}
-          onExploreDemo={() => setIsDemoMode(true)}
+          onExploreDemo={handleEnterDemo}
         />
         <CloudAuthModal
           isOpen={showCloudModal}
@@ -785,9 +841,11 @@ function App() {
     );
   }
 
+  const currentAppMode = resolveAppMode(isDemoMode, isAuthenticated);
+
   return (
     <div className="flex flex-col h-screen w-screen overflow-hidden bg-slate-950 text-slate-100 antialiased font-sans">
-      {!inputs.isConfigured && (
+      {!activeInputs.isConfigured && (
         <OnboardingWizard
           onComplete={handleInputsChange}
           onOpenCloudModal={() => setShowCloudModal(true)}
@@ -799,7 +857,7 @@ function App() {
         ledger={displayActiveLedger}
         parallelLedgers={displayParallelLedgers}
         successRate={monteCarloSummary.successRate}
-        inputs={inputs}
+        inputs={activeInputs}
         activeView={activeView}
         onNavigate={handleNavigate}
         globalScenario={globalScenario}
@@ -811,6 +869,9 @@ function App() {
         isAuthenticated={isAuthenticated}
         currentUserEmail={currentUserEmail}
         isSyncing={isPlanSyncing}
+        isDemoMode={isDemoMode}
+        onExitDemo={handleExitDemo}
+        appMode={currentAppMode}
         globalFontSize={globalFontSize}
         setGlobalFontSize={setGlobalFontSize}
       >
@@ -819,7 +880,7 @@ function App() {
           <ParametersWorkspace
             activeSection={activeView}
             onNavigateSection={handleNavigate}
-            inputs={inputs}
+            inputs={activeInputs}
             onChange={handleInputsChange}
             onReset={() => handleInputsChange(DEFAULT_INPUTS)}
             simulateSurvivor={simulateSurvivor}
@@ -833,7 +894,7 @@ function App() {
         {activeView === 'overview' && (
           <BracketMapChart
             ledger={displayActiveLedger}
-            inputs={inputs}
+            inputs={activeInputs}
             simulateSurvivor={simulateSurvivor}
             guidelineOverlay={chartGuidelineOverlay}
             setGuidelineOverlay={setChartGuidelineOverlay}
@@ -844,7 +905,7 @@ function App() {
         {activeView === 'taxable-income' && (
           <TaxableIncomeWorkspace
             ledger={displayActiveLedger}
-            inputs={inputs}
+            inputs={activeInputs}
             simulateSurvivor={simulateSurvivor}
             activeScenarioSequence={activeSequence}
             onApplyOptimization={handleApplyOptimization}
@@ -863,7 +924,7 @@ function App() {
         {activeView === 'lookback-ledger' && (
           <LookbackLedgerTable
             ledger={displayActiveLedger}
-            inputs={inputs}
+            inputs={activeInputs}
             simulateSurvivor={simulateSurvivor}
             onNavigateToActuals={() => {
               setActiveView('actuals');
@@ -874,7 +935,7 @@ function App() {
         {/* Workspace 4: Monte Carlo Analysis */}
         {activeView === 'monte-carlo' && (
           <MonteCarloWorkspace
-            inputs={inputs}
+            inputs={activeInputs}
             onChangeInputs={handleInputsChange}
             simulateSurvivor={simulateSurvivor}
             summary={displayMonteCarloSummary}
@@ -887,7 +948,7 @@ function App() {
         {/* Workspace 5: Plan Comparison */}
         {activeView === 'compare' && (
           <PlanComparisonWorkspace
-            inputs={inputs}
+            inputs={activeInputs}
             onLoadPlan={handleInputsChange}
             savedPlans={savedPlans}
             onSavePlans={setSavedPlans}
@@ -904,21 +965,21 @@ function App() {
         {activeView === 'actuals' && (
           <ActualsWorkspace
             ledger={displayActiveLedger}
-            inputs={inputs}
+            inputs={activeInputs}
             onUpdateActuals={(actuals) => {
-              setInputs((prev) => ({
+              handleInputsChange((prev) => ({
                 ...prev,
                 actualTracking: actuals,
               }));
             }}
             onUpdateGuardrailSettings={(guardrails) => {
-              setInputs((prev) => ({
+              handleInputsChange((prev) => ({
                 ...prev,
                 guardrailSettings: guardrails,
               }));
             }}
             onApplySpendingBonusToBudget={(newBudget) => {
-              setInputs((prev) => ({
+              handleInputsChange((prev) => ({
                 ...prev,
                 annualLivingExpenses: newBudget,
               }));
@@ -931,7 +992,7 @@ function App() {
         {activeView === 'bucket-management' && (
           <BucketManagementWorkspace
             ledger={displayActiveLedger}
-            inputs={inputs}
+            inputs={activeInputs}
             onInputsChange={handleInputsChange}
             simulateSurvivor={simulateSurvivor}
           />

@@ -27,12 +27,25 @@ class PlanSyncServiceSingleton {
   private lastSyncedAt: string | null = null;
   private lastUpdatedBy: string | null = null;
   private error: string | null = null;
+  private isDemoMode: boolean = false;
 
   constructor() {
     if (typeof window !== 'undefined') {
       this.lastSyncedAt = window.localStorage.getItem('retirement_planner_plan_synced_at');
       this.lastUpdatedBy = window.localStorage.getItem('retirement_planner_plan_updated_by');
     }
+  }
+
+  public setDemoMode(active: boolean): void {
+    this.isDemoMode = active;
+    if (active && this.autoSaveTimer) {
+      clearTimeout(this.autoSaveTimer);
+      this.autoSaveTimer = null;
+    }
+  }
+
+  public isDemo(): boolean {
+    return this.isDemoMode;
   }
 
   public getStatus(): PlanSyncStatus {
@@ -80,6 +93,7 @@ class PlanSyncServiceSingleton {
    * Fetch the latest shared household plan from AWS DynamoDB.
    */
   public async fetchRemotePlan(): Promise<RemotePlanDocument | null> {
+    if (this.isDemoMode) return null;
     if (!AuthService.isAuthenticated()) return null;
     if (typeof navigator !== 'undefined' && !navigator.onLine) return null;
 
@@ -120,6 +134,7 @@ class PlanSyncServiceSingleton {
     savedPlans: SavedPlan[] = [],
     customScenarios: CustomRothScenario[] = []
   ): Promise<boolean> {
+    if (this.isDemoMode) return false;
     if (!AuthService.isAuthenticated()) return false;
     if (typeof navigator !== 'undefined' && !navigator.onLine) return false;
 
@@ -232,6 +247,9 @@ class PlanSyncServiceSingleton {
    * 4. If both have populated data: compares timestamps to resolve newer version.
    */
   public async syncPlanNow(): Promise<{ action: 'downloaded' | 'uploaded' | 'up-to-date'; updatedBy?: string }> {
+    if (this.isDemoMode) {
+      return { action: 'up-to-date' };
+    }
     if (!AuthService.isAuthenticated()) {
       return { action: 'up-to-date' };
     }
@@ -320,6 +338,8 @@ class PlanSyncServiceSingleton {
     savedPlans: SavedPlan[] = [],
     customScenarios: CustomRothScenario[] = []
   ): void {
+    if (this.isDemoMode) return;
+
     if (typeof window !== 'undefined') {
       window.localStorage.setItem('retirement_planner_plan_local_modified_at', new Date().toISOString());
     }

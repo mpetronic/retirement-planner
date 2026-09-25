@@ -211,8 +211,7 @@ export const CloudAuthModal: React.FC<CloudAuthModalProps> = ({ isOpen, onClose,
   const handleSignOut = () => {
     AuthService.signOut();
     setPasskeys([]);
-    setSuccessMsg('Signed out of household cloud.');
-    setTimeout(() => setSuccessMsg(''), 2000);
+    onClose();
   };
 
   const handleSaveConfig = (e: React.FormEvent) => {

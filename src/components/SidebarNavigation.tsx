@@ -187,6 +187,8 @@ interface SidebarNavigationProps {
   isAuthenticated?: boolean;
   currentUserEmail?: string;
   isSyncing?: boolean;
+  isDemoMode?: boolean;
+  appMode?: 'demo' | 'localhost' | 'production';
 }
 
 export const SidebarNavigation: React.FC<SidebarNavigationProps> = ({
@@ -201,6 +203,8 @@ export const SidebarNavigation: React.FC<SidebarNavigationProps> = ({
   isAuthenticated = false,
   currentUserEmail,
   isSyncing = false,
+  isDemoMode = false,
+  appMode = 'production',
 }) => {
   const versionInfo = getVersionInfo();
   const isParamViewActive = activeView.startsWith('params-');
@@ -524,23 +528,32 @@ export const SidebarNavigation: React.FC<SidebarNavigationProps> = ({
         {onOpenCloudModal && (
           <button
             type="button"
-            onClick={onOpenCloudModal}
+            disabled={isDemoMode || appMode === 'localhost'}
+            onClick={isDemoMode || appMode === 'localhost' ? undefined : onOpenCloudModal}
             title={
-              isCollapsed
+              isDemoMode
+                ? 'Sign in to Cloud is disabled in Demo Sandbox mode. Exit Demo to sign in.'
+                : appMode === 'localhost'
+                ? 'Cloud Sync & Sign In are disabled in Localhost Dev mode (operating strictly off local storage).'
+                : isCollapsed
                 ? isAuthenticated
                   ? `Household Cloud: ${currentUserEmail || 'Connected'}`
                   : 'Connect Household Cloud'
                 : undefined
             }
-            className={`w-full flex items-center gap-2.5 px-2.5 py-1.5 text-xs rounded-xl transition-all cursor-pointer border ${
-              isAuthenticated
-                ? 'bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-300 border-emerald-500/30'
-                : 'bg-slate-800/40 hover:bg-slate-800 text-amber-300 border-amber-500/30'
+            className={`w-full flex items-center gap-2.5 px-2.5 py-1.5 text-xs rounded-xl transition-all border ${
+              isDemoMode || appMode === 'localhost'
+                ? 'bg-slate-800/30 text-slate-500 border-slate-800/80 cursor-not-allowed opacity-60'
+                : isAuthenticated
+                ? 'bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-300 border-emerald-500/30 cursor-pointer'
+                : 'bg-slate-800/40 hover:bg-slate-800 text-amber-300 border-amber-500/30 cursor-pointer'
             } ${isCollapsed ? 'justify-center px-0' : ''}`}
           >
             <Cloud
               className={`w-4 h-4 shrink-0 ${
-                isAuthenticated
+                isDemoMode || appMode === 'localhost'
+                  ? 'text-slate-600'
+                  : isAuthenticated
                   ? isSyncing
                     ? 'text-emerald-300 animate-pulse'
                     : 'text-emerald-400'
@@ -550,16 +563,36 @@ export const SidebarNavigation: React.FC<SidebarNavigationProps> = ({
             {!isCollapsed && (
               <span className="truncate flex items-center justify-between w-full font-medium">
                 <span className="truncate pr-1">
-                  {isAuthenticated ? (currentUserEmail ? currentUserEmail.split('@')[0] : 'Cloud Synced') : 'Sign in to Cloud'}
+                  {isDemoMode
+                    ? 'Sign in (Disabled)'
+                    : appMode === 'localhost'
+                    ? 'Local Storage'
+                    : isAuthenticated
+                    ? currentUserEmail
+                      ? currentUserEmail.split('@')[0]
+                      : 'Cloud Synced'
+                    : 'Sign in to Cloud'}
                 </span>
                 <span
                   className={`text-[9px] uppercase font-bold px-1.5 py-0.5 rounded border shrink-0 ${
-                    isAuthenticated
+                    isDemoMode
+                      ? 'bg-amber-500/10 text-amber-400/80 border-amber-500/20'
+                      : appMode === 'localhost'
+                      ? 'bg-sky-500/10 text-sky-400 border-sky-500/20'
+                      : isAuthenticated
                       ? 'bg-emerald-500/20 text-emerald-400 border-emerald-500/30'
                       : 'bg-amber-500/20 text-amber-300 border-amber-500/30'
                   }`}
                 >
-                  {isAuthenticated ? (isSyncing ? 'SYNC' : 'LIVE') : 'OFFLINE'}
+                  {isDemoMode
+                    ? 'DEMO'
+                    : appMode === 'localhost'
+                    ? 'DEV'
+                    : isAuthenticated
+                    ? isSyncing
+                      ? 'SYNC'
+                      : 'LIVE'
+                    : 'OFFLINE'}
                 </span>
               </span>
             )}
@@ -583,7 +616,7 @@ export const SidebarNavigation: React.FC<SidebarNavigationProps> = ({
 
         {/* Open Expenser PWA */}
         <a
-          href="/expenser.html"
+          href="/expenser"
           target="_blank"
           rel="noopener noreferrer"
           title={isCollapsed ? 'Launch Expenser PWA' : undefined}
