@@ -121,118 +121,144 @@ const DEFAULT_INPUTS: AppStateInputs = {
   bucketSettings: DEFAULT_BUCKET_STRATEGY_SETTINGS,
 };
 
+function parseStoredValue<T>(key: string, rawItem: string | null, initialValue: T): T {
+  if (!rawItem) return initialValue;
+  try {
+    const parsed = JSON.parse(rawItem);
+
+    // Robust deep merge to ensure new Monte Carlo fields are populated for users with old saved states
+    if (key === 'retirement_planner_inputs') {
+      const init = initialValue as unknown as AppStateInputs;
+      const p = parsed as Partial<AppStateInputs>;
+      return {
+        ...init,
+        ...p,
+        simulationStartYear:
+          p.simulationStartYear !== undefined
+            ? p.simulationStartYear
+            : p.rothConversionStartYear
+            ? p.rothConversionStartYear - 1
+            : 2026,
+        growthAssumptions: {
+          ...init.growthAssumptions,
+          ...p.growthAssumptions,
+        },
+        you: {
+          ...init.you,
+          ...p.you,
+        },
+        wife: {
+          ...init.wife,
+          ...p.wife,
+        },
+        portfolio: {
+          ...init.portfolio,
+          ...p.portfolio,
+        },
+        jurisdiction: {
+          ...init.jurisdiction,
+          ...p.jurisdiction,
+        },
+        monteCarloSettings: {
+          ...init.monteCarloSettings,
+          ...p.monteCarloSettings,
+        },
+        useDetailedExpenses: p.useDetailedExpenses !== undefined ? p.useDetailedExpenses : false,
+        detailedExpenses: normalizeDetailedExpenses(p.detailedExpenses),
+        actualTracking: p.actualTracking || {},
+        guardrailSettings: {
+          ...DEFAULT_GUARDRAIL_SETTINGS,
+          ...(p.guardrailSettings || {}),
+        },
+        bucketSettings: {
+          ...DEFAULT_BUCKET_STRATEGY_SETTINGS,
+          ...(p.bucketSettings || {}),
+          cash: {
+            ...DEFAULT_BUCKET_STRATEGY_SETTINGS.cash,
+            ...(p.bucketSettings?.cash || {}),
+          },
+          income: {
+            ...DEFAULT_BUCKET_STRATEGY_SETTINGS.income,
+            ...(p.bucketSettings?.income || {}),
+          },
+          growth: {
+            ...DEFAULT_BUCKET_STRATEGY_SETTINGS.growth,
+            ...(p.bucketSettings?.growth || {}),
+          },
+          actionLedger: p.bucketSettings?.actionLedger || {},
+        },
+      } as unknown as T;
+    }
+
+    if (key === 'retirement_planner_saved_plans' && Array.isArray(parsed)) {
+      return (parsed as SavedPlan[]).map((p) => ({
+        ...p,
+        inputs: {
+          ...p.inputs,
+          detailedExpenses: normalizeDetailedExpenses(p.inputs?.detailedExpenses),
+          actualTracking: p.inputs?.actualTracking || {},
+          guardrailSettings: {
+            ...DEFAULT_GUARDRAIL_SETTINGS,
+            ...(p.inputs?.guardrailSettings || {}),
+          },
+          bucketSettings: {
+            ...DEFAULT_BUCKET_STRATEGY_SETTINGS,
+            ...(p.inputs?.bucketSettings || {}),
+            cash: {
+              ...DEFAULT_BUCKET_STRATEGY_SETTINGS.cash,
+              ...(p.inputs?.bucketSettings?.cash || {}),
+            },
+            income: {
+              ...DEFAULT_BUCKET_STRATEGY_SETTINGS.income,
+              ...(p.inputs?.bucketSettings?.income || {}),
+            },
+            growth: {
+              ...DEFAULT_BUCKET_STRATEGY_SETTINGS.growth,
+              ...(p.inputs?.bucketSettings?.growth || {}),
+            },
+            actionLedger: p.inputs?.bucketSettings?.actionLedger || {},
+          },
+        },
+      })) as unknown as T;
+    }
+
+    return parsed;
+  } catch (error) {
+    console.warn(`LocalStorage read error for key "${key}":`, error);
+    return initialValue;
+  }
+}
+
 // Custom hook for LocalStorage persistence with defensive deep merge schema protection
 function useLocalStorage<T>(key: string, initialValue: T): [T, (value: T | ((val: T) => T)) => void] {
   const [storedValue, setStoredValue] = useState<T>(() => {
     try {
       const item = window.localStorage.getItem(key);
-      if (item) {
-        const parsed = JSON.parse(item);
-
-        // Robust deep merge to ensure new Monte Carlo fields are populated for users with old saved states
-        if (key === 'retirement_planner_inputs') {
-          const init = initialValue as unknown as AppStateInputs;
-          const p = parsed as Partial<AppStateInputs>;
-          return {
-            ...init,
-            ...p,
-            simulationStartYear:
-              p.simulationStartYear !== undefined
-                ? p.simulationStartYear
-                : p.rothConversionStartYear
-                ? p.rothConversionStartYear - 1
-                : 2026,
-            growthAssumptions: {
-              ...init.growthAssumptions,
-              ...p.growthAssumptions,
-            },
-            you: {
-              ...init.you,
-              ...p.you,
-            },
-            wife: {
-              ...init.wife,
-              ...p.wife,
-            },
-            portfolio: {
-              ...init.portfolio,
-              ...p.portfolio,
-            },
-            jurisdiction: {
-              ...init.jurisdiction,
-              ...p.jurisdiction,
-            },
-            monteCarloSettings: {
-              ...init.monteCarloSettings,
-              ...p.monteCarloSettings,
-            },
-            useDetailedExpenses: p.useDetailedExpenses !== undefined ? p.useDetailedExpenses : false,
-            detailedExpenses: normalizeDetailedExpenses(p.detailedExpenses),
-            actualTracking: p.actualTracking || {},
-            guardrailSettings: {
-              ...DEFAULT_GUARDRAIL_SETTINGS,
-              ...(p.guardrailSettings || {}),
-            },
-            bucketSettings: {
-              ...DEFAULT_BUCKET_STRATEGY_SETTINGS,
-              ...(p.bucketSettings || {}),
-              cash: {
-                ...DEFAULT_BUCKET_STRATEGY_SETTINGS.cash,
-                ...(p.bucketSettings?.cash || {}),
-              },
-              income: {
-                ...DEFAULT_BUCKET_STRATEGY_SETTINGS.income,
-                ...(p.bucketSettings?.income || {}),
-              },
-              growth: {
-                ...DEFAULT_BUCKET_STRATEGY_SETTINGS.growth,
-                ...(p.bucketSettings?.growth || {}),
-              },
-              actionLedger: p.bucketSettings?.actionLedger || {},
-            },
-          } as unknown as T;
-        }
-
-        if (key === 'retirement_planner_saved_plans' && Array.isArray(parsed)) {
-          return (parsed as SavedPlan[]).map((p) => ({
-            ...p,
-            inputs: {
-              ...p.inputs,
-              detailedExpenses: normalizeDetailedExpenses(p.inputs?.detailedExpenses),
-              actualTracking: p.inputs?.actualTracking || {},
-              guardrailSettings: {
-                ...DEFAULT_GUARDRAIL_SETTINGS,
-                ...(p.inputs?.guardrailSettings || {}),
-              },
-              bucketSettings: {
-                ...DEFAULT_BUCKET_STRATEGY_SETTINGS,
-                ...(p.inputs?.bucketSettings || {}),
-                cash: {
-                  ...DEFAULT_BUCKET_STRATEGY_SETTINGS.cash,
-                  ...(p.inputs?.bucketSettings?.cash || {}),
-                },
-                income: {
-                  ...DEFAULT_BUCKET_STRATEGY_SETTINGS.income,
-                  ...(p.inputs?.bucketSettings?.income || {}),
-                },
-                growth: {
-                  ...DEFAULT_BUCKET_STRATEGY_SETTINGS.growth,
-                  ...(p.inputs?.bucketSettings?.growth || {}),
-                },
-                actionLedger: p.inputs?.bucketSettings?.actionLedger || {},
-              },
-            },
-          })) as unknown as T;
-        }
-
-        return parsed;
-      }
-      return initialValue;
+      return parseStoredValue(key, item, initialValue);
     } catch (error) {
       console.warn(`LocalStorage read error for key "${key}":`, error);
       return initialValue;
     }
   });
+
+  useEffect(() => {
+    const handleStorageChange = (e: StorageEvent | CustomEvent) => {
+      if ('key' in e && e.key && e.key !== key) return;
+      try {
+        const item = window.localStorage.getItem(key);
+        setStoredValue(parseStoredValue(key, item, initialValue));
+      } catch (err) {
+        console.warn(`LocalStorage sync error for key "${key}":`, err);
+      }
+    };
+
+    window.addEventListener('storage', handleStorageChange as EventListener);
+    window.addEventListener('retirement_planner_inputs_updated', handleStorageChange as EventListener);
+    return () => {
+      window.removeEventListener('storage', handleStorageChange as EventListener);
+      window.removeEventListener('retirement_planner_inputs_updated', handleStorageChange as EventListener);
+    };
+  }, [key, initialValue]);
 
   const setValue = (value: T | ((val: T) => T)) => {
     try {

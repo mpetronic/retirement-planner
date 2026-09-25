@@ -2,6 +2,7 @@
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 import { execSync } from 'child_process';
+import { resolve } from 'path';
 import pkg from './package.json';
 
 function getTimestampYYYYMMDDHHMMSS(d: Date = new Date()): string {
@@ -153,6 +154,14 @@ export default defineConfig({
   plugins: [react(), versionPlugin()],
   define: {
     __APP_VERSION_INFO__: JSON.stringify(resolveScmVersionInfo()),
+  },
+  build: {
+    rollupOptions: {
+      input: {
+        main: resolve(__dirname, 'index.html'),
+        expenser: resolve(__dirname, 'expenser.html'),
+      },
+    },
   },
   test: {
     environment: 'node',

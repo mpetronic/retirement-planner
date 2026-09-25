@@ -25,6 +25,7 @@ import {
   Scale,
   MapPin,
   HeartHandshake,
+  Smartphone,
 } from 'lucide-react';
 import { getVersionInfo } from '../utils/version';
 
@@ -524,6 +525,27 @@ export const SidebarNavigation: React.FC<SidebarNavigationProps> = ({
             {!isCollapsed && <span className="truncate">Display Settings</span>}
           </button>
         )}
+
+        {/* Open Expenser PWA */}
+        <a
+          href="/expenser.html"
+          target="_blank"
+          rel="noopener noreferrer"
+          title={isCollapsed ? 'Launch Expenser PWA' : undefined}
+          className={`w-full flex items-center gap-2.5 px-2.5 py-1.5 text-xs text-emerald-400 hover:text-emerald-300 hover:bg-emerald-500/10 rounded-xl transition-all cursor-pointer border border-emerald-500/20 ${
+            isCollapsed ? 'justify-center px-0' : ''
+          }`}
+        >
+          <Smartphone className="w-4 h-4 text-emerald-400 shrink-0" />
+          {!isCollapsed && (
+            <span className="truncate flex items-center justify-between w-full font-medium">
+              Expenser App
+              <span className="text-[9px] uppercase font-bold px-1 py-0.5 rounded bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">
+                PWA
+              </span>
+            </span>
+          )}
+        </a>
 
         {/* Documentation / Help shortcut */}
         <button
