@@ -25,6 +25,8 @@ import {
   Scale,
   MapPin,
   HeartHandshake,
+  Smartphone,
+  Cloud,
 } from 'lucide-react';
 import { getVersionInfo } from '../utils/version';
 
@@ -181,6 +183,12 @@ interface SidebarNavigationProps {
   onOpenDocumentation?: (sectionId?: string) => void;
   onOpenAbout?: () => void;
   onOpenDisplaySettings?: () => void;
+  onOpenCloudModal?: () => void;
+  isAuthenticated?: boolean;
+  currentUserEmail?: string;
+  isSyncing?: boolean;
+  isDemoMode?: boolean;
+  appMode?: 'demo' | 'localhost' | 'production';
 }
 
 export const SidebarNavigation: React.FC<SidebarNavigationProps> = ({
@@ -191,6 +199,12 @@ export const SidebarNavigation: React.FC<SidebarNavigationProps> = ({
   onOpenDocumentation,
   onOpenAbout,
   onOpenDisplaySettings,
+  onOpenCloudModal,
+  isAuthenticated = false,
+  currentUserEmail,
+  isSyncing = false,
+  isDemoMode = false,
+  appMode = 'production',
 }) => {
   const versionInfo = getVersionInfo();
   const isParamViewActive = activeView.startsWith('params-');
@@ -510,6 +524,81 @@ export const SidebarNavigation: React.FC<SidebarNavigationProps> = ({
 
       {/* Sidebar Footer */}
       <div className="p-2.5 border-t border-slate-800 bg-slate-900/90 shrink-0 space-y-1.5">
+        {/* Household Cloud Sync */}
+        {onOpenCloudModal && (
+          <button
+            type="button"
+            disabled={isDemoMode || appMode === 'localhost'}
+            onClick={isDemoMode || appMode === 'localhost' ? undefined : onOpenCloudModal}
+            title={
+              isDemoMode
+                ? 'Sign in to Cloud is disabled in Demo Sandbox mode. Exit Demo to sign in.'
+                : appMode === 'localhost'
+                ? 'Cloud Sync & Sign In are disabled in Localhost Dev mode (operating strictly off local storage).'
+                : isCollapsed
+                ? isAuthenticated
+                  ? `Household Cloud: ${currentUserEmail || 'Connected'}`
+                  : 'Connect Household Cloud'
+                : undefined
+            }
+            className={`w-full flex items-center gap-2.5 px-2.5 py-1.5 text-xs rounded-xl transition-all border ${
+              isDemoMode || appMode === 'localhost'
+                ? 'bg-slate-800/30 text-slate-500 border-slate-800/80 cursor-not-allowed opacity-60'
+                : isAuthenticated
+                ? 'bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-300 border-emerald-500/30 cursor-pointer'
+                : 'bg-slate-800/40 hover:bg-slate-800 text-amber-300 border-amber-500/30 cursor-pointer'
+            } ${isCollapsed ? 'justify-center px-0' : ''}`}
+          >
+            <Cloud
+              className={`w-4 h-4 shrink-0 ${
+                isDemoMode || appMode === 'localhost'
+                  ? 'text-slate-600'
+                  : isAuthenticated
+                  ? isSyncing
+                    ? 'text-emerald-300 animate-pulse'
+                    : 'text-emerald-400'
+                  : 'text-amber-400'
+              }`}
+            />
+            {!isCollapsed && (
+              <span className="truncate flex items-center justify-between w-full font-medium">
+                <span className="truncate pr-1">
+                  {isDemoMode
+                    ? 'Sign in (Disabled)'
+                    : appMode === 'localhost'
+                    ? 'Local Storage'
+                    : isAuthenticated
+                    ? currentUserEmail
+                      ? currentUserEmail.split('@')[0]
+                      : 'Cloud Synced'
+                    : 'Sign in to Cloud'}
+                </span>
+                <span
+                  className={`text-[9px] uppercase font-bold px-1.5 py-0.5 rounded border shrink-0 ${
+                    isDemoMode
+                      ? 'bg-amber-500/10 text-amber-400/80 border-amber-500/20'
+                      : appMode === 'localhost'
+                      ? 'bg-sky-500/10 text-sky-400 border-sky-500/20'
+                      : isAuthenticated
+                      ? 'bg-emerald-500/20 text-emerald-400 border-emerald-500/30'
+                      : 'bg-amber-500/20 text-amber-300 border-amber-500/30'
+                  }`}
+                >
+                  {isDemoMode
+                    ? 'DEMO'
+                    : appMode === 'localhost'
+                    ? 'DEV'
+                    : isAuthenticated
+                    ? isSyncing
+                      ? 'SYNC'
+                      : 'LIVE'
+                    : 'OFFLINE'}
+                </span>
+              </span>
+            )}
+          </button>
+        )}
+
         {/* Display & Typography Settings */}
         {onOpenDisplaySettings && (
           <button
@@ -524,6 +613,27 @@ export const SidebarNavigation: React.FC<SidebarNavigationProps> = ({
             {!isCollapsed && <span className="truncate">Display Settings</span>}
           </button>
         )}
+
+        {/* Open Expenser PWA */}
+        <a
+          href="/expenser"
+          target="_blank"
+          rel="noopener noreferrer"
+          title={isCollapsed ? 'Launch Expenser PWA' : undefined}
+          className={`w-full flex items-center gap-2.5 px-2.5 py-1.5 text-xs text-emerald-400 hover:text-emerald-300 hover:bg-emerald-500/10 rounded-xl transition-all cursor-pointer border border-emerald-500/20 ${
+            isCollapsed ? 'justify-center px-0' : ''
+          }`}
+        >
+          <Smartphone className="w-4 h-4 text-emerald-400 shrink-0" />
+          {!isCollapsed && (
+            <span className="truncate flex items-center justify-between w-full font-medium">
+              Expenser App
+              <span className="text-[9px] uppercase font-bold px-1 py-0.5 rounded bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">
+                PWA
+              </span>
+            </span>
+          )}
+        </a>
 
         {/* Documentation / Help shortcut */}
         <button

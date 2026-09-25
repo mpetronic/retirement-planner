@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect, useCallback } from 'react';
 import {
   SimulationResultRow,
   AppStateInputs,
@@ -27,7 +27,17 @@ import {
   ChevronDown,
   ChevronUp,
   RotateCcw,
+  Wallet,
+  RefreshCw,
+  Smartphone,
+  ExternalLink,
+  Tag,
+  Cloud,
 } from 'lucide-react';
+import { getStorageAdapter } from '../shared/storage';
+import { ActualExpense } from '../shared/types/expenses';
+import { AuthService } from '../shared/auth/AuthService';
+import { CloudAuthModal } from './CloudAuthModal';
 import { RangeSlider } from './RangeSlider';
 import { Chart } from 'react-chartjs-2';
 import { Chart as ChartJS, registerables } from 'chart.js';
@@ -78,6 +88,181 @@ export const ActualsWorkspace: React.FC<ActualsWorkspaceProps> = ({
   const [showReconciliation, setShowReconciliation] = useState(true);
   const [showGuardrailConfig, setShowGuardrailConfig] = useState(false);
   const [yearPendingDelete, setYearPendingDelete] = useState<number | null>(null);
+
+  // Live Logged Actual Expenses from Storage Adapter
+  const [loggedExpenses, setLoggedExpenses] = useState<ActualExpense[]>([]);
+  const [isLoadingExpenses, setIsLoadingExpenses] = useState<boolean>(false);
+  const [selectedMonthFilter, setSelectedMonthFilter] = useState<number | null>(null);
+  const [showExpenseTable, setShowExpenseTable] = useState<boolean>(true);
+  const [showTransactionsDrawer, setShowTransactionsDrawer] = useState<boolean>(false);
+  const [showCloudModal, setShowCloudModal] = useState<boolean>(false);
+  const [isAuthenticated, setIsAuthenticated] = useState<boolean>(() => AuthService.isAuthenticated());
+
+  const loadLoggedExpenses = useCallback(async () => {
+    setIsLoadingExpenses(true);
+    try {
+      const adapter = getStorageAdapter();
+      const exps = await adapter.getExpenses(selectedYear, selectedMonthFilter || undefined);
+      setLoggedExpenses(exps);
+    } catch (err) {
+      console.error('Failed to load logged actual expenses:', err);
+    } finally {
+      setIsLoadingExpenses(false);
+    }
+  }, [selectedYear, selectedMonthFilter]);
+
+  useEffect(() => {
+    loadLoggedExpenses();
+
+    const handleStorageEvent = () => {
+      loadLoggedExpenses();
+    };
+    const unsubscribeAuth = AuthService.subscribe(s => {
+      setIsAuthenticated(Boolean(s));
+      loadLoggedExpenses();
+    });
+
+    window.addEventListener('storage', handleStorageEvent);
+    window.addEventListener('retirement_planner_inputs_updated', handleStorageEvent);
+    window.addEventListener('cloud_expenses_synced', handleStorageEvent);
+    window.addEventListener('cloud_categories_synced', handleStorageEvent);
+    window.addEventListener('cloud_sync_completed', handleStorageEvent);
+
+    return () => {
+      window.removeEventListener('storage', handleStorageEvent);
+      window.removeEventListener('retirement_planner_inputs_updated', handleStorageEvent);
+      window.removeEventListener('cloud_expenses_synced', handleStorageEvent);
+      window.removeEventListener('cloud_categories_synced', handleStorageEvent);
+      window.removeEventListener('cloud_sync_completed', handleStorageEvent);
+      unsubscribeAuth();
+    };
+  }, [loadLoggedExpenses]);
+
+  // Aggregated logged actual expenses for the selected year/month
+  const actualsSummary = useMemo(() => {
+    let totalSpend = 0;
+    const byCategory: Record<string, number> = {};
+    const byLineItem: Record<string, { total: number; count: number; name: string; categoryName: string; payers: Record<string, number> }> = {};
+    const byPayer: Record<string, number> = {};
+
+    for (const exp of loggedExpenses) {
+      totalSpend += exp.amount;
+      byCategory[exp.categoryName] = (byCategory[exp.categoryName] || 0) + exp.amount;
+
+      if (!byLineItem[exp.categoryId]) {
+        byLineItem[exp.categoryId] = {
+          total: 0,
+          count: 0,
+          name: exp.categoryName,
+          categoryName: exp.categoryName,
+          payers: {},
+        };
+      }
+      byLineItem[exp.categoryId].total += exp.amount;
+      byLineItem[exp.categoryId].count += 1;
+      const payer = exp.enteredBy || 'Primary';
+      byLineItem[exp.categoryId].payers[payer] = (byLineItem[exp.categoryId].payers[payer] || 0) + exp.amount;
+      byPayer[payer] = (byPayer[payer] || 0) + exp.amount;
+    }
+
+    return { totalSpend, byCategory, byLineItem, byPayer, count: loggedExpenses.length };
+  }, [loggedExpenses]);
+
+  // Comparison list between Planned Detailed Budget and Logged Actuals
+  const comparisonItems = useMemo(() => {
+    const items: Array<{
+      id: string;
+      name: string;
+      group: string;
+      plannedAnnual: number;
+      actualAnnual: number;
+      variance: number;
+      percentUsed: number;
+      transactionCount: number;
+      payers: Record<string, number>;
+    }> = [];
+
+    if (inputs.useDetailedExpenses && inputs.detailedExpenses) {
+      const norm = normalizeDetailedExpenses(inputs.detailedExpenses);
+      const stateCosts = norm.costs[inputs.jurisdiction.currentState] || norm.costs.MD || {};
+      const freqs = norm.frequencies;
+
+      for (const catItem of norm.catalog.items) {
+        if (catItem.isOneTime && catItem.targetYear !== selectedYear) continue;
+
+        const cost = stateCosts[catItem.id] ?? 0;
+        const freq = freqs[catItem.id] ?? catItem.defaultFrequency ?? 12;
+        const plannedFullYear = catItem.isOneTime ? cost : cost * freq;
+        const plannedAmount = selectedMonthFilter ? cost * (freq / 12) : plannedFullYear;
+
+        const actualEntry = actualsSummary.byLineItem[catItem.id];
+        const actualAmount = actualEntry?.total || 0;
+        const variance = plannedAmount - actualAmount;
+        const percentUsed = plannedAmount > 0 ? (actualAmount / plannedAmount) * 100 : actualAmount > 0 ? 999 : 0;
+
+        items.push({
+          id: catItem.id,
+          name: catItem.name,
+          group: catItem.category || 'Living',
+          plannedAnnual: plannedAmount,
+          actualAnnual: actualAmount,
+          variance,
+          percentUsed,
+          transactionCount: actualEntry?.count || 0,
+          payers: actualEntry?.payers || {},
+        });
+      }
+    }
+
+    // Also include any logged categories created on the fly not present in detailedExpenses
+    for (const [catId, entry] of Object.entries(actualsSummary.byLineItem)) {
+      if (!items.some((i) => i.id === catId)) {
+        const parts = entry.name.includes(' - ') ? entry.name.split(' - ') : ['Custom', entry.name];
+        items.push({
+          id: catId,
+          name: parts[1] ? parts[1].trim() : entry.name,
+          group: parts[0].trim(),
+          plannedAnnual: 0,
+          actualAnnual: entry.total,
+          variance: -entry.total,
+          percentUsed: 999,
+          transactionCount: entry.count,
+          payers: entry.payers,
+        });
+      }
+    }
+
+    return items.sort((a, b) => b.actualAnnual - a.actualAnnual);
+  }, [inputs.useDetailedExpenses, inputs.detailedExpenses, inputs.jurisdiction.currentState, selectedYear, selectedMonthFilter, actualsSummary]);
+
+  // Sync actual logged expenses into activeRecord living expenses
+  const handleSyncActualsToRecord = () => {
+    const nextCategories: Record<string, number> = {};
+    for (const [catName, amount] of Object.entries(actualsSummary.byCategory)) {
+      const group = catName.includes(' - ') ? catName.split(' - ')[0].trim() : catName;
+      nextCategories[group] = (nextCategories[group] || 0) + amount;
+    }
+
+    const updatedRecord = {
+      ...activeRecord,
+      totalLivingExpenses: Math.round(actualsSummary.totalSpend),
+      categoryExpenses: nextCategories,
+    };
+
+    onUpdateActuals({
+      ...actualTracking,
+      [selectedYear]: updatedRecord,
+    });
+  };
+
+  // Delete an individual logged expense transaction
+  const handleDeleteLoggedExpense = async (id: string) => {
+    if (window.confirm('Delete this expense transaction?')) {
+      const adapter = getStorageAdapter();
+      await adapter.deleteExpense(id);
+      await loadLoggedExpenses();
+    }
+  };
 
   // Active year record or defaults
   const activeRecord: YearActualsRecord = useMemo(() => {
@@ -611,6 +796,369 @@ export const ActualsWorkspace: React.FC<ActualsWorkspaceProps> = ({
             </button>
           );
         })}
+      </div>
+
+      {/* Logged Expense Actuals & Budget Reconciliation Card */}
+      <div className="bg-slate-900/80 border border-slate-800 rounded-2xl p-5 shadow space-y-4 animate-in fade-in">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-800 pb-3.5">
+          <div className="flex items-center gap-2.5">
+            <div className="p-2 rounded-xl bg-emerald-500/10 border border-emerald-500/25 text-emerald-400">
+              <Wallet className="w-5 h-5" />
+            </div>
+            <div>
+              <h3 className="text-sm sm:text-base font-bold text-white flex items-center gap-2">
+                Logged Actual Expenses & Budget Variance ({selectedYear})
+                {selectedMonthFilter && (
+                  <span className="text-xs px-2 py-0.5 rounded-full bg-slate-800 text-emerald-400 border border-slate-700 font-normal">
+                    Month {selectedMonthFilter}
+                  </span>
+                )}
+              </h3>
+              <p className="text-xs text-slate-400 mt-0.5">
+                Live expense records synchronized from your companion Expenser PWA and household storage.
+              </p>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2 self-start sm:self-auto">
+            {/* Cloud Sync Button */}
+            <button
+              type="button"
+              onClick={() => setShowCloudModal(true)}
+              className={`px-3 py-1.5 rounded-xl border text-xs font-semibold flex items-center gap-1.5 transition-all cursor-pointer shadow-sm ${
+                isAuthenticated
+                  ? 'bg-emerald-600/20 hover:bg-emerald-600/30 text-emerald-300 border-emerald-500/40'
+                  : 'bg-slate-800/90 hover:bg-slate-700 text-slate-300 border-slate-700'
+              }`}
+              title={isAuthenticated ? 'Household Cloud Connected & Synced' : 'Connect Household Cloud'}
+            >
+              <Cloud className="w-3.5 h-3.5" />
+              <span>{isAuthenticated ? 'Cloud Synced' : 'Connect Cloud'}</span>
+              {isAuthenticated && <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />}
+            </button>
+
+            <button
+              onClick={() => loadLoggedExpenses()}
+              disabled={isLoadingExpenses}
+              className="p-2 rounded-xl bg-slate-800/80 hover:bg-slate-700 text-slate-300 hover:text-white transition-all border border-slate-700/60 cursor-pointer"
+              title="Refresh logged expenses"
+            >
+              <RefreshCw className={`w-3.5 h-3.5 ${isLoadingExpenses ? 'animate-spin text-emerald-400' : ''}`} />
+            </button>
+
+            <a
+              href="/expenser"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="px-3 py-1.5 rounded-xl bg-emerald-600/20 hover:bg-emerald-600/30 text-emerald-300 border border-emerald-500/40 text-xs font-semibold flex items-center gap-1.5 transition-all shadow-sm"
+              title="Open mobile Expenser PWA in new tab"
+            >
+              <Smartphone className="w-3.5 h-3.5" />
+              <span>Open Expenser</span>
+              <ExternalLink className="w-3 h-3 text-emerald-400" />
+            </a>
+
+            <button
+              onClick={() => setShowExpenseTable(!showExpenseTable)}
+              className="px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-medium border border-slate-700 transition-all flex items-center gap-1 cursor-pointer"
+            >
+              {showExpenseTable ? 'Collapse' : 'Expand'}
+              {showExpenseTable ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
+            </button>
+          </div>
+        </div>
+
+        {/* Month Filter Selector Strip */}
+        <div className="flex items-center gap-1.5 overflow-x-auto pb-1 custom-scrollbar text-xs">
+          <span className="text-slate-500 font-bold uppercase text-[10px] tracking-wider shrink-0 mr-1">
+            Filter Period:
+          </span>
+          <button
+            onClick={() => setSelectedMonthFilter(null)}
+            className={`px-2.5 py-1 rounded-lg font-semibold transition-all shrink-0 cursor-pointer ${
+              selectedMonthFilter === null
+                ? 'bg-emerald-500 text-slate-950 shadow font-bold'
+                : 'bg-slate-950/60 hover:bg-slate-800 text-slate-400 hover:text-slate-200 border border-slate-800'
+            }`}
+          >
+            Full Year {selectedYear}
+          </button>
+          {['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'].map((mName, mIdx) => {
+            const mNum = mIdx + 1;
+            const isSelected = selectedMonthFilter === mNum;
+            return (
+              <button
+                key={mNum}
+                onClick={() => setSelectedMonthFilter(isSelected ? null : mNum)}
+                className={`px-2 py-1 rounded-lg font-medium transition-all shrink-0 cursor-pointer ${
+                  isSelected
+                    ? 'bg-emerald-500 text-slate-950 shadow font-bold'
+                    : 'bg-slate-950/60 hover:bg-slate-800 text-slate-400 hover:text-slate-200 border border-slate-800'
+                }`}
+              >
+                {mName}
+              </button>
+            );
+          })}
+        </div>
+
+        {/* Summary KPIs Row */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+          {/* Total Logged Actual Spend */}
+          <div className="bg-slate-950/60 border border-slate-800/90 rounded-xl p-3.5">
+            <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider block">
+              Total Logged Spend
+            </span>
+            <div className="text-xl font-extrabold text-white mt-1">
+              {formatCurrency(actualsSummary.totalSpend)}
+            </div>
+            <p className="text-[11px] text-slate-400 mt-0.5">
+              {actualsSummary.count} transaction{actualsSummary.count === 1 ? '' : 's'} recorded
+            </p>
+          </div>
+
+          {/* Planned Budget */}
+          <div className="bg-slate-950/60 border border-slate-800/90 rounded-xl p-3.5">
+            <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider block">
+              Planned Baseline Budget
+            </span>
+            <div className="text-xl font-extrabold text-slate-200 mt-1">
+              {formatCurrency(selectedMonthFilter ? (baselineRecurringAnnual / 12) : baselineRecurringAnnual)}
+            </div>
+            <p className="text-[11px] text-slate-400 mt-0.5">
+              {selectedMonthFilter ? '1 month allocation' : 'Annual budgeted recurring baseline'}
+            </p>
+          </div>
+
+          {/* Net Variance */}
+          {(() => {
+            const plannedRef = selectedMonthFilter ? (baselineRecurringAnnual / 12) : baselineRecurringAnnual;
+            const variance = plannedRef - actualsSummary.totalSpend;
+            const isUnder = variance >= 0;
+            const pct = plannedRef > 0 ? Math.abs((variance / plannedRef) * 100).toFixed(1) : '0';
+            return (
+              <div className={`border rounded-xl p-3.5 ${
+                isUnder
+                  ? 'bg-emerald-950/20 border-emerald-500/30 text-emerald-300'
+                  : 'bg-rose-950/20 border-rose-500/30 text-rose-300'
+              }`}>
+                <span className="text-[11px] font-bold uppercase tracking-wider block">
+                  {isUnder ? 'Under Budget (Surplus)' : 'Over Budget (Deficit)'}
+                </span>
+                <div className="text-xl font-extrabold mt-1 flex items-center gap-1">
+                  {isUnder ? `+${formatCurrency(variance)}` : `-${formatCurrency(Math.abs(variance))}`}
+                </div>
+                <p className="text-[11px] opacity-80 mt-0.5">
+                  {isUnder ? `${pct}% below planned spend` : `${pct}% above planned spend`}
+                </p>
+              </div>
+            );
+          })()}
+
+          {/* Payer Breakdown & Sync Action */}
+          <div className="bg-slate-950/60 border border-slate-800/90 rounded-xl p-3.5 flex flex-col justify-between">
+            <div>
+              <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider block">
+                Payer Share
+              </span>
+              <div className="flex items-center gap-2 mt-1 text-xs">
+                {Object.keys(actualsSummary.byPayer).length === 0 ? (
+                  <span className="text-slate-500 italic">No transactions</span>
+                ) : (
+                  Object.entries(actualsSummary.byPayer).map(([payer, amount]) => (
+                    <span key={payer} className="px-2 py-0.5 rounded-md bg-slate-900 border border-slate-700 text-slate-300 font-medium">
+                      {payer}: <strong>{formatCurrency(amount)}</strong>
+                    </span>
+                  ))
+                )}
+              </div>
+            </div>
+
+            {actualsSummary.totalSpend > 0 && !selectedMonthFilter && (
+              <button
+                type="button"
+                onClick={handleSyncActualsToRecord}
+                className="mt-2 w-full py-1.5 rounded-lg bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold text-xs transition-all flex items-center justify-center gap-1 cursor-pointer shadow"
+                title="Copy logged actual spend total into Living Expenses override for this timeline year"
+              >
+                <CheckCircle2 className="w-3.5 h-3.5" />
+                <span>Sync to Year {selectedYear} Total</span>
+              </button>
+            )}
+          </div>
+        </div>
+
+        {/* Detailed Line Item Variance Table */}
+        {showExpenseTable && (
+          <div className="space-y-3 pt-1">
+            {comparisonItems.length === 0 ? (
+              <div className="bg-slate-950/60 border border-slate-800 rounded-xl p-8 text-center space-y-2.5">
+                <p className="text-sm font-semibold text-slate-300">
+                  No actual expenses logged for {selectedMonthFilter ? `Month ${selectedMonthFilter}, ` : ''}{selectedYear} yet.
+                </p>
+                <p className="text-xs text-slate-500 max-w-md mx-auto">
+                  Log daily expenses on the go with the mobile companion app or add a line item to start tracking variances against your retirement budget.
+                </p>
+                <div className="pt-2">
+                  <a
+                    href="/expenser"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs shadow-lg transition-all"
+                  >
+                    <Smartphone className="w-4 h-4" />
+                    Launch Expenser PWA
+                  </a>
+                </div>
+              </div>
+            ) : (
+              <div className="overflow-x-auto border border-slate-800 rounded-xl">
+                <table className="w-full text-left text-xs text-slate-300 divide-y divide-slate-800">
+                  <thead className="bg-slate-950/80 text-slate-400 uppercase text-[10px] font-bold tracking-wider">
+                    <tr>
+                      <th className="px-3.5 py-2.5">Line Item / Category</th>
+                      <th className="px-3.5 py-2.5 text-right">Planned Budget</th>
+                      <th className="px-3.5 py-2.5 text-right">Actual Spend</th>
+                      <th className="px-3.5 py-2.5 text-right">Variance</th>
+                      <th className="px-3.5 py-2.5">Budget Usage</th>
+                      <th className="px-3.5 py-2.5">Payer Breakdown</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-800/60 bg-slate-900/40">
+                    {comparisonItems.map((item) => {
+                      const isOver = item.variance < 0;
+                      const hasSpend = item.actualAnnual > 0;
+                      return (
+                        <tr key={item.id} className="hover:bg-slate-800/40 transition-colors">
+                          <td className="px-3.5 py-2.5 font-medium text-white flex items-center gap-2">
+                            <span className="w-2 h-2 rounded-full bg-emerald-400 shrink-0" />
+                            <div>
+                              <div className="font-semibold text-slate-100">{item.name}</div>
+                              <div className="text-[10px] text-slate-500">{item.group}</div>
+                            </div>
+                          </td>
+                          <td className="px-3.5 py-2.5 text-right font-mono text-slate-300">
+                            {formatCurrency(item.plannedAnnual)}
+                          </td>
+                          <td className="px-3.5 py-2.5 text-right font-mono font-semibold text-white">
+                            {formatCurrency(item.actualAnnual)}
+                          </td>
+                          <td className="px-3.5 py-2.5 text-right font-mono">
+                            {hasSpend ? (
+                              <span
+                                className={`inline-flex items-center px-2 py-0.5 rounded text-[11px] font-bold ${
+                                  isOver
+                                    ? 'bg-rose-500/20 text-rose-300 border border-rose-500/30'
+                                    : 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30'
+                                }`}
+                              >
+                                {isOver ? `-${formatCurrency(Math.abs(item.variance))}` : `+${formatCurrency(item.variance)}`}
+                              </span>
+                            ) : (
+                              <span className="text-slate-500">$0</span>
+                            )}
+                          </td>
+                          <td className="px-3.5 py-2.5 min-w-[130px]">
+                            {item.plannedAnnual > 0 ? (
+                              <div className="space-y-1">
+                                <div className="flex justify-between text-[10px] font-mono text-slate-400">
+                                  <span>{Math.round(item.percentUsed)}%</span>
+                                </div>
+                                <div className="w-full bg-slate-800 rounded-full h-1.5 overflow-hidden">
+                                  <div
+                                    className={`h-full rounded-full transition-all ${
+                                      item.percentUsed > 100
+                                        ? 'bg-rose-500'
+                                        : item.percentUsed > 80
+                                        ? 'bg-amber-400'
+                                        : 'bg-emerald-400'
+                                    }`}
+                                    style={{ width: `${Math.min(100, item.percentUsed)}%` }}
+                                  />
+                                </div>
+                              </div>
+                            ) : (
+                              <span className="text-[10px] text-slate-500 italic">No budget set</span>
+                            )}
+                          </td>
+                          <td className="px-3.5 py-2.5">
+                            {Object.keys(item.payers).length > 0 ? (
+                              <div className="flex flex-wrap gap-1 text-[10px]">
+                                {Object.entries(item.payers).map(([payer, amt]) => (
+                                  <span key={payer} className="px-1.5 py-0.5 rounded bg-slate-800 text-slate-300 border border-slate-700">
+                                    {payer}: {formatCurrency(amt)}
+                                  </span>
+                                ))}
+                              </div>
+                            ) : (
+                              <span className="text-slate-600 text-[11px]">—</span>
+                            )}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )}
+
+            {/* Collapsible Transactions Drawer Trigger */}
+            {loggedExpenses.length > 0 && (
+              <div className="pt-1 flex items-center justify-between text-xs text-slate-400">
+                <button
+                  type="button"
+                  onClick={() => setShowTransactionsDrawer(!showTransactionsDrawer)}
+                  className="text-emerald-400 hover:text-emerald-300 flex items-center gap-1 font-semibold cursor-pointer"
+                >
+                  <Tag className="w-3.5 h-3.5" />
+                  <span>{showTransactionsDrawer ? 'Hide' : 'View'} all {loggedExpenses.length} transaction records</span>
+                </button>
+              </div>
+            )}
+
+            {/* Individual Transaction Ledger Drawer */}
+            {showTransactionsDrawer && loggedExpenses.length > 0 && (
+              <div className="bg-slate-950/70 border border-slate-800 rounded-xl p-3 space-y-2 max-h-60 overflow-y-auto custom-scrollbar animate-in fade-in">
+                <div className="text-[11px] font-bold text-slate-400 uppercase tracking-wider mb-2">
+                  Transaction Audit Log ({selectedYear})
+                </div>
+                <div className="divide-y divide-slate-800/60">
+                  {loggedExpenses.map((exp) => (
+                    <div key={exp.expenseId} className="py-2 first:pt-0 flex items-center justify-between text-xs">
+                      <div>
+                        <div className="flex items-center space-x-2">
+                          <span className="font-bold text-white">${exp.amount.toFixed(2)}</span>
+                          <span className="px-2 py-0.5 rounded-full bg-slate-800 text-slate-300 text-[11px]">
+                            {exp.categoryName}
+                          </span>
+                        </div>
+                        <div className="text-[11px] text-slate-500 mt-0.5 flex items-center space-x-2">
+                          <span>{exp.date}</span>
+                          <span>•</span>
+                          <span>{exp.enteredBy}</span>
+                          {exp.notes && (
+                            <>
+                              <span>•</span>
+                              <span className="text-amber-300 italic truncate max-w-[200px]">{exp.notes}</span>
+                            </>
+                          )}
+                        </div>
+                      </div>
+
+                      <button
+                        onClick={() => handleDeleteLoggedExpense(exp.expenseId)}
+                        className="p-1.5 text-slate-500 hover:text-rose-400 hover:bg-rose-500/10 rounded-lg transition-colors cursor-pointer"
+                        title="Delete this transaction"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        )}
       </div>
 
       {/* Active Year Data Entry Cards */}
@@ -1204,6 +1752,12 @@ export const ActualsWorkspace: React.FC<ActualsWorkspaceProps> = ({
           </div>
         </div>
       )}
+      {/* Cloud Authentication Modal */}
+      <CloudAuthModal
+        isOpen={showCloudModal}
+        onClose={() => setShowCloudModal(false)}
+        onSyncComplete={loadLoggedExpenses}
+      />
     </div>
   );
 };

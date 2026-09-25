@@ -8,6 +8,8 @@ import {
   AlertTriangle,
   Settings,
   X,
+  Cloud,
+  Fingerprint,
 } from 'lucide-react';
 import { SidebarNavigation, ActiveViewType } from './SidebarNavigation';
 
@@ -28,6 +30,13 @@ interface DashboardLayoutProps {
   isSimulating?: boolean;
   onOpenDocumentation?: (sectionId?: string) => void;
   onOpenAbout?: () => void;
+  onOpenCloudModal?: () => void;
+  isAuthenticated?: boolean;
+  currentUserEmail?: string;
+  isSyncing?: boolean;
+  isDemoMode?: boolean;
+  onExitDemo?: () => void;
+  appMode?: 'demo' | 'localhost' | 'production';
   globalFontSize: number;
   setGlobalFontSize: (size: number) => void;
   children: React.ReactNode;
@@ -64,6 +73,13 @@ export const DashboardLayout: React.FC<DashboardLayoutProps> = ({
   isSimulating = false,
   onOpenDocumentation,
   onOpenAbout,
+  onOpenCloudModal,
+  isAuthenticated = false,
+  currentUserEmail,
+  isSyncing = false,
+  isDemoMode = false,
+  onExitDemo,
+  appMode = 'production',
   globalFontSize,
   setGlobalFontSize,
   children,
@@ -174,10 +190,41 @@ export const DashboardLayout: React.FC<DashboardLayoutProps> = ({
         onOpenDocumentation={onOpenDocumentation}
         onOpenAbout={onOpenAbout}
         onOpenDisplaySettings={() => setShowDisplaySettings(true)}
+        onOpenCloudModal={onOpenCloudModal}
+        isAuthenticated={isAuthenticated}
+        currentUserEmail={currentUserEmail}
+        isSyncing={isSyncing}
+        isDemoMode={isDemoMode}
+        appMode={appMode}
       />
 
       {/* Main Viewport & Layout */}
       <div className="flex-1 flex flex-col h-full min-w-0 overflow-hidden bg-slate-950">
+        {/* Ephemeral Demo Sandbox Top Banner */}
+        {isDemoMode && (
+          <div className="bg-amber-500/15 border-b border-amber-500/30 px-4 py-2 flex flex-wrap items-center justify-between gap-2 text-xs text-amber-200 shrink-0">
+            <div className="flex items-center gap-2">
+              <span className="px-1.5 py-0.5 rounded bg-amber-500/25 border border-amber-500/40 text-amber-300 font-bold uppercase tracking-wider text-[10px]">
+                Demo Sandbox
+              </span>
+              <span className="text-[11px] text-amber-200/90 font-medium">
+                Viewing an isolated sample plan. Changes are in-memory only and will not modify cloud or local storage.
+              </span>
+            </div>
+            <div className="flex items-center gap-2">
+              {onExitDemo && (
+                <button
+                  type="button"
+                  onClick={onExitDemo}
+                  className="px-3 py-1 rounded-lg bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold text-[11px] transition-all cursor-pointer shadow-sm active:scale-95"
+                >
+                  Exit Demo
+                </button>
+              )}
+            </div>
+          </div>
+        )}
+
         {/* Streamlined Top Header Bar */}
         <header className="px-4 py-2 border-b border-slate-800 bg-slate-900/80 backdrop-blur-md z-10 flex flex-wrap items-center justify-between gap-3 shrink-0">
           {/* Left Section: Breadcrumb & View Title */}
@@ -191,10 +238,82 @@ export const DashboardLayout: React.FC<DashboardLayoutProps> = ({
                 {currentViewMeta.title}
               </h1>
             </div>
+            {appMode === 'localhost' && !isAuthenticated && !isDemoMode && (
+              <span className="px-2 py-0.5 rounded-md bg-sky-500/10 border border-sky-500/20 text-sky-400 text-[10px] font-mono font-semibold hidden md:inline-block">
+                Localhost Dev
+              </span>
+            )}
           </div>
 
           {/* Right Section: Action Controls & Switchers */}
           <div className="flex items-center gap-2 shrink-0">
+            {/* Household Cloud Sync Button */}
+            {onOpenCloudModal && (
+              <button
+                type="button"
+                disabled={isDemoMode || appMode === 'localhost'}
+                onClick={isDemoMode || appMode === 'localhost' ? undefined : onOpenCloudModal}
+                className={`flex items-center gap-2 px-3 py-1.5 rounded-xl text-xs font-semibold border transition-all ${
+                  isDemoMode || appMode === 'localhost'
+                    ? 'bg-slate-800/40 text-slate-500 border-slate-700/50 cursor-not-allowed opacity-60'
+                    : isAuthenticated
+                    ? 'bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-300 border-emerald-500/30 cursor-pointer'
+                    : 'bg-emerald-600 hover:bg-emerald-500 text-white border-emerald-500/50 shadow-md shadow-emerald-950/40 cursor-pointer'
+                }`}
+                title={
+                  isDemoMode
+                    ? 'Sign in to Cloud is disabled in Demo Sandbox mode. Exit Demo to sign in.'
+                    : appMode === 'localhost'
+                    ? 'Cloud Sync & Sign In are disabled in Localhost Dev mode (operating strictly off local storage).'
+                    : isAuthenticated
+                    ? `Household Cloud Synced: ${currentUserEmail || 'Active'}. Click to manage passkeys / sync.`
+                    : 'Sign into Household Cloud with Passkey or Password'
+                }
+              >
+                <Cloud
+                  className={`w-3.5 h-3.5 ${
+                    isDemoMode || appMode === 'localhost'
+                      ? 'text-slate-500'
+                      : isAuthenticated
+                      ? isSyncing
+                        ? 'text-emerald-300 animate-pulse'
+                        : 'text-emerald-400'
+                      : 'text-white'
+                  }`}
+                />
+                <span className="font-bold">
+                  {isDemoMode ? (
+                    <span>Sign In (Disabled)</span>
+                  ) : appMode === 'localhost' ? (
+                    <span>Local Storage Only</span>
+                  ) : isAuthenticated ? (
+                    <span className="flex items-center gap-1.5">
+                      <span className="hidden sm:inline">
+                        {currentUserEmail ? currentUserEmail.split('@')[0] : 'Cloud Synced'}
+                      </span>
+                      <span className="sm:hidden">Cloud</span>
+                    </span>
+                  ) : (
+                    <span className="flex items-center gap-1.5">
+                      <span>Sign In</span>
+                      <Fingerprint className="w-3.5 h-3.5 hidden sm:inline text-emerald-200" />
+                    </span>
+                  )}
+                </span>
+                {!isDemoMode && appMode !== 'localhost' && (
+                  <span
+                    className={`w-2 h-2 rounded-full ${
+                      isAuthenticated
+                        ? isSyncing
+                          ? 'bg-emerald-300 animate-ping'
+                          : 'bg-emerald-400'
+                        : 'bg-white animate-pulse'
+                    }`}
+                  />
+                )}
+              </button>
+            )}
+
             {/* Summary KPIs Toggle Button */}
             <button
               type="button"

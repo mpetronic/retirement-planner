@@ -398,6 +398,31 @@ export const ParametersWorkspace: React.FC<ParametersWorkspaceProps> = ({
                   />
                 </div>
               </div>
+
+              <div className="space-y-1.5 pt-1 border-t border-slate-800/60">
+                <RangeSlider
+                  min={50}
+                  max={110}
+                  step={1}
+                  value={inputs.you.longevityAge ?? 90}
+                  onChange={(val) => updateNestedState('you', 'longevityAge', val)}
+                  renderLabel={(displayVal) => (
+                    <div className="flex justify-between items-center text-xs">
+                      <label className="text-slate-400 font-medium">Actuarial Projected Longevity Age</label>
+                      <span className="text-emerald-400 font-bold font-mono text-xs bg-slate-950 px-2 py-0.5 rounded border border-slate-800">
+                        Age {displayVal} (Year {yourBirthYear + displayVal})
+                      </span>
+                    </div>
+                  )}
+                />
+                <div className="flex justify-between text-[10px] text-slate-500 font-mono">
+                  <span>Age 50</span>
+                  <span>Age 85</span>
+                  <span>Age 90</span>
+                  <span>Age 95</span>
+                  <span>Age 110</span>
+                </div>
+              </div>
             </div>
 
             {/* Spouse Profile Card */}
@@ -568,6 +593,31 @@ export const ParametersWorkspace: React.FC<ParametersWorkspaceProps> = ({
                       prefix="$"
                       placeholder="0"
                     />
+                  </div>
+                </div>
+
+                <div className="space-y-1.5 pt-1 border-t border-slate-800/60">
+                  <RangeSlider
+                    min={50}
+                    max={110}
+                    step={1}
+                    value={inputs.wife.longevityAge ?? 95}
+                    onChange={(val) => updateNestedState('wife', 'longevityAge', val)}
+                    renderLabel={(displayVal) => (
+                      <div className="flex justify-between items-center text-xs">
+                        <label className="text-slate-400 font-medium">Actuarial Projected Longevity Age</label>
+                        <span className="text-emerald-400 font-bold font-mono text-xs bg-slate-950 px-2 py-0.5 rounded border border-slate-800">
+                          Age {displayVal} (Year {wifeBirthYear + displayVal})
+                        </span>
+                      </div>
+                    )}
+                  />
+                  <div className="flex justify-between text-[10px] text-slate-500 font-mono">
+                    <span>Age 50</span>
+                    <span>Age 85</span>
+                    <span>Age 90</span>
+                    <span>Age 95</span>
+                    <span>Age 110</span>
                   </div>
                 </div>
               </div>

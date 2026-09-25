@@ -22,11 +22,15 @@ interface AboutDialogProps {
   isOpen: boolean;
   onClose: () => void;
   onOpenDocumentation?: () => void;
+  title?: string;
+  subtitle?: string;
 }
 
 export const AboutDialog: React.FC<AboutDialogProps> = ({
   isOpen,
   onClose,
+  title = 'Retirement Planner',
+  subtitle = 'Interactive 35-Year Tax, IRMAA & Wealth Simulator',
 }) => {
   const [copied, setCopied] = useState(false);
   const versionInfo = getVersionInfo();
@@ -35,7 +39,7 @@ export const AboutDialog: React.FC<AboutDialogProps> = ({
 
   const handleCopyDiagnostics = async () => {
     const diagnosticData = [
-      `Application: Retirement Planner 2.0`,
+      `Application: ${title}`,
       `Display Version: ${versionInfo.displayVersion}`,
       `Base Tag: ${versionInfo.lastTag || versionInfo.tag || 'None'}`,
       `Tag Distance: ${versionInfo.tagDistance ?? 0}`,
@@ -70,14 +74,14 @@ export const AboutDialog: React.FC<AboutDialogProps> = ({
             <div>
               <div className="flex items-center gap-2.5">
                 <h2 className="text-lg font-black text-slate-100 tracking-tight">
-                  Retirement Planner
+                  {title}
                 </h2>
                 <span className="px-2 py-0.5 text-[11px] font-mono font-bold rounded-full bg-emerald-500/15 border border-emerald-500/30 text-emerald-300">
                   {versionInfo.displayVersion}
                 </span>
               </div>
               <p className="text-xs text-slate-400">
-                Interactive 35-Year Tax, IRMAA & Wealth Simulator
+                {subtitle}
               </p>
             </div>
           </div>
