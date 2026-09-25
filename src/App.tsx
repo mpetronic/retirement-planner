@@ -35,6 +35,10 @@ import { BucketManagementWorkspace } from './components/BucketManagementWorkspac
 import { DocumentationDialog } from './components/DocumentationDialog';
 import { AboutDialog } from './components/AboutDialog';
 import { OnboardingWizard } from './components/OnboardingWizard';
+import { CloudAuthModal } from './components/CloudAuthModal';
+import { AuthService } from './shared/auth/AuthService';
+import { getStorageAdapter } from './shared/storage';
+import { syncPlannerCatalogToCloudStorage } from './shared/utils/plannerCategories';
 
 // Default initial state matching specifications
 const DEFAULT_INPUTS: AppStateInputs = {
@@ -292,7 +296,31 @@ function App() {
   const [useTodayDollars, setUseTodayDollars] = useLocalStorage<boolean>('retirement_planner_use_today_dollars', false);
   const [showDocumentation, setShowDocumentation] = useState<boolean>(false);
   const [showAboutDialog, setShowAboutDialog] = useState<boolean>(false);
+  const [showCloudModal, setShowCloudModal] = useState<boolean>(false);
+  const [isAuthenticated, setIsAuthenticated] = useState<boolean>(() => AuthService.isAuthenticated());
   const [documentationSectionId, setDocumentationSectionId] = useState<string>('overview');
+
+  // Listen to Cognito auth state changes
+  useEffect(() => {
+    return AuthService.subscribe((session) => {
+      setIsAuthenticated(Boolean(session));
+    });
+  }, []);
+
+  // Automatically sync planner line items & profile names to cloud DynamoDB when authenticated or when inputs change
+  useEffect(() => {
+    if (inputs.detailedExpenses && inputs.detailedExpenses.catalog) {
+      const adapter = getStorageAdapter();
+      const profileNames = {
+        primaryName: inputs.you?.name || 'Primary',
+        spouseName: inputs.wife?.name || 'Spouse',
+        isSingleFiler: Boolean(inputs.isSingleFiler),
+      };
+      syncPlannerCatalogToCloudStorage(inputs.detailedExpenses, adapter, profileNames).catch((err) => {
+        console.warn('Failed to background sync catalog to storage:', err);
+      });
+    }
+  }, [inputs.detailedExpenses, inputs.you?.name, inputs.wife?.name, inputs.isSingleFiler, isAuthenticated]);
 
   const handleOpenDocumentation = (sectionId?: string) => {
     setDocumentationSectionId(sectionId || 'overview');
@@ -725,6 +753,8 @@ function App() {
         isSimulating={isSimulating}
         onOpenDocumentation={handleOpenDocumentation}
         onOpenAbout={() => setShowAboutDialog(true)}
+        onOpenCloudModal={() => setShowCloudModal(true)}
+        isAuthenticated={isAuthenticated}
         globalFontSize={globalFontSize}
         setGlobalFontSize={setGlobalFontSize}
       >
@@ -873,6 +903,12 @@ function App() {
           }}
         />
       )}
+
+      {/* Household Cloud Authentication & Sync Modal */}
+      <CloudAuthModal
+        isOpen={showCloudModal}
+        onClose={() => setShowCloudModal(false)}
+      />
     </div>
   );
 }

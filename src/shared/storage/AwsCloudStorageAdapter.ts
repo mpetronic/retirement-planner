@@ -28,17 +28,15 @@ export class AwsCloudStorageAdapter implements StorageAdapter {
   // --- Category Operations ---
 
   async getCategories(): Promise<ExpenseCategory[]> {
-    // 1. Immediately return cached local categories for instant UI responsiveness
-    const localCats = await this.localAdapter.getCategories();
-
-    // 2. Trigger asynchronous background sync with Cloud DynamoDB if authenticated
     if (typeof window !== 'undefined' && navigator.onLine && AuthService.isAuthenticated()) {
-      this.syncCategoriesFromCloud().catch(err => {
-        console.warn('Background category cloud sync failed:', err);
-      });
+      try {
+        await this.syncCategoriesFromCloud();
+      } catch (err) {
+        console.warn('Background category cloud sync failed, using local cache:', err);
+      }
     }
 
-    return localCats;
+    return this.localAdapter.getCategories();
   }
 
   private async syncCategoriesFromCloud(): Promise<void> {
@@ -57,14 +55,26 @@ export class AwsCloudStorageAdapter implements StorageAdapter {
 
       if (!response.ok) return;
 
-      const remoteCats: ExpenseCategory[] = await response.json();
-      if (Array.isArray(remoteCats)) {
-        for (const cat of remoteCats) {
-          await this.localAdapter.saveCategory(cat);
+      const data = await response.json();
+      const remoteCats: ExpenseCategory[] = Array.isArray(data)
+        ? data
+        : Array.isArray(data.categories)
+        ? data.categories
+        : [];
+
+      const remoteIds = new Set(remoteCats.map(c => c.id));
+      const localCats = await this.localAdapter.getCategories();
+
+      // 1. Purge any local categories that were deleted in the cloud
+      for (const localCat of localCats) {
+        if (!remoteIds.has(localCat.id)) {
+          await this.localAdapter.deleteCategory(localCat.id);
         }
-        if (typeof window !== 'undefined' && typeof CustomEvent !== 'undefined') {
-          window.dispatchEvent(new CustomEvent('cloud_categories_synced', { detail: remoteCats }));
-        }
+      }
+
+      // 2. Save / update all active remote categories
+      for (const cat of remoteCats) {
+        await this.localAdapter.saveCategory(cat);
       }
     } finally {
       this.isSyncingCategories = false;
@@ -116,15 +126,15 @@ export class AwsCloudStorageAdapter implements StorageAdapter {
   // --- Expense Operations ---
 
   async getExpenses(year: number, month?: number): Promise<ActualExpense[]> {
-    const local = await this.localAdapter.getExpenses(year, month);
-
     if (typeof window !== 'undefined' && navigator.onLine && AuthService.isAuthenticated()) {
-      this.syncExpensesFromCloud(year, month).catch(err => {
-        console.warn('Background expense cloud sync failed:', err);
-      });
+      try {
+        await this.syncExpensesFromCloud(year, month);
+      } catch (err) {
+        console.warn('Background expense cloud sync failed, using local cache:', err);
+      }
     }
 
-    return local;
+    return this.localAdapter.getExpenses(year, month);
   }
 
   private async syncExpensesFromCloud(year: number, month?: number): Promise<void> {
@@ -147,23 +157,34 @@ export class AwsCloudStorageAdapter implements StorageAdapter {
 
       if (!response.ok) return;
 
-      const remoteExpenses: ActualExpense[] = await response.json();
-      if (Array.isArray(remoteExpenses)) {
-        const pending = await this.localAdapter.getPendingSyncExpenses();
-        const pendingIds = new Set(pending.map(p => p.expenseId));
+      const data = await response.json();
+      const remoteExpenses: ActualExpense[] = Array.isArray(data)
+        ? data
+        : Array.isArray(data.expenses)
+        ? data.expenses
+        : [];
 
-        for (const exp of remoteExpenses) {
-          // Do not overwrite local entries that have pending edits
-          if (!pendingIds.has(exp.expenseId)) {
-            await this.localAdapter.saveExpense({
-              ...exp,
-            });
-            await this.localAdapter.markExpensesSynced([exp.expenseId]);
-          }
+      const pending = await this.localAdapter.getPendingSyncExpenses();
+      const pendingIds = new Set(pending.map(p => p.expenseId));
+      const remoteIds = new Set(remoteExpenses.map(p => p.expenseId));
+
+      // 1. Fetch current local expenses for this timeframe
+      const localExpenses = await this.localAdapter.getExpenses(year, month);
+
+      // 2. Remove any local expenses that were deleted on the cloud (and not pending sync)
+      for (const localExp of localExpenses) {
+        if (!remoteIds.has(localExp.expenseId) && !pendingIds.has(localExp.expenseId) && localExp.syncStatus !== 'PENDING_SYNC') {
+          await this.localAdapter.deleteExpense(localExp.expenseId);
         }
+      }
 
-        if (typeof window !== 'undefined' && typeof CustomEvent !== 'undefined') {
-          window.dispatchEvent(new CustomEvent('cloud_expenses_synced', { detail: remoteExpenses }));
+      // 3. Save / update all authoritative remote expenses
+      for (const exp of remoteExpenses) {
+        if (!pendingIds.has(exp.expenseId)) {
+          await this.localAdapter.saveExpense({
+            ...exp,
+            syncStatus: 'SYNCED',
+          });
         }
       }
     } finally {

@@ -8,6 +8,7 @@ import {
   AlertTriangle,
   Settings,
   X,
+  Cloud,
 } from 'lucide-react';
 import { SidebarNavigation, ActiveViewType } from './SidebarNavigation';
 
@@ -28,6 +29,8 @@ interface DashboardLayoutProps {
   isSimulating?: boolean;
   onOpenDocumentation?: (sectionId?: string) => void;
   onOpenAbout?: () => void;
+  onOpenCloudModal?: () => void;
+  isAuthenticated?: boolean;
   globalFontSize: number;
   setGlobalFontSize: (size: number) => void;
   children: React.ReactNode;
@@ -64,6 +67,8 @@ export const DashboardLayout: React.FC<DashboardLayoutProps> = ({
   isSimulating = false,
   onOpenDocumentation,
   onOpenAbout,
+  onOpenCloudModal,
+  isAuthenticated = false,
   globalFontSize,
   setGlobalFontSize,
   children,
@@ -174,6 +179,8 @@ export const DashboardLayout: React.FC<DashboardLayoutProps> = ({
         onOpenDocumentation={onOpenDocumentation}
         onOpenAbout={onOpenAbout}
         onOpenDisplaySettings={() => setShowDisplaySettings(true)}
+        onOpenCloudModal={onOpenCloudModal}
+        isAuthenticated={isAuthenticated}
       />
 
       {/* Main Viewport & Layout */}
@@ -195,6 +202,30 @@ export const DashboardLayout: React.FC<DashboardLayoutProps> = ({
 
           {/* Right Section: Action Controls & Switchers */}
           <div className="flex items-center gap-2 shrink-0">
+            {/* Household Cloud Sync Button */}
+            {onOpenCloudModal && (
+              <button
+                type="button"
+                onClick={onOpenCloudModal}
+                className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl text-xs font-semibold border transition-all cursor-pointer ${
+                  isAuthenticated
+                    ? 'bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-300 border-emerald-500/30'
+                    : 'bg-slate-900/80 hover:bg-slate-800 text-amber-300 border-amber-500/30'
+                }`}
+                title={isAuthenticated ? 'Household Cloud Synced (AWS us-east-1)' : 'Connect Household Cloud (Sign In)'}
+              >
+                <Cloud className={`w-3.5 h-3.5 ${isAuthenticated ? 'text-emerald-400' : 'text-amber-400'}`} />
+                <span className="hidden sm:inline font-bold">
+                  {isAuthenticated ? 'Cloud Synced' : 'Sign in to Cloud'}
+                </span>
+                <span
+                  className={`w-2 h-2 rounded-full ${
+                    isAuthenticated ? 'bg-emerald-400' : 'bg-amber-400 animate-pulse'
+                  }`}
+                />
+              </button>
+            )}
+
             {/* Summary KPIs Toggle Button */}
             <button
               type="button"

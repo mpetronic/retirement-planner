@@ -28,7 +28,7 @@ import {
 } from 'lucide-react';
 import { getStorageAdapter } from '../../shared/storage';
 import { ActualExpense, ExpenseCategory } from '../../shared/types/expenses';
-import { getPlannerProfileNames } from '../../shared/utils/profileNames';
+import { resolveLoggedInPayerName } from '../../shared/utils/profileNames';
 import { AuthService } from '../../shared/auth/AuthService';
 import { CloudAuthModal } from '../../components/CloudAuthModal';
 import {
@@ -67,7 +67,7 @@ const COLOR_PRESETS = [
 
 export const ExpenserApp: React.FC = () => {
   const adapter = useMemo(() => getStorageAdapter(), []);
-  const profileNames = useMemo(() => getPlannerProfileNames(), []);
+  const [payerName, setPayerName] = useState<string>(() => resolveLoggedInPayerName());
 
   // State
   const [amountStr, setAmountStr] = useState<string>('0');
@@ -76,8 +76,6 @@ export const ExpenserApp: React.FC = () => {
   const [categorySearchQuery, setCategorySearchQuery] = useState<string>('');
   const [isCategorySearchOpen, setIsCategorySearchOpen] = useState<boolean>(false);
   const [highlightedIndex, setHighlightedIndex] = useState<number>(0);
-  const [enteredBy, setEnteredBy] = useState<string>(() => profileNames.primaryName);
-  const [customPayer, setCustomPayer] = useState<string>('');
   const [expenseDate, setExpenseDate] = useState<string>(() => new Date().toISOString().split('T')[0]);
   const [notes, setNotes] = useState<string>('');
   const [recentExpenses, setRecentExpenses] = useState<ActualExpense[]>([]);
@@ -225,18 +223,25 @@ export const ExpenserApp: React.FC = () => {
     const handleOnline = () => setIsOnline(true);
     const handleOffline = () => setIsOnline(false);
     const handleCloudSync = () => {
+      setPayerName(resolveLoggedInPayerName());
       loadData();
     };
     const unsubscribeAuth = AuthService.subscribe(s => {
       setIsAuthenticated(Boolean(s));
+      setPayerName(resolveLoggedInPayerName());
       loadData();
     });
+
+    const handleStorage = () => {
+      setPayerName(resolveLoggedInPayerName());
+    };
 
     window.addEventListener('online', handleOnline);
     window.addEventListener('offline', handleOffline);
     window.addEventListener('cloud_categories_synced', handleCloudSync);
     window.addEventListener('cloud_expenses_synced', handleCloudSync);
     window.addEventListener('cloud_sync_completed', handleCloudSync);
+    window.addEventListener('storage', handleStorage);
 
     return () => {
       window.removeEventListener('online', handleOnline);
@@ -244,6 +249,7 @@ export const ExpenserApp: React.FC = () => {
       window.removeEventListener('cloud_categories_synced', handleCloudSync);
       window.removeEventListener('cloud_expenses_synced', handleCloudSync);
       window.removeEventListener('cloud_sync_completed', handleCloudSync);
+      window.removeEventListener('storage', handleStorage);
       unsubscribeAuth();
     };
   }, [loadData]);
@@ -342,14 +348,14 @@ export const ExpenserApp: React.FC = () => {
 
     try {
       const selectedItem = allCatalogItems.find(c => c.id === selectedCategoryId);
-      const payerName = customPayer.trim() || enteredBy;
+      const activePayer = payerName || resolveLoggedInPayerName();
 
       await adapter.saveExpense({
         date: expenseDate,
         amount: parsedAmount,
         categoryId: selectedCategoryId,
         categoryName: selectedItem ? selectedItem.displayName : 'Uncategorized',
-        enteredBy: payerName,
+        enteredBy: activePayer,
         notes: notes.trim() || undefined,
       });
 
@@ -502,6 +508,31 @@ export const ExpenserApp: React.FC = () => {
         </div>
       </header>
 
+      {/* Unauthenticated / Connect Cloud Callout Banner */}
+      {!isAuthenticated && (
+        <div
+          onClick={() => setShowCloudModal(true)}
+          className="mx-4 mt-3 p-3 bg-gradient-to-r from-amber-500/20 to-orange-500/10 hover:from-amber-500/30 hover:to-orange-500/20 border border-amber-500/40 rounded-2xl flex items-center justify-between cursor-pointer transition-all shadow-lg shadow-amber-950/20 group"
+        >
+          <div className="flex items-center space-x-2.5 min-w-0">
+            <div className="w-8 h-8 rounded-xl bg-amber-500/20 border border-amber-500/30 flex items-center justify-center shrink-0">
+              <Cloud className="w-4 h-4 text-amber-400 group-hover:scale-110 transition-transform" />
+            </div>
+            <div className="min-w-0">
+              <p className="text-xs font-bold text-amber-200 truncate">
+                Sign in to Household Cloud
+              </p>
+              <p className="text-[11px] text-amber-300/80 truncate">
+                Sync categories & live actuals with your desktop planner
+              </p>
+            </div>
+          </div>
+          <span className="px-2.5 py-1 rounded-xl bg-amber-500 text-slate-950 text-xs font-bold shrink-0 ml-2 shadow-sm group-hover:bg-amber-400 transition-colors">
+            Sign In
+          </span>
+        </div>
+      )}
+
       {/* Main Content Area */}
       <main className="flex-1 flex flex-col justify-between p-4 space-y-3">
         {/* Amount Display with Today's Stat */}
@@ -535,7 +566,7 @@ export const ExpenserApp: React.FC = () => {
               </span>
             )}
             <span className="px-2.5 py-0.5 rounded-full bg-slate-800 text-slate-300 border border-slate-700 font-medium">
-              👤 {customPayer || enteredBy}
+              👤 {payerName}
             </span>
             {notes && (
               <span className="px-2.5 py-0.5 rounded-full bg-slate-800/80 text-amber-300 border border-amber-500/30 flex items-center gap-1">
@@ -711,44 +742,8 @@ export const ExpenserApp: React.FC = () => {
           )}
         </div>
 
-        {/* Controls Row (Payer Selector, Date, Notes Trigger) */}
-        <div className="grid grid-cols-3 gap-2">
-          {/* Payer Toggle */}
-          <div className="bg-slate-900/80 border border-slate-800 rounded-xl p-1.5 flex items-center justify-around">
-            <button
-              onClick={() => {
-                triggerHaptic(8);
-                setEnteredBy(profileNames.primaryName);
-                setCustomPayer('');
-              }}
-              title={profileNames.primaryName}
-              className={`flex-1 py-1 rounded-lg text-xs font-semibold transition-all truncate px-1 ${
-                enteredBy === profileNames.primaryName && !customPayer
-                  ? 'bg-emerald-600 text-white shadow'
-                  : 'text-slate-400 hover:text-slate-200'
-              }`}
-            >
-              {profileNames.primaryName}
-            </button>
-            {!profileNames.isSingleFiler && (
-              <button
-                onClick={() => {
-                  triggerHaptic(8);
-                  setEnteredBy(profileNames.spouseName);
-                  setCustomPayer('');
-                }}
-                title={profileNames.spouseName}
-                className={`flex-1 py-1 rounded-lg text-xs font-semibold transition-all truncate px-1 ${
-                  enteredBy === profileNames.spouseName && !customPayer
-                    ? 'bg-emerald-600 text-white shadow'
-                    : 'text-slate-400 hover:text-slate-200'
-                }`}
-              >
-                {profileNames.spouseName}
-              </button>
-            )}
-          </div>
-
+        {/* Controls Row (Date & Notes) */}
+        <div className="grid grid-cols-2 gap-2">
           {/* Date Picker Button */}
           <button
             type="button"
@@ -756,7 +751,7 @@ export const ExpenserApp: React.FC = () => {
               triggerHaptic(8);
               setShowDateModal(true);
             }}
-            className="bg-slate-900/80 hover:bg-slate-800 border border-slate-800 rounded-xl p-1.5 flex items-center justify-center space-x-1 text-xs font-medium text-slate-300 transition-all cursor-pointer active:scale-95"
+            className="bg-slate-900/80 hover:bg-slate-800 border border-slate-800 rounded-xl p-2 flex items-center justify-center space-x-1.5 text-xs font-medium text-slate-300 transition-all cursor-pointer active:scale-95"
           >
             <Calendar className="w-3.5 h-3.5 text-emerald-400" />
             <span>{expenseDate === todayStr ? 'Today' : expenseDate.slice(5)}</span>
@@ -764,8 +759,9 @@ export const ExpenserApp: React.FC = () => {
 
           {/* Notes Button */}
           <button
+            type="button"
             onClick={() => setShowNotesDrawer(prev => !prev)}
-            className={`bg-slate-900/80 border rounded-xl p-1.5 flex items-center justify-center space-x-1 text-xs font-medium transition-all ${
+            className={`bg-slate-900/80 border rounded-xl p-2 flex items-center justify-center space-x-1.5 text-xs font-medium transition-all cursor-pointer active:scale-95 ${
               notes
                 ? 'border-amber-500/50 text-amber-300 bg-amber-500/10'
                 : 'border-slate-800 text-slate-300 hover:bg-slate-800'

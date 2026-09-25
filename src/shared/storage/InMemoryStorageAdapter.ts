@@ -1,4 +1,4 @@
-import { ActualExpense, ExpenseCategory, FullHouseholdArchive, StorageAdapter } from '../types/expenses';
+import { ActualExpense, ExpenseCategory, FullHouseholdArchive, StorageAdapter, SyncStatus } from '../types/expenses';
 import { DEFAULT_EXPENSE_CATEGORIES } from './defaultCategories';
 
 export class InMemoryStorageAdapter implements StorageAdapter {
@@ -52,17 +52,30 @@ export class InMemoryStorageAdapter implements StorageAdapter {
       .slice(0, limit);
   }
 
-  async saveExpense(expense: Omit<ActualExpense, 'expenseId' | 'createdAt' | 'updatedAt' | 'syncStatus'>): Promise<ActualExpense> {
+  async saveExpense(
+    expense: Omit<ActualExpense, 'expenseId' | 'createdAt' | 'updatedAt' | 'syncStatus'> & {
+      expenseId?: string;
+      createdAt?: string;
+      updatedAt?: string;
+      syncStatus?: SyncStatus;
+    }
+  ): Promise<ActualExpense> {
     const now = new Date().toISOString();
+    const expenseId = expense.expenseId || `exp_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
     const newRecord: ActualExpense = {
       ...expense,
-      expenseId: `exp_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
-      syncStatus: 'PENDING_SYNC',
-      createdAt: now,
-      updatedAt: now,
+      expenseId,
+      syncStatus: expense.syncStatus || 'PENDING_SYNC',
+      createdAt: expense.createdAt || now,
+      updatedAt: expense.updatedAt || now,
     };
 
-    this.expenses.push(newRecord);
+    const existingIndex = this.expenses.findIndex(e => e.expenseId === expenseId);
+    if (existingIndex >= 0) {
+      this.expenses[existingIndex] = newRecord;
+    } else {
+      this.expenses.push(newRecord);
+    }
     return newRecord;
   }
 

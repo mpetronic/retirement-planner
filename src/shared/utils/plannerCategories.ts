@@ -1,5 +1,5 @@
-import { ExpenseCategory } from '../types/expenses';
-import { normalizeDetailedExpenses, ExpenseItemDefinition } from '../../types';
+import { ExpenseCategory, StorageAdapter } from '../types/expenses';
+import { normalizeDetailedExpenses, ExpenseItemDefinition, DetailedExpensesState } from '../../types';
 
 export interface PlannerExpenseLineItem {
   id: string;
@@ -170,11 +170,24 @@ export function mergeWithCustomCategories(
   const seenNames = new Set(plannerItems.map(p => p.name.toLowerCase()));
 
   for (const cat of customCategories) {
-    // Only merge user-created custom categories (isCustom === true)
-    if (!cat.isCustom) continue;
+    // Intercept internal household profile configuration category
+    if (cat.id === '__household_profiles__') {
+      try {
+        if (cat.name && cat.name.startsWith('PROFILES::')) {
+          const raw = cat.name.replace('PROFILES::', '');
+          if (typeof window !== 'undefined') {
+            window.localStorage.setItem('retirement_planner_profile_names', raw);
+          }
+        }
+      } catch {
+        // ignore
+      }
+      continue;
+    }
+
     if (seenIds.has(cat.id)) continue;
 
-    const parts = cat.name.includes(' - ') ? cat.name.split(' - ') : ['Custom', cat.name];
+    const parts = cat.name.includes(' - ') ? cat.name.split(' - ') : ['Living', cat.name];
     const groupCategory = parts[0].trim();
     const name = parts[1] ? parts[1].trim() : cat.name.trim();
     const displayName = cat.name.includes(' - ') ? cat.name : `${groupCategory} - ${name}`;
@@ -189,13 +202,63 @@ export function mergeWithCustomCategories(
       name,
       displayName,
       plannedMonthlyDefault: cat.plannedMonthlyDefault || 0,
-      color: cat.color || '#8b5cf6',
+      color: cat.color || GROUP_COLORS[groupCategory] || '#8b5cf6',
       icon: cat.icon || 'Tag',
-      isCustom: true,
+      isCustom: Boolean(cat.isCustom),
     });
     seenIds.add(cat.id);
     seenDisplayNames.add(displayName.toLowerCase());
   }
 
   return result;
+}
+
+export async function syncPlannerCatalogToCloudStorage(
+  detailedExpenses: DetailedExpensesState | null | undefined,
+  adapter: StorageAdapter,
+  profileNames?: { primaryName: string; spouseName: string; isSingleFiler: boolean }
+): Promise<void> {
+  // Sync profiles if provided
+  if (profileNames) {
+    try {
+      await adapter.saveCategory({
+        id: '__household_profiles__',
+        name: `PROFILES::${JSON.stringify(profileNames)}`,
+        plannedMonthlyDefault: 0,
+        color: '#6366f1',
+        icon: 'Users',
+        isCustom: false,
+      });
+    } catch (err) {
+      console.warn('Failed to sync household profiles to cloud:', err);
+    }
+  }
+
+  if (!detailedExpenses || !detailedExpenses.catalog || !Array.isArray(detailedExpenses.catalog.items)) {
+    return;
+  }
+  const costsMD = detailedExpenses.costs?.MD || detailedExpenses.MD || {};
+  const costsFL = detailedExpenses.costs?.FL || detailedExpenses.FL || {};
+  const frequencies = detailedExpenses.frequencies || {};
+
+  for (const item of detailedExpenses.catalog.items) {
+    const group = item.category || 'Living';
+    const cost = costsMD[item.id] ?? costsFL[item.id] ?? 0;
+    const freq = frequencies[item.id] ?? item.defaultFrequency ?? 12;
+    const monthlyCost = freq > 0 ? (cost * freq) / 12 : cost;
+    const displayName = `${group} - ${item.name}`;
+
+    try {
+      await adapter.saveCategory({
+        id: item.id,
+        name: displayName,
+        plannedMonthlyDefault: Math.round(monthlyCost),
+        color: GROUP_COLORS[group] || '#6366f1',
+        icon: 'Tag',
+        isCustom: false,
+      });
+    } catch (err) {
+      console.warn(`Failed to sync category ${item.name} to cloud:`, err);
+    }
+  }
 }

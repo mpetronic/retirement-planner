@@ -1,4 +1,4 @@
-import { ActualExpense, ExpenseCategory, FullHouseholdArchive, StorageAdapter } from '../types/expenses';
+import { ActualExpense, ExpenseCategory, FullHouseholdArchive, StorageAdapter, SyncStatus } from '../types/expenses';
 
 const DB_NAME = 'RetirementExpenserDB';
 const DB_VERSION = 1;
@@ -60,10 +60,19 @@ export class IndexedDbStorageAdapter implements StorageAdapter {
       const req = store.getAll();
 
       req.onsuccess = () => {
-        // Purge any legacy non-custom seed categories so planner is 100% SSOT
+        // Only purge legacy hardcoded mock seed IDs so real cloud categories are preserved
+        const legacyMockIds = new Set([
+          'cat_living',
+          'cat_housing',
+          'cat_transportation',
+          'cat_insurance',
+          'cat_healthcare',
+          'cat_leisure',
+          'cat_other',
+        ]);
         const items = (req.result || []) as ExpenseCategory[];
         for (const item of items) {
-          if (!item.isCustom) {
+          if (legacyMockIds.has(item.id)) {
             store.delete(item.id);
           }
         }
@@ -160,15 +169,23 @@ export class IndexedDbStorageAdapter implements StorageAdapter {
     });
   }
 
-  async saveExpense(expense: Omit<ActualExpense, 'expenseId' | 'createdAt' | 'updatedAt' | 'syncStatus'>): Promise<ActualExpense> {
+  async saveExpense(
+    expense: Omit<ActualExpense, 'expenseId' | 'createdAt' | 'updatedAt' | 'syncStatus'> & {
+      expenseId?: string;
+      createdAt?: string;
+      updatedAt?: string;
+      syncStatus?: SyncStatus;
+    }
+  ): Promise<ActualExpense> {
     const db = await this.getDB();
     const now = new Date().toISOString();
+    const expenseId = expense.expenseId || `exp_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
     const newRecord: ActualExpense = {
       ...expense,
-      expenseId: `exp_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
-      syncStatus: 'PENDING_SYNC',
-      createdAt: now,
-      updatedAt: now,
+      expenseId,
+      syncStatus: expense.syncStatus || 'PENDING_SYNC',
+      createdAt: expense.createdAt || now,
+      updatedAt: expense.updatedAt || now,
     };
 
     return new Promise<ActualExpense>((resolve, reject) => {
