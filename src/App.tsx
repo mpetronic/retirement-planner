@@ -36,6 +36,7 @@ import { DocumentationDialog } from './components/DocumentationDialog';
 import { AboutDialog } from './components/AboutDialog';
 import { OnboardingWizard } from './components/OnboardingWizard';
 import { CloudAuthModal } from './components/CloudAuthModal';
+import { LandingPage } from './components/LandingPage';
 import { AuthService } from './shared/auth/AuthService';
 import { getStorageAdapter, PlanSyncService } from './shared/storage';
 import { syncPlannerCatalogToCloudStorage } from './shared/utils/plannerCategories';
@@ -298,6 +299,7 @@ function App() {
   const [showAboutDialog, setShowAboutDialog] = useState<boolean>(false);
   const [showCloudModal, setShowCloudModal] = useState<boolean>(false);
   const [isAuthenticated, setIsAuthenticated] = useState<boolean>(() => AuthService.isAuthenticated());
+  const [isDemoMode, setIsDemoMode] = useState<boolean>(false);
   const [currentUserEmail, setCurrentUserEmail] = useState<string>(() => AuthService.getSession()?.email || '');
   const [isPlanSyncing, setIsPlanSyncing] = useState<boolean>(false);
   const [documentationSectionId, setDocumentationSectionId] = useState<string>('overview');
@@ -309,6 +311,7 @@ function App() {
       setIsAuthenticated(auth);
       setCurrentUserEmail(session?.email || '');
       if (auth) {
+        setIsDemoMode(false);
         PlanSyncService.syncPlanNow().catch((err) => {
           console.warn('Background plan cloud sync failed:', err);
         });
@@ -766,6 +769,21 @@ function App() {
   }, []);
 
   const isParamView = activeView.startsWith('params-');
+
+  if (!isAuthenticated && !isDemoMode) {
+    return (
+      <div className="min-h-screen w-screen bg-slate-950 text-slate-100 antialiased font-sans">
+        <LandingPage
+          onSignIn={() => setShowCloudModal(true)}
+          onExploreDemo={() => setIsDemoMode(true)}
+        />
+        <CloudAuthModal
+          isOpen={showCloudModal}
+          onClose={() => setShowCloudModal(false)}
+        />
+      </div>
+    );
+  }
 
   return (
     <div className="flex flex-col h-screen w-screen overflow-hidden bg-slate-950 text-slate-100 antialiased font-sans">
