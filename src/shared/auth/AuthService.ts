@@ -8,6 +8,9 @@ export interface AuthSession {
   email: string;
   householdId: string;
   sub: string;
+  nickname?: string;
+  givenName?: string;
+  name?: string;
 }
 
 const STORAGE_KEY_SESSION = 'retirement_planner_auth_session';
@@ -27,6 +30,18 @@ class AuthServiceClass {
       const raw = window.localStorage.getItem(STORAGE_KEY_SESSION);
       if (raw) {
         this.currentSession = JSON.parse(raw);
+        if (this.currentSession && this.currentSession.idToken) {
+          const payload = this.parseJwtPayload(this.currentSession.idToken);
+          if (typeof payload.nickname === 'string' && payload.nickname.trim()) {
+            this.currentSession.nickname = payload.nickname.trim();
+          }
+          if (typeof payload.given_name === 'string' && payload.given_name.trim()) {
+            this.currentSession.givenName = payload.given_name.trim();
+          }
+          if (typeof payload.name === 'string' && payload.name.trim()) {
+            this.currentSession.name = payload.name.trim();
+          }
+        }
       }
     } catch (err) {
       console.error('Failed to parse auth session from localStorage:', err);
@@ -148,6 +163,9 @@ class AuthServiceClass {
     const exp = typeof payload.exp === 'number' ? payload.exp : Math.floor(Date.now() / 1000) + (authResult.ExpiresIn || 3600);
     const sub = String(payload.sub || '');
     const householdId = String(payload['custom:household_id'] || 'household_default');
+    const nickname = typeof payload.nickname === 'string' && payload.nickname.trim() ? payload.nickname.trim() : undefined;
+    const givenName = typeof payload.given_name === 'string' && payload.given_name.trim() ? payload.given_name.trim() : undefined;
+    const name = typeof payload.name === 'string' && payload.name.trim() ? payload.name.trim() : undefined;
 
     const session: AuthSession = {
       idToken: authResult.IdToken,
@@ -157,6 +175,9 @@ class AuthServiceClass {
       email: String(payload.email || email),
       householdId,
       sub,
+      nickname,
+      givenName,
+      name,
     };
 
     this.saveSessionToStorage(session);
@@ -227,12 +248,18 @@ class AuthServiceClass {
       const authResult = data.AuthenticationResult;
       const payload = this.parseJwtPayload(authResult.IdToken);
       const exp = typeof payload.exp === 'number' ? payload.exp : Math.floor(Date.now() / 1000) + (authResult.ExpiresIn || 3600);
+      const nickname = typeof payload.nickname === 'string' && payload.nickname.trim() ? payload.nickname.trim() : this.currentSession.nickname;
+      const givenName = typeof payload.given_name === 'string' && payload.given_name.trim() ? payload.given_name.trim() : this.currentSession.givenName;
+      const name = typeof payload.name === 'string' && payload.name.trim() ? payload.name.trim() : this.currentSession.name;
 
       const updatedSession: AuthSession = {
         ...this.currentSession,
         idToken: authResult.IdToken,
         accessToken: authResult.AccessToken,
         expiresAt: exp,
+        nickname,
+        givenName,
+        name,
       };
 
       this.saveSessionToStorage(updatedSession);

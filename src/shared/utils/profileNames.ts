@@ -43,7 +43,21 @@ export function resolveLoggedInPayerName(): string {
   const profileNames = getPlannerProfileNames();
   const session = AuthService.getSession();
 
-  if (!session || !session.email) {
+  if (!session) {
+    return profileNames.primaryName;
+  }
+
+  // 1. Highest priority: Cognito 'nickname' attribute if configured
+  if (session.nickname && session.nickname.trim()) {
+    return session.nickname.trim();
+  }
+
+  // 2. Second priority: Cognito 'given_name' attribute if configured
+  if (session.givenName && session.givenName.trim()) {
+    return session.givenName.trim();
+  }
+
+  if (!session.email) {
     return profileNames.primaryName;
   }
 
