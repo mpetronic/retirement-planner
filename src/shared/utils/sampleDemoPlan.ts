@@ -87,6 +87,9 @@ export const SAMPLE_DEMO_PLAN: AppStateInputs = {
     enableRegimeSwitching: true,
     historicalSamplingStrategy: 'hybrid',
     calibrateHistoricalMeans: true,
+    activeCmaProfileId: 'custom',
+    baseCmaProfileId: null,
+    customCmaProfiles: [],
     stressTest: {
       enabled: false,
       mode: 'absolute',

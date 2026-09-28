@@ -119,6 +119,9 @@ const DEFAULT_INPUTS: AppStateInputs = {
     enableRegimeSwitching: true,
     historicalSamplingStrategy: 'hybrid',
     calibrateHistoricalMeans: true,
+    activeCmaProfileId: 'custom',
+    baseCmaProfileId: null,
+    customCmaProfiles: [],
     stressTest: {
       enabled: false,
       mode: 'absolute',
@@ -549,6 +552,7 @@ function App() {
     for (let t = 0; t < trials; t++) {
       if (mode === 'historical') {
         const isBlock = historicalStrategy === 'block' ? true : historicalStrategy === 'random' ? false : rand() < 0.35;
+        const targetCpi = deferredInputs.growthAssumptions.cpiInflationRate;
         list.push(
           generateHistoricalSequence(
             isBlock,
@@ -558,10 +562,12 @@ function App() {
             constantCpi,
             calibrateHistoricalMeans,
             equityMean,
-            bondMean
+            bondMean,
+            targetCpi
           )
         );
       } else {
+        const targetCpi = deferredInputs.growthAssumptions.cpiInflationRate;
         list.push(
           generateSyntheticSequence(
             equityMean,
@@ -572,7 +578,8 @@ function App() {
             rand,
             isCpiRandomized,
             constantCpi,
-            enableRegimeSwitching
+            enableRegimeSwitching,
+            targetCpi
           )
         );
       }
@@ -947,6 +954,7 @@ function App() {
             globalScenario={globalScenario}
             useTodayDollars={useTodayDollars}
             setUseTodayDollars={setUseTodayDollars}
+            onOpenDocumentation={handleOpenDocumentation}
           />
         )}
 

@@ -13,8 +13,18 @@ import {
   RefreshCw,
   TrendingUp,
   PieChart,
-  DollarSign
+  DollarSign,
+  RotateCcw,
+  ExternalLink
 } from 'lucide-react';
+import { CmaProfileSelector } from './CmaProfileSelector';
+import { 
+  getCmaProfile, 
+  getFieldDeviations, 
+  calculateArithmeticDrift, 
+  CurrentParameterValues, 
+  CMAFieldKey 
+} from '../constants/cmaProfiles';
 
 ChartJS.register(...registerables);
 
@@ -26,6 +36,7 @@ interface MonteCarloWorkspaceProps {
   globalScenario: 'flat' | 'p10' | 'p50' | 'p90';
   useTodayDollars?: boolean;
   setUseTodayDollars?: (val: boolean) => void;
+  onOpenDocumentation?: (sectionId?: string) => void;
 }
 
 export const MonteCarloWorkspace: React.FC<MonteCarloWorkspaceProps> = ({
@@ -35,6 +46,7 @@ export const MonteCarloWorkspace: React.FC<MonteCarloWorkspaceProps> = ({
   globalScenario,
   useTodayDollars = false,
   setUseTodayDollars,
+  onOpenDocumentation,
 }) => {
   const successRate = summary.successRate;
 
@@ -74,25 +86,79 @@ export const MonteCarloWorkspace: React.FC<MonteCarloWorkspaceProps> = ({
     return `${rounded}%`;
   };
 
-  // State update helpers
+  // Reference CMA profile and deviation detection
+  const customProfiles = inputs.monteCarloSettings.customCmaProfiles || [];
+  const activeCmaId = inputs.monteCarloSettings.activeCmaProfileId;
+  const baseCmaId = inputs.monteCarloSettings.baseCmaProfileId;
+  const referenceProfile = getCmaProfile(activeCmaId, customProfiles) || getCmaProfile(baseCmaId, customProfiles);
+
+  const currentValues: CurrentParameterValues = {
+    equityReturnRate: inputs.growthAssumptions.equityReturnRate,
+    equityVolatility: inputs.monteCarloSettings.equityVolatility,
+    fixedIncomeReturnRate: inputs.growthAssumptions.fixedIncomeReturnRate,
+    fixedIncomeVolatility: inputs.monteCarloSettings.fixedIncomeVolatility,
+    cashYieldRate: inputs.growthAssumptions.cashYieldRate,
+    cpiInflationRate: inputs.growthAssumptions.cpiInflationRate,
+    correlation: inputs.monteCarloSettings.correlation,
+  };
+
+  const deviations = referenceProfile ? getFieldDeviations(referenceProfile, currentValues) : null;
+
+  // State update helpers with auto-forking from CMA presets
   const updateSettings = <K extends keyof MonteCarloSettings>(field: K, value: MonteCarloSettings[K]) => {
+    const isCmaField = ['equityVolatility', 'fixedIncomeVolatility', 'correlation'].includes(field as string);
+    const shouldFork = isCmaField && inputs.monteCarloSettings.activeCmaProfileId && inputs.monteCarloSettings.activeCmaProfileId !== 'custom';
+
     onChangeInputs({
       ...inputs,
       monteCarloSettings: {
         ...inputs.monteCarloSettings,
         [field]: value,
+        ...(shouldFork ? {
+          activeCmaProfileId: 'custom',
+          baseCmaProfileId: inputs.monteCarloSettings.activeCmaProfileId,
+        } : {}),
       },
     });
   };
 
   const updateGrowthAssumptions = (field: keyof AppStateInputs['growthAssumptions'], value: number | null) => {
+    const isCmaField = ['equityReturnRate', 'fixedIncomeReturnRate', 'cashYieldRate', 'cpiInflationRate'].includes(field);
+    const shouldFork = isCmaField && inputs.monteCarloSettings.activeCmaProfileId && inputs.monteCarloSettings.activeCmaProfileId !== 'custom';
+
     onChangeInputs({
       ...inputs,
       growthAssumptions: {
         ...inputs.growthAssumptions,
         [field]: value,
       },
+      monteCarloSettings: shouldFork ? {
+        ...inputs.monteCarloSettings,
+        activeCmaProfileId: 'custom',
+        baseCmaProfileId: inputs.monteCarloSettings.activeCmaProfileId,
+      } : inputs.monteCarloSettings,
     });
+  };
+
+  const resetFieldToPreset = (field: CMAFieldKey) => {
+    if (!referenceProfile) return;
+    if (field === 'equityReturnRate' || field === 'fixedIncomeReturnRate' || field === 'cashYieldRate' || field === 'cpiInflationRate') {
+      onChangeInputs({
+        ...inputs,
+        growthAssumptions: {
+          ...inputs.growthAssumptions,
+          [field]: referenceProfile[field],
+        },
+      });
+    } else {
+      onChangeInputs({
+        ...inputs,
+        monteCarloSettings: {
+          ...inputs.monteCarloSettings,
+          [field]: referenceProfile[field],
+        },
+      });
+    }
   };
 
   const fiRate = inputs.growthAssumptions.fixedIncomeReturnRate;
@@ -456,15 +522,41 @@ export const MonteCarloWorkspace: React.FC<MonteCarloWorkspaceProps> = ({
               </span>
             </div>
 
+            {/* CMA Profile Selection & Institutional Status Header */}
+            <CmaProfileSelector inputs={inputs} onChangeInputs={onChangeInputs} />
+
             <div className="bg-slate-950/60 p-3.5 rounded-xl border border-slate-800 space-y-3">
               <p className="text-[11px] text-slate-400 leading-relaxed">
-                <span className="text-slate-200 font-semibold">How these values drive the simulation:</span> In <strong className="text-emerald-400">Flat Mode</strong>, these rates are applied as fixed, constant annual growth and inflation. In <strong className="text-emerald-400">Monte Carlo Mode</strong>, the Equity and Fixed Income rates form the <strong className="text-slate-200">expected distribution center (means)</strong> around which 1,000 randomized annual trials fluctuate based on your volatility settings. In <strong className="text-emerald-400">Historical Bootstrap Mode</strong>, market returns sample from 1970–2025 history.
+                <span className="text-slate-200 font-semibold">How these values drive the simulation:</span> In <strong className="text-emerald-400">Flat Mode</strong>, these rates are applied as fixed, constant annual growth and inflation. In <strong className="text-emerald-400">Monte Carlo Mode</strong>, the Equity and Fixed Income rates represent your <strong className="text-slate-200">Target CAGR (Compound Annual Growth Rate)</strong>. The engine automatically adjusts stochastic annual drift (μ) to overcome volatility drag, ensuring your median 30-year wealth compounds at your target CAGR. In <strong className="text-emerald-400">Historical Bootstrap Mode</strong>, market returns sample from 1970–2025 history calibrated to your target expectations.
+                {onOpenDocumentation && (
+                  <button
+                    type="button"
+                    onClick={() => onOpenDocumentation('cma-volatility-drag')}
+                    className="inline-flex items-center gap-1 text-emerald-400 hover:text-emerald-300 font-semibold ml-1.5 underline decoration-emerald-500/50 hover:decoration-emerald-400 transition-colors cursor-pointer"
+                  >
+                    <span>Read detailed CMA & Volatility Drag Math guide</span>
+                    <ExternalLink className="w-2.5 h-2.5" />
+                  </button>
+                )}
               </p>
 
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 pt-1">
                 {/* Equity Return Rate */}
                 <div className="space-y-1.5 p-2.5 bg-slate-900/60 rounded-lg border border-slate-800/80">
-                  <label className="text-[10px] text-slate-400 font-bold uppercase tracking-wider block truncate">Equity Return (Mean)</label>
+                  <div className="flex justify-between items-center">
+                    <label className="text-[10px] text-slate-400 font-bold uppercase tracking-wider block truncate">Equity Return (Mean)</label>
+                    {deviations?.equityReturnRate.isModified && (
+                      <button
+                        type="button"
+                        onClick={() => resetFieldToPreset('equityReturnRate')}
+                        className="text-[10px] text-amber-400 hover:text-amber-300 flex items-center gap-0.5 cursor-pointer font-mono"
+                        title={`Reset to ${referenceProfile?.name} default (${formatPercent(deviations.equityReturnRate.presetValue)})`}
+                      >
+                        <RotateCcw className="w-2.5 h-2.5" />
+                        <span>{deviations.equityReturnRate.delta > 0 ? '+' : ''}{(deviations.equityReturnRate.delta * 100).toFixed(1)}%</span>
+                      </button>
+                    )}
+                  </div>
                   <RangeSlider
                     min={0.00}
                     max={0.15}
@@ -473,9 +565,31 @@ export const MonteCarloWorkspace: React.FC<MonteCarloWorkspaceProps> = ({
                     onChange={(val) => updateGrowthAssumptions('equityReturnRate', val)}
                     className="w-full h-1 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-emerald-500"
                     renderLabel={(displayVal) => (
-                      <div className="flex justify-between items-center text-xs font-mono font-bold text-slate-200">
-                        <span>Rate:</span>
-                        <span className="text-emerald-400">{formatPercent(displayVal)}</span>
+                      <div className="space-y-0.5 font-mono">
+                        <div className="flex justify-between items-center text-xs font-bold text-slate-200">
+                          <span>
+                            Target{' '}
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                onOpenDocumentation?.('cma-volatility-drag');
+                              }}
+                              className="text-emerald-400 hover:text-emerald-300 underline decoration-dotted decoration-emerald-500/60 hover:decoration-emerald-400 cursor-pointer transition-colors"
+                              title="Compound Annual Growth Rate (CAGR) - Click to view documentation"
+                            >
+                              CAGR
+                            </button>
+                            :
+                          </span>
+                          <span className="text-emerald-400">{formatPercent(displayVal)}</span>
+                        </div>
+                        <div className="flex justify-between items-center text-[10px] text-slate-400">
+                          <span>Drift (μ):</span>
+                          <span className="text-slate-300 font-semibold">
+                            {formatPercent(calculateArithmeticDrift(displayVal, inputs.monteCarloSettings.equityVolatility))}
+                          </span>
+                        </div>
                       </div>
                     )}
                   />
@@ -483,7 +597,20 @@ export const MonteCarloWorkspace: React.FC<MonteCarloWorkspaceProps> = ({
 
                 {/* Fixed Income Return Rate */}
                 <div className="space-y-1.5 p-2.5 bg-slate-900/60 rounded-lg border border-slate-800/80">
-                  <label className="text-[10px] text-slate-400 font-bold uppercase tracking-wider block truncate">Fixed Income (Mean)</label>
+                  <div className="flex justify-between items-center">
+                    <label className="text-[10px] text-slate-400 font-bold uppercase tracking-wider block truncate">Fixed Income (Mean)</label>
+                    {deviations?.fixedIncomeReturnRate.isModified && (
+                      <button
+                        type="button"
+                        onClick={() => resetFieldToPreset('fixedIncomeReturnRate')}
+                        className="text-[10px] text-amber-400 hover:text-amber-300 flex items-center gap-0.5 cursor-pointer font-mono"
+                        title={`Reset to ${referenceProfile?.name} default (${formatPercent(deviations.fixedIncomeReturnRate.presetValue)})`}
+                      >
+                        <RotateCcw className="w-2.5 h-2.5" />
+                        <span>{deviations.fixedIncomeReturnRate.delta > 0 ? '+' : ''}{(deviations.fixedIncomeReturnRate.delta * 100).toFixed(1)}%</span>
+                      </button>
+                    )}
+                  </div>
                   <RangeSlider
                     min={0.00}
                     max={0.10}
@@ -492,9 +619,31 @@ export const MonteCarloWorkspace: React.FC<MonteCarloWorkspaceProps> = ({
                     onChange={(val) => updateGrowthAssumptions('fixedIncomeReturnRate', val)}
                     className="w-full h-1 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-emerald-500"
                     renderLabel={(displayVal) => (
-                      <div className="flex justify-between items-center text-xs font-mono font-bold text-slate-200">
-                        <span>Rate:</span>
-                        <span className="text-emerald-400">{formatPercent(displayVal)}</span>
+                      <div className="space-y-0.5 font-mono">
+                        <div className="flex justify-between items-center text-xs font-bold text-slate-200">
+                          <span>
+                            Target{' '}
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                onOpenDocumentation?.('cma-volatility-drag');
+                              }}
+                              className="text-emerald-400 hover:text-emerald-300 underline decoration-dotted decoration-emerald-500/60 hover:decoration-emerald-400 cursor-pointer transition-colors"
+                              title="Compound Annual Growth Rate (CAGR) - Click to view documentation"
+                            >
+                              CAGR
+                            </button>
+                            :
+                          </span>
+                          <span className="text-emerald-400">{formatPercent(displayVal)}</span>
+                        </div>
+                        <div className="flex justify-between items-center text-[10px] text-slate-400">
+                          <span>Drift (μ):</span>
+                          <span className="text-slate-300 font-semibold">
+                            {formatPercent(calculateArithmeticDrift(displayVal, inputs.monteCarloSettings.fixedIncomeVolatility))}
+                          </span>
+                        </div>
                       </div>
                     )}
                   />
@@ -502,7 +651,20 @@ export const MonteCarloWorkspace: React.FC<MonteCarloWorkspaceProps> = ({
 
                 {/* CPI Inflation Rate */}
                 <div className="space-y-1.5 p-2.5 bg-slate-900/60 rounded-lg border border-slate-800/80">
-                  <label className="text-[10px] text-slate-400 font-bold uppercase tracking-wider block truncate">CPI Inflation</label>
+                  <div className="flex justify-between items-center">
+                    <label className="text-[10px] text-slate-400 font-bold uppercase tracking-wider block truncate">CPI Inflation</label>
+                    {deviations?.cpiInflationRate.isModified && (
+                      <button
+                        type="button"
+                        onClick={() => resetFieldToPreset('cpiInflationRate')}
+                        className="text-[10px] text-amber-400 hover:text-amber-300 flex items-center gap-0.5 cursor-pointer font-mono"
+                        title={`Reset to ${referenceProfile?.name} default (${formatPercent(deviations.cpiInflationRate.presetValue)})`}
+                      >
+                        <RotateCcw className="w-2.5 h-2.5" />
+                        <span>{deviations.cpiInflationRate.delta > 0 ? '+' : ''}{(deviations.cpiInflationRate.delta * 100).toFixed(1)}%</span>
+                      </button>
+                    )}
+                  </div>
                   <RangeSlider
                     min={0.00}
                     max={0.08}
@@ -645,9 +807,22 @@ export const MonteCarloWorkspace: React.FC<MonteCarloWorkspaceProps> = ({
                     <>
                       <div className="flex justify-between items-center text-xs">
                         <span className="font-semibold text-slate-200">Cash Savings</span>
-                        <span className="text-[10px] font-mono font-bold px-1.5 py-0.5 rounded bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
-                          {formatPercent(displayVal)} yield
-                        </span>
+                        <div className="flex items-center gap-1.5">
+                          {deviations?.cashYieldRate.isModified && (
+                            <button
+                              type="button"
+                              onClick={() => resetFieldToPreset('cashYieldRate')}
+                              className="text-[10px] text-amber-400 hover:text-amber-300 flex items-center gap-0.5 cursor-pointer font-mono"
+                              title={`Reset to ${referenceProfile?.name} default (${formatPercent(deviations.cashYieldRate.presetValue)})`}
+                            >
+                              <RotateCcw className="w-2.5 h-2.5" />
+                              <span>{deviations.cashYieldRate.delta > 0 ? '+' : ''}{(deviations.cashYieldRate.delta * 100).toFixed(1)}%</span>
+                            </button>
+                          )}
+                          <span className="text-[10px] font-mono font-bold px-1.5 py-0.5 rounded bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+                            {formatPercent(displayVal)} yield
+                          </span>
+                        </div>
                       </div>
                       <div className="flex justify-between text-[10px] text-slate-400 font-mono">
                         <span>{inputs.growthAssumptions.cashYieldRate !== null && inputs.growthAssumptions.cashYieldRate !== undefined ? 'Custom' : 'Matches Bonds'}</span>
@@ -852,10 +1027,23 @@ export const MonteCarloWorkspace: React.FC<MonteCarloWorkspaceProps> = ({
                         onChange={(val) => updateSettings('equityVolatility', Math.round(val * 1000) / 1000)}
                         className="w-full h-1 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-emerald-500"
                         renderLabel={(displayVal) => (
-                          <label className="text-xs font-semibold text-slate-300 flex justify-between">
+                          <div className="text-xs font-semibold text-slate-300 flex justify-between items-center">
                             <span>Equity Return Volatility (Std Dev)</span>
-                            <span className="text-emerald-400 font-mono font-semibold">{formatPercent(displayVal)}</span>
-                          </label>
+                            <div className="flex items-center gap-1.5 font-mono">
+                              {deviations?.equityVolatility.isModified && (
+                                <button
+                                  type="button"
+                                  onClick={() => resetFieldToPreset('equityVolatility')}
+                                  className="text-[10px] text-amber-400 hover:text-amber-300 flex items-center gap-0.5 cursor-pointer font-mono"
+                                  title={`Reset to ${referenceProfile?.name} default (${formatPercent(deviations.equityVolatility.presetValue)})`}
+                                >
+                                  <RotateCcw className="w-2.5 h-2.5" />
+                                  <span>{deviations.equityVolatility.delta > 0 ? '+' : ''}{(deviations.equityVolatility.delta * 100).toFixed(1)}%</span>
+                                </button>
+                              )}
+                              <span className="text-emerald-400 font-semibold">{formatPercent(displayVal)}</span>
+                            </div>
+                          </div>
                         )}
                       />
                     </div>
@@ -870,10 +1058,23 @@ export const MonteCarloWorkspace: React.FC<MonteCarloWorkspaceProps> = ({
                         onChange={(val) => updateSettings('fixedIncomeVolatility', Math.round(val * 1000) / 1000)}
                         className="w-full h-1 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-emerald-500"
                         renderLabel={(displayVal) => (
-                          <label className="text-xs font-semibold text-slate-300 flex justify-between">
+                          <div className="text-xs font-semibold text-slate-300 flex justify-between items-center">
                             <span>Bond Return Volatility (Std Dev)</span>
-                            <span className="text-emerald-400 font-mono font-semibold">{formatPercent(displayVal)}</span>
-                          </label>
+                            <div className="flex items-center gap-1.5 font-mono">
+                              {deviations?.fixedIncomeVolatility.isModified && (
+                                <button
+                                  type="button"
+                                  onClick={() => resetFieldToPreset('fixedIncomeVolatility')}
+                                  className="text-[10px] text-amber-400 hover:text-amber-300 flex items-center gap-0.5 cursor-pointer font-mono"
+                                  title={`Reset to ${referenceProfile?.name} default (${formatPercent(deviations.fixedIncomeVolatility.presetValue)})`}
+                                >
+                                  <RotateCcw className="w-2.5 h-2.5" />
+                                  <span>{deviations.fixedIncomeVolatility.delta > 0 ? '+' : ''}{(deviations.fixedIncomeVolatility.delta * 100).toFixed(1)}%</span>
+                                </button>
+                              )}
+                              <span className="text-emerald-400 font-semibold">{formatPercent(displayVal)}</span>
+                            </div>
+                          </div>
                         )}
                       />
                     </div>
@@ -888,10 +1089,23 @@ export const MonteCarloWorkspace: React.FC<MonteCarloWorkspaceProps> = ({
                         onChange={(val) => updateSettings('correlation', val)}
                         className="w-full h-1 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-emerald-500"
                         renderLabel={(displayVal) => (
-                          <label className="text-xs font-semibold text-slate-300 flex justify-between">
+                          <div className="text-xs font-semibold text-slate-300 flex justify-between items-center">
                             <span>Asset Correlation Coefficient (ρ)</span>
-                            <span className="text-emerald-400 font-mono font-semibold">{(displayVal).toFixed(2)}</span>
-                          </label>
+                            <div className="flex items-center gap-1.5 font-mono">
+                              {deviations?.correlation.isModified && (
+                                <button
+                                  type="button"
+                                  onClick={() => resetFieldToPreset('correlation')}
+                                  className="text-[10px] text-amber-400 hover:text-amber-300 flex items-center gap-0.5 cursor-pointer font-mono"
+                                  title={`Reset to ${referenceProfile?.name} default (${(deviations.correlation.presetValue).toFixed(2)})`}
+                                >
+                                  <RotateCcw className="w-2.5 h-2.5" />
+                                  <span>{deviations.correlation.delta > 0 ? '+' : ''}{(deviations.correlation.delta).toFixed(2)}</span>
+                                </button>
+                              )}
+                              <span className="text-emerald-400 font-semibold">{(displayVal).toFixed(2)}</span>
+                            </div>
+                          </div>
                         )}
                       />
                     </div>

@@ -858,6 +858,62 @@ describe('Constant vs Randomized CPI Simulation', () => {
     expect(summary1.representativeSequences.best.equityReturns).toEqual(summary2.representativeSequences.best.equityReturns);
     expect(summary1.representativeSequences.best.fixedIncomeReturns).toEqual(summary2.representativeSequences.best.fixedIncomeReturns);
   });
+
+  describe('CMA Volatility Drag & Calibrated Inflation', () => {
+    it('calibrates forward inflation shocks to anchor around target CPI in synthetic sequences', () => {
+      const rand = mulberry32(42);
+      const targetCpi = 0.024; // Vanguard 2.4% expectation
+      const trials = 100;
+      let totalCpi = 0;
+      let count = 0;
+
+      for (let t = 0; t < trials; t++) {
+        const seq = generateSyntheticSequence(0.068, 0.16, 0.046, 0.055, 0.15, rand, true, null, true, targetCpi);
+        for (const cpi of (seq.inflationRates || [])) {
+          totalCpi += cpi;
+          count++;
+        }
+      }
+
+      const meanCpi = totalCpi / count;
+      // Mean sampled inflation across 100 trials should center tightly around target 2.4% (rather than historical 4.0%)
+      expect(meanCpi).toBeCloseTo(targetCpi, 2);
+    });
+
+    it('calibrates forward inflation shocks in historical bootstrap sequences when calibrateMeans is enabled', () => {
+      const rand = mulberry32(101);
+      const targetCpi = 0.025;
+      const seq = generateHistoricalSequence(false, undefined, rand, true, null, true, 0.07, 0.04, targetCpi);
+      const rates = seq.inflationRates || [];
+      const meanCpi = rates.reduce((a, b) => a + b, 0) / rates.length;
+      expect(meanCpi).toBeCloseTo(targetCpi, 1);
+    });
+
+    it('applies volatility drag adjustment to elevate annual arithmetic drift in synthetic sequences', () => {
+      // 7.0% target geometric CAGR with 16% volatility requires ~8.28% arithmetic drift
+      const targetGeometric = 0.07;
+      const vol = 0.16;
+      const rand = mulberry32(999);
+      const trials = 300;
+      let totalAnnualEquity = 0;
+      let count = 0;
+
+      for (let t = 0; t < trials; t++) {
+        // Without regime switching to directly measure normal distribution mean
+        const seq = generateSyntheticSequence(targetGeometric, vol, 0.04, 0.05, 0.15, rand, false, 0.025, false, 0.025);
+        for (const ret of seq.equityReturns) {
+          totalAnnualEquity += ret;
+          count++;
+        }
+      }
+
+      const realizedArithmeticMean = totalAnnualEquity / count;
+      // Realized arithmetic mean should be near 8.28% (elevated above 7.0% by ~1.28% volatility drag)
+      expect(realizedArithmeticMean).toBeGreaterThan(0.078);
+      expect(realizedArithmeticMean).toBeLessThan(0.088);
+    });
+  });
 });
+
 
 

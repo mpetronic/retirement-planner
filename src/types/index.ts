@@ -79,6 +79,27 @@ export interface StressTestConfig {
   overrides: StressTestYearOverride[];
 }
 
+export interface CMAProfile {
+  id: string; // e.g. 'vanguard-2026', 'blackrock-2026', 'jpmorgan-2026', 'consensus-2026', 'custom'
+  name: string; // e.g. 'Vanguard VCMM'
+  institution: string; // e.g. 'Vanguard Investment Strategy Group'
+  editionYear: number; // e.g. 2026
+  horizon: string; // e.g. '30-Year Secular'
+  description?: string;
+  sourceUrl?: string;
+  isBuiltIn: boolean; // true for bundled, false for user-imported
+
+  // Asset return parameters (Geometric CAGR)
+  equityReturnRate: number;      // Stated 30-year geometric CAGR (e.g. 0.068 for 6.8%)
+  equityVolatility: number;      // Annual standard deviation (e.g. 0.160 for 16.0%)
+  fixedIncomeReturnRate: number; // Stated 30-year geometric CAGR (e.g. 0.046 for 4.6%)
+  fixedIncomeVolatility: number; // Annual standard deviation (e.g. 0.055 for 5.5%)
+  cashYieldRate: number;         // Money market / short-term cash yield (e.g. 0.035 for 3.5%)
+  cpiInflationRate: number;      // Secular headline CPI expected rate (e.g. 0.024 for 2.4%)
+  cpiVolatility?: number;        // Annual inflation standard deviation (default ~0.018)
+  correlation: number;           // Stock-Bond correlation coefficient (e.g. 0.15)
+}
+
 export interface MonteCarloSettings {
   mode: 'monte-carlo' | 'historical';
   equityVolatility: number;      // e.g. 0.15 (15%)
@@ -93,6 +114,9 @@ export interface MonteCarloSettings {
   enableRegimeSwitching?: boolean; // If true (default), apply Markov 2-state regime switching and Ornstein-Uhlenbeck mean reversion
   historicalSamplingStrategy?: 'hybrid' | 'block' | 'random'; // Historical bootstrap strategy (hybrid: 35% block / 65% random, block: 100% contiguous, random: 100% random resampled)
   calibrateHistoricalMeans?: boolean; // If true (default), calibrate historical return shocks to match user configured baseline means (e.g. 7% equity / 4% bond)
+  activeCmaProfileId?: string;   // e.g. 'vanguard-2026', 'consensus-2026', or 'custom'
+  baseCmaProfileId?: string | null; // Tracks parent preset if modified (e.g. 'vanguard-2026')
+  customCmaProfiles?: CMAProfile[]; // User imported/created profiles
 }
 
 export interface ExpenseItemDefinition {
