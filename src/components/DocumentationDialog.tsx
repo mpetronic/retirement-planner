@@ -835,12 +835,12 @@ export const DocumentationDialog: React.FC<DocumentationDialogProps> = ({
                   <span className="text-[10px] text-slate-500">30-Year Horizon</span>
                 </div>
                 <div className="text-slate-300 space-y-0.5 text-[10px]">
-                  <div>Equities: <strong className="text-slate-100">5.0% CAGR</strong> (16.0% Volatility)</div>
+                  <div>Equities: <strong className="text-slate-100">6.8% CAGR</strong> (16.0% Volatility)</div>
                   <div>Fixed Income: <strong className="text-slate-100">4.6% CAGR</strong> (5.5% Volatility)</div>
                   <div>CPI Inflation: <strong className="text-slate-100">2.4% Secular</strong></div>
                 </div>
                 <p className="text-[9px] text-slate-400 font-sans pt-1">
-                  Anchored by the Vanguard Capital Markets Model. Reflects conservative valuations and moderate global growth.
+                  Anchored by the Vanguard Capital Markets Model. Reflects 30-year secular expectations (factoring in 10-year initial multiple compression of 5.0%–5.2% followed by mean reversion to 7.0%+ earnings growth).
                 </p>
               </div>
 
@@ -850,9 +850,9 @@ export const DocumentationDialog: React.FC<DocumentationDialogProps> = ({
                   <span className="text-[10px] text-slate-500">Secular Transition</span>
                 </div>
                 <div className="text-slate-300 space-y-0.5 text-[10px]">
-                  <div>Equities: <strong className="text-slate-100">6.8% CAGR</strong> (17.5% Volatility)</div>
-                  <div>Fixed Income: <strong className="text-slate-100">4.8% CAGR</strong> (6.0% Volatility)</div>
-                  <div>CPI Inflation: <strong className="text-slate-100">2.5% Secular</strong></div>
+                  <div>Equities: <strong className="text-slate-100">6.9% CAGR</strong> (15.8% Volatility)</div>
+                  <div>Fixed Income: <strong className="text-slate-100">4.7% CAGR</strong> (5.7% Volatility)</div>
+                  <div>CPI Inflation: <strong className="text-slate-100">2.6% Secular</strong></div>
                 </div>
                 <p className="text-[9px] text-slate-400 font-sans pt-1">
                   BlackRock Investment Institute assumptions incorporating AI productivity tailwinds and persistent structural supply constraints.
@@ -865,9 +865,9 @@ export const DocumentationDialog: React.FC<DocumentationDialogProps> = ({
                   <span className="text-[10px] text-slate-500">200+ Asset Classes</span>
                 </div>
                 <div className="text-slate-300 space-y-0.5 text-[10px]">
-                  <div>Equities: <strong className="text-slate-100">7.0% CAGR</strong> (16.0% Volatility)</div>
-                  <div>Fixed Income: <strong className="text-slate-100">4.9% CAGR</strong> (5.5% Volatility)</div>
-                  <div>CPI Inflation: <strong className="text-slate-100">2.6% Secular</strong></div>
+                  <div>Equities: <strong className="text-slate-100">7.2% CAGR</strong> (15.5% Volatility)</div>
+                  <div>Fixed Income: <strong className="text-slate-100">4.8% CAGR</strong> (5.5% Volatility)</div>
+                  <div>CPI Inflation: <strong className="text-slate-100">2.5% Secular</strong></div>
                 </div>
                 <p className="text-[9px] text-slate-400 font-sans pt-1">
                   Long-Term Capital Market Assumptions factoring in capital deepening, fiscal deficits, and corporate earnings resilience.
@@ -880,8 +880,8 @@ export const DocumentationDialog: React.FC<DocumentationDialogProps> = ({
                   <span className="text-[10px] text-slate-500">Multi-Model Median</span>
                 </div>
                 <div className="text-slate-300 space-y-0.5 text-[10px]">
-                  <div>Equities: <strong className="text-slate-100">6.5% CAGR</strong> (16.5% Volatility)</div>
-                  <div>Fixed Income: <strong className="text-slate-100">4.7% CAGR</strong> (5.8% Volatility)</div>
+                  <div>Equities: <strong className="text-slate-100">7.0% CAGR</strong> (15.5% Volatility)</div>
+                  <div>Fixed Income: <strong className="text-slate-100">4.6% CAGR</strong> (5.5% Volatility)</div>
                   <div>CPI Inflation: <strong className="text-slate-100">2.5% Secular</strong></div>
                 </div>
                 <p className="text-[9px] text-slate-400 font-sans pt-1">
@@ -987,10 +987,10 @@ export const DocumentationDialog: React.FC<DocumentationDialogProps> = ({
               <div className="grid grid-cols-1 md:grid-cols-2 gap-3 pt-1 text-[11px] font-mono">
                 <div className="p-3 bg-slate-900/80 border border-slate-800 rounded-lg space-y-1">
                   <span className="font-bold text-emerald-400 block font-sans">Equities (16% Volatility)</span>
-                  <div className="text-slate-300">Target CAGR (g): <strong>5.00%</strong></div>
+                  <div className="text-slate-300">Target CAGR (g): <strong>6.80%</strong></div>
                   <div className="text-slate-300">Annual Volatility (σ): <strong>16.00%</strong></div>
                   <div className="text-amber-400">Volatility Drag (σ² / 2): <strong>(0.16)² / 2 = 1.28%</strong></div>
-                  <div className="text-emerald-400 font-bold pt-0.5">Required Drift (μ): 5.00% + 1.28% = 6.28%</div>
+                  <div className="text-emerald-400 font-bold pt-0.5">Required Drift (μ): 6.80% + 1.28% = 8.08%</div>
                 </div>
 
                 <div className="p-3 bg-slate-900/80 border border-slate-800 rounded-lg space-y-1">
@@ -1018,8 +1018,8 @@ export const DocumentationDialog: React.FC<DocumentationDialogProps> = ({
                   In simplified calculators, changing between deterministic and Monte Carlo modes requires re-entering different return numbers. In Retirement Planner 2.0, the return sliders always represent your <strong className="text-emerald-400">Target CAGR</strong>:
                 </p>
                 <ul className="text-[11px] text-slate-400 space-y-1 list-disc list-inside leading-relaxed pl-1">
-                  <li><strong>In Flat Mode:</strong> Volatility is zero. Wealth compounds deterministically at the exact Target CAGR (e.g. 5.0%).</li>
-                  <li><strong>In Monte Carlo Mode:</strong> The engine automatically sets the distribution center to arithmetic drift <strong className="text-slate-200">μ = Target CAGR + (σ² / 2)</strong>. After 1,000 multi-year trials, the <strong className="text-emerald-400">P50 median trial</strong> accumulates to the exact wealth expected from your Target CAGR. Without this mathematical adjustment, a simulation centered at 5.0% would erroneously compound at only 3.72% CAGR due to volatility drag!</li>
+                  <li><strong>In Flat Mode:</strong> Volatility is zero. Wealth compounds deterministically at the exact Target CAGR (e.g. 6.8%).</li>
+                  <li><strong>In Monte Carlo Mode:</strong> The engine automatically sets the distribution center to arithmetic drift <strong className="text-slate-200">μ = Target CAGR + (σ² / 2)</strong>. After 1,000 multi-year trials, the <strong className="text-emerald-400">P50 median trial</strong> accumulates to the exact wealth expected from your Target CAGR. Without this mathematical adjustment, a simulation centered at 6.8% would erroneously compound at only 5.52% CAGR due to volatility drag!</li>
                 </ul>
               </div>
 
