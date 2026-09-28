@@ -500,7 +500,7 @@ function App() {
   );
 
   // Persisted plan selections for Workspace 4 comparison
-  const [selectedPlanAId, setSelectedPlanAId] = useLocalStorage<string>('retirement_planner_selected_plan_a', '');
+  const [selectedPlanAId, setSelectedPlanAId] = useLocalStorage<string>('retirement_planner_selected_plan_a', 'current');
   const [selectedPlanBId, setSelectedPlanBId] = useLocalStorage<string>('retirement_planner_selected_plan_b', '');
 
   // Persisted Quick Fill selection for Workspace 2 Roth optimization
@@ -971,6 +971,9 @@ function App() {
             setSelectedPlanAId={setSelectedPlanAId}
             selectedPlanBId={selectedPlanBId}
             setSelectedPlanBId={setSelectedPlanBId}
+            ledger={displayActiveLedger}
+            activeSequence={activeSequence}
+            globalScenario={globalScenario}
           />
         )}
 

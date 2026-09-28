@@ -1,5 +1,5 @@
 import React, { useState, useMemo } from 'react';
-import { AppStateInputs, SavedPlan, SimulationResultRow, getSimulationStartYear } from '../types';
+import { AppStateInputs, SavedPlan, SimulationResultRow, LockedReturnSequence, getSimulationStartYear } from '../types';
 import { runRetirementSimulation } from '../engine/simulationEngine';
 import { 
   Plus, 
@@ -32,6 +32,9 @@ interface PlanComparisonWorkspaceProps {
   setSelectedPlanAId: (id: string) => void;
   selectedPlanBId: string;
   setSelectedPlanBId: (id: string) => void;
+  ledger?: SimulationResultRow[];
+  activeSequence?: LockedReturnSequence | null;
+  globalScenario?: 'flat' | 'p10' | 'p50' | 'p90';
 }
 
 export const PlanComparisonWorkspace: React.FC<PlanComparisonWorkspaceProps> = ({
@@ -45,6 +48,9 @@ export const PlanComparisonWorkspace: React.FC<PlanComparisonWorkspaceProps> = (
   setSelectedPlanAId,
   selectedPlanBId,
   setSelectedPlanBId,
+  ledger,
+  activeSequence,
+  globalScenario,
 }) => {
   const [newPlanName, setNewPlanName] = useState('');
   const [notification, setNotification] = useState<{ message: string; type: 'success' | 'info' | 'error' } | null>(null);
@@ -52,11 +58,32 @@ export const PlanComparisonWorkspace: React.FC<PlanComparisonWorkspaceProps> = (
   const [inspectingPlan, setInspectingPlan] = useState<SavedPlan | null>(null);
   const simStartYear = getSimulationStartYear(inputs);
 
-  const endingAge = useMemo(() => {
-    if (!inputs.you.birthDate) return 90;
-    const birthYear = parseInt(inputs.you.birthDate.split('-')[0], 10);
-    return isNaN(birthYear) ? 90 : (simStartYear + 34 - birthYear);
-  }, [inputs.you.birthDate, simStartYear]);
+  // Derive the global plan ending year and ending age from the active overview analysis ledger or inputs
+  const { globalEndingYear, endingAge, totalPlanYears } = useMemo(() => {
+    if (ledger && ledger.length > 0) {
+      const finalRow = ledger[ledger.length - 1];
+      const endYr = finalRow.year;
+      const endAge = finalRow.yourAge;
+      return {
+        globalEndingYear: endYr,
+        endingAge: endAge,
+        totalPlanYears: endYr - simStartYear + 1,
+      };
+    }
+
+    // Fallback if ledger is not provided
+    const yourBirthYear = inputs.you.birthDate ? parseInt(inputs.you.birthDate.split('-')[0], 10) : 1960;
+    const wifeBirthYear = inputs.wife.birthDate ? parseInt(inputs.wife.birthDate.split('-')[0], 10) : 1964;
+    const deathYear = yourBirthYear + (inputs.you.longevityAge ?? 85);
+    const wifeDeathYear = inputs.isSingleFiler ? 0 : (wifeBirthYear + (inputs.wife.longevityAge ?? 95));
+    const endYr = Math.max(simStartYear, inputs.isSingleFiler ? deathYear : Math.max(deathYear, wifeDeathYear));
+    const endAge = endYr - yourBirthYear;
+    return {
+      globalEndingYear: endYr,
+      endingAge: endAge,
+      totalPlanYears: endYr - simStartYear + 1,
+    };
+  }, [ledger, inputs, simStartYear]);
 
   // Trigger alert messages that auto-dismiss
   const triggerNotification = (message: string, type: 'success' | 'info' | 'error' = 'success') => {
@@ -318,10 +345,8 @@ export const PlanComparisonWorkspace: React.FC<PlanComparisonWorkspaceProps> = (
     setNewPlanName('');
     triggerNotification(`Scenario "${name}" successfully saved!`, 'success');
 
-    // Auto-select as Plan A or Plan B if empty
-    if (!selectedPlanAId) {
-      setSelectedPlanAId(newPlan.id);
-    } else if (!selectedPlanBId) {
+    // Auto-select as Plan B if empty (Plan A defaults to current active plan)
+    if (!selectedPlanBId) {
       setSelectedPlanBId(newPlan.id);
     }
   };
@@ -335,7 +360,7 @@ export const PlanComparisonWorkspace: React.FC<PlanComparisonWorkspaceProps> = (
   // 3. Delete Plan
   const handleDeletePlan = (id: string, name: string) => {
     onSavePlans((prev) => prev.filter((p) => p.id !== id));
-    if (selectedPlanAId === id) setSelectedPlanAId('');
+    if (selectedPlanAId === id) setSelectedPlanAId('current');
     if (selectedPlanBId === id) setSelectedPlanBId('');
     triggerNotification(`Plan "${name}" deleted.`, 'info');
   };
@@ -344,6 +369,7 @@ export const PlanComparisonWorkspace: React.FC<PlanComparisonWorkspaceProps> = (
   const calculateLifetimeMetrics = (ledger: SimulationResultRow[]) => {
     const lastRow = ledger[ledger.length - 1];
     const endingEstate = lastRow ? lastRow.totalPortfolioValue : 0;
+    const endingRoth = lastRow ? (lastRow.endYourRothIRA || 0) + (lastRow.endWifeRothIRA || 0) : 0;
     
     const federalTaxExcludingNiit = ledger.reduce((sum, r) => sum + Math.max(0, r.fedIncomeTax - r.niitTax), 0);
     const stateTax = ledger.reduce((sum, r) => sum + r.stateIncomeTax, 0);
@@ -359,15 +385,35 @@ export const PlanComparisonWorkspace: React.FC<PlanComparisonWorkspaceProps> = (
       irmaa,
       medicareBase,
       endingEstate,
+      endingRoth,
       niit,
       totalTax,
       totalExpenses
     };
   };
 
-  // Resolve Plan A and Plan B
-  const planA = useMemo(() => savedPlans.find((p) => p.id === selectedPlanAId), [savedPlans, selectedPlanAId]);
-  const planB = useMemo(() => savedPlans.find((p) => p.id === selectedPlanBId), [savedPlans, selectedPlanBId]);
+  // Dynamic representation of the Current Active Plan
+  const currentPlan: SavedPlan = useMemo(() => ({
+    id: 'current',
+    name: 'Current Active Plan',
+    inputs: {
+      ...inputs,
+      simulateSurvivor,
+    },
+    createdAt: 'Active Workspace',
+  }), [inputs, simulateSurvivor]);
+
+  // Resolve Plan A and Plan B (defaulting Plan A to current active plan if unset)
+  const effectivePlanAId = selectedPlanAId || 'current';
+  const planA = useMemo(() => {
+    if (effectivePlanAId === 'current') return currentPlan;
+    return savedPlans.find((p) => p.id === effectivePlanAId);
+  }, [savedPlans, effectivePlanAId, currentPlan]);
+
+  const planB = useMemo(() => {
+    if (selectedPlanBId === 'current') return currentPlan;
+    return savedPlans.find((p) => p.id === selectedPlanBId);
+  }, [savedPlans, selectedPlanBId, currentPlan]);
 
   // Helper to discount a row's nominal values back to today's purchasing power (real value)
   const discountRow = (row: SimulationResultRow): SimulationResultRow => {
@@ -386,20 +432,46 @@ export const PlanComparisonWorkspace: React.FC<PlanComparisonWorkspaceProps> = (
     return discounted;
   };
 
-  // Run dynamic simulations on standard flat returns
+  // Run dynamic simulations on active scenario returns ending on global plan ending year
   const simResultA = useMemo(() => {
     if (!planA) return null;
-    const rawResult = runRetirementSimulation(planA.inputs, simulateSurvivor, null);
+    if (planA.id === 'current' && ledger && ledger.length > 0) {
+      return ledger;
+    }
+    const inputsA: AppStateInputs = {
+      ...planA.inputs,
+      you: { ...planA.inputs.you, birthDate: inputs.you.birthDate, longevityAge: inputs.you.longevityAge },
+      wife: { ...planA.inputs.wife, birthDate: inputs.wife.birthDate, longevityAge: inputs.wife.longevityAge },
+      isSingleFiler: inputs.isSingleFiler,
+      simulationStartYear: inputs.simulationStartYear,
+    };
+    const simSurvivorA = (planA.inputs as { simulateSurvivor?: boolean })?.simulateSurvivor !== undefined 
+      ? (planA.inputs as { simulateSurvivor?: boolean }).simulateSurvivor!
+      : simulateSurvivor;
+    const rawResult = runRetirementSimulation(inputsA, simSurvivorA, activeSequence).filter((r) => r.year <= globalEndingYear);
     if (!useTodayDollars) return rawResult;
     return rawResult.map((r) => discountRow(r));
-  }, [planA, simulateSurvivor, useTodayDollars]);
+  }, [planA, simulateSurvivor, useTodayDollars, inputs, globalEndingYear, activeSequence, ledger]);
 
   const simResultB = useMemo(() => {
     if (!planB) return null;
-    const rawResult = runRetirementSimulation(planB.inputs, simulateSurvivor, null);
+    if (planB.id === 'current' && ledger && ledger.length > 0) {
+      return ledger;
+    }
+    const inputsB: AppStateInputs = {
+      ...planB.inputs,
+      you: { ...planB.inputs.you, birthDate: inputs.you.birthDate, longevityAge: inputs.you.longevityAge },
+      wife: { ...planB.inputs.wife, birthDate: inputs.wife.birthDate, longevityAge: inputs.wife.longevityAge },
+      isSingleFiler: inputs.isSingleFiler,
+      simulationStartYear: inputs.simulationStartYear,
+    };
+    const simSurvivorB = (planB.inputs as { simulateSurvivor?: boolean })?.simulateSurvivor !== undefined 
+      ? (planB.inputs as { simulateSurvivor?: boolean }).simulateSurvivor!
+      : simulateSurvivor;
+    const rawResult = runRetirementSimulation(inputsB, simSurvivorB, activeSequence).filter((r) => r.year <= globalEndingYear);
     if (!useTodayDollars) return rawResult;
     return rawResult.map((r) => discountRow(r));
-  }, [planB, simulateSurvivor, useTodayDollars]);
+  }, [planB, simulateSurvivor, useTodayDollars, inputs, globalEndingYear, activeSequence, ledger]);
 
   // Sum lifetime stats
   const statsA = useMemo(() => simResultA ? calculateLifetimeMetrics(simResultA) : null, [simResultA]);
@@ -421,7 +493,7 @@ export const PlanComparisonWorkspace: React.FC<PlanComparisonWorkspaceProps> = (
       {
         id: 'state',
         name: 'State Income Taxes',
-        desc: 'State taxes paid over 35 years based on Maryland vs Florida rules.',
+        desc: `State taxes paid over ${totalPlanYears} years based on Maryland vs Florida rules.`,
         valA: statsA.stateTax,
         valB: statsB.stateTax,
         lowerIsBetter: true,
@@ -451,15 +523,23 @@ export const PlanComparisonWorkspace: React.FC<PlanComparisonWorkspaceProps> = (
         lowerIsBetter: true,
       },
       {
+        id: 'endingRoth',
+        name: `Ending Roth IRA Balance (Age ${endingAge})`,
+        desc: `Final terminal tax-free Roth IRA balance in year ${globalEndingYear} for legacy inheritance or late-life expenditures.`,
+        valA: statsA.endingRoth,
+        valB: statsB.endingRoth,
+        lowerIsBetter: false,
+      },
+      {
         id: 'endingEstate',
-        name: `Net Portfolio Estate (Age ${endingAge})`,
-        desc: 'Final terminal value of combined accounts after all years of growth, taxes, and drawdowns.',
+        name: `Ending Net Estate (Age ${endingAge})`,
+        desc: `Final terminal value of combined accounts in year ${globalEndingYear} after all years of growth, taxes, and drawdowns under ${globalScenario ? globalScenario.toUpperCase() : 'active'} return assumptions.`,
         valA: statsA.endingEstate,
         valB: statsB.endingEstate,
         lowerIsBetter: false,
       },
     ];
-  }, [statsA, statsB, endingAge]);
+  }, [statsA, statsB, endingAge, globalEndingYear, totalPlanYears, globalScenario]);
 
   // Visual summary analysis
   const summaryInsight = useMemo(() => {
@@ -469,7 +549,7 @@ export const PlanComparisonWorkspace: React.FC<PlanComparisonWorkspaceProps> = (
     const estateDelta = statsB.endingEstate - statsA.endingEstate;
     const surchargeSavings = statsA.irmaa - statsB.irmaa;
 
-    const isIdentical = selectedPlanAId === selectedPlanBId || (Math.abs(taxSavings) < 0.1 && Math.abs(estateDelta) < 0.1);
+    const isIdentical = effectivePlanAId === selectedPlanBId || (Math.abs(taxSavings) < 0.1 && Math.abs(estateDelta) < 0.1);
 
     const isTaxFavorable = taxSavings > 0;
     const isEstateFavorable = estateDelta > 0;
@@ -539,7 +619,7 @@ export const PlanComparisonWorkspace: React.FC<PlanComparisonWorkspaceProps> = (
       estateDesc,
       isIdentical
     };
-  }, [statsA, statsB, planA, planB, selectedPlanAId, selectedPlanBId]);
+  }, [statsA, statsB, planA, planB, effectivePlanAId, selectedPlanBId]);
 
   return (
     <div className="space-y-3">
@@ -655,7 +735,7 @@ export const PlanComparisonWorkspace: React.FC<PlanComparisonWorkspaceProps> = (
             ) : (
               <div className="space-y-3 max-h-[360px] overflow-y-auto custom-scrollbar pr-1">
                 {savedPlans.map((plan) => {
-                  const isA = selectedPlanAId === plan.id;
+                  const isA = effectivePlanAId === plan.id;
                   const isB = selectedPlanBId === plan.id;
                   
                   // Compute details
@@ -767,14 +847,18 @@ export const PlanComparisonWorkspace: React.FC<PlanComparisonWorkspaceProps> = (
               <div className="flex-1 space-y-1.5">
                 <label className="text-[10px] text-blue-400 font-bold uppercase tracking-wider block">Plan A (Baseline Scenario)</label>
                 <select
-                  value={selectedPlanAId}
+                  value={effectivePlanAId}
                   onChange={(e) => setSelectedPlanAId(e.target.value)}
                   className="w-full bg-slate-900 border border-slate-800 focus:border-blue-500 text-xs px-3 py-2 rounded-xl text-slate-200 focus:outline-none"
                 >
-                  <option value="">-- Choose Plan A --</option>
-                  {savedPlans.map((p) => (
-                    <option key={p.id} value={p.id}>{p.name}</option>
-                  ))}
+                  <option value="current">Current Active Plan</option>
+                  {savedPlans.length > 0 && (
+                    <optgroup label="Saved Scenarios">
+                      {savedPlans.map((p) => (
+                        <option key={p.id} value={p.id}>{p.name}</option>
+                      ))}
+                    </optgroup>
+                  )}
                 </select>
               </div>
 
@@ -791,9 +875,14 @@ export const PlanComparisonWorkspace: React.FC<PlanComparisonWorkspaceProps> = (
                   className="w-full bg-slate-900 border border-slate-800 focus:border-emerald-500 text-xs px-3 py-2 rounded-xl text-slate-200 focus:outline-none"
                 >
                   <option value="">-- Choose Plan B --</option>
-                  {savedPlans.map((p) => (
-                    <option key={p.id} value={p.id}>{p.name}</option>
-                  ))}
+                  <option value="current">Current Active Plan</option>
+                  {savedPlans.length > 0 && (
+                    <optgroup label="Saved Scenarios">
+                      {savedPlans.map((p) => (
+                        <option key={p.id} value={p.id}>{p.name}</option>
+                      ))}
+                    </optgroup>
+                  )}
                 </select>
               </div>
 
@@ -823,7 +912,7 @@ export const PlanComparisonWorkspace: React.FC<PlanComparisonWorkspaceProps> = (
                   <table className="w-full text-left border-collapse text-xs">
                     <thead>
                       <tr className="bg-slate-900/60 border-b border-slate-800 text-slate-400 font-semibold uppercase tracking-wider">
-                        <th className="py-5 px-6">Lifetime Category ({simStartYear} - {simStartYear + 34})</th>
+                        <th className="py-5 px-6">Lifetime Category ({simStartYear} - {globalEndingYear})</th>
                         <th className="py-5 px-5 text-right text-blue-300 font-bold bg-blue-500/5">Plan A: {planA.name}</th>
                         <th className="py-5 px-5 text-right text-emerald-300 font-bold bg-emerald-500/5">Plan B: {planB.name}</th>
                         <th className="py-5 px-5 text-right">Lifetime Delta</th>
