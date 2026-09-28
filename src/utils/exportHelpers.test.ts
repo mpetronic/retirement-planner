@@ -147,6 +147,17 @@ describe('exportHelpers', () => {
       const parsed = JSON.parse(text);
       expect(parsed.simulateSurvivor).toBe(true);
     });
+
+    it('preserves savedPlans in exported JSON payload', async () => {
+      const mockSaved = [
+        { id: 'scen-1', name: 'FL Relocation', inputs: mockInputs, createdAt: 'Sep 28, 2026' }
+      ];
+      const blob = generateJsonBlob(mockInputs, false, mockSaved);
+      const text = await blob.text();
+      const parsed = JSON.parse(text);
+      expect(parsed.savedPlans).toHaveLength(1);
+      expect(parsed.savedPlans[0].name).toBe('FL Relocation');
+    });
   });
 
   describe('generateExcelExportBlob', () => {

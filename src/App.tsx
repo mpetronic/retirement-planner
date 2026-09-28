@@ -402,7 +402,7 @@ function App() {
     }
   };
 
-  // Synchronize inputs while seamlessly restoring simulateSurvivor if present in imported/loaded plan
+  // Synchronize inputs while seamlessly restoring simulateSurvivor and savedPlans if present in imported/loaded plan
   const handleInputsChange = (newInputs: AppStateInputs | ((prev: AppStateInputs) => AppStateInputs)) => {
     if (isDemoMode) {
       if (typeof newInputs === 'function') {
@@ -411,11 +411,17 @@ function App() {
           if (typeof next.simulateSurvivor === 'boolean') {
             setSimulateSurvivor(next.simulateSurvivor);
           }
+          if (Array.isArray((next as { savedPlans?: SavedPlan[] }).savedPlans)) {
+            setSavedPlans((next as { savedPlans?: SavedPlan[] }).savedPlans!);
+          }
           return next;
         });
       } else {
         if (typeof newInputs.simulateSurvivor === 'boolean') {
           setSimulateSurvivor(newInputs.simulateSurvivor);
+        }
+        if (Array.isArray((newInputs as { savedPlans?: SavedPlan[] }).savedPlans)) {
+          setSavedPlans((newInputs as { savedPlans?: SavedPlan[] }).savedPlans!);
         }
         setDemoInputs(newInputs);
       }
@@ -428,11 +434,17 @@ function App() {
         if (typeof next.simulateSurvivor === 'boolean') {
           setSimulateSurvivor(next.simulateSurvivor);
         }
+        if (Array.isArray((next as { savedPlans?: SavedPlan[] }).savedPlans)) {
+          setSavedPlans((next as { savedPlans?: SavedPlan[] }).savedPlans!);
+        }
         return next;
       });
     } else {
       if (typeof newInputs.simulateSurvivor === 'boolean') {
         setSimulateSurvivor(newInputs.simulateSurvivor);
+      }
+      if (Array.isArray((newInputs as { savedPlans?: SavedPlan[] }).savedPlans)) {
+        setSavedPlans((newInputs as { savedPlans?: SavedPlan[] }).savedPlans!);
       }
       setInputs(newInputs);
     }
@@ -899,6 +911,8 @@ function App() {
             setSimulateSurvivor={setSimulateSurvivor}
             ledger={displayActiveLedger}
             globalScenario={globalScenario}
+            savedPlans={savedPlans}
+            onSavePlans={setSavedPlans}
           />
         )}
 

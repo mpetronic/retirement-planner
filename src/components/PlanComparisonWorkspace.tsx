@@ -18,7 +18,9 @@ import {
   FileText,
   MapPin,
   Calendar,
-  Zap
+  Zap,
+  Download,
+  Upload
 } from 'lucide-react';
 
 interface PlanComparisonWorkspaceProps {
@@ -365,6 +367,86 @@ export const PlanComparisonWorkspace: React.FC<PlanComparisonWorkspaceProps> = (
     triggerNotification(`Plan "${name}" deleted.`, 'info');
   };
 
+  // 4. Export Saved Scenarios to JSON
+  const handleExportScenariosJSON = () => {
+    if (savedPlans.length === 0) {
+      triggerNotification('No saved scenarios to export.', 'info');
+      return;
+    }
+    const dataStr = JSON.stringify(savedPlans, null, 2);
+    const blob = new Blob([dataStr], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `Retirement_Scenarios_${new Date().toISOString().slice(0, 10)}.json`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+    triggerNotification(`Exported ${savedPlans.length} scenario(s) to JSON.`, 'success');
+  };
+
+  // 5. Import Scenarios from JSON
+  const handleImportScenariosJSON = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      try {
+        const text = event.target?.result as string;
+        if (!text) return;
+        const parsed = JSON.parse(text);
+
+        let scenariosToImport: SavedPlan[] = [];
+        if (Array.isArray(parsed)) {
+          scenariosToImport = parsed;
+        } else if (parsed && typeof parsed === 'object' && Array.isArray(parsed.savedPlans)) {
+          scenariosToImport = parsed.savedPlans;
+        }
+
+        if (scenariosToImport.length === 0) {
+          triggerNotification('No valid scenarios found in this JSON file.', 'error');
+          return;
+        }
+
+        onSavePlans((prev) => {
+          const existingNames = new Set(prev.map((p) => p.name.toLowerCase()));
+          const existingIds = new Set(prev.map((p) => p.id));
+          const validNew = scenariosToImport.filter((p) => p && p.name && p.inputs);
+          const merged = [...prev];
+          let addedCount = 0;
+
+          for (const plan of validNew) {
+            let uniqueId = plan.id || Date.now().toString();
+            if (existingIds.has(uniqueId)) {
+              uniqueId = `${uniqueId}_${Date.now()}_${Math.random().toString(36).substr(2, 4)}`;
+            }
+            let uniqueName = plan.name;
+            if (existingNames.has(uniqueName.toLowerCase())) {
+              uniqueName = `${plan.name} (Imported)`;
+            }
+            existingIds.add(uniqueId);
+            existingNames.add(uniqueName.toLowerCase());
+            merged.push({
+              ...plan,
+              id: uniqueId,
+              name: uniqueName,
+            });
+            addedCount++;
+          }
+          triggerNotification(`Successfully imported ${addedCount} scenario(s)!`, 'success');
+          return merged;
+        });
+      } catch (err) {
+        console.error('Import scenarios failed:', err);
+        triggerNotification('Failed to parse scenarios file. Please ensure it is a valid JSON file.', 'error');
+      }
+    };
+    reader.readAsText(file);
+    e.target.value = '';
+  };
+
   // Helpers to calculate lifetime statistics
   const calculateLifetimeMetrics = (ledger: SimulationResultRow[]) => {
     const lastRow = ledger[ledger.length - 1];
@@ -687,50 +769,94 @@ export const PlanComparisonWorkspace: React.FC<PlanComparisonWorkspaceProps> = (
               <h4 className="text-sm font-bold text-slate-200">
                 Saved Scenarios ({savedPlans.length})
               </h4>
-              {savedPlans.length > 0 && (
-                <div className="flex items-center gap-2">
-                  {!showClearConfirm ? (
-                    <button
-                      onClick={() => setShowClearConfirm(true)}
-                      className="text-[10px] text-slate-500 hover:text-rose-400 flex items-center gap-1 font-bold font-sans transition-colors cursor-pointer"
-                    >
-                      Clear All
-                    </button>
-                  ) : (
-                    <div className="flex items-center gap-1.5 text-[10px]">
-                      <span className="text-slate-400 font-sans">Delete all?</span>
+              <div className="flex items-center gap-1.5">
+                <label
+                  title="Import scenarios from JSON file"
+                  className="flex items-center gap-1 px-2 py-1 rounded-lg bg-slate-900 hover:bg-slate-800 border border-slate-700/80 hover:border-slate-600 text-slate-300 hover:text-emerald-400 text-xs font-semibold transition-colors cursor-pointer shadow-sm"
+                >
+                  <Upload className="w-3.5 h-3.5 text-emerald-400" />
+                  <span>Import</span>
+                  <input
+                    type="file"
+                    accept=".json"
+                    onChange={handleImportScenariosJSON}
+                    className="hidden"
+                  />
+                </label>
+                <button
+                  type="button"
+                  onClick={handleExportScenariosJSON}
+                  disabled={savedPlans.length === 0}
+                  title={savedPlans.length === 0 ? "No saved scenarios to export" : "Export scenarios to JSON file"}
+                  className={`flex items-center gap-1 px-2 py-1 rounded-lg border text-xs font-semibold transition-colors shadow-sm ${
+                    savedPlans.length === 0
+                      ? 'bg-slate-950/60 border-slate-800 text-slate-600 cursor-not-allowed'
+                      : 'bg-slate-900 hover:bg-slate-800 border-slate-700/80 hover:border-slate-600 text-slate-300 hover:text-blue-400 cursor-pointer'
+                  }`}
+                >
+                  <Download className={`w-3.5 h-3.5 ${savedPlans.length > 0 ? 'text-blue-400' : 'text-slate-600'}`} />
+                  <span>Export</span>
+                </button>
+                {savedPlans.length > 0 && (
+                  <div className="flex items-center gap-2 pl-1 border-l border-slate-800">
+                    {!showClearConfirm ? (
                       <button
-                        onClick={() => {
-                          onSavePlans([]);
-                          setSelectedPlanAId('');
-                          setSelectedPlanBId('');
-                          triggerNotification('All saved plans cleared.', 'info');
-                          setShowClearConfirm(false);
-                        }}
-                        className="text-rose-400 hover:text-rose-300 font-bold cursor-pointer"
+                        onClick={() => setShowClearConfirm(true)}
+                        className="text-[10px] text-slate-500 hover:text-rose-400 flex items-center gap-1 font-bold font-sans transition-colors cursor-pointer"
                       >
-                        Yes
+                        Clear
                       </button>
-                      <span className="text-slate-500">/</span>
-                      <button
-                        onClick={() => setShowClearConfirm(false)}
-                        className="text-slate-400 hover:text-slate-300 font-bold cursor-pointer"
-                      >
-                        No
-                      </button>
-                    </div>
-                  )}
-                </div>
-              )}
+                    ) : (
+                      <div className="flex items-center gap-1.5 text-[10px]">
+                        <span className="text-slate-400 font-sans">Delete all?</span>
+                        <button
+                          onClick={() => {
+                            onSavePlans([]);
+                            setSelectedPlanAId('');
+                            setSelectedPlanBId('');
+                            triggerNotification('All saved plans cleared.', 'info');
+                            setShowClearConfirm(false);
+                          }}
+                          className="text-rose-400 hover:text-rose-300 font-bold cursor-pointer"
+                        >
+                          Yes
+                        </button>
+                        <span className="text-slate-500">/</span>
+                        <button
+                          onClick={() => setShowClearConfirm(false)}
+                          className="text-slate-400 hover:text-slate-300 font-bold cursor-pointer"
+                        >
+                          No
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
             </div>
 
             {savedPlans.length === 0 ? (
-              <div className="text-center py-8 bg-slate-950/20 rounded-xl border border-slate-800/40 border-dashed">
-                <AlertCircle className="w-6 h-6 text-slate-600 mx-auto mb-2" />
-                <p className="text-xs text-slate-500 font-medium">No plans saved yet.</p>
-                <p className="text-[10px] text-slate-600 max-w-[200px] mx-auto mt-1 leading-normal">
-                  Adjust inputs in the sidebar and click save above to record your first plan!
+              <div className="text-center py-6 px-3 bg-slate-950/20 rounded-xl border border-slate-800/40 border-dashed space-y-2">
+                <AlertCircle className="w-5 h-5 text-slate-600 mx-auto" />
+                <p className="text-xs text-slate-400 font-medium">No plans saved yet.</p>
+                <p className="text-[10px] text-slate-500 max-w-[220px] mx-auto leading-normal">
+                  Save current parameters above, or import scenarios from a JSON backup file.
                 </p>
+                <div className="pt-1">
+                  <label
+                    title="Import scenarios from JSON file"
+                    className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-slate-900 hover:bg-slate-800 border border-slate-700 hover:border-emerald-500/50 text-slate-300 hover:text-emerald-300 text-xs font-semibold transition-all cursor-pointer shadow-sm"
+                  >
+                    <Upload className="w-3.5 h-3.5 text-emerald-400" />
+                    <span>Import Scenarios JSON</span>
+                    <input
+                      type="file"
+                      accept=".json"
+                      onChange={handleImportScenariosJSON}
+                      className="hidden"
+                    />
+                  </label>
+                </div>
               </div>
             ) : (
               <div className="space-y-3 max-h-[360px] overflow-y-auto custom-scrollbar pr-1">
