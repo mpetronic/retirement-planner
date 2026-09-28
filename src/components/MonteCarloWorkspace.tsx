@@ -15,7 +15,8 @@ import {
   PieChart,
   DollarSign,
   RotateCcw,
-  ExternalLink
+  ExternalLink,
+  Flame
 } from 'lucide-react';
 import { CmaProfileSelector } from './CmaProfileSelector';
 import { 
@@ -1246,7 +1247,8 @@ export const MonteCarloWorkspace: React.FC<MonteCarloWorkspaceProps> = ({
           {/* Section 4: Inflation (CPI) Simulation Modeling */}
           <div className="pt-4 border-t border-slate-800/60 space-y-3">
             <div className="flex items-center justify-between">
-              <label className="text-xs font-semibold text-slate-300 flex items-center gap-2">
+              <label className="text-xs font-bold text-slate-200 flex items-center gap-2">
+                <Flame className="w-4 h-4 text-emerald-400" />
                 <span>4. Inflation (CPI) Simulation Modeling</span>
               </label>
               <span className={`text-[10px] font-mono font-bold px-2 py-0.5 rounded ${
@@ -1279,21 +1281,52 @@ export const MonteCarloWorkspace: React.FC<MonteCarloWorkspaceProps> = ({
                 className="w-4 h-4 bg-slate-950 rounded border-slate-800 text-emerald-500 focus:ring-emerald-500 accent-emerald-500 cursor-pointer"
               />
               <label htmlFor="randomizeCpiCheckbox" className="text-xs text-slate-300 cursor-pointer select-none font-medium">
-                Randomize Annual CPI Across Trials (Co-sample from 1970–2025 History)
+                Stochastic Annual CPI Across Trials (Historical Shocks Calibrated to CMA Baseline)
               </label>
             </div>
 
             {inputs.monteCarloSettings.randomizeCPI !== false ? (
-              <p className="text-[10px] text-slate-500 leading-relaxed bg-slate-950/40 p-2.5 rounded-lg border border-slate-800/40">
-                <span className="text-slate-400 font-semibold">Stochastic Mode:</span> Annual inflation varies each trial by sampling historical year-over-year CPI changes centered around your configured baseline ({formatPercent(inputs.growthAssumptions.cpiInflationRate)}). This stresses retirement cashflows with historical inflation shocks.
-              </p>
+              <div className="p-3 bg-slate-950/40 rounded-xl border border-slate-800/60 space-y-2">
+                <p className="text-[11px] text-slate-300 leading-relaxed">
+                  <strong className="text-emerald-400">Stochastic Shock Calibration:</strong> Annual inflation varies each trial by zero-centering historical 1970–2025 CPI shocks and calibrating them directly to your configured CMA secular baseline (<strong className="text-slate-100 font-mono">{formatPercent(inputs.growthAssumptions.cpiInflationRate)}</strong>{referenceProfile ? ` from ${referenceProfile.name}` : ''}).
+                </p>
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1 text-[10px] text-slate-400">
+                  <span>Preserves empirical crisis spikes and stagflation fat tails without unbalancing 30-year secular purchasing power.</span>
+                  {onOpenDocumentation && (
+                    <button
+                      type="button"
+                      onClick={() => onOpenDocumentation('cma-volatility-drag')}
+                      className="text-emerald-400 hover:text-emerald-300 underline decoration-dotted decoration-emerald-500/60 hover:decoration-emerald-400 cursor-pointer transition-colors shrink-0 text-left sm:text-right"
+                      title="Learn how CMA secular inflation targets calibrate historical shocks"
+                    >
+                      Learn about CMA inflation shock calibration &rarr;
+                    </button>
+                  )}
+                </div>
+              </div>
             ) : (
               <div className="p-3 bg-slate-950/60 rounded-xl border border-amber-500/30 space-y-3">
                 <div className="flex justify-between items-center text-xs">
                   <span className="text-slate-300 font-semibold">Constant Annual Inflation Rate (CPI):</span>
-                  <span className="text-amber-400 font-mono font-bold">
-                    {formatPercent(inputs.monteCarloSettings.constantCPIRate ?? inputs.growthAssumptions.cpiInflationRate)}
-                  </span>
+                  <div className="flex items-center gap-1.5 font-mono">
+                    {referenceProfile && Math.abs((inputs.monteCarloSettings.constantCPIRate ?? inputs.growthAssumptions.cpiInflationRate) - referenceProfile.cpiInflationRate) > 0.0001 && (
+                      <button
+                        type="button"
+                        onClick={() => updateSettings('constantCPIRate', referenceProfile.cpiInflationRate)}
+                        className="text-[10px] text-amber-400 hover:text-amber-300 flex items-center gap-0.5 cursor-pointer font-mono"
+                        title={`Reset to ${referenceProfile.name} default (${formatPercent(referenceProfile.cpiInflationRate)})`}
+                      >
+                        <RotateCcw className="w-2.5 h-2.5" />
+                        <span>
+                          {(inputs.monteCarloSettings.constantCPIRate ?? inputs.growthAssumptions.cpiInflationRate) - referenceProfile.cpiInflationRate > 0 ? '+' : ''}
+                          {(((inputs.monteCarloSettings.constantCPIRate ?? inputs.growthAssumptions.cpiInflationRate) - referenceProfile.cpiInflationRate) * 100).toFixed(1)}%
+                        </span>
+                      </button>
+                    )}
+                    <span className="text-amber-400 font-bold">
+                      {formatPercent(inputs.monteCarloSettings.constantCPIRate ?? inputs.growthAssumptions.cpiInflationRate)}
+                    </span>
+                  </div>
                 </div>
                 <div className="flex items-center gap-3">
                   <RangeSlider
@@ -1316,7 +1349,7 @@ export const MonteCarloWorkspace: React.FC<MonteCarloWorkspaceProps> = ({
                   </div>
                 </div>
                 <p className="text-[10px] text-slate-400 leading-relaxed">
-                  <span className="text-amber-400 font-semibold">Deterministic Constant CPI:</span> Inflation is fixed at exactly {formatPercent(inputs.monteCarloSettings.constantCPIRate ?? inputs.growthAssumptions.cpiInflationRate)}/year across every trial and year. This matches the standard convention of financial advisor software (e.g. eMoney, RightCapital, MoneyGuidePro).
+                  <span className="text-amber-400 font-semibold">Deterministic Constant CPI:</span> Inflation is fixed at exactly {formatPercent(inputs.monteCarloSettings.constantCPIRate ?? inputs.growthAssumptions.cpiInflationRate)}/year across every trial and year. This disables stochastic shocks and matches the standard convention of commercial financial planning software (e.g. eMoney, RightCapital, MoneyGuidePro).
                 </p>
               </div>
             )}
