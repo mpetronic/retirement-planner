@@ -21,7 +21,9 @@ import { CmaProfileSelector } from './CmaProfileSelector';
 import { 
   getCmaProfile, 
   getFieldDeviations, 
+  isProfileModified,
   calculateArithmeticDrift, 
+  DEFAULT_CMA_PROFILE_ID,
   CurrentParameterValues, 
   CMAFieldKey 
 } from '../constants/cmaProfiles';
@@ -87,10 +89,14 @@ export const MonteCarloWorkspace: React.FC<MonteCarloWorkspaceProps> = ({
   };
 
   // Reference CMA profile and deviation detection
+  const defaultPresetId = DEFAULT_CMA_PROFILE_ID;
   const customProfiles = inputs.monteCarloSettings.customCmaProfiles || [];
   const activeCmaId = inputs.monteCarloSettings.activeCmaProfileId;
-  const baseCmaId = inputs.monteCarloSettings.baseCmaProfileId;
-  const referenceProfile = getCmaProfile(activeCmaId, customProfiles) || getCmaProfile(baseCmaId, customProfiles);
+  const baseCmaId = inputs.monteCarloSettings.baseCmaProfileId 
+    || (activeCmaId && activeCmaId !== 'custom' ? activeCmaId : defaultPresetId);
+  const referenceProfile = getCmaProfile(activeCmaId, customProfiles) 
+    || getCmaProfile(baseCmaId, customProfiles) 
+    || getCmaProfile(defaultPresetId);
 
   const currentValues: CurrentParameterValues = {
     equityReturnRate: inputs.growthAssumptions.equityReturnRate,
@@ -107,16 +113,19 @@ export const MonteCarloWorkspace: React.FC<MonteCarloWorkspaceProps> = ({
   // State update helpers with auto-forking from CMA presets
   const updateSettings = <K extends keyof MonteCarloSettings>(field: K, value: MonteCarloSettings[K]) => {
     const isCmaField = ['equityVolatility', 'fixedIncomeVolatility', 'correlation'].includes(field as string);
-    const shouldFork = isCmaField && inputs.monteCarloSettings.activeCmaProfileId && inputs.monteCarloSettings.activeCmaProfileId !== 'custom';
+    const effectiveBaseId = inputs.monteCarloSettings.baseCmaProfileId 
+      || (inputs.monteCarloSettings.activeCmaProfileId && inputs.monteCarloSettings.activeCmaProfileId !== 'custom' 
+          ? inputs.monteCarloSettings.activeCmaProfileId 
+          : defaultPresetId);
 
     onChangeInputs({
       ...inputs,
       monteCarloSettings: {
         ...inputs.monteCarloSettings,
         [field]: value,
-        ...(shouldFork ? {
+        ...(isCmaField ? {
           activeCmaProfileId: 'custom',
-          baseCmaProfileId: inputs.monteCarloSettings.activeCmaProfileId,
+          baseCmaProfileId: effectiveBaseId,
         } : {}),
       },
     });
@@ -124,7 +133,10 @@ export const MonteCarloWorkspace: React.FC<MonteCarloWorkspaceProps> = ({
 
   const updateGrowthAssumptions = (field: keyof AppStateInputs['growthAssumptions'], value: number | null) => {
     const isCmaField = ['equityReturnRate', 'fixedIncomeReturnRate', 'cashYieldRate', 'cpiInflationRate'].includes(field);
-    const shouldFork = isCmaField && inputs.monteCarloSettings.activeCmaProfileId && inputs.monteCarloSettings.activeCmaProfileId !== 'custom';
+    const effectiveBaseId = inputs.monteCarloSettings.baseCmaProfileId 
+      || (inputs.monteCarloSettings.activeCmaProfileId && inputs.monteCarloSettings.activeCmaProfileId !== 'custom' 
+          ? inputs.monteCarloSettings.activeCmaProfileId 
+          : defaultPresetId);
 
     onChangeInputs({
       ...inputs,
@@ -132,33 +144,47 @@ export const MonteCarloWorkspace: React.FC<MonteCarloWorkspaceProps> = ({
         ...inputs.growthAssumptions,
         [field]: value,
       },
-      monteCarloSettings: shouldFork ? {
+      monteCarloSettings: isCmaField ? {
         ...inputs.monteCarloSettings,
         activeCmaProfileId: 'custom',
-        baseCmaProfileId: inputs.monteCarloSettings.activeCmaProfileId,
+        baseCmaProfileId: effectiveBaseId,
       } : inputs.monteCarloSettings,
     });
   };
 
   const resetFieldToPreset = (field: CMAFieldKey) => {
     if (!referenceProfile) return;
+    const nextGrowth = { ...inputs.growthAssumptions };
+    const nextSettings = { ...inputs.monteCarloSettings };
+
     if (field === 'equityReturnRate' || field === 'fixedIncomeReturnRate' || field === 'cashYieldRate' || field === 'cpiInflationRate') {
-      onChangeInputs({
-        ...inputs,
-        growthAssumptions: {
-          ...inputs.growthAssumptions,
-          [field]: referenceProfile[field],
-        },
-      });
+      nextGrowth[field] = referenceProfile[field] as number;
     } else {
-      onChangeInputs({
-        ...inputs,
-        monteCarloSettings: {
-          ...inputs.monteCarloSettings,
-          [field]: referenceProfile[field],
-        },
-      });
+      nextSettings[field] = referenceProfile[field] as number;
     }
+
+    // Check if after resetting this field, the profile matches the reference preset exactly
+    const nextValues: CurrentParameterValues = {
+      equityReturnRate: nextGrowth.equityReturnRate,
+      equityVolatility: nextSettings.equityVolatility,
+      fixedIncomeReturnRate: nextGrowth.fixedIncomeReturnRate,
+      fixedIncomeVolatility: nextSettings.fixedIncomeVolatility,
+      cashYieldRate: nextGrowth.cashYieldRate,
+      cpiInflationRate: nextGrowth.cpiInflationRate,
+      correlation: nextSettings.correlation,
+    };
+
+    const stillModified = isProfileModified(referenceProfile, nextValues);
+    if (!stillModified && referenceProfile.isBuiltIn) {
+      nextSettings.activeCmaProfileId = referenceProfile.id;
+      nextSettings.baseCmaProfileId = referenceProfile.id;
+    }
+
+    onChangeInputs({
+      ...inputs,
+      growthAssumptions: nextGrowth,
+      monteCarloSettings: nextSettings,
+    });
   };
 
   const fiRate = inputs.growthAssumptions.fixedIncomeReturnRate;

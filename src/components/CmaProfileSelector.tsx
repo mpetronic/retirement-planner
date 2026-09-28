@@ -11,6 +11,7 @@ import {
   getAllCmaProfiles, 
   getCmaProfile, 
   isProfileModified, 
+  DEFAULT_CMA_PROFILE_ID,
   CurrentParameterValues 
 } from '../constants/cmaProfiles';
 import { CmaImportExportModal } from './CmaImportExportModal';
@@ -29,11 +30,12 @@ export const CmaProfileSelector: React.FC<CmaProfileSelectorProps> = ({
   const customProfiles = inputs.monteCarloSettings.customCmaProfiles || [];
   const allProfiles = getAllCmaProfiles(customProfiles);
 
-  const activeId = inputs.monteCarloSettings.activeCmaProfileId || 'custom';
-  const baseId = inputs.monteCarloSettings.baseCmaProfileId;
+  const defaultPresetId = DEFAULT_CMA_PROFILE_ID;
+  const activeId = inputs.monteCarloSettings.activeCmaProfileId || defaultPresetId;
+  const baseId = inputs.monteCarloSettings.baseCmaProfileId || (activeId !== 'custom' ? activeId : defaultPresetId);
 
   const activeProfile = getCmaProfile(activeId, customProfiles);
-  const baseProfile = getCmaProfile(baseId, customProfiles);
+  const baseProfile = getCmaProfile(baseId, customProfiles) || getCmaProfile(defaultPresetId);
 
   // Reference profile for deviation comparisons: active preset or the underlying parent preset
   const referenceProfile = activeProfile || baseProfile;

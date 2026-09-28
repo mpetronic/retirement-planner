@@ -25,7 +25,7 @@ export const BUILT_IN_CMA_PROFILES: CMAProfile[] = [
     editionYear: 2026,
     horizon: '30-Year Secular',
     description: 'Valuation-grounded secular outlook based on the Vanguard Capital Markets Model (VCMM), reflecting elevated starting multiples and long-term mean reversion.',
-    sourceUrl: 'https://corporate.vanguard.com/content/corporatesite/us/en/insights/economic-and-market-outlook.html',
+    sourceUrl: 'https://corporate.vanguard.com/content/corporatesite/us/en/corp/vemo/vemo-return-forecasts.html',
     isBuiltIn: true,
     equityReturnRate: 0.068,
     equityVolatility: 0.160,
@@ -43,7 +43,7 @@ export const BUILT_IN_CMA_PROFILES: CMAProfile[] = [
     editionYear: 2026,
     horizon: '30-Year Secular',
     description: 'Macro-thematic secular regime modeling structural inflation, persistent sovereign debt deficits, energy transition capex, and AI infrastructure buildout.',
-    sourceUrl: 'https://www.blackrock.com/us/individual/insights/blackrock-investment-institute/capital-market-assumptions',
+    sourceUrl: 'https://www.blackrock.com/us/financial-professionals/insights/blackrock-investment-institute',
     isBuiltIn: true,
     equityReturnRate: 0.069,
     equityVolatility: 0.158,
@@ -74,7 +74,7 @@ export const BUILT_IN_CMA_PROFILES: CMAProfile[] = [
   },
 ];
 
-export const DEFAULT_CMA_PROFILE_ID = 'custom';
+export const DEFAULT_CMA_PROFILE_ID = 'vanguard-2026';
 
 /**
  * Calculates stochastic annual arithmetic drift from geometric compound return (CAGR)

@@ -7,6 +7,7 @@ import {
   getCmaProfile,
   getFieldDeviations,
   isProfileModified,
+  DEFAULT_CMA_PROFILE_ID,
 } from './cmaProfiles';
 import { CMAProfile } from '../types';
 
@@ -88,5 +89,12 @@ describe('cmaProfiles registry and mathematical utilities', () => {
     expect(deviations.equityReturnRate.isModified).toBe(true);
     expect(deviations.equityReturnRate.delta).toBeCloseTo(0.075 - 0.068, 4);
     expect(deviations.fixedIncomeReturnRate.isModified).toBe(false);
+  });
+
+  it('exports a valid default CMA profile ID that resolves to a built-in preset', () => {
+    expect(DEFAULT_CMA_PROFILE_ID).toBe('vanguard-2026');
+    const defaultProfile = getCmaProfile(DEFAULT_CMA_PROFILE_ID);
+    expect(defaultProfile).toBeDefined();
+    expect(defaultProfile?.isBuiltIn).toBe(true);
   });
 });
