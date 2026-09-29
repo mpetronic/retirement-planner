@@ -221,7 +221,7 @@ export class IndexedDbStorageAdapter implements StorageAdapter {
     });
   }
 
-  private async getExpenseById(id: string): Promise<ActualExpense | null> {
+  async getExpenseById(id: string): Promise<ActualExpense | null> {
     const db = await this.getDB();
     return new Promise<ActualExpense | null>((resolve, reject) => {
       const tx = db.transaction(STORE_EXPENSES, 'readonly');

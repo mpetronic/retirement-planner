@@ -52,6 +52,11 @@ export class InMemoryStorageAdapter implements StorageAdapter {
       .slice(0, limit);
   }
 
+  async getExpenseById(id: string): Promise<ActualExpense | null> {
+    const found = this.expenses.find(e => e.expenseId === id);
+    return found || null;
+  }
+
   async saveExpense(
     expense: Omit<ActualExpense, 'expenseId' | 'createdAt' | 'updatedAt' | 'syncStatus'> & {
       expenseId?: string;

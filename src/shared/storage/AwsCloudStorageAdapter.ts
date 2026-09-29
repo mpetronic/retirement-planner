@@ -210,16 +210,45 @@ export class AwsCloudStorageAdapter implements StorageAdapter {
     return saved;
   }
 
+  async getExpenseById(id: string): Promise<ActualExpense | null> {
+    if (this.localAdapter.getExpenseById) {
+      return this.localAdapter.getExpenseById(id);
+    }
+    return null;
+  }
+
   async updateExpense(id: string, updates: Partial<ActualExpense>): Promise<ActualExpense> {
+    const existing = this.localAdapter.getExpenseById ? await this.localAdapter.getExpenseById(id) : null;
+    const dateChangedMonthOrYear = Boolean(
+      existing && updates.date && existing.date.slice(0, 7) !== updates.date.slice(0, 7)
+    );
+
     const updated = await this.localAdapter.updateExpense(id, {
       ...updates,
       syncStatus: 'PENDING_SYNC',
     });
 
     if (typeof window !== 'undefined' && navigator.onLine && AuthService.isAuthenticated()) {
-      this.flushPendingExpenses().catch(err => {
+      // If date changed year or month, delete the old remote item with the old sort key from DynamoDB
+      if (dateChangedMonthOrYear) {
+        try {
+          const headers = await this.getAuthHeaders();
+          if (headers) {
+            await fetch(`${this.getApiEndpoint()}/api/expenses/${encodeURIComponent(id)}`, {
+              method: 'DELETE',
+              headers,
+            });
+          }
+        } catch (err) {
+          console.warn('Failed to delete old remote expense during date move:', err);
+        }
+      }
+
+      try {
+        await this.flushPendingExpenses();
+      } catch (err) {
         console.warn('Background update expense sync failed:', err);
-      });
+      }
     }
 
     return updated;

@@ -71,6 +71,7 @@ export interface StorageAdapter {
 
   getExpenses(year: number, month?: number): Promise<ActualExpense[]>;
   getRecentExpenses(limit?: number): Promise<ActualExpense[]>;
+  getExpenseById?(id: string): Promise<ActualExpense | null>;
   saveExpense(expense: Omit<ActualExpense, 'expenseId' | 'createdAt' | 'updatedAt' | 'syncStatus'> & {
     expenseId?: string;
     createdAt?: string;
