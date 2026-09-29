@@ -32,6 +32,13 @@ import {
   Smartphone,
   ExternalLink,
   Tag,
+  Pencil,
+  Search,
+  ArrowUpDown,
+  Check,
+  X,
+  ArrowUp,
+  ArrowDown,
 } from 'lucide-react';
 import { getStorageAdapter } from '../shared/storage';
 import { ActualExpense } from '../shared/types/expenses';
@@ -94,6 +101,30 @@ export const ActualsWorkspace: React.FC<ActualsWorkspaceProps> = ({
   const [showExpenseTable, setShowExpenseTable] = useState<boolean>(true);
   const [showTransactionsDrawer, setShowTransactionsDrawer] = useState<boolean>(false);
   const [, setIsAuthenticated] = useState<boolean>(() => AuthService.isAuthenticated());
+
+  // Line item breakdown modal state
+  const [selectedLineItemForBreakdown, setSelectedLineItemForBreakdown] = useState<{
+    id: string;
+    name: string;
+    group: string;
+    plannedAnnual: number;
+    actualAnnual: number;
+  } | null>(null);
+
+  // Breakdown modal filter and sort state
+  const [breakdownFilterText, setBreakdownFilterText] = useState<string>('');
+  const [breakdownPayerFilter, setBreakdownPayerFilter] = useState<string>('ALL');
+  const [breakdownSortField, setBreakdownSortField] = useState<'date' | 'amount' | 'enteredBy'>('date');
+  const [breakdownSortDirection, setBreakdownSortDirection] = useState<'asc' | 'desc'>('desc');
+
+  // Breakdown modal editing state
+  const [editingExpenseId, setEditingExpenseId] = useState<string | null>(null);
+  const [editExpenseDate, setEditExpenseDate] = useState<string>('');
+  const [editExpenseAmount, setEditExpenseAmount] = useState<string>('');
+  const [editExpensePayer, setEditExpensePayer] = useState<string>('');
+  const [editExpenseNotes, setEditExpenseNotes] = useState<string>('');
+  const [isSavingExpenseEdit, setIsSavingExpenseEdit] = useState<boolean>(false);
+  const [expenseEditError, setExpenseEditError] = useState<string | null>(null);
 
   const loadLoggedExpenses = useCallback(async () => {
     setIsLoadingExpenses(true);
@@ -270,7 +301,125 @@ export const ActualsWorkspace: React.FC<ActualsWorkspaceProps> = ({
     if (window.confirm('Delete this expense transaction?')) {
       const adapter = getStorageAdapter();
       await adapter.deleteExpense(id);
+      if (editingExpenseId === id) {
+        setEditingExpenseId(null);
+      }
       await loadLoggedExpenses();
+    }
+  };
+
+  // Active line item expenses matching the selected category/line item
+  const activeLineItemExpenses = useMemo(() => {
+    if (!selectedLineItemForBreakdown) return [];
+    const targetId = selectedLineItemForBreakdown.id;
+    const targetNameLower = selectedLineItemForBreakdown.name.toLowerCase();
+
+    return loggedExpenses.filter(e => {
+      if (e.categoryId === targetId) return true;
+      const catLower = e.categoryName.toLowerCase();
+      if (catLower === targetNameLower) return true;
+      if (catLower.endsWith(` - ${targetNameLower}`)) return true;
+      if (catLower.endsWith(targetNameLower)) return true;
+      return false;
+    });
+  }, [selectedLineItemForBreakdown, loggedExpenses]);
+
+  // Unique payers for the active line item breakdown
+  const availableBreakdownPayers = useMemo(() => {
+    const payersSet = new Set<string>();
+    for (const exp of activeLineItemExpenses) {
+      payersSet.add(exp.enteredBy || 'Primary');
+    }
+    return Array.from(payersSet);
+  }, [activeLineItemExpenses]);
+
+  // Filtered and sorted expenses for the breakdown modal
+  const filteredAndSortedLineItemExpenses = useMemo(() => {
+    let list = [...activeLineItemExpenses];
+
+    // 1. Text filter (notes, amount, date, who entered)
+    if (breakdownFilterText.trim()) {
+      const q = breakdownFilterText.trim().toLowerCase();
+      list = list.filter(e => {
+        const matchesDate = e.date.toLowerCase().includes(q);
+        const matchesAmount = e.amount.toString().includes(q) || formatCurrency(e.amount).toLowerCase().includes(q);
+        const matchesPayer = (e.enteredBy || '').toLowerCase().includes(q);
+        const matchesNotes = (e.notes || '').toLowerCase().includes(q);
+        return matchesDate || matchesAmount || matchesPayer || matchesNotes;
+      });
+    }
+
+    // 2. Payer filter
+    if (breakdownPayerFilter !== 'ALL') {
+      list = list.filter(e => (e.enteredBy || 'Primary') === breakdownPayerFilter);
+    }
+
+    // 3. Sorting
+    list.sort((a, b) => {
+      let comparison = 0;
+      if (breakdownSortField === 'date') {
+        comparison = a.date.localeCompare(b.date);
+      } else if (breakdownSortField === 'amount') {
+        comparison = a.amount - b.amount;
+      } else if (breakdownSortField === 'enteredBy') {
+        const pA = a.enteredBy || 'Primary';
+        const pB = b.enteredBy || 'Primary';
+        comparison = pA.localeCompare(pB);
+      }
+      return breakdownSortDirection === 'asc' ? comparison : -comparison;
+    });
+
+    return list;
+  }, [activeLineItemExpenses, breakdownFilterText, breakdownPayerFilter, breakdownSortField, breakdownSortDirection]);
+
+  const handleToggleSort = (field: 'date' | 'amount' | 'enteredBy') => {
+    if (breakdownSortField === field) {
+      setBreakdownSortDirection(prev => (prev === 'asc' ? 'desc' : 'asc'));
+    } else {
+      setBreakdownSortField(field);
+      setBreakdownSortDirection(field === 'date' ? 'desc' : 'asc');
+    }
+  };
+
+  const handleStartEditExpense = (exp: ActualExpense) => {
+    setEditingExpenseId(exp.expenseId);
+    setEditExpenseDate(exp.date);
+    setEditExpenseAmount(exp.amount.toFixed(2));
+    setEditExpensePayer(exp.enteredBy || 'Primary');
+    setEditExpenseNotes(exp.notes || '');
+    setExpenseEditError(null);
+  };
+
+  const handleSaveExpenseEdit = async (expenseId: string) => {
+    const parsedAmount = parseFloat(editExpenseAmount);
+    if (isNaN(parsedAmount) || parsedAmount <= 0) {
+      setExpenseEditError('Amount must be greater than $0.00');
+      return;
+    }
+    if (!editExpenseDate) {
+      setExpenseEditError('Date is required');
+      return;
+    }
+
+    setIsSavingExpenseEdit(true);
+    setExpenseEditError(null);
+
+    try {
+      const adapter = getStorageAdapter();
+      await adapter.updateExpense(expenseId, {
+        date: editExpenseDate,
+        amount: Math.round(parsedAmount * 100) / 100,
+        enteredBy: editExpensePayer.trim() || 'Primary',
+        notes: editExpenseNotes.trim() || undefined,
+      });
+
+      await loadLoggedExpenses();
+      setEditingExpenseId(null);
+    } catch (err: unknown) {
+      console.error('Failed to update expense:', err);
+      setExpenseEditError(err instanceof Error ? err.message : 'Failed to update expense');
+    } finally {
+      setIsSavingExpenseEdit(false);
     }
   };
 
@@ -825,7 +974,7 @@ export const ActualsWorkspace: React.FC<ActualsWorkspaceProps> = ({
                 )}
               </h3>
               <p className="text-xs text-slate-400 mt-0.5">
-                Live expense records synchronized from your companion Expenser PWA and household storage.
+                Live expense records synchronized from your companion Expenser PWA and household storage. Click any line item to view, filter, sort, edit, or delete logged purchases.
               </p>
             </div>
           </div>
@@ -1016,6 +1165,7 @@ export const ActualsWorkspace: React.FC<ActualsWorkspaceProps> = ({
                       <th className="px-3.5 py-2.5 text-right">Variance</th>
                       <th className="px-3.5 py-2.5">Budget Usage</th>
                       <th className="px-3.5 py-2.5">Payer Breakdown</th>
+                      <th className="px-3.5 py-2.5 text-center">Actuals</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-800/60 bg-slate-900/40">
@@ -1023,11 +1173,30 @@ export const ActualsWorkspace: React.FC<ActualsWorkspaceProps> = ({
                       const isOver = item.variance < 0;
                       const hasSpend = item.actualAnnual > 0;
                       return (
-                        <tr key={item.id} className="hover:bg-slate-800/40 transition-colors">
+                        <tr
+                          key={item.id}
+                          onClick={() => {
+                            setSelectedLineItemForBreakdown(item);
+                            setBreakdownFilterText('');
+                            setBreakdownPayerFilter('ALL');
+                            setBreakdownSortField('date');
+                            setBreakdownSortDirection('desc');
+                            setEditingExpenseId(null);
+                          }}
+                          className="hover:bg-slate-800/60 transition-colors cursor-pointer group"
+                          title="Click to view detailed expense breakdown, edit, or delete logged transactions"
+                        >
                           <td className="px-3.5 py-2.5 font-medium text-white flex items-center gap-2">
-                            <span className="w-2 h-2 rounded-full bg-emerald-400 shrink-0" />
+                            <span className="w-2 h-2 rounded-full bg-emerald-400 shrink-0 group-hover:scale-125 transition-transform" />
                             <div>
-                              <div className="font-semibold text-slate-100">{item.name}</div>
+                              <div className="font-semibold text-slate-100 group-hover:text-emerald-300 transition-colors flex items-center gap-1.5">
+                                <span>{item.name}</span>
+                                {item.transactionCount > 0 && (
+                                  <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-emerald-500/20 text-emerald-400 font-semibold font-mono">
+                                    {item.transactionCount}
+                                  </span>
+                                )}
+                              </div>
                               <div className="text-[10px] text-slate-500">{item.group}</div>
                             </div>
                           </td>
@@ -1087,6 +1256,28 @@ export const ActualsWorkspace: React.FC<ActualsWorkspaceProps> = ({
                             ) : (
                               <span className="text-slate-600 text-[11px]">—</span>
                             )}
+                          </td>
+                          <td className="px-3.5 py-2.5 text-center">
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setSelectedLineItemForBreakdown(item);
+                                setBreakdownFilterText('');
+                                setBreakdownPayerFilter('ALL');
+                                setBreakdownSortField('date');
+                                setBreakdownSortDirection('desc');
+                                setEditingExpenseId(null);
+                              }}
+                              className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
+                                item.transactionCount > 0
+                                  ? 'bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-300 border border-emerald-500/30'
+                                  : 'bg-slate-800/40 hover:bg-slate-800 text-slate-500 hover:text-slate-300 border border-slate-700/50'
+                              }`}
+                            >
+                              <span>{item.transactionCount > 0 ? `${item.transactionCount} logs` : 'Breakdown'}</span>
+                              <ExternalLink className="w-3 h-3 text-emerald-400" />
+                            </button>
                           </td>
                         </tr>
                       );
@@ -1741,6 +1932,371 @@ export const ActualsWorkspace: React.FC<ActualsWorkspaceProps> = ({
               >
                 <Trash2 className="w-4 h-4" />
                 Confirm Delete
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+      {/* Line Item Breakdown Modal */}
+      {selectedLineItemForBreakdown && (
+        <div className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-md flex items-center justify-center p-4 animate-in fade-in">
+          <div className="bg-slate-900 border border-slate-800 rounded-3xl max-w-4xl w-full max-h-[85vh] flex flex-col shadow-2xl overflow-hidden animate-in zoom-in-95 duration-150">
+            {/* Modal Header */}
+            <div className="p-5 border-b border-slate-800 flex items-center justify-between bg-slate-950/40">
+              <div className="flex items-center space-x-3 min-w-0">
+                <div className="p-2.5 rounded-2xl bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 shrink-0">
+                  <Tag className="w-5 h-5" />
+                </div>
+                <div className="min-w-0">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <h2 className="text-base font-bold text-white truncate">
+                      {selectedLineItemForBreakdown.name}
+                    </h2>
+                    <span className="text-[10px] px-2 py-0.5 rounded-full bg-slate-800 text-slate-300 font-semibold border border-slate-700">
+                      {selectedLineItemForBreakdown.group}
+                    </span>
+                    <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 font-semibold border border-emerald-500/30">
+                      Year {selectedYear}{selectedMonthFilter ? ` • Month ${selectedMonthFilter}` : ''}
+                    </span>
+                  </div>
+                  <p className="text-xs text-slate-400 mt-0.5">
+                    Individual actual expenses logged for this line item. Edit or delete entries to correct mistakes.
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  setSelectedLineItemForBreakdown(null);
+                  setEditingExpenseId(null);
+                }}
+                className="p-2 rounded-xl bg-slate-800 text-slate-400 hover:text-white hover:bg-slate-700 transition-colors cursor-pointer shrink-0 ml-3"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            {/* Quick Stats Bar */}
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 p-4 bg-slate-950/60 border-b border-slate-800 text-xs">
+              <div className="bg-slate-900/60 border border-slate-800 rounded-xl p-2.5">
+                <span className="text-[10px] text-slate-400 block font-medium uppercase tracking-wider">Planned Budget</span>
+                <span className="text-sm font-bold font-mono text-slate-200">
+                  {formatCurrency(selectedLineItemForBreakdown.plannedAnnual)}
+                </span>
+              </div>
+              <div className="bg-slate-900/60 border border-slate-800 rounded-xl p-2.5">
+                <span className="text-[10px] text-slate-400 block font-medium uppercase tracking-wider">Actual Spend</span>
+                <span className="text-sm font-bold font-mono text-emerald-400">
+                  {formatCurrency(activeLineItemExpenses.reduce((sum, e) => sum + e.amount, 0))}
+                </span>
+              </div>
+              <div className="bg-slate-900/60 border border-slate-800 rounded-xl p-2.5">
+                <span className="text-[10px] text-slate-400 block font-medium uppercase tracking-wider">Transactions</span>
+                <span className="text-sm font-bold font-mono text-white">
+                  {activeLineItemExpenses.length} logged
+                </span>
+              </div>
+              <div className="bg-slate-900/60 border border-slate-800 rounded-xl p-2.5">
+                <span className="text-[10px] text-slate-400 block font-medium uppercase tracking-wider">Average / Log</span>
+                <span className="text-sm font-bold font-mono text-slate-300">
+                  {activeLineItemExpenses.length > 0
+                    ? formatCurrency(activeLineItemExpenses.reduce((sum, e) => sum + e.amount, 0) / activeLineItemExpenses.length)
+                    : '$0'}
+                </span>
+              </div>
+            </div>
+
+            {/* Filter & Search Bar */}
+            <div className="p-3.5 bg-slate-900/80 border-b border-slate-800 flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
+              <div className="flex items-center gap-2 flex-1">
+                <div className="relative flex-1 max-w-sm flex items-center bg-slate-950 border border-slate-800 focus-within:border-emerald-500 rounded-xl px-2.5 py-1.5 transition-all">
+                  <Search className="w-3.5 h-3.5 text-slate-500 mr-2 shrink-0" />
+                  <input
+                    type="text"
+                    value={breakdownFilterText}
+                    onChange={(e) => setBreakdownFilterText(e.target.value)}
+                    placeholder="Filter by note, amount, date, purchaser..."
+                    className="w-full bg-transparent text-xs text-white placeholder-slate-500 focus:outline-none"
+                  />
+                  {breakdownFilterText && (
+                    <button
+                      type="button"
+                      onClick={() => setBreakdownFilterText('')}
+                      className="p-0.5 text-slate-400 hover:text-white"
+                    >
+                      <X className="w-3 h-3" />
+                    </button>
+                  )}
+                </div>
+
+                {availableBreakdownPayers.length > 1 && (
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-[11px] text-slate-400 font-medium hidden md:inline">Purchaser:</span>
+                    <select
+                      value={breakdownPayerFilter}
+                      onChange={(e) => setBreakdownPayerFilter(e.target.value)}
+                      className="bg-slate-950 border border-slate-800 text-slate-300 text-xs rounded-xl px-2.5 py-1.5 focus:outline-none focus:border-emerald-500"
+                    >
+                      <option value="ALL">All Payers</option>
+                      {availableBreakdownPayers.map((p) => (
+                        <option key={p} value={p}>{p}</option>
+                      ))}
+                    </select>
+                  </div>
+                )}
+              </div>
+
+              <div className="text-[11px] text-slate-400 flex items-center gap-2 self-end sm:self-auto">
+                <span>
+                  Showing <strong className="text-white">{filteredAndSortedLineItemExpenses.length}</strong> of {activeLineItemExpenses.length}
+                </span>
+                {(breakdownFilterText || breakdownPayerFilter !== 'ALL') && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setBreakdownFilterText('');
+                      setBreakdownPayerFilter('ALL');
+                    }}
+                    className="text-emerald-400 hover:text-emerald-300 underline font-medium cursor-pointer"
+                  >
+                    Clear filter
+                  </button>
+                )}
+              </div>
+            </div>
+
+            {/* Error Message banner if edit fails */}
+            {expenseEditError && (
+              <div className="mx-4 mt-3 p-2.5 rounded-xl bg-rose-500/10 border border-rose-500/30 text-rose-300 text-xs flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <AlertTriangle className="w-4 h-4 shrink-0 text-rose-400" />
+                  <span>{expenseEditError}</span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setExpenseEditError(null)}
+                  className="text-slate-400 hover:text-white"
+                >
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              </div>
+            )}
+
+            {/* Scrollable Tabular Display */}
+            <div className="flex-1 overflow-y-auto custom-scrollbar p-0">
+              {activeLineItemExpenses.length === 0 ? (
+                <div className="py-16 text-center space-y-2 px-4">
+                  <Tag className="w-8 h-8 text-slate-600 mx-auto" />
+                  <p className="text-sm font-semibold text-slate-300">
+                    No actual expenses logged for {selectedLineItemForBreakdown.name} in {selectedYear}.
+                  </p>
+                  <p className="text-xs text-slate-500 max-w-sm mx-auto">
+                    When purchases are logged in the Expenser app or via cloud sync with this category, they will appear here.
+                  </p>
+                </div>
+              ) : filteredAndSortedLineItemExpenses.length === 0 ? (
+                <div className="py-12 text-center text-slate-400 text-xs">
+                  No logged expenses match &ldquo;{breakdownFilterText}&rdquo;.
+                </div>
+              ) : (
+                <table className="w-full text-left text-xs text-slate-300 divide-y divide-slate-800">
+                  <thead className="bg-slate-950/80 text-slate-400 uppercase text-[10px] font-bold tracking-wider sticky top-0 z-10 backdrop-blur">
+                    <tr>
+                      <th
+                        onClick={() => handleToggleSort('date')}
+                        className="px-4 py-3 cursor-pointer hover:text-white transition-colors"
+                      >
+                        <div className="flex items-center gap-1.5">
+                          <span>Expense Date</span>
+                          {breakdownSortField === 'date' ? (
+                            breakdownSortDirection === 'asc' ? (
+                              <ArrowUp className="w-3 h-3 text-emerald-400" />
+                            ) : (
+                              <ArrowDown className="w-3 h-3 text-emerald-400" />
+                            )
+                          ) : (
+                            <ArrowUpDown className="w-3 h-3 text-slate-600" />
+                          )}
+                        </div>
+                      </th>
+                      <th
+                        onClick={() => handleToggleSort('amount')}
+                        className="px-4 py-3 text-right cursor-pointer hover:text-white transition-colors"
+                      >
+                        <div className="flex items-center justify-end gap-1.5">
+                          <span>Amount</span>
+                          {breakdownSortField === 'amount' ? (
+                            breakdownSortDirection === 'asc' ? (
+                              <ArrowUp className="w-3 h-3 text-emerald-400" />
+                            ) : (
+                              <ArrowDown className="w-3 h-3 text-emerald-400" />
+                            )
+                          ) : (
+                            <ArrowUpDown className="w-3 h-3 text-slate-600" />
+                          )}
+                        </div>
+                      </th>
+                      <th
+                        onClick={() => handleToggleSort('enteredBy')}
+                        className="px-4 py-3 cursor-pointer hover:text-white transition-colors"
+                      >
+                        <div className="flex items-center gap-1.5">
+                          <span>Who Entered</span>
+                          {breakdownSortField === 'enteredBy' ? (
+                            breakdownSortDirection === 'asc' ? (
+                              <ArrowUp className="w-3 h-3 text-emerald-400" />
+                            ) : (
+                              <ArrowDown className="w-3 h-3 text-emerald-400" />
+                            )
+                          ) : (
+                            <ArrowUpDown className="w-3 h-3 text-slate-600" />
+                          )}
+                        </div>
+                      </th>
+                      <th className="px-4 py-3">Note / Memo</th>
+                      <th className="px-4 py-3 text-right">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-800/60 bg-slate-900/30">
+                    {filteredAndSortedLineItemExpenses.map((exp) => {
+                      const isEditing = editingExpenseId === exp.expenseId;
+
+                      if (isEditing) {
+                        return (
+                          <tr key={exp.expenseId} className="bg-emerald-950/20 border-y border-emerald-500/30">
+                            <td className="px-4 py-2.5">
+                              <input
+                                type="date"
+                                value={editExpenseDate}
+                                onChange={(e) => setEditExpenseDate(e.target.value)}
+                                className="bg-slate-950 border border-slate-700 rounded-lg px-2 py-1 text-xs text-white focus:outline-none focus:border-emerald-500 [color-scheme:dark]"
+                                required
+                              />
+                            </td>
+                            <td className="px-4 py-2.5 text-right">
+                              <div className="relative inline-flex items-center">
+                                <span className="text-emerald-400 font-bold mr-1">$</span>
+                                <input
+                                  type="number"
+                                  step="0.01"
+                                  min="0.01"
+                                  value={editExpenseAmount}
+                                  onChange={(e) => setEditExpenseAmount(e.target.value)}
+                                  className="w-24 bg-slate-950 border border-slate-700 rounded-lg px-2 py-1 text-xs font-mono font-bold text-white text-right focus:outline-none focus:border-emerald-500"
+                                  required
+                                />
+                              </div>
+                            </td>
+                            <td className="px-4 py-2.5">
+                              <input
+                                type="text"
+                                value={editExpensePayer}
+                                onChange={(e) => setEditExpensePayer(e.target.value)}
+                                placeholder="Payer name"
+                                className="w-28 bg-slate-950 border border-slate-700 rounded-lg px-2 py-1 text-xs text-white focus:outline-none focus:border-emerald-500"
+                              />
+                            </td>
+                            <td className="px-4 py-2.5">
+                              <input
+                                type="text"
+                                value={editExpenseNotes}
+                                onChange={(e) => setEditExpenseNotes(e.target.value)}
+                                placeholder="Add note / store..."
+                                className="w-full bg-slate-950 border border-slate-700 rounded-lg px-2 py-1 text-xs text-white focus:outline-none focus:border-emerald-500"
+                              />
+                            </td>
+                            <td className="px-4 py-2.5 text-right">
+                              <div className="flex items-center justify-end gap-1.5">
+                                <button
+                                  type="button"
+                                  disabled={isSavingExpenseEdit}
+                                  onClick={() => handleSaveExpenseEdit(exp.expenseId)}
+                                  className="p-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold transition-all shadow-sm cursor-pointer disabled:opacity-50"
+                                  title="Save changes and sync to DynamoDB"
+                                >
+                                  {isSavingExpenseEdit ? (
+                                    <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                                  ) : (
+                                    <Check className="w-3.5 h-3.5" />
+                                  )}
+                                </button>
+                                <button
+                                  type="button"
+                                  disabled={isSavingExpenseEdit}
+                                  onClick={() => setEditingExpenseId(null)}
+                                  className="p-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-white text-xs transition-colors cursor-pointer"
+                                  title="Cancel edit"
+                                >
+                                  <X className="w-3.5 h-3.5" />
+                                </button>
+                              </div>
+                            </td>
+                          </tr>
+                        );
+                      }
+
+                      return (
+                        <tr key={exp.expenseId} className="hover:bg-slate-800/40 transition-colors">
+                          <td className="px-4 py-3 font-mono text-slate-200">
+                            {exp.date}
+                          </td>
+                          <td className="px-4 py-3 text-right font-mono font-bold text-emerald-400 text-sm">
+                            {formatCurrency(exp.amount)}
+                          </td>
+                          <td className="px-4 py-3">
+                            <span className="inline-flex items-center px-2 py-0.5 rounded-full bg-slate-800 text-slate-300 text-[11px] font-medium border border-slate-700/60">
+                              {exp.enteredBy || 'Primary'}
+                            </span>
+                          </td>
+                          <td className="px-4 py-3 text-slate-300">
+                            {exp.notes ? (
+                              <span className="text-amber-200/90">{exp.notes}</span>
+                            ) : (
+                              <span className="text-slate-600 italic text-[11px]">No note</span>
+                            )}
+                          </td>
+                          <td className="px-4 py-3 text-right">
+                            <div className="flex items-center justify-end gap-1">
+                              <button
+                                type="button"
+                                onClick={() => handleStartEditExpense(exp)}
+                                className="p-1.5 text-slate-400 hover:text-emerald-400 hover:bg-emerald-500/10 rounded-lg transition-colors cursor-pointer"
+                                title="Edit this transaction"
+                              >
+                                <Pencil className="w-3.5 h-3.5" />
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => handleDeleteLoggedExpense(exp.expenseId)}
+                                className="p-1.5 text-slate-500 hover:text-rose-400 hover:bg-rose-500/10 rounded-lg transition-colors cursor-pointer"
+                                title="Delete this transaction"
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              )}
+            </div>
+
+            {/* Modal Footer */}
+            <div className="p-4 bg-slate-950/70 border-t border-slate-800 flex items-center justify-between text-xs text-slate-400">
+              <span className="hidden sm:inline">
+                Edits and deletions synchronize automatically to your household DynamoDB storage.
+              </span>
+              <button
+                type="button"
+                onClick={() => {
+                  setSelectedLineItemForBreakdown(null);
+                  setEditingExpenseId(null);
+                }}
+                className="px-5 py-2 bg-slate-800 hover:bg-slate-700 text-white rounded-xl font-semibold transition-colors cursor-pointer ml-auto"
+              >
+                Close
               </button>
             </div>
           </div>
