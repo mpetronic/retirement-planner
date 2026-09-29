@@ -114,7 +114,7 @@ export function clamp(val: number, min: number, max: number): number {
 import { calculateArithmeticDrift } from '../constants/cmaProfiles';
 
 /**
- * Generates joint stock/bond returns for 35 years using bivariate Student-t distribution
+ * Generates joint stock/bond returns for 35 years using bivariate normal distribution
  * with optional 2-state Markov regime-switching and Ornstein-Uhlenbeck mean reversion.
  *
  * Implements institutional volatility drag adjustment: annual distribution drift is elevated
@@ -135,8 +135,6 @@ export function generateSyntheticSequence(
   const equityReturns: number[] = [];
   const fixedIncomeReturns: number[] = [];
   const inflationRates: number[] = [];
-  
-  const df = 5; // Degrees of freedom for Student-t distribution to capture fat tails
   
   // Stochastic arithmetic drift translation (adjusts for discrete annual volatility drag)
   const equityDrift = calculateArithmeticDrift(equityMean, equityVol);
@@ -216,19 +214,10 @@ export function generateSyntheticSequence(
     const x1 = z1;
     const x2 = effCorrelation * z1 + Math.sqrt(Math.max(0.0001, 1 - effCorrelation * effCorrelation)) * z2;
     
-    // 5. Student-t scaling (df = 5) for fat tails
-    let v = 0;
-    for (let j = 0; j < df; j++) {
-      const zi = nextGaussian(rand);
-      v += zi * zi;
-    }
-    const tScale = Math.sqrt((df - 2) / Math.max(0.0001, v));
-    
-    const t1 = x1 * tScale;
-    const t2 = x2 * tScale;
-    
-    const rawEquityReturn = effEquityMean + effEquityVol * t1;
-    const rawBondReturn = effBondMean + effBondVol * t2;
+    // In CMA/synthetic mode, returns directly follow the calibrated bivariate normal distribution,
+    // honoring institutional CMA volatility and correlation without uncalibrated fat-tail inflation.
+    const rawEquityReturn = effEquityMean + effEquityVol * x1;
+    const rawBondReturn = effBondMean + effBondVol * x2;
     
     // Clamp to realistic historical boundaries
     const equityReturn = clamp(rawEquityReturn, EQUITY_RETURN_MIN, EQUITY_RETURN_MAX);
@@ -288,7 +277,8 @@ export function generateHistoricalSequence(
   calibrateMeans: boolean = true,
   equityMean?: number,
   bondMean?: number,
-  targetCPIRate?: number
+  targetCPIRate?: number,
+  enableStudentT: boolean = false
 ): Omit<LockedReturnSequence, 'id'> {
   const equityReturns: number[] = [];
   const fixedIncomeReturns: number[] = [];
@@ -299,6 +289,10 @@ export function generateHistoricalSequence(
   const bondShift = calibrateMeans && bondMean !== undefined ? (bondMean - HISTORICAL_BOND_MEAN) : 0;
   const cpiShift = calibrateMeans && targetCPIRate !== undefined ? (targetCPIRate - HISTORICAL_CPI_MEAN) : 0;
   
+  const stockBaseline = calibrateMeans && equityMean !== undefined ? equityMean : HISTORICAL_STOCK_MEAN;
+  const bondBaseline = calibrateMeans && bondMean !== undefined ? bondMean : HISTORICAL_BOND_MEAN;
+  const df = 5;
+
   if (blockSampling) {
     // Select a continuous 35-year historical segment.
     // Restrict starting index to [0, count - 35] so every block is fully contiguous without wrapping.
@@ -310,8 +304,22 @@ export function generateHistoricalSequence(
       
     for (let i = 0; i < 35; i++) {
       const yearData = HISTORICAL_RETURNS[idx];
-      equityReturns.push(clamp(yearData.stock + stockShift, EQUITY_RETURN_MIN, EQUITY_RETURN_MAX));
-      fixedIncomeReturns.push(clamp(yearData.bond + bondShift, BOND_RETURN_MIN, BOND_RETURN_MAX));
+      let eq = yearData.stock + stockShift;
+      let fi = yearData.bond + bondShift;
+
+      if (enableStudentT) {
+        let v = 0;
+        for (let j = 0; j < df; j++) {
+          const zi = nextGaussian(rand);
+          v += zi * zi;
+        }
+        const tScale = Math.sqrt((df - 2) / Math.max(0.0001, v));
+        eq = stockBaseline + (yearData.stock - HISTORICAL_STOCK_MEAN) * tScale;
+        fi = bondBaseline + (yearData.bond - HISTORICAL_BOND_MEAN) * tScale;
+      }
+
+      equityReturns.push(clamp(eq, EQUITY_RETURN_MIN, EQUITY_RETURN_MAX));
+      fixedIncomeReturns.push(clamp(fi, BOND_RETURN_MIN, BOND_RETURN_MAX));
       const rawCpi = randomizeCPI ? (yearData.inflation + cpiShift) : (constantCPIRate ?? 0.025);
       inflationRates.push(clamp(rawCpi, INFLATION_RATE_MIN, INFLATION_RATE_MAX));
       idx++;
@@ -321,8 +329,22 @@ export function generateHistoricalSequence(
     for (let i = 0; i < 35; i++) {
       const idx = Math.floor(rand() * HISTORICAL_RETURNS.length);
       const yearData = HISTORICAL_RETURNS[idx];
-      equityReturns.push(clamp(yearData.stock + stockShift, EQUITY_RETURN_MIN, EQUITY_RETURN_MAX));
-      fixedIncomeReturns.push(clamp(yearData.bond + bondShift, BOND_RETURN_MIN, BOND_RETURN_MAX));
+      let eq = yearData.stock + stockShift;
+      let fi = yearData.bond + bondShift;
+
+      if (enableStudentT) {
+        let v = 0;
+        for (let j = 0; j < df; j++) {
+          const zi = nextGaussian(rand);
+          v += zi * zi;
+        }
+        const tScale = Math.sqrt((df - 2) / Math.max(0.0001, v));
+        eq = stockBaseline + (yearData.stock - HISTORICAL_STOCK_MEAN) * tScale;
+        fi = bondBaseline + (yearData.bond - HISTORICAL_BOND_MEAN) * tScale;
+      }
+
+      equityReturns.push(clamp(eq, EQUITY_RETURN_MIN, EQUITY_RETURN_MAX));
+      fixedIncomeReturns.push(clamp(fi, BOND_RETURN_MIN, BOND_RETURN_MAX));
       const rawCpi = randomizeCPI ? (yearData.inflation + cpiShift) : (constantCPIRate ?? 0.025);
       inflationRates.push(clamp(rawCpi, INFLATION_RATE_MIN, INFLATION_RATE_MAX));
     }
@@ -527,6 +549,7 @@ export function runMonteCarloSimulation(
       const strategy = inputs.monteCarloSettings?.historicalSamplingStrategy ?? 'hybrid';
       const isBlock = strategy === 'block' ? true : strategy === 'random' ? false : rand() < 0.35;
       const calibrateMeans = inputs.monteCarloSettings?.calibrateHistoricalMeans !== false;
+      const enableStudentT = inputs.monteCarloSettings?.enableHistoricalStudentT === true;
       rawSequences.push(generateHistoricalSequence(
         isBlock,
         undefined,
@@ -536,7 +559,8 @@ export function runMonteCarloSimulation(
         calibrateMeans,
         equityMean,
         bondMean,
-        targetCpi
+        targetCpi,
+        enableStudentT
       ));
     } else {
       rawSequences.push(generateSyntheticSequence(

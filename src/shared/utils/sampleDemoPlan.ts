@@ -87,6 +87,7 @@ export const SAMPLE_DEMO_PLAN: AppStateInputs = {
     enableRegimeSwitching: true,
     historicalSamplingStrategy: 'hybrid',
     calibrateHistoricalMeans: true,
+    enableHistoricalStudentT: false,
     activeCmaProfileId: 'vanguard-2026',
     baseCmaProfileId: 'vanguard-2026',
     customCmaProfiles: [],

@@ -913,6 +913,97 @@ describe('Constant vs Randomized CPI Simulation', () => {
       expect(realizedArithmeticMean).toBeLessThan(0.088);
     });
   });
+
+  describe('Student-t distribution handling', () => {
+    it('applies Student-t fat-tail adjustments to historical sequences when enableStudentT is true', () => {
+      const rand1 = mulberry32(12345);
+      const rand2 = mulberry32(12345);
+
+      const standardSeq = generateHistoricalSequence(
+        false, undefined, rand1, false, 0.025, true, 0.07, 0.04, 0.025, false
+      );
+      const studentTSeq = generateHistoricalSequence(
+        false, undefined, rand2, false, 0.025, true, 0.07, 0.04, 0.025, true
+      );
+
+      expect(standardSeq.equityReturns.length).toBe(35);
+      expect(studentTSeq.equityReturns.length).toBe(35);
+
+      // Student-t sequence should differ due to fat-tail tScale scaling
+      expect(studentTSeq.equityReturns).not.toEqual(standardSeq.equityReturns);
+
+      // All returns must remain safely clamped within institutional limits
+      for (const eq of studentTSeq.equityReturns) {
+        expect(eq).toBeGreaterThanOrEqual(EQUITY_RETURN_MIN);
+        expect(eq).toBeLessThanOrEqual(EQUITY_RETURN_MAX);
+      }
+      for (const fi of studentTSeq.fixedIncomeReturns) {
+        expect(fi).toBeGreaterThanOrEqual(BOND_RETURN_MIN);
+        expect(fi).toBeLessThanOrEqual(BOND_RETURN_MAX);
+      }
+    });
+
+    it('runs full Monte Carlo simulation with enableHistoricalStudentT toggle', () => {
+      const baseInputs: AppStateInputs = {
+        you: {
+          birthDate: '1960-06-15',
+          estimatedPIA: 3000,
+          targetSSClaimingAge: 70,
+          plannedRetirementAge: 65,
+          activeSalary: 0,
+        },
+        wife: {
+          birthDate: '1964-03-10',
+          estimatedPIA: 2000,
+          targetSSClaimingAge: 67,
+          plannedRetirementAge: 62,
+          activeSalary: 0,
+        },
+        portfolio: {
+          yourPreTaxIRA: 1000000,
+          yourRothIRA: 50000,
+          yourTaxableBrokerage: 200000,
+          yourTaxableBasis: 150000,
+          wifePreTaxIRA: 200000,
+          wifeRothIRA: 0,
+          wifeTaxableBrokerage: 0,
+          wifeTaxableBasis: 0,
+          yourCash: 50000,
+        },
+        jurisdiction: {
+          relocationYear: null,
+          currentState: 'MD',
+          targetState: 'FL',
+        },
+        growthAssumptions: {
+          equityReturnRate: 0.07,
+          fixedIncomeReturnRate: 0.04,
+          cpiInflationRate: 0.03,
+          healthcareInflationRate: 0.05,
+        },
+        annualLivingExpenses: 80000,
+        annualRothConversion: 0,
+        rothConversionStrategy: 'flat',
+        rothConversionTargetValue: null,
+        monteCarloSettings: {
+          mode: 'historical',
+          equityVolatility: 0.15,
+          fixedIncomeVolatility: 0.05,
+          correlation: 0.15,
+          trials: 50,
+          seed: 42,
+          enableHistoricalStudentT: true,
+        },
+        isConfigured: true,
+        isSingleFiler: false,
+      };
+
+      const summary = runMonteCarloSimulation(baseInputs);
+      expect(summary.trialsRun).toBe(50);
+      expect(summary.successRate).toBeGreaterThanOrEqual(0);
+      expect(summary.percentiles.length).toBe(35);
+    });
+  });
 });
 
 

@@ -119,6 +119,7 @@ const DEFAULT_INPUTS: AppStateInputs = {
     enableRegimeSwitching: true,
     historicalSamplingStrategy: 'hybrid',
     calibrateHistoricalMeans: true,
+    enableHistoricalStudentT: false,
     activeCmaProfileId: 'vanguard-2026',
     baseCmaProfileId: 'vanguard-2026',
     customCmaProfiles: [],
@@ -556,6 +557,7 @@ function App() {
     const enableRegimeSwitching = deferredInputs.monteCarloSettings?.enableRegimeSwitching !== false;
     const historicalStrategy = deferredInputs.monteCarloSettings?.historicalSamplingStrategy ?? 'hybrid';
     const calibrateHistoricalMeans = deferredInputs.monteCarloSettings?.calibrateHistoricalMeans !== false;
+    const enableHistoricalStudentT = deferredInputs.monteCarloSettings?.enableHistoricalStudentT === true;
 
     const baseSeed = seed !== null && seed !== undefined ? seed : 12345;
     const rand = mulberry32(baseSeed + nonce);
@@ -575,7 +577,8 @@ function App() {
             calibrateHistoricalMeans,
             equityMean,
             bondMean,
-            targetCpi
+            targetCpi,
+            enableHistoricalStudentT
           )
         );
       } else {
@@ -613,6 +616,7 @@ function App() {
     deferredInputs.monteCarloSettings.enableRegimeSwitching,
     deferredInputs.monteCarloSettings.historicalSamplingStrategy,
     deferredInputs.monteCarloSettings.calibrateHistoricalMeans,
+    deferredInputs.monteCarloSettings.enableHistoricalStudentT,
   ]);
 
   // 2. Compute representative market return sequences (P10, P50, P90) instantaneously (<0.1ms).

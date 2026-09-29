@@ -1238,6 +1238,42 @@ export const MonteCarloWorkspace: React.FC<MonteCarloWorkspaceProps> = ({
                         )}
                       </p>
                     </div>
+
+                    {/* Student-t Fat-Tail Adjustments Toggle (Only for Historical Mode) */}
+                    <div className="pt-2 border-t border-slate-800/60 space-y-2">
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-2">
+                          <input
+                            type="checkbox"
+                            id="enableHistoricalStudentTCheckbox"
+                            checked={inputs.monteCarloSettings.enableHistoricalStudentT === true}
+                            onChange={(e) => updateSettings('enableHistoricalStudentT', e.target.checked)}
+                            className="w-3.5 h-3.5 bg-slate-950 rounded border-slate-800 text-emerald-500 focus:ring-emerald-500 accent-emerald-500 cursor-pointer"
+                          />
+                          <label htmlFor="enableHistoricalStudentTCheckbox" className="text-[11px] text-slate-200 cursor-pointer select-none font-semibold">
+                            Apply Student-t Fat-Tail Adjustments (df = 5)
+                          </label>
+                        </div>
+                        <span className={`text-[9px] font-mono font-bold px-1.5 py-0.5 rounded ${
+                          inputs.monteCarloSettings.enableHistoricalStudentT === true
+                            ? 'bg-amber-500/10 text-amber-400 border border-amber-500/20'
+                            : 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20'
+                        }`}>
+                          {inputs.monteCarloSettings.enableHistoricalStudentT === true ? 'Active (df = 5 Fat Tails)' : 'Standard (Empirical History)'}
+                        </span>
+                      </div>
+                      <p className="text-[9px] text-slate-400 leading-normal pl-5">
+                        {inputs.monteCarloSettings.enableHistoricalStudentT === true ? (
+                          <>
+                            <strong className="text-amber-400">Student-t Fat Tails Enabled:</strong> Scales annual historical return deviations by a Student-t distribution factor (5 degrees of freedom). This generates amplified outlier shocks and fat tails beyond the 1970–2025 empirical dataset to stress-test extreme market crises.
+                          </>
+                        ) : (
+                          <>
+                            <strong className="text-slate-300">Standard Historical (Recommended):</strong> Replays empirical annual returns directly from 1970–2025, preserving authentic historical fat tails (e.g. 1973–74 stagflation, 2008 GFC, 2022 rate shock) without synthetic tail amplification.
+                          </>
+                        )}
+                      </p>
+                    </div>
                   </div>
                 )}
               </div>

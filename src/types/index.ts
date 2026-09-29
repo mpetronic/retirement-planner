@@ -114,6 +114,7 @@ export interface MonteCarloSettings {
   enableRegimeSwitching?: boolean; // If true (default), apply Markov 2-state regime switching and Ornstein-Uhlenbeck mean reversion
   historicalSamplingStrategy?: 'hybrid' | 'block' | 'random'; // Historical bootstrap strategy (hybrid: 35% block / 65% random, block: 100% contiguous, random: 100% random resampled)
   calibrateHistoricalMeans?: boolean; // If true (default), calibrate historical return shocks to match user configured baseline means (e.g. 7% equity / 4% bond)
+  enableHistoricalStudentT?: boolean; // If true, apply Student-t fat-tail scaling (df=5) to historical bootstrap shocks. Only applicable in historical mode (not CMA/synthetic).
   activeCmaProfileId?: string;   // e.g. 'vanguard-2026', 'consensus-2026', or 'custom'
   baseCmaProfileId?: string | null; // Tracks parent preset if modified (e.g. 'vanguard-2026')
   customCmaProfiles?: CMAProfile[]; // User imported/created profiles

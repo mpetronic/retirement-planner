@@ -158,6 +158,20 @@ describe('exportHelpers', () => {
       expect(parsed.savedPlans).toHaveLength(1);
       expect(parsed.savedPlans[0].name).toBe('FL Relocation');
     });
+
+    it('preserves enableHistoricalStudentT in exported JSON payload', async () => {
+      const inputsWithFatTail = {
+        ...mockInputs,
+        monteCarloSettings: {
+          ...mockInputs.monteCarloSettings,
+          enableHistoricalStudentT: true,
+        },
+      };
+      const blob = generateJsonBlob(inputsWithFatTail);
+      const text = await blob.text();
+      const parsed = JSON.parse(text);
+      expect(parsed.monteCarloSettings.enableHistoricalStudentT).toBe(true);
+    });
   });
 
   describe('generateExcelExportBlob', () => {
