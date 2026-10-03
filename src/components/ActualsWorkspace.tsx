@@ -39,11 +39,16 @@ import {
   X,
   ArrowUp,
   ArrowDown,
+  ArrowRight,
+  Flame,
 } from 'lucide-react';
 import { getStorageAdapter } from '../shared/storage';
 import { ActualExpense } from '../shared/types/expenses';
 import { AuthService } from '../shared/auth/AuthService';
+import { syncCustomCategoriesToPlanner, savePlannerExpenseLineItem } from '../shared/utils/plannerCategories';
+import { ActiveViewType } from './SidebarNavigation';
 import { RangeSlider } from './RangeSlider';
+import { NumericInput } from './NumericInput';
 import { Chart } from 'react-chartjs-2';
 import { Chart as ChartJS, registerables } from 'chart.js';
 
@@ -55,7 +60,8 @@ interface ActualsWorkspaceProps {
   onUpdateActuals: (actuals: Record<number, YearActualsRecord>) => void;
   onUpdateGuardrailSettings: (settings: GuardrailSettings) => void;
   onApplySpendingBonusToBudget?: (newBudget: number) => void;
-  onNavigateToTab?: (tabIndex: number) => void;
+  onNavigateToTab?: (tab: number | ActiveViewType) => void;
+  onUpdatePriorTaxReturnMAGI?: (priorMAGI: Record<number, number | null>) => void;
 }
 
 export const ActualsWorkspace: React.FC<ActualsWorkspaceProps> = ({
@@ -64,6 +70,8 @@ export const ActualsWorkspace: React.FC<ActualsWorkspaceProps> = ({
   onUpdateActuals,
   onUpdateGuardrailSettings,
   onApplySpendingBonusToBudget,
+  onNavigateToTab,
+  onUpdatePriorTaxReturnMAGI,
 }) => {
   const simStartYear = getSimulationStartYear(inputs);
   const currentCalendarYear = new Date().getFullYear();
@@ -130,8 +138,32 @@ export const ActualsWorkspace: React.FC<ActualsWorkspaceProps> = ({
     setIsLoadingExpenses(true);
     try {
       const adapter = getStorageAdapter();
-      const exps = await adapter.getExpenses(selectedYear, selectedMonthFilter || undefined);
+      const [exps, cats] = await Promise.all([
+        adapter.getExpenses(selectedYear, selectedMonthFilter || undefined),
+        adapter.getCategories().catch(() => []),
+      ]);
       setLoggedExpenses(exps);
+
+      // 1. Sync custom categories from storage into Planner Detailed Expenses
+      if (cats && cats.length > 0) {
+        syncCustomCategoriesToPlanner(cats);
+      }
+
+      // 2. Also register any line items from logged transactions if missing from catalog
+      for (const exp of exps) {
+        if (!exp.categoryName) continue;
+        const parts = exp.categoryName.includes(' - ') ? exp.categoryName.split(' - ') : ['Living', exp.categoryName];
+        const group = parts[0].trim();
+        const name = parts[1] ? parts[1].trim() : exp.categoryName.trim();
+        if (group === 'Healthcare') continue;
+
+        savePlannerExpenseLineItem({
+          id: exp.categoryId,
+          name,
+          groupCategory: group,
+          plannedMonthlyDefault: 0,
+        });
+      }
     } catch (err) {
       console.error('Failed to load logged actual expenses:', err);
     } finally {
@@ -196,105 +228,6 @@ export const ActualsWorkspace: React.FC<ActualsWorkspaceProps> = ({
     return { totalSpend, byCategory, byLineItem, byPayer, count: loggedExpenses.length };
   }, [loggedExpenses]);
 
-  // Comparison list between Planned Detailed Budget and Logged Actuals
-  const comparisonItems = useMemo(() => {
-    const items: Array<{
-      id: string;
-      name: string;
-      group: string;
-      plannedAnnual: number;
-      actualAnnual: number;
-      variance: number;
-      percentUsed: number;
-      transactionCount: number;
-      payers: Record<string, number>;
-    }> = [];
-
-    if (inputs.useDetailedExpenses && inputs.detailedExpenses) {
-      const norm = normalizeDetailedExpenses(inputs.detailedExpenses);
-      const activeStateForYear = (inputs.jurisdiction.relocationYear !== null && selectedYear >= inputs.jurisdiction.relocationYear)
-        ? inputs.jurisdiction.targetState
-        : inputs.jurisdiction.currentState;
-      const stateCosts = norm.costs[activeStateForYear] || norm.costs.ALL || norm.costs[inputs.jurisdiction.currentState] || {};
-      const freqs = norm.frequencies;
-
-      for (const catItem of norm.catalog.items) {
-        if (catItem.isOneTime && catItem.targetYear !== selectedYear) continue;
-
-        const appliesToActiveState = !catItem.applicableStates ||
-          catItem.applicableStates.includes('ALL') ||
-          catItem.applicableStates.includes(activeStateForYear);
-
-        const actualEntry = actualsSummary.byLineItem[catItem.id];
-        const actualAmount = actualEntry?.total || 0;
-
-        // Clean declutter: Hide line item completely if not applicable to current active state and has zero actual spend
-        if (!appliesToActiveState && actualAmount === 0) {
-          continue;
-        }
-
-        const cost = appliesToActiveState ? (stateCosts[catItem.id] ?? 0) : 0;
-        const freq = freqs[catItem.id] ?? catItem.defaultFrequency ?? 12;
-        const plannedFullYear = catItem.isOneTime ? cost : cost * freq;
-        const plannedAmount = selectedMonthFilter ? cost * (freq / 12) : plannedFullYear;
-
-        const variance = plannedAmount - actualAmount;
-        const percentUsed = plannedAmount > 0 ? (actualAmount / plannedAmount) * 100 : actualAmount > 0 ? 999 : 0;
-
-        items.push({
-          id: catItem.id,
-          name: !appliesToActiveState ? `${catItem.name} (Unbudgeted in ${activeStateForYear})` : catItem.name,
-          group: catItem.category || 'Living',
-          plannedAnnual: plannedAmount,
-          actualAnnual: actualAmount,
-          variance,
-          percentUsed,
-          transactionCount: actualEntry?.count || 0,
-          payers: actualEntry?.payers || {},
-        });
-      }
-    }
-
-    // Also include any logged categories created on the fly not present in detailedExpenses
-    for (const [catId, entry] of Object.entries(actualsSummary.byLineItem)) {
-      if (!items.some((i) => i.id === catId)) {
-        const parts = entry.name.includes(' - ') ? entry.name.split(' - ') : ['Custom', entry.name];
-        items.push({
-          id: catId,
-          name: parts[1] ? parts[1].trim() : entry.name,
-          group: parts[0].trim(),
-          plannedAnnual: 0,
-          actualAnnual: entry.total,
-          variance: -entry.total,
-          percentUsed: 999,
-          transactionCount: entry.count,
-          payers: entry.payers,
-        });
-      }
-    }
-
-    return items.sort((a, b) => b.actualAnnual - a.actualAnnual);
-  }, [inputs.useDetailedExpenses, inputs.detailedExpenses, inputs.jurisdiction.currentState, inputs.jurisdiction.targetState, inputs.jurisdiction.relocationYear, selectedYear, selectedMonthFilter, actualsSummary]);
-
-  // Sync actual logged expenses into activeRecord living expenses
-  const handleSyncActualsToRecord = () => {
-    const nextCategories: Record<string, number> = {};
-    for (const [catName, amount] of Object.entries(actualsSummary.byCategory)) {
-      const group = catName.includes(' - ') ? catName.split(' - ')[0].trim() : catName;
-      nextCategories[group] = (nextCategories[group] || 0) + amount;
-    }
-
-    const updatedRecord = {
-      ...activeRecord,
-      totalLivingExpenses: Math.round(actualsSummary.totalSpend),
-      categoryExpenses: nextCategories,
-    };
-
-    onUpdateActuals({
-      ...actualTracking,
-      [selectedYear]: updatedRecord,
-    });
-  };
 
   // Delete an individual logged expense transaction
   const handleDeleteLoggedExpense = async (id: string) => {
@@ -433,6 +366,8 @@ export const ActualsWorkspace: React.FC<ActualsWorkspaceProps> = ({
       healthcareInflationRate: null,
       totalLivingExpenses: null,
       categoryExpenses: {},
+      healthcareOOP: null,
+      irmaaSurcharges: null,
       preMedicareHealthcareCost: null,
       medicareBasePremiums: null,
       earnedSalaryYou: null,
@@ -457,6 +392,252 @@ export const ActualsWorkspace: React.FC<ActualsWorkspaceProps> = ({
   const activeLedgerRow = useMemo(() => {
     return ledger.find((r) => r.year === selectedYear);
   }, [ledger, selectedYear]);
+
+  // Sync actual logged expenses into activeRecord living expenses and healthcare
+  const handleSyncActualsToRecord = () => {
+    const nextCategories: Record<string, number> = {};
+    let nonHealthcareSpend = 0;
+    let loggedOOP = 0;
+    let loggedPremiums = 0;
+    let loggedIRMAA = 0;
+
+    for (const exp of loggedExpenses) {
+      const catLower = exp.categoryName.toLowerCase();
+      const idLower = exp.categoryId.toLowerCase();
+      if (
+        idLower === 'healthcare-oop' ||
+        catLower.includes('out-of-pocket') ||
+        catLower.includes('deductible') ||
+        catLower.includes('copay') ||
+        catLower.includes('co-pay')
+      ) {
+        loggedOOP += exp.amount;
+      } else if (
+        idLower === 'healthcare-premiums' ||
+        catLower.includes('insurance premium') ||
+        catLower.includes('medicare part b') ||
+        catLower.includes('supplement')
+      ) {
+        loggedPremiums += exp.amount;
+      } else if (
+        idLower === 'healthcare-irmaa' ||
+        catLower.includes('irmaa') ||
+        catLower.includes('surcharge')
+      ) {
+        loggedIRMAA += exp.amount;
+      } else {
+        const group = exp.categoryName.includes(' - ') ? exp.categoryName.split(' - ')[0].trim() : exp.categoryName;
+        nextCategories[group] = (nextCategories[group] || 0) + exp.amount;
+        nonHealthcareSpend += exp.amount;
+      }
+    }
+
+    const updatedRecord: YearActualsRecord = {
+      ...activeRecord,
+      totalLivingExpenses: Math.round(nonHealthcareSpend),
+      categoryExpenses: nextCategories,
+      healthcareOOP: loggedOOP > 0 ? Math.round(loggedOOP) : activeRecord.healthcareOOP,
+      preMedicareHealthcareCost: loggedPremiums > 0 ? Math.round(loggedPremiums) : activeRecord.preMedicareHealthcareCost,
+      irmaaSurcharges: loggedIRMAA > 0 ? Math.round(loggedIRMAA) : activeRecord.irmaaSurcharges,
+    };
+
+    onUpdateActuals({
+      ...actualTracking,
+      [selectedYear]: updatedRecord,
+    });
+  };
+
+  // Comparison list between Planned Detailed Budget and Logged Actuals
+  const comparisonItems = useMemo(() => {
+    const items: Array<{
+      id: string;
+      name: string;
+      group: string;
+      plannedAnnual: number;
+      actualAnnual: number;
+      variance: number;
+      percentUsed: number;
+      transactionCount: number;
+      payers: Record<string, number>;
+    }> = [];
+
+    // 1. Detailed Living Expenses (or fallback to general living expenses if detailed expenses disabled)
+    if (inputs.useDetailedExpenses && inputs.detailedExpenses) {
+      const norm = normalizeDetailedExpenses(inputs.detailedExpenses);
+      const activeStateForYear = (inputs.jurisdiction.relocationYear !== null && selectedYear >= inputs.jurisdiction.relocationYear)
+        ? inputs.jurisdiction.targetState
+        : inputs.jurisdiction.currentState;
+      const stateCosts = norm.costs[activeStateForYear] || norm.costs.ALL || norm.costs[inputs.jurisdiction.currentState] || {};
+      const freqs = norm.frequencies;
+
+      for (const catItem of norm.catalog.items) {
+        if (catItem.isOneTime && catItem.targetYear !== selectedYear) continue;
+
+        const appliesToActiveState = !catItem.applicableStates ||
+          catItem.applicableStates.includes('ALL') ||
+          catItem.applicableStates.includes(activeStateForYear);
+
+        const actualEntry = actualsSummary.byLineItem[catItem.id];
+        const actualAmount = actualEntry?.total || 0;
+
+        // Clean declutter: Hide line item completely if not applicable to current active state and has zero actual spend
+        if (!appliesToActiveState && actualAmount === 0) {
+          continue;
+        }
+
+        const cost = appliesToActiveState ? (stateCosts[catItem.id] ?? 0) : 0;
+        const freq = freqs[catItem.id] ?? catItem.defaultFrequency ?? 12;
+        const plannedFullYear = catItem.isOneTime ? cost : cost * freq;
+        const plannedAmount = selectedMonthFilter ? cost * (freq / 12) : plannedFullYear;
+
+        const variance = plannedAmount - actualAmount;
+        const percentUsed = plannedAmount > 0 ? (actualAmount / plannedAmount) * 100 : actualAmount > 0 ? 999 : 0;
+
+        items.push({
+          id: catItem.id,
+          name: !appliesToActiveState ? `${catItem.name} (Unbudgeted in ${activeStateForYear})` : catItem.name,
+          group: catItem.category || 'Living',
+          plannedAnnual: plannedAmount,
+          actualAnnual: actualAmount,
+          variance,
+          percentUsed,
+          transactionCount: actualEntry?.count || 0,
+          payers: actualEntry?.payers || {},
+        });
+      }
+    } else {
+      const plannedLiving = activeLedgerRow?.plannedBaseLivingExpenses ?? (inputs.annualLivingExpenses ?? 100000);
+      const plannedAmount = selectedMonthFilter ? plannedLiving / 12 : plannedLiving;
+      const actualAmount = activeRecord.totalLivingExpenses ?? actualsSummary.totalSpend ?? 0;
+      const variance = plannedAmount - actualAmount;
+      const percentUsed = plannedAmount > 0 ? (actualAmount / plannedAmount) * 100 : actualAmount > 0 ? 999 : 0;
+      items.push({
+        id: 'general-living',
+        name: 'General Living Expenses',
+        group: 'Living',
+        plannedAnnual: plannedAmount,
+        actualAnnual: actualAmount,
+        variance,
+        percentUsed,
+        transactionCount: actualsSummary.count,
+        payers: actualsSummary.byPayer,
+      });
+    }
+
+    // 2. Healthcare Insurance Premiums (Pre-65 + Medicare Base)
+    const plannedPremiumsAnnual = (activeLedgerRow?.preMedicareHealthcareCost ?? 0) + (activeLedgerRow?.medicareBasePremiums ?? 0);
+    const plannedPremiums = selectedMonthFilter ? plannedPremiumsAnnual / 12 : plannedPremiumsAnnual;
+    const premiumsLoggedEntry = actualsSummary.byLineItem['healthcare-premiums'];
+    const actualPremiums = premiumsLoggedEntry
+      ? premiumsLoggedEntry.total
+      : ((activeRecord.preMedicareHealthcareCost ?? 0) + (activeRecord.medicareBasePremiums ?? 0));
+
+    if (plannedPremiums > 0 || actualPremiums > 0) {
+      const variance = plannedPremiums - actualPremiums;
+      const percentUsed = plannedPremiums > 0 ? (actualPremiums / plannedPremiums) * 100 : actualPremiums > 0 ? 999 : 0;
+      items.push({
+        id: 'healthcare-premiums',
+        name: 'Healthcare Insurance Premiums (Pre-65 & Medicare Part B / Supp / D)',
+        group: 'Healthcare',
+        plannedAnnual: plannedPremiums,
+        actualAnnual: actualPremiums,
+        variance,
+        percentUsed,
+        transactionCount: premiumsLoggedEntry?.count ?? (actualPremiums > 0 ? 1 : 0),
+        payers: premiumsLoggedEntry?.payers ?? {},
+      });
+    }
+
+    // 3. Healthcare Out-of-Pocket (Max Allowance Ceiling vs Realized Co-pays & Deductibles)
+    const plannedOOPAnnual = activeLedgerRow?.plannedHealthcareOOP ?? 0;
+    const plannedOOP = selectedMonthFilter ? plannedOOPAnnual / 12 : plannedOOPAnnual;
+    const oopLoggedEntry = actualsSummary.byLineItem['healthcare-oop'];
+    const actualOOP = oopLoggedEntry
+      ? oopLoggedEntry.total
+      : (activeRecord.healthcareOOP ?? 0);
+
+    if (plannedOOP > 0 || actualOOP > 0) {
+      const variance = plannedOOP - actualOOP;
+      const percentUsed = plannedOOP > 0 ? (actualOOP / plannedOOP) * 100 : actualOOP > 0 ? 999 : 0;
+      items.push({
+        id: 'healthcare-oop',
+        name: 'Healthcare Out-of-Pocket (Max Allowance Ceiling)',
+        group: 'Healthcare',
+        plannedAnnual: plannedOOP,
+        actualAnnual: actualOOP,
+        variance,
+        percentUsed,
+        transactionCount: oopLoggedEntry?.count ?? (actualOOP > 0 ? 1 : 0),
+        payers: oopLoggedEntry?.payers ?? {},
+      });
+    }
+
+    // 4. Medicare IRMAA Surcharges (Part B & D)
+    const plannedIRMAAAnnual = activeLedgerRow?.combinedSurchargeAnnual ?? 0;
+    const plannedIRMAA = selectedMonthFilter ? plannedIRMAAAnnual / 12 : plannedIRMAAAnnual;
+    const irmaaLoggedEntry = actualsSummary.byLineItem['healthcare-irmaa'];
+    const actualIRMAA = irmaaLoggedEntry
+      ? irmaaLoggedEntry.total
+      : (activeRecord.irmaaSurcharges ?? 0);
+
+    if (plannedIRMAA > 0 || actualIRMAA > 0) {
+      const variance = plannedIRMAA - actualIRMAA;
+      const percentUsed = plannedIRMAA > 0 ? (actualIRMAA / plannedIRMAA) * 100 : actualIRMAA > 0 ? 999 : 0;
+      items.push({
+        id: 'healthcare-irmaa',
+        name: 'Medicare IRMAA Surcharges (Part B & D)',
+        group: 'Healthcare',
+        plannedAnnual: plannedIRMAA,
+        actualAnnual: actualIRMAA,
+        variance,
+        percentUsed,
+        transactionCount: irmaaLoggedEntry?.count ?? (actualIRMAA > 0 ? 1 : 0),
+        payers: irmaaLoggedEntry?.payers ?? {},
+      });
+    }
+
+    // 5. Also include any logged categories created on the fly not present in items
+    for (const [catId, entry] of Object.entries(actualsSummary.byLineItem)) {
+      if (!items.some((i) => i.id === catId)) {
+        const parts = entry.name.includes(' - ') ? entry.name.split(' - ') : ['Custom', entry.name];
+        items.push({
+          id: catId,
+          name: parts[1] ? parts[1].trim() : entry.name,
+          group: parts[0].trim(),
+          plannedAnnual: 0,
+          actualAnnual: entry.total,
+          variance: -entry.total,
+          percentUsed: 999,
+          transactionCount: entry.count,
+          payers: entry.payers,
+        });
+      }
+    }
+
+    return items.sort((a, b) => b.actualAnnual - a.actualAnnual);
+  }, [
+    inputs.useDetailedExpenses,
+    inputs.detailedExpenses,
+    inputs.annualLivingExpenses,
+    inputs.jurisdiction.currentState,
+    inputs.jurisdiction.targetState,
+    inputs.jurisdiction.relocationYear,
+    selectedYear,
+    selectedMonthFilter,
+    actualsSummary,
+    activeLedgerRow,
+    activeRecord,
+  ]);
+
+  const totalPlannedForComparison = useMemo(() => {
+    return comparisonItems.reduce((acc, i) => acc + i.plannedAnnual, 0);
+  }, [comparisonItems]);
+
+  const totalActualForComparison = useMemo(() => {
+    return comparisonItems.reduce((acc, i) => acc + i.actualAnnual, 0);
+  }, [comparisonItems]);
+
+  const totalVarianceForComparison = totalPlannedForComparison - totalActualForComparison;
 
   // Format currency helper
   const formatCurrency = (val: number | null | undefined) => {
@@ -568,7 +749,7 @@ export const ActualsWorkspace: React.FC<ActualsWorkspaceProps> = ({
   // Latest actual row for guardrail analysis
   const latestActualRow = useMemo(() => {
     const actualRows = ledger.filter((r) => r.isActual);
-    if (actualRows.length === 0) return ledger[0];
+    if (actualRows.length === 0) return null;
     return actualRows[actualRows.length - 1];
   }, [ledger]);
 
@@ -578,15 +759,21 @@ export const ActualsWorkspace: React.FC<ActualsWorkspaceProps> = ({
   }, [getPlannedRecurringBudgetForYear, currentCalendarYear]);
 
   // Guardrail metrics
-  const plannedBudgetBase = getPlannedRecurringBudgetForYear(latestActualRow?.year ?? currentCalendarYear);
-  const plannedBudget = plannedBudgetBase * (latestActualRow?.cpiFactor ?? 1.0);
+  const plannedBudgetBase = getPlannedRecurringBudgetForYear(latestActualRow?.year ?? selectedYear);
+  const plannedBudget = latestActualRow?.plannedLivingExpenses ?? (plannedBudgetBase * (ledger[0]?.cpiFactor ?? 1.0) + (ledger[0]?.plannedHealthcareOOP ?? 0));
   const guardrailUpperLimit = latestActualRow?.guardrailUpperLimit ?? (plannedBudget * (1 + (guardrailSettings.upperGuardrailPct ?? 0.15)));
   const guardrailLowerLimit = latestActualRow?.guardrailLowerLimit ?? (plannedBudget * (1 - (guardrailSettings.lowerGuardrailPct ?? 0.15)));
   const currentSurplusGap = latestActualRow?.actualSurplusGap ?? 0;
   const permittedBonus = latestActualRow?.permittedSpendingBonus ?? 0;
-  const actualSpend = latestActualRow?.livingExpenses ?? plannedBudget;
+
+  // Actual spend: if an actual row exists in ledger, use its realized living expenses.
+  // Otherwise, use what's tracked or logged for selectedYear (defaults to 0 when zero transactions logged).
+  const trackedSpend = (activeRecord?.totalLivingExpenses !== undefined && activeRecord?.totalLivingExpenses !== null)
+    ? (activeRecord.totalLivingExpenses + (activeRecord.healthcareOOP ?? 0))
+    : actualsSummary.totalSpend;
+  const actualSpend = latestActualRow ? latestActualRow.livingExpenses : trackedSpend;
   const spendingSavings = plannedBudget - actualSpend;
-  const marketSurplusShare = currentSurplusGap - spendingSavings;
+  const marketSurplusShare = latestActualRow ? (currentSurplusGap - spendingSavings) : 0;
 
   // Variance Comparison Chart Data
   const varianceChartData = useMemo(() => {
@@ -599,7 +786,7 @@ export const ActualsWorkspace: React.FC<ActualsWorkspaceProps> = ({
       datasets: [
         {
           label: 'Planned Budget ($)',
-          data: rowsToChart.map((r) => getPlannedRecurringBudgetForYear(r.year) * r.cpiFactor),
+          data: rowsToChart.map((r) => r.plannedLivingExpenses ?? (getPlannedRecurringBudgetForYear(r.year) * r.cpiFactor)),
           borderColor: '#60a5fa',
           backgroundColor: 'rgba(96, 165, 250, 0.1)',
           borderWidth: 1.75,
@@ -811,20 +998,30 @@ export const ActualsWorkspace: React.FC<ActualsWorkspaceProps> = ({
             <div className="flex items-center justify-between">
               <span className="text-xs font-bold text-emerald-400 uppercase tracking-wider flex items-center gap-1.5">
                 <Sparkles className="w-3.5 h-3.5" />
-                Permission to Spend Advisory ({latestActualRow ? latestActualRow.year : currentCalendarYear})
+                Permission to Spend Advisory ({latestActualRow ? latestActualRow.year : selectedYear})
               </span>
               <span
                 className={`text-xs font-extrabold px-2.5 py-0.5 rounded-full border ${
-                  currentSurplusGap >= 0
+                  !latestActualRow
+                    ? 'bg-slate-800 text-slate-300 border-slate-700'
+                    : currentSurplusGap >= 0
                     ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40'
                     : 'bg-rose-500/20 text-rose-300 border-rose-500/40'
                 }`}
               >
-                {currentSurplusGap >= 0 ? `+${formatCurrency(currentSurplusGap)} Net Surplus` : `${formatCurrency(currentSurplusGap)} Deficit`}
+                {!latestActualRow
+                  ? 'Tracking Active'
+                  : currentSurplusGap >= 0
+                  ? `+${formatCurrency(currentSurplusGap)} Net Surplus`
+                  : `${formatCurrency(currentSurplusGap)} Deficit`}
               </span>
             </div>
             <p className="text-sm font-bold text-slate-100 mt-1">
-              {currentSurplusGap >= 0 ? (
+              {!latestActualRow ? (
+                <>
+                  Tracking for {selectedYear} is active. Log actual expense transactions and reconcile year-end portfolio balances to activate next year's spending advisory.
+                </>
+              ) : currentSurplusGap >= 0 ? (
                 <>
                   You have <span className="text-emerald-400">permission to spend up to +{formatCurrency(permittedBonus)}</span> in extra discretionary budget next year!
                 </>
@@ -994,12 +1191,23 @@ export const ActualsWorkspace: React.FC<ActualsWorkspaceProps> = ({
                 )}
               </h3>
               <p className="text-xs text-slate-400 mt-0.5">
-                Live expense records synchronized from your companion Expenser PWA and household storage. Click any line item to view, filter, sort, edit, or delete logged purchases.
+                Live expense records synchronized from your companion Expenser PWA and household storage. Click any line item to view, filter, sort, edit, or delete logged purchases. Manage planned baselines in the{' '}
+                {onNavigateToTab && (
+                  <button
+                    type="button"
+                    onClick={() => onNavigateToTab('params-expenses')}
+                    className="text-emerald-400 hover:text-emerald-300 underline font-medium cursor-pointer inline-flex items-center gap-0.5"
+                  >
+                    Detailed Living Expenses worksheet
+                    <ArrowRight className="w-2.5 h-2.5" />
+                  </button>
+                )}
+                .
               </p>
             </div>
           </div>
 
-          <div className="flex items-center gap-2 self-start sm:self-auto">
+          <div className="flex items-center gap-2 self-start sm:self-auto flex-wrap">
             <button
               onClick={() => loadLoggedExpenses()}
               disabled={isLoadingExpenses}
@@ -1008,6 +1216,19 @@ export const ActualsWorkspace: React.FC<ActualsWorkspaceProps> = ({
             >
               <RefreshCw className={`w-3.5 h-3.5 ${isLoadingExpenses ? 'animate-spin text-emerald-400' : ''}`} />
             </button>
+
+            {onNavigateToTab && (
+              <button
+                type="button"
+                onClick={() => onNavigateToTab('params-expenses')}
+                className="px-3 py-1.5 rounded-xl bg-indigo-600/20 hover:bg-indigo-600/30 text-indigo-300 border border-indigo-500/40 text-xs font-semibold flex items-center gap-1.5 transition-all shadow-sm cursor-pointer"
+                title="Jump to Detailed Living Expenses worksheet in Parameters"
+              >
+                <Flame className="w-3.5 h-3.5 text-indigo-400" />
+                <span>Detailed Expenses Worksheet</span>
+                <ArrowRight className="w-3 h-3 text-indigo-400" />
+              </button>
+            )}
 
             <a
               href="/expenser"
@@ -1067,38 +1288,36 @@ export const ActualsWorkspace: React.FC<ActualsWorkspaceProps> = ({
 
         {/* Summary KPIs Row */}
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
-          {/* Total Logged Actual Spend */}
+          {/* Total Actual Spend */}
           <div className="bg-slate-950/60 border border-slate-800/90 rounded-xl p-3.5">
             <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider block">
-              Total Logged Spend
+              Total Actual Spend
             </span>
             <div className="text-xl font-extrabold text-white mt-1">
-              {formatCurrency(actualsSummary.totalSpend)}
+              {formatCurrency(totalActualForComparison)}
             </div>
             <p className="text-[11px] text-slate-400 mt-0.5">
-              {actualsSummary.count} transaction{actualsSummary.count === 1 ? '' : 's'} recorded
+              {actualsSummary.count} logged transaction{actualsSummary.count === 1 ? '' : 's'} + recorded actuals
             </p>
           </div>
 
           {/* Planned Budget */}
           <div className="bg-slate-950/60 border border-slate-800/90 rounded-xl p-3.5">
             <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider block">
-              Planned Baseline Budget
+              Planned Total Budget
             </span>
             <div className="text-xl font-extrabold text-slate-200 mt-1">
-              {formatCurrency(selectedMonthFilter ? (baselineRecurringAnnual / 12) : baselineRecurringAnnual)}
+              {formatCurrency(totalPlannedForComparison)}
             </div>
             <p className="text-[11px] text-slate-400 mt-0.5">
-              {selectedMonthFilter ? '1 month allocation' : 'Annual budgeted recurring baseline'}
+              {selectedMonthFilter ? '1 month allocation' : 'Annual comprehensive living & healthcare budget'}
             </p>
           </div>
 
           {/* Net Variance */}
           {(() => {
-            const plannedRef = selectedMonthFilter ? (baselineRecurringAnnual / 12) : baselineRecurringAnnual;
-            const variance = plannedRef - actualsSummary.totalSpend;
-            const isUnder = variance >= 0;
-            const pct = plannedRef > 0 ? Math.abs((variance / plannedRef) * 100).toFixed(1) : '0';
+            const isUnder = totalVarianceForComparison >= 0;
+            const pct = totalPlannedForComparison > 0 ? Math.abs((totalVarianceForComparison / totalPlannedForComparison) * 100).toFixed(1) : '0';
             return (
               <div className={`border rounded-xl p-3.5 ${
                 isUnder
@@ -1109,10 +1328,10 @@ export const ActualsWorkspace: React.FC<ActualsWorkspaceProps> = ({
                   {isUnder ? 'Under Budget (Surplus)' : 'Over Budget (Deficit)'}
                 </span>
                 <div className="text-xl font-extrabold mt-1 flex items-center gap-1">
-                  {isUnder ? `+${formatCurrency(variance)}` : `-${formatCurrency(Math.abs(variance))}`}
+                  {isUnder ? `+${formatCurrency(totalVarianceForComparison)}` : `-${formatCurrency(Math.abs(totalVarianceForComparison))}`}
                 </div>
                 <p className="text-[11px] opacity-80 mt-0.5">
-                  {isUnder ? `${pct}% below planned spend` : `${pct}% above planned spend`}
+                  {isUnder ? `${pct}% below planned budget` : `${pct}% above planned budget`}
                 </p>
               </div>
             );
@@ -1382,96 +1601,80 @@ export const ActualsWorkspace: React.FC<ActualsWorkspaceProps> = ({
               <label className="text-slate-300 font-semibold block mb-1">
                 Realized Equities Return (S&P 500 / Total Stock)
               </label>
-              <div className="relative">
-                <input
-                  type="number"
-                  step="0.01"
-                  placeholder="e.g. 12.5"
-                  value={activeRecord.equityReturnRate !== null && activeRecord.equityReturnRate !== undefined ? Math.round(activeRecord.equityReturnRate * 10000) / 100 : ''}
-                  onChange={(e) =>
-                    handleFieldChange(
-                      'equityReturnRate',
-                      e.target.value === '' ? null : parseFloat(e.target.value) / 100
-                    )
-                  }
-                  className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 pr-8 text-white font-mono focus:border-emerald-500 focus:outline-none"
-                />
-                <span className="absolute right-3 top-2 text-slate-400 font-mono font-bold">
-                  %
-                </span>
-              </div>
+              <NumericInput
+                allowDecimals={true}
+                decimalPlaces={2}
+                suffix="%"
+                placeholder="e.g. 12.5"
+                value={activeRecord.equityReturnRate !== null && activeRecord.equityReturnRate !== undefined ? Math.round(activeRecord.equityReturnRate * 10000) / 100 : null}
+                onChange={(val) =>
+                  handleFieldChange(
+                    'equityReturnRate',
+                    val === null ? null : val / 100
+                  )
+                }
+                className="h-9 bg-slate-950 border-slate-700 text-white font-mono focus:border-emerald-500"
+              />
             </div>
 
             <div>
               <label className="text-slate-300 font-semibold block mb-1">
                 Realized Fixed Income Return (Bonds / Treasuries)
               </label>
-              <div className="relative">
-                <input
-                  type="number"
-                  step="0.01"
-                  placeholder="e.g. 4.0"
-                  value={activeRecord.fixedIncomeReturnRate !== null && activeRecord.fixedIncomeReturnRate !== undefined ? Math.round(activeRecord.fixedIncomeReturnRate * 10000) / 100 : ''}
-                  onChange={(e) =>
-                    handleFieldChange(
-                      'fixedIncomeReturnRate',
-                      e.target.value === '' ? null : parseFloat(e.target.value) / 100
-                    )
-                  }
-                  className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 pr-8 text-white font-mono focus:border-emerald-500 focus:outline-none"
-                />
-                <span className="absolute right-3 top-2 text-slate-400 font-mono font-bold">
-                  %
-                </span>
-              </div>
+              <NumericInput
+                allowDecimals={true}
+                decimalPlaces={2}
+                suffix="%"
+                placeholder="e.g. 4.0"
+                value={activeRecord.fixedIncomeReturnRate !== null && activeRecord.fixedIncomeReturnRate !== undefined ? Math.round(activeRecord.fixedIncomeReturnRate * 10000) / 100 : null}
+                onChange={(val) =>
+                  handleFieldChange(
+                    'fixedIncomeReturnRate',
+                    val === null ? null : val / 100
+                  )
+                }
+                className="h-9 bg-slate-950 border-slate-700 text-white font-mono focus:border-emerald-500"
+              />
             </div>
 
             <div>
               <label className="text-slate-300 font-semibold block mb-1">
                 Realized CPI Headline Inflation Rate
               </label>
-              <div className="relative">
-                <input
-                  type="number"
-                  step="0.01"
-                  placeholder="e.g. 2.8"
-                  value={activeRecord.cpiInflationRate !== null && activeRecord.cpiInflationRate !== undefined ? Math.round(activeRecord.cpiInflationRate * 10000) / 100 : ''}
-                  onChange={(e) =>
-                    handleFieldChange(
-                      'cpiInflationRate',
-                      e.target.value === '' ? null : parseFloat(e.target.value) / 100
-                    )
-                  }
-                  className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 pr-8 text-white font-mono focus:border-emerald-500 focus:outline-none"
-                />
-                <span className="absolute right-3 top-2 text-slate-400 font-mono font-bold">
-                  %
-                </span>
-              </div>
+              <NumericInput
+                allowDecimals={true}
+                decimalPlaces={2}
+                suffix="%"
+                placeholder="e.g. 2.8"
+                value={activeRecord.cpiInflationRate !== null && activeRecord.cpiInflationRate !== undefined ? Math.round(activeRecord.cpiInflationRate * 10000) / 100 : null}
+                onChange={(val) =>
+                  handleFieldChange(
+                    'cpiInflationRate',
+                    val === null ? null : val / 100
+                  )
+                }
+                className="h-9 bg-slate-950 border-slate-700 text-white font-mono focus:border-emerald-500"
+              />
             </div>
 
             <div>
               <label className="text-slate-300 font-semibold block mb-1">
                 Realized Healthcare Inflation Rate
               </label>
-              <div className="relative">
-                <input
-                  type="number"
-                  step="0.01"
-                  placeholder="e.g. 5.0"
-                  value={activeRecord.healthcareInflationRate !== null && activeRecord.healthcareInflationRate !== undefined ? Math.round(activeRecord.healthcareInflationRate * 10000) / 100 : ''}
-                  onChange={(e) =>
-                    handleFieldChange(
-                      'healthcareInflationRate',
-                      e.target.value === '' ? null : parseFloat(e.target.value) / 100
-                    )
-                  }
-                  className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 pr-8 text-white font-mono focus:border-emerald-500 focus:outline-none"
-                />
-                <span className="absolute right-3 top-2 text-slate-400 font-mono font-bold">
-                  %
-                </span>
-              </div>
+              <NumericInput
+                allowDecimals={true}
+                decimalPlaces={2}
+                suffix="%"
+                placeholder="e.g. 5.0"
+                value={activeRecord.healthcareInflationRate !== null && activeRecord.healthcareInflationRate !== undefined ? Math.round(activeRecord.healthcareInflationRate * 10000) / 100 : null}
+                onChange={(val) =>
+                  handleFieldChange(
+                    'healthcareInflationRate',
+                    val === null ? null : val / 100
+                  )
+                }
+                className="h-9 bg-slate-950 border-slate-700 text-white font-mono focus:border-emerald-500"
+              />
             </div>
           </div>
         </div>
@@ -1495,20 +1698,14 @@ export const ActualsWorkspace: React.FC<ActualsWorkspaceProps> = ({
           <div className="space-y-3 text-xs">
             <div>
               <label className="text-slate-300 font-semibold block mb-1">
-                Total Annual Living Expenses
+                Living Expenses (Excluding Healthcare) ($)
               </label>
-              <input
-                type="number"
-                step="100"
+              <NumericInput
+                prefix="$"
                 placeholder={`Budgeted: ${formatCurrency(getPlannedRecurringBudgetForYear(selectedYear) * (activeLedgerRow?.cpiFactor || 1))}`}
-                value={activeRecord.totalLivingExpenses !== null && activeRecord.totalLivingExpenses !== undefined ? activeRecord.totalLivingExpenses : ''}
-                onChange={(e) =>
-                  handleFieldChange(
-                    'totalLivingExpenses',
-                    e.target.value === '' ? null : parseFloat(e.target.value)
-                  )
-                }
-                className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-white font-mono focus:border-sky-500 focus:outline-none"
+                value={activeRecord.totalLivingExpenses}
+                onChange={(val) => handleFieldChange('totalLivingExpenses', val)}
+                className="h-9 bg-slate-950 border-slate-700 text-white font-mono focus:border-sky-500"
               />
             </div>
 
@@ -1520,14 +1717,12 @@ export const ActualsWorkspace: React.FC<ActualsWorkspaceProps> = ({
                 {DEFAULT_EXPENSE_CATEGORIES.map((cat) => (
                   <div key={cat} className="flex items-center justify-between gap-2">
                     <span className="text-slate-400">{cat}:</span>
-                    <input
-                      type="number"
-                      placeholder="$0"
-                      value={activeRecord.categoryExpenses?.[cat] || ''}
-                      onChange={(e) =>
-                        handleCategoryCostChange(cat, e.target.value === '' ? 0 : parseFloat(e.target.value))
-                      }
-                      className="w-28 bg-slate-900 border border-slate-700 rounded-lg px-2 py-1 text-right text-white font-mono text-xs"
+                    <NumericInput
+                      prefix="$"
+                      placeholder="0"
+                      value={activeRecord.categoryExpenses?.[cat]}
+                      onChange={(val) => handleCategoryCostChange(cat, val ?? 0)}
+                      className="w-28 h-7 bg-slate-900 border-slate-700 text-right text-white font-mono text-xs"
                     />
                   </div>
                 ))}
@@ -1536,55 +1731,72 @@ export const ActualsWorkspace: React.FC<ActualsWorkspaceProps> = ({
 
             <div>
               <label className="text-slate-300 font-semibold block mb-1">
-                Pre-Medicare Healthcare Costs (Annual)
+                Actual Healthcare OOP (Co-pays & Deductibles) ($)
               </label>
-              <input
-                type="number"
+              <NumericInput
+                prefix="$"
+                placeholder={`Allowance Ceiling: ${formatCurrency(activeLedgerRow?.plannedHealthcareOOP ?? 0)}`}
+                value={activeRecord.healthcareOOP}
+                onChange={(val) => handleFieldChange('healthcareOOP', val)}
+                className="h-9 bg-slate-950 border-slate-700 text-white font-mono focus:border-sky-500"
+              />
+              <p className="text-[11px] text-slate-500 mt-0.5">
+                Maximum allowance ceiling is budgeted. Only actual spend reduces portfolio; unspent allowance remains invested.
+              </p>
+            </div>
+
+            <div>
+              <label className="text-slate-300 font-semibold block mb-1">
+                Pre-Medicare Healthcare Premiums ($)
+              </label>
+              <NumericInput
+                prefix="$"
                 placeholder="Optional override ($)"
-                value={activeRecord.preMedicareHealthcareCost !== null && activeRecord.preMedicareHealthcareCost !== undefined ? activeRecord.preMedicareHealthcareCost : ''}
-                onChange={(e) =>
-                  handleFieldChange(
-                    'preMedicareHealthcareCost',
-                    e.target.value === '' ? null : parseFloat(e.target.value)
-                  )
-                }
-                className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-white font-mono focus:border-sky-500 focus:outline-none"
+                value={activeRecord.preMedicareHealthcareCost}
+                onChange={(val) => handleFieldChange('preMedicareHealthcareCost', val)}
+                className="h-9 bg-slate-950 border-slate-700 text-white font-mono focus:border-sky-500"
               />
             </div>
 
             <div>
               <label className="text-slate-300 font-semibold block mb-1">
-                Medicare Base Premiums (Annual)
+                Medicare Base Premiums (Part B + Supp/D) ($)
               </label>
-              <input
-                type="number"
+              <NumericInput
+                prefix="$"
                 placeholder="Optional override ($)"
-                value={activeRecord.medicareBasePremiums !== null && activeRecord.medicareBasePremiums !== undefined ? activeRecord.medicareBasePremiums : ''}
-                onChange={(e) =>
-                  handleFieldChange(
-                    'medicareBasePremiums',
-                    e.target.value === '' ? null : parseFloat(e.target.value)
-                  )
-                }
-                className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-white font-mono focus:border-sky-500 focus:outline-none"
+                value={activeRecord.medicareBasePremiums}
+                onChange={(val) => handleFieldChange('medicareBasePremiums', val)}
+                className="h-9 bg-slate-950 border-slate-700 text-white font-mono focus:border-sky-500"
               />
+            </div>
+
+            <div>
+              <label className="text-slate-300 font-semibold block mb-1">
+                Medicare IRMAA Surcharges (Part B & D) ($)
+              </label>
+              <NumericInput
+                prefix="$"
+                placeholder={`Planned Surcharges: ${formatCurrency(activeLedgerRow?.combinedSurchargeAnnual ?? 0)}`}
+                value={activeRecord.irmaaSurcharges}
+                onChange={(val) => handleFieldChange('irmaaSurcharges', val)}
+                className="h-9 bg-slate-950 border-slate-700 text-white font-mono focus:border-sky-500"
+              />
+              <p className="text-[11px] text-slate-500 mt-0.5">
+                Optional override for realized IRMAA Part B & D surcharge premiums.
+              </p>
             </div>
 
             <div>
               <label className="text-slate-300 font-semibold block mb-1">
                 Actual Charitable Giving & Tithe ($)
               </label>
-              <input
-                type="number"
+              <NumericInput
+                prefix="$"
                 placeholder="Optional override ($)"
-                value={activeRecord.charitableTithe !== null && activeRecord.charitableTithe !== undefined ? activeRecord.charitableTithe : ''}
-                onChange={(e) =>
-                  handleFieldChange(
-                    'charitableTithe',
-                    e.target.value === '' ? null : parseFloat(e.target.value)
-                  )
-                }
-                className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-white font-mono focus:border-sky-500 focus:outline-none"
+                value={activeRecord.charitableTithe}
+                onChange={(val) => handleFieldChange('charitableTithe', val)}
+                className="h-9 bg-slate-950 border-slate-700 text-white font-mono focus:border-sky-500"
               />
             </div>
           </div>
@@ -1604,14 +1816,12 @@ export const ActualsWorkspace: React.FC<ActualsWorkspaceProps> = ({
               <label className="text-slate-300 font-semibold block mb-1">
                 Realized MAGI / AGI (Feeds 2-Yr Lookback)
               </label>
-              <input
-                type="number"
+              <NumericInput
+                prefix="$"
                 placeholder={`Replayed: ${formatCurrency(activeLedgerRow?.magi)}`}
-                value={activeRecord.magi !== null && activeRecord.magi !== undefined ? activeRecord.magi : ''}
-                onChange={(e) =>
-                  handleFieldChange('magi', e.target.value === '' ? null : parseFloat(e.target.value))
-                }
-                className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-white font-mono focus:border-purple-500 focus:outline-none"
+                value={activeRecord.magi}
+                onChange={(val) => handleFieldChange('magi', val)}
+                className="h-9 bg-slate-950 border-slate-700 text-white font-mono focus:border-purple-500"
               />
               <p className="text-[11px] text-slate-500 mt-0.5">
                 Automatically determines Medicare IRMAA tiers for {selectedYear + 2}.
@@ -1622,17 +1832,12 @@ export const ActualsWorkspace: React.FC<ActualsWorkspaceProps> = ({
               <label className="text-slate-300 font-semibold block mb-1">
                 Total Income Taxes Paid (Fed + State)
               </label>
-              <input
-                type="number"
+              <NumericInput
+                prefix="$"
                 placeholder={`Replayed: ${formatCurrency(activeLedgerRow?.totalIncomeTax)}`}
-                value={activeRecord.totalIncomeTax !== null && activeRecord.totalIncomeTax !== undefined ? activeRecord.totalIncomeTax : ''}
-                onChange={(e) =>
-                  handleFieldChange(
-                    'totalIncomeTax',
-                    e.target.value === '' ? null : parseFloat(e.target.value)
-                  )
-                }
-                className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-white font-mono focus:border-purple-500 focus:outline-none"
+                value={activeRecord.totalIncomeTax}
+                onChange={(val) => handleFieldChange('totalIncomeTax', val)}
+                className="h-9 bg-slate-950 border-slate-700 text-white font-mono focus:border-purple-500"
               />
             </div>
 
@@ -1640,17 +1845,12 @@ export const ActualsWorkspace: React.FC<ActualsWorkspaceProps> = ({
               <label className="text-slate-300 font-semibold block mb-1">
                 Earned Gross Salary - Primary ($)
               </label>
-              <input
-                type="number"
+              <NumericInput
+                prefix="$"
                 placeholder="Active paycheck salary earned"
-                value={activeRecord.earnedSalaryYou !== null && activeRecord.earnedSalaryYou !== undefined ? activeRecord.earnedSalaryYou : ''}
-                onChange={(e) =>
-                  handleFieldChange(
-                    'earnedSalaryYou',
-                    e.target.value === '' ? null : parseFloat(e.target.value)
-                  )
-                }
-                className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-white font-mono focus:border-purple-500 focus:outline-none"
+                value={activeRecord.earnedSalaryYou}
+                onChange={(val) => handleFieldChange('earnedSalaryYou', val)}
+                className="h-9 bg-slate-950 border-slate-700 text-white font-mono focus:border-purple-500"
               />
             </div>
 
@@ -1659,18 +1859,58 @@ export const ActualsWorkspace: React.FC<ActualsWorkspaceProps> = ({
                 <label className="text-slate-300 font-semibold block mb-1">
                   Earned Gross Salary - Spouse ($)
                 </label>
-                <input
-                  type="number"
+                <NumericInput
+                  prefix="$"
                   placeholder="Active paycheck salary earned"
-                  value={activeRecord.earnedSalaryWife !== null && activeRecord.earnedSalaryWife !== undefined ? activeRecord.earnedSalaryWife : ''}
-                  onChange={(e) =>
-                    handleFieldChange(
-                      'earnedSalaryWife',
-                      e.target.value === '' ? null : parseFloat(e.target.value)
-                    )
-                  }
-                  className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-white font-mono focus:border-purple-500 focus:outline-none"
+                  value={activeRecord.earnedSalaryWife}
+                  onChange={(val) => handleFieldChange('earnedSalaryWife', val)}
+                  className="h-9 bg-slate-950 border-slate-700 text-white font-mono focus:border-purple-500"
                 />
+              </div>
+            )}
+
+            {onUpdatePriorTaxReturnMAGI && (
+              <div className="pt-3 border-t border-slate-800 space-y-3">
+                <span className="text-[11px] font-bold text-purple-400 uppercase tracking-wider block">
+                  Prior Tax Return MAGI (2-Year IRMAA Lookback)
+                </span>
+                <div>
+                  <label className="text-slate-300 font-semibold block mb-1">
+                    2024 Form 1040 MAGI (Feeds 2026 IRMAA)
+                  </label>
+                  <NumericInput
+                    prefix="$"
+                    placeholder="Optional (Defaults to 2026 salary/yields)"
+                    value={inputs.priorTaxReturnMAGI?.[2024]}
+                    onChange={(val) =>
+                      onUpdatePriorTaxReturnMAGI({
+                        ...(inputs.priorTaxReturnMAGI || {}),
+                        2024: val,
+                      })
+                    }
+                    className="h-9 bg-slate-950 border-slate-700 text-white font-mono focus:border-purple-500 focus:ring-purple-500"
+                  />
+                </div>
+                <div>
+                  <label className="text-slate-300 font-semibold block mb-1">
+                    2025 Form 1040 MAGI (Feeds 2027 IRMAA)
+                  </label>
+                  <NumericInput
+                    prefix="$"
+                    placeholder="Optional (Defaults to 2026 salary/yields)"
+                    value={inputs.priorTaxReturnMAGI?.[2025]}
+                    onChange={(val) =>
+                      onUpdatePriorTaxReturnMAGI({
+                        ...(inputs.priorTaxReturnMAGI || {}),
+                        2025: val,
+                      })
+                    }
+                    className="h-9 bg-slate-950 border-slate-700 text-white font-mono focus:border-purple-500 focus:ring-purple-500"
+                  />
+                </div>
+                <p className="text-[11px] text-slate-500">
+                  IRS Form 1040 Line 11 + tax-exempt interest from prior returns. Used by Medicare to evaluate Part B & D surcharge tiers in simulation years 2026 and 2027. Updates simulation on blur.
+                </p>
               </div>
             )}
           </div>
@@ -1705,77 +1945,52 @@ export const ActualsWorkspace: React.FC<ActualsWorkspaceProps> = ({
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="text-slate-400 block mb-1">Pre-Tax (Traditional IRA)</label>
-                  <input
-                    type="number"
+                  <NumericInput
+                    prefix="$"
                     placeholder={`Calc: ${formatCurrency(activeLedgerRow?.endYourPreTaxIRA)}`}
-                    value={activeRecord.endYourPreTaxIRA !== null && activeRecord.endYourPreTaxIRA !== undefined ? activeRecord.endYourPreTaxIRA : ''}
-                    onChange={(e) =>
-                      handleFieldChange(
-                        'endYourPreTaxIRA',
-                        e.target.value === '' ? null : parseFloat(e.target.value)
-                      )
-                    }
-                    className="w-full bg-slate-900 border border-slate-700 rounded-lg px-2.5 py-1.5 text-white font-mono"
+                    value={activeRecord.endYourPreTaxIRA}
+                    onChange={(val) => handleFieldChange('endYourPreTaxIRA', val)}
+                    className="h-8 bg-slate-900 border-slate-700 text-white font-mono"
                   />
                 </div>
                 <div>
                   <label className="text-slate-400 block mb-1">Roth IRA</label>
-                  <input
-                    type="number"
+                  <NumericInput
+                    prefix="$"
                     placeholder={`Calc: ${formatCurrency(activeLedgerRow?.endYourRothIRA)}`}
-                    value={activeRecord.endYourRothIRA !== null && activeRecord.endYourRothIRA !== undefined ? activeRecord.endYourRothIRA : ''}
-                    onChange={(e) =>
-                      handleFieldChange(
-                        'endYourRothIRA',
-                        e.target.value === '' ? null : parseFloat(e.target.value)
-                      )
-                    }
-                    className="w-full bg-slate-900 border border-slate-700 rounded-lg px-2.5 py-1.5 text-white font-mono"
+                    value={activeRecord.endYourRothIRA}
+                    onChange={(val) => handleFieldChange('endYourRothIRA', val)}
+                    className="h-8 bg-slate-900 border-slate-700 text-white font-mono"
                   />
                 </div>
                 <div>
                   <label className="text-slate-400 block mb-1">Taxable Brokerage</label>
-                  <input
-                    type="number"
+                  <NumericInput
+                    prefix="$"
                     placeholder={`Calc: ${formatCurrency(activeLedgerRow?.endYourTaxableBrokerage)}`}
-                    value={activeRecord.endYourTaxableBrokerage !== null && activeRecord.endYourTaxableBrokerage !== undefined ? activeRecord.endYourTaxableBrokerage : ''}
-                    onChange={(e) =>
-                      handleFieldChange(
-                        'endYourTaxableBrokerage',
-                        e.target.value === '' ? null : parseFloat(e.target.value)
-                      )
-                    }
-                    className="w-full bg-slate-900 border border-slate-700 rounded-lg px-2.5 py-1.5 text-white font-mono"
+                    value={activeRecord.endYourTaxableBrokerage}
+                    onChange={(val) => handleFieldChange('endYourTaxableBrokerage', val)}
+                    className="h-8 bg-slate-900 border-slate-700 text-white font-mono"
                   />
                 </div>
                 <div>
                   <label className="text-slate-400 block mb-1">Taxable Cost Basis</label>
-                  <input
-                    type="number"
+                  <NumericInput
+                    prefix="$"
                     placeholder={`Calc: ${formatCurrency(activeLedgerRow?.endYourTaxableBasis)}`}
-                    value={activeRecord.endYourTaxableBasis !== null && activeRecord.endYourTaxableBasis !== undefined ? activeRecord.endYourTaxableBasis : ''}
-                    onChange={(e) =>
-                      handleFieldChange(
-                        'endYourTaxableBasis',
-                        e.target.value === '' ? null : parseFloat(e.target.value)
-                      )
-                    }
-                    className="w-full bg-slate-900 border border-slate-700 rounded-lg px-2.5 py-1.5 text-white font-mono"
+                    value={activeRecord.endYourTaxableBasis}
+                    onChange={(val) => handleFieldChange('endYourTaxableBasis', val)}
+                    className="h-8 bg-slate-900 border-slate-700 text-white font-mono"
                   />
                 </div>
                 <div className="col-span-2">
                   <label className="text-slate-400 block mb-1">Cash Reserve Savings</label>
-                  <input
-                    type="number"
+                  <NumericInput
+                    prefix="$"
                     placeholder={`Calc: ${formatCurrency(activeLedgerRow?.endYourCash)}`}
-                    value={activeRecord.endYourCash !== null && activeRecord.endYourCash !== undefined ? activeRecord.endYourCash : ''}
-                    onChange={(e) =>
-                      handleFieldChange(
-                        'endYourCash',
-                        e.target.value === '' ? null : parseFloat(e.target.value)
-                      )
-                    }
-                    className="w-full bg-slate-900 border border-slate-700 rounded-lg px-2.5 py-1.5 text-white font-mono"
+                    value={activeRecord.endYourCash}
+                    onChange={(val) => handleFieldChange('endYourCash', val)}
+                    className="h-8 bg-slate-900 border-slate-700 text-white font-mono"
                   />
                 </div>
               </div>
@@ -1790,77 +2005,52 @@ export const ActualsWorkspace: React.FC<ActualsWorkspaceProps> = ({
                 <div className="grid grid-cols-2 gap-3">
                   <div>
                     <label className="text-slate-400 block mb-1">Pre-Tax (Traditional IRA)</label>
-                    <input
-                      type="number"
+                    <NumericInput
+                      prefix="$"
                       placeholder={`Calc: ${formatCurrency(activeLedgerRow?.endWifePreTaxIRA)}`}
-                      value={activeRecord.endWifePreTaxIRA !== null && activeRecord.endWifePreTaxIRA !== undefined ? activeRecord.endWifePreTaxIRA : ''}
-                      onChange={(e) =>
-                        handleFieldChange(
-                          'endWifePreTaxIRA',
-                          e.target.value === '' ? null : parseFloat(e.target.value)
-                        )
-                      }
-                      className="w-full bg-slate-900 border border-slate-700 rounded-lg px-2.5 py-1.5 text-white font-mono"
+                      value={activeRecord.endWifePreTaxIRA}
+                      onChange={(val) => handleFieldChange('endWifePreTaxIRA', val)}
+                      className="h-8 bg-slate-900 border-slate-700 text-white font-mono"
                     />
                   </div>
                   <div>
                     <label className="text-slate-400 block mb-1">Roth IRA</label>
-                    <input
-                      type="number"
+                    <NumericInput
+                      prefix="$"
                       placeholder={`Calc: ${formatCurrency(activeLedgerRow?.endWifeRothIRA)}`}
-                      value={activeRecord.endWifeRothIRA !== null && activeRecord.endWifeRothIRA !== undefined ? activeRecord.endWifeRothIRA : ''}
-                      onChange={(e) =>
-                        handleFieldChange(
-                          'endWifeRothIRA',
-                          e.target.value === '' ? null : parseFloat(e.target.value)
-                        )
-                      }
-                      className="w-full bg-slate-900 border border-slate-700 rounded-lg px-2.5 py-1.5 text-white font-mono"
+                      value={activeRecord.endWifeRothIRA}
+                      onChange={(val) => handleFieldChange('endWifeRothIRA', val)}
+                      className="h-8 bg-slate-900 border-slate-700 text-white font-mono"
                     />
                   </div>
                   <div>
                     <label className="text-slate-400 block mb-1">Taxable Brokerage</label>
-                    <input
-                      type="number"
+                    <NumericInput
+                      prefix="$"
                       placeholder={`Calc: ${formatCurrency(activeLedgerRow?.endWifeTaxableBrokerage)}`}
-                      value={activeRecord.endWifeTaxableBrokerage !== null && activeRecord.endWifeTaxableBrokerage !== undefined ? activeRecord.endWifeTaxableBrokerage : ''}
-                      onChange={(e) =>
-                        handleFieldChange(
-                          'endWifeTaxableBrokerage',
-                          e.target.value === '' ? null : parseFloat(e.target.value)
-                        )
-                      }
-                      className="w-full bg-slate-900 border border-slate-700 rounded-lg px-2.5 py-1.5 text-white font-mono"
+                      value={activeRecord.endWifeTaxableBrokerage}
+                      onChange={(val) => handleFieldChange('endWifeTaxableBrokerage', val)}
+                      className="h-8 bg-slate-900 border-slate-700 text-white font-mono"
                     />
                   </div>
                   <div>
                     <label className="text-slate-400 block mb-1">Taxable Cost Basis</label>
-                    <input
-                      type="number"
+                    <NumericInput
+                      prefix="$"
                       placeholder={`Calc: ${formatCurrency(activeLedgerRow?.endWifeTaxableBasis)}`}
-                      value={activeRecord.endWifeTaxableBasis !== null && activeRecord.endWifeTaxableBasis !== undefined ? activeRecord.endWifeTaxableBasis : ''}
-                      onChange={(e) =>
-                        handleFieldChange(
-                          'endWifeTaxableBasis',
-                          e.target.value === '' ? null : parseFloat(e.target.value)
-                        )
-                      }
-                      className="w-full bg-slate-900 border border-slate-700 rounded-lg px-2.5 py-1.5 text-white font-mono"
+                      value={activeRecord.endWifeTaxableBasis}
+                      onChange={(val) => handleFieldChange('endWifeTaxableBasis', val)}
+                      className="h-8 bg-slate-900 border-slate-700 text-white font-mono"
                     />
                   </div>
                   <div className="col-span-2">
                     <label className="text-slate-400 block mb-1">Cash Reserve Savings</label>
-                    <input
-                      type="number"
+                    <NumericInput
+                      prefix="$"
                       placeholder={`Calc: ${formatCurrency(activeLedgerRow?.endWifeCash)}`}
-                      value={activeRecord.endWifeCash !== null && activeRecord.endWifeCash !== undefined ? activeRecord.endWifeCash : ''}
-                      onChange={(e) =>
-                        handleFieldChange(
-                          'endWifeCash',
-                          e.target.value === '' ? null : parseFloat(e.target.value)
-                        )
-                      }
-                      className="w-full bg-slate-900 border border-slate-700 rounded-lg px-2.5 py-1.5 text-white font-mono"
+                      value={activeRecord.endWifeCash}
+                      onChange={(val) => handleFieldChange('endWifeCash', val)}
+                      className="h-8 bg-slate-900 border-slate-700 text-white font-mono"
                     />
                   </div>
                 </div>

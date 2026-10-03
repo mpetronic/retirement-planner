@@ -379,8 +379,10 @@ export interface YearActualsRecord {
   // Realized expenses & inflows
   totalLivingExpenses?: number | null;
   categoryExpenses?: Record<string, number>;
+  healthcareOOP?: number | null; // Realized healthcare out-of-pocket (deductibles, co-pays, prescriptions)
   preMedicareHealthcareCost?: number | null;
   medicareBasePremiums?: number | null;
+  irmaaSurcharges?: number | null; // Realized Medicare IRMAA Part B & D surcharges paid
   earnedSalaryYou?: number | null;
   earnedSalaryWife?: number | null;
   charitableTithe?: number | null;
@@ -461,6 +463,7 @@ export interface AppStateInputs {
   actualTracking?: ActualTrackingState;
   guardrailSettings?: GuardrailSettings;
   bucketSettings?: BucketStrategySettings;
+  priorTaxReturnMAGI?: Record<number, number | null>; // Historical 2-year lookback tax return MAGI (e.g. 2024 for 2026, 2025 for 2027)
 }
 
 /**
@@ -525,6 +528,10 @@ export interface SimulationResultRow {
   
   // Expenses & Cashflow
   livingExpenses: number;
+  plannedBaseLivingExpenses?: number; // Base recurring living budget before OOP and one-time
+  plannedLivingExpenses?: number; // Total planned living expenses including healthcare OOP allowance
+  healthcareOOP?: number; // Realized or modeled healthcare OOP cost (deductibles, co-pays, coinsurance)
+  plannedHealthcareOOP?: number; // Maximum planned annual healthcare OOP ceiling / allowance
   medicareBasePremiums: number;
   preMedicareHealthcareCost: number; // Annual pre-Medicare healthcare premium expenses
   totalExpenses: number; // Expenses + Taxes + Medicare Base & Surcharges + Pre-Medicare Premium

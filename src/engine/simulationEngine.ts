@@ -668,6 +668,49 @@ export function runRetirementSimulation(
       wifeMedicarePremiums = 0;
     }
 
+    const decMonthIdx = (year - simStartYear) * 12 + 11;
+    const isYouWorkingDec = !youDeceased && (decMonthIdx < yourRetireMonthIdx) && ((inputs.you.activeSalary ?? 0) > 0);
+    const isWifeWorkingDec = !wifeDeceased && !inputs.isSingleFiler && (decMonthIdx < wifeRetireMonthIdx) && ((inputs.wife.activeSalary ?? 0) > 0);
+
+    const startYearMonthIdx = (year - simStartYear) * 12;
+    const endYearMonthIdx = startYearMonthIdx + 11;
+
+    // Determine planned annual healthcare OOP maximum allowance for this year
+    let yourPlannedAnnualOOP = 0;
+    if (!youDeceased && !isYouWorkingDec) {
+      if (yourMedicareMonthIdx <= startYearMonthIdx) {
+        yourPlannedAnnualOOP = yourMedicareOOP;
+      } else if (yourMedicareMonthIdx > endYearMonthIdx) {
+        yourPlannedAnnualOOP = yourPreMedicareOOP;
+      } else {
+        const preMonths = yourMedicareMonthIdx - startYearMonthIdx;
+        const medMonths = 12 - preMonths;
+        yourPlannedAnnualOOP = preMonths * (yourPreMedicareOOP / 12) + medMonths * (yourMedicareOOP / 12);
+      }
+    }
+    let wifePlannedAnnualOOP = 0;
+    if (!wifeDeceased && !isWifeWorkingDec) {
+      if (wifeMedicareMonthIdx <= startYearMonthIdx) {
+        wifePlannedAnnualOOP = wifeMedicareOOP;
+      } else if (wifeMedicareMonthIdx > endYearMonthIdx) {
+        wifePlannedAnnualOOP = wifePreMedicareOOP;
+      } else {
+        const preMonths = wifeMedicareMonthIdx - startYearMonthIdx;
+        const medMonths = 12 - preMonths;
+        wifePlannedAnnualOOP = preMonths * (wifePreMedicareOOP / 12) + medMonths * (wifeMedicareOOP / 12);
+      }
+    }
+    const plannedHealthcareOOP = yourPlannedAnnualOOP + wifePlannedAnnualOOP;
+
+    let realizedHealthcareOOP = plannedHealthcareOOP;
+    if (actualRec) {
+      if (actualRec.healthcareOOP !== undefined && actualRec.healthcareOOP !== null) {
+        realizedHealthcareOOP = actualRec.healthcareOOP;
+      } else {
+        realizedHealthcareOOP = 0;
+      }
+    }
+
     let plannedBaseLivingExpensesAnnual = inputs.annualLivingExpenses ?? 100000;
     if (inputs.useDetailedExpenses && inputs.detailedExpenses) {
       const de = normalizeDetailedExpenses(inputs.detailedExpenses);
@@ -689,8 +732,12 @@ export function runRetirementSimulation(
     }
 
     let baseLivingExpensesAnnual = plannedBaseLivingExpensesAnnual;
-    if (actualRec?.totalLivingExpenses !== undefined && actualRec?.totalLivingExpenses !== null) {
-      baseLivingExpensesAnnual = actualRec.totalLivingExpenses / (cpiFactor || 1);
+    if (actualRec) {
+      if (actualRec.totalLivingExpenses !== undefined && actualRec.totalLivingExpenses !== null) {
+        baseLivingExpensesAnnual = actualRec.totalLivingExpenses / (cpiFactor || 1);
+      } else {
+        baseLivingExpensesAnnual = 0;
+      }
     }
 
     // Dynamic Guardrail policy adjustment during forward simulation (post-actuals)
@@ -820,38 +867,45 @@ export function runRetirementSimulation(
         magiTwoYearsAgo = rawLookbackMAGI;
       }
     } else {
-      const lookbackYourAge = yourAge - 2;
-      const lookbackWifeAge = wifeAge - 2;
-
-      let estSS = 0;
-      if (!youDeceased && lookbackYourAge >= (inputs.you.targetSSClaimingAge || 67)) estSS += yourSSAnnualBase;
-      if (!wifeDeceased) {
-        if (youDeceased) {
-          if (lookbackWifeAge >= 60) estSS += wifeSurvivorSSBenefit;
-        } else if (lookbackWifeAge >= (inputs.wife.targetSSClaimingAge || 67)) {
-          estSS += Math.max(wifeSSAnnualBase, spousalSSAnnualFloor);
-        }
-      }
-
-      let estRMD = 0;
-      if (!youDeceased && lookbackYourAge >= yourRmdStartAge) estRMD += yourRMD;
-      if (!wifeDeceased && lookbackWifeAge >= wifeRmdStartAge) estRMD += wifeRMD;
-
-      const preSimYourSalary = inputs.you.activeSalary ?? 0;
-      const preSimWifeSalary = (!inputs.isSingleFiler ? inputs.wife.activeSalary : 0) ?? 0;
-      const preSimSalary = preSimYourSalary + preSimWifeSalary;
-
-      const cashRate = inputs.growthAssumptions.cashYieldRate ?? inputs.growthAssumptions.fixedIncomeReturnRate;
-      const estInterest = (yourCash + (wifeDeceased ? 0 : wifeCash)) * cashRate;
-      const estDividends = (yourTaxable + (wifeDeceased ? 0 : wifeTaxable)) * taxableDividendYield;
-      const baseNonSalaryIncome = estSS * 0.85 + estRMD + estDividends + estInterest;
-      rawLookbackMAGI = preSimSalary + baseNonSalaryIncome;
-
-      if (isSSA44Enabled && preSimSalary > 0 && (isYouRetiredThisYear || isWifeRetiredThisYear)) {
-        magiTwoYearsAgo = baseNonSalaryIncome;
-        isSSA44Applied = true;
+      const lookbackYear = year - 2;
+      const explicitPriorMAGI = inputs.priorTaxReturnMAGI?.[lookbackYear] ?? inputs.actualTracking?.[lookbackYear]?.magi;
+      if (explicitPriorMAGI !== undefined && explicitPriorMAGI !== null) {
+        rawLookbackMAGI = explicitPriorMAGI;
+        magiTwoYearsAgo = explicitPriorMAGI;
       } else {
-        magiTwoYearsAgo = rawLookbackMAGI;
+        const lookbackYourAge = yourAge - 2;
+        const lookbackWifeAge = wifeAge - 2;
+
+        let estSS = 0;
+        if (!youDeceased && lookbackYourAge >= (inputs.you.targetSSClaimingAge || 67)) estSS += yourSSAnnualBase;
+        if (!wifeDeceased) {
+          if (youDeceased) {
+            if (lookbackWifeAge >= 60) estSS += wifeSurvivorSSBenefit;
+          } else if (lookbackWifeAge >= (inputs.wife.targetSSClaimingAge || 67)) {
+            estSS += Math.max(wifeSSAnnualBase, spousalSSAnnualFloor);
+          }
+        }
+
+        let estRMD = 0;
+        if (!youDeceased && lookbackYourAge >= yourRmdStartAge) estRMD += yourRMD;
+        if (!wifeDeceased && lookbackWifeAge >= wifeRmdStartAge) estRMD += wifeRMD;
+
+        const preSimYourSalary = inputs.you.activeSalary ?? 0;
+        const preSimWifeSalary = (!inputs.isSingleFiler ? inputs.wife.activeSalary : 0) ?? 0;
+        const preSimSalary = preSimYourSalary + preSimWifeSalary;
+
+        const cashRate = inputs.growthAssumptions.cashYieldRate ?? inputs.growthAssumptions.fixedIncomeReturnRate;
+        const estInterest = (yourCash + (wifeDeceased ? 0 : wifeCash)) * cashRate;
+        const estDividends = (yourTaxable + (wifeDeceased ? 0 : wifeTaxable)) * taxableDividendYield;
+        const baseNonSalaryIncome = estSS * 0.85 + estRMD + estDividends + estInterest;
+        rawLookbackMAGI = preSimSalary + baseNonSalaryIncome;
+
+        if (isSSA44Enabled && preSimSalary > 0 && (isYouRetiredThisYear || isWifeRetiredThisYear)) {
+          magiTwoYearsAgo = baseNonSalaryIncome;
+          isSSA44Applied = true;
+        } else {
+          magiTwoYearsAgo = rawLookbackMAGI;
+        }
       }
     }
 
@@ -875,6 +929,17 @@ export function runRetirementSimulation(
         wifePartDSurcharge = basePartD;
         break;
       }
+    }
+
+    if (actualRec?.surchargeTier !== undefined && actualRec?.surchargeTier !== null) {
+      surchargeTier = actualRec.surchargeTier;
+      const tierDef = irmaaTiers.find((t) => t.tierNumber === surchargeTier) || irmaaTiers[0];
+      const basePartB = tierDef.partBSurcharge * healthcareFactor;
+      const basePartD = tierDef.partDSurcharge * healthcareFactor;
+      yourPartBSurcharge = basePartB;
+      yourPartDSurcharge = basePartD;
+      wifePartBSurcharge = basePartB;
+      wifePartDSurcharge = basePartD;
     }
 
     let oneTimeCosts = 0;
@@ -914,6 +979,7 @@ export function runRetirementSimulation(
     let annualMedicareBasePremiums = 0;
     let annualMedicareSurcharges = 0;
     let annualLivingExpenses = 0;
+    let annualHealthcareOOP = 0;
     let annualDrawdownCash = 0;
     let annualDrawdownTaxable = 0;
     let annualDrawdownPreTax = 0;
@@ -936,9 +1002,6 @@ export function runRetirementSimulation(
     // so we count eligible months and pro-rate at the end (avoids 12× over-count).
     let yourMedicareMonthCount = 0;
     let wifeMedicareMonthCount = 0;
-
-    // December month index hoisted here so it is available outside the solver loop.
-    const decMonthIdx = (year - simStartYear) * 12 + 11;
 
     let monthlyYourDividends = 0;
     let monthlyWifeDividends = 0;
@@ -1016,21 +1079,28 @@ export function runRetirementSimulation(
       // 6. Base expenses
       const monthlyBaseExpenses = (baseLivingExpensesAnnual * cpiFactor) / 12;
       let monthlyYourOOP = 0;
-      if (!youDeceased && !isYouWorking) {
-        if (monthIdx < yourMedicareMonthIdx) {
-          monthlyYourOOP = yourPreMedicareOOP / 12;
-        } else {
-          monthlyYourOOP = yourMedicareOOP / 12;
-        }
-      }
       let monthlyWifeOOP = 0;
-      if (!wifeDeceased && !isWifeWorking) {
-        if (monthIdx < wifeMedicareMonthIdx) {
-          monthlyWifeOOP = wifePreMedicareOOP / 12;
-        } else {
-          monthlyWifeOOP = wifeMedicareOOP / 12;
+      if (actualRec) {
+        const monthlyActualOOP = realizedHealthcareOOP / 12;
+        monthlyYourOOP = (wifeDeceased || inputs.isSingleFiler) ? monthlyActualOOP : (monthlyActualOOP / 2);
+        monthlyWifeOOP = (!wifeDeceased && !inputs.isSingleFiler) ? (monthlyActualOOP / 2) : 0;
+      } else {
+        if (!youDeceased && !isYouWorking) {
+          if (monthIdx < yourMedicareMonthIdx) {
+            monthlyYourOOP = yourPreMedicareOOP / 12;
+          } else {
+            monthlyYourOOP = yourMedicareOOP / 12;
+          }
+        }
+        if (!wifeDeceased && !isWifeWorking) {
+          if (monthIdx < wifeMedicareMonthIdx) {
+            monthlyWifeOOP = wifePreMedicareOOP / 12;
+          } else {
+            monthlyWifeOOP = wifeMedicareOOP / 12;
+          }
         }
       }
+      annualHealthcareOOP += monthlyYourOOP + monthlyWifeOOP;
       const monthlyLiving = monthlyBaseExpenses + (month === 0 ? oneTimeCosts * cpiFactor : 0) + monthlyYourOOP + monthlyWifeOOP;
       annualLivingExpenses += monthlyLiving;
 
@@ -1287,10 +1357,6 @@ export function runRetirementSimulation(
     // isSingle only flips to true in years AFTER the death year (year > DEATH_YEAR).
     const firstDeathYear = Math.min(DEATH_YEAR, WIFE_DEATH_YEAR);
     const isSingle = (simulateSurvivor && (year > (inputs.isSingleFiler ? DEATH_YEAR : firstDeathYear))) || inputs.isSingleFiler;
-
-    // isYouWorkingDec / isWifeWorkingDec depend only on decMonthIdx (constant), so hoist above conversion and solver.
-    const isYouWorkingDec = !youDeceased && (decMonthIdx < yourRetireMonthIdx) && ((inputs.you.activeSalary ?? 0) > 0);
-    const isWifeWorkingDec = !wifeDeceased && !inputs.isSingleFiler && (decMonthIdx < wifeRetireMonthIdx) && ((inputs.wife.activeSalary ?? 0) > 0);
 
     // Deposit December 401(k) if working
     if (isYouWorkingDec && monthlyYour401k > 0) {
@@ -1549,8 +1615,17 @@ export function runRetirementSimulation(
         }
       }
 
-      const monthlyYourOOPDec = (!youDeceased && !isYouWorkingDec) ? (decMonthIdx < yourMedicareMonthIdx ? yourPreMedicareOOP / 12 : yourMedicareOOP / 12) : 0;
-      const monthlyWifeOOPDec = (!wifeDeceased && !isWifeWorkingDec) ? (decMonthIdx < wifeMedicareMonthIdx ? wifePreMedicareOOP / 12 : wifeMedicareOOP / 12) : 0;
+      let monthlyYourOOPDec = 0;
+      let monthlyWifeOOPDec = 0;
+      if (actualRec) {
+        const monthlyActualOOP = realizedHealthcareOOP / 12;
+        monthlyYourOOPDec = (wifeDeceased || inputs.isSingleFiler) ? monthlyActualOOP : (monthlyActualOOP / 2);
+        monthlyWifeOOPDec = (!wifeDeceased && !inputs.isSingleFiler) ? (monthlyActualOOP / 2) : 0;
+      } else {
+        monthlyYourOOPDec = (!youDeceased && !isYouWorkingDec) ? (decMonthIdx < yourMedicareMonthIdx ? yourPreMedicareOOP / 12 : yourMedicareOOP / 12) : 0;
+        monthlyWifeOOPDec = (!wifeDeceased && !isWifeWorkingDec) ? (decMonthIdx < wifeMedicareMonthIdx ? wifePreMedicareOOP / 12 : wifeMedicareOOP / 12) : 0;
+      }
+      annualHealthcareOOP += monthlyYourOOPDec + monthlyWifeOOPDec;
       decLiving = (baseLivingExpensesAnnual * cpiFactor) / 12 + monthlyYourOOPDec + monthlyWifeOOPDec;
 
       monthlyYourPremDec = 0;
@@ -1708,9 +1783,12 @@ export function runRetirementSimulation(
     let reinvestedSurplus = 0;
     if (finalDecBuffer > 0) {
       reinvestedSurplus = finalDecBuffer;
-      if (isSurvivorActive || youDeceased) {
+      if (youDeceased && !wifeDeceased && !inputs.isSingleFiler) {
         wifeTaxable += finalDecBuffer;
         wifeBasis += finalDecBuffer;
+      } else if (inputs.isSingleFiler || wifeDeceased) {
+        yourTaxable += finalDecBuffer;
+        yourBasis += finalDecBuffer;
       } else {
         const half = finalDecBuffer / 2;
         yourTaxable += half;
@@ -1795,6 +1873,9 @@ export function runRetirementSimulation(
     annualMedicareSurcharges =
       yourMedicareMonthCount * (yourPartBSurcharge + yourPartDSurcharge) +
       wifeMedicareMonthCount * (wifePartBSurcharge + wifePartDSurcharge);
+    if (actualRec?.irmaaSurcharges !== undefined && actualRec?.irmaaSurcharges !== null) {
+      annualMedicareSurcharges = actualRec.irmaaSurcharges;
+    }
 
     annualYourDividends += monthlyYourDividendsDec;
     annualWifeDividends += monthlyWifeDividendsDec;
@@ -1847,8 +1928,14 @@ export function runRetirementSimulation(
     const netTakeHomeSalary = Math.max(0, grossSalary - annualTotal401k - annualTotalFICA - annualTotalTaxWithholding);
 
     // Guardrails calculation
-    const plannedLivingExpenses = (plannedBaseLivingExpensesAnnual + oneTimeCosts) * cpiFactor;
-    const spendingVariance = plannedLivingExpenses - annualLivingExpenses; // positive if spent less than budget
+    const plannedLivingExpenses = (plannedBaseLivingExpensesAnnual + oneTimeCosts) * cpiFactor + plannedHealthcareOOP;
+    const hasActualSpendRecorded = Boolean(actualRec && (
+      (actualRec.totalLivingExpenses !== undefined && actualRec.totalLivingExpenses !== null) ||
+      (actualRec.healthcareOOP !== undefined && actualRec.healthcareOOP !== null)
+    ));
+    const spendingVariance = hasActualSpendRecorded
+      ? (plannedLivingExpenses - annualLivingExpenses)
+      : 0;
     const modeledGrowthRate = (preTaxEquityPortion * inputs.growthAssumptions.equityReturnRate) + ((1 - preTaxEquityPortion) * inputs.growthAssumptions.fixedIncomeReturnRate);
     const startYearPortfolio = (ledger.length > 0) ? ledger[ledger.length - 1].totalPortfolioValue : (
       (inputs.portfolio.yourPreTaxIRA || 0) + (inputs.portfolio.yourRothIRA || 0) + (inputs.portfolio.yourTaxableBrokerage || 0) + (inputs.portfolio.yourCash || 0) +
@@ -1857,10 +1944,10 @@ export function runRetirementSimulation(
     const estimatedBaselineGrowth = startYearPortfolio * modeledGrowthRate;
     const surplusGrowth = Math.max(0, portfolioGrowth - estimatedBaselineGrowth);
     const marketSurplusShare = (inputs.guardrailSettings?.marketSurplusSharePct ?? 0.10) * surplusGrowth;
-    const actualSurplusGap = spendingVariance + marketSurplusShare;
+    const actualSurplusGap = actualRec ? (spendingVariance + marketSurplusShare) : 0;
     const upperGuardrailLimit = plannedLivingExpenses * (1 + (inputs.guardrailSettings?.upperGuardrailPct ?? 0.15));
     const lowerGuardrailLimit = plannedLivingExpenses * (1 - (inputs.guardrailSettings?.lowerGuardrailPct ?? 0.15));
-    const permittedSpendingBonus = Math.min(Math.max(0, actualSurplusGap), upperGuardrailLimit - plannedLivingExpenses);
+    const permittedSpendingBonus = actualRec ? Math.min(Math.max(0, actualSurplusGap), upperGuardrailLimit - plannedLivingExpenses) : 0;
 
     ledger.push({
       year,
@@ -1906,6 +1993,10 @@ export function runRetirementSimulation(
       combinedSurchargeMonthly: (yourMedicareMonthCount > 0 && !isYouWorkingDec ? yourPartBSurcharge + yourPartDSurcharge : 0) + (wifeMedicareMonthCount > 0 && !isWifeWorkingDec ? wifePartBSurcharge + wifePartDSurcharge : 0),
       combinedSurchargeAnnual: annualMedicareSurcharges,
       livingExpenses: annualLivingExpenses,
+      plannedBaseLivingExpenses: (plannedBaseLivingExpensesAnnual + oneTimeCosts) * cpiFactor,
+      plannedLivingExpenses,
+      healthcareOOP: annualHealthcareOOP,
+      plannedHealthcareOOP,
       medicareBasePremiums: annualMedicareBasePremiums,
       preMedicareHealthcareCost: annualPreMedicarePremium,
       totalExpenses,

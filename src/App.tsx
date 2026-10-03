@@ -40,7 +40,7 @@ import { LandingPage } from './components/LandingPage';
 import { NotFoundPage } from './components/NotFoundPage';
 import { AuthService } from './shared/auth/AuthService';
 import { getStorageAdapter, PlanSyncService } from './shared/storage';
-import { syncPlannerCatalogToCloudStorage } from './shared/utils/plannerCategories';
+import { syncPlannerCatalogToCloudStorage, syncCustomCategoriesToPlanner } from './shared/utils/plannerCategories';
 import { SAMPLE_DEMO_PLAN } from './shared/utils/sampleDemoPlan';
 import { isLocalhostEnvironment, resolveAppMode } from './shared/utils/appMode';
 
@@ -389,6 +389,38 @@ function App() {
       });
     }
   }, [activeInputs.detailedExpenses, activeInputs.you?.name, activeInputs.wife?.name, activeInputs.isSingleFiler, isAuthenticated, isDemoMode]);
+
+  // Pull and synchronize custom categories from storage (e.g. created in Expenser app) into Detailed Expenses
+  useEffect(() => {
+    if (isDemoMode) return;
+    const syncCategoriesFromStorage = async () => {
+      try {
+        const adapter = getStorageAdapter();
+        const cats = await adapter.getCategories();
+        if (cats && cats.length > 0) {
+          syncCustomCategoriesToPlanner(cats);
+        }
+      } catch (err) {
+        console.warn('Failed to pull categories from storage to planner:', err);
+      }
+    };
+
+    syncCategoriesFromStorage();
+
+    const handleSyncEvent = () => {
+      syncCategoriesFromStorage();
+    };
+
+    window.addEventListener('cloud_categories_synced', handleSyncEvent);
+    window.addEventListener('cloud_sync_completed', handleSyncEvent);
+    window.addEventListener('cloud_expenses_synced', handleSyncEvent);
+
+    return () => {
+      window.removeEventListener('cloud_categories_synced', handleSyncEvent);
+      window.removeEventListener('cloud_sync_completed', handleSyncEvent);
+      window.removeEventListener('cloud_expenses_synced', handleSyncEvent);
+    };
+  }, [isDemoMode, isAuthenticated]);
 
   const handleOpenDocumentation = (sectionId?: string) => {
     setDocumentationSectionId(sectionId || 'overview');
@@ -1019,6 +1051,12 @@ function App() {
               }));
             }}
             onNavigateToTab={(tabIdx) => handleNavigate(tabIdx)}
+            onUpdatePriorTaxReturnMAGI={(priorMAGI) => {
+              handleInputsChange((prev) => ({
+                ...prev,
+                priorTaxReturnMAGI: priorMAGI,
+              }));
+            }}
           />
         )}
 

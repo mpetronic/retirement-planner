@@ -26,6 +26,8 @@ import {
   ExpenseItemDefinition,
   normalizeDetailedExpenses
 } from '../types';
+import { getStorageAdapter } from '../shared/storage';
+import { syncCustomCategoriesToPlanner } from '../shared/utils/plannerCategories';
 
 interface DetailedExpensesDialogProps {
   isOpen: boolean;
@@ -80,6 +82,13 @@ export const DetailedExpensesDialog: React.FC<DetailedExpensesDialogProps> = ({
   // Re-sync when dialog opens or props change
   useEffect(() => {
     if (isOpen) {
+      const adapter = getStorageAdapter();
+      adapter.getCategories().then((cats) => {
+        if (cats && cats.length > 0) {
+          syncCustomCategoriesToPlanner(cats);
+        }
+      }).catch(console.warn);
+
       const norm = normalizeDetailedExpenses(detailedExpenses);
       setCatalog(norm.catalog);
       const sList = norm.states && norm.states.length > 0 ? [...norm.states] : [currentState || 'MD', targetState || 'FL'];
@@ -105,7 +114,6 @@ export const DetailedExpensesDialog: React.FC<DetailedExpensesDialogProps> = ({
   const [editingItem, setEditingItem] = useState<ExpenseItemDefinition | null>(null);
   const [itemName, setItemName] = useState('');
   const [itemCategory, setItemCategory] = useState('Housing');
-  const [customCategoryInput, setCustomCategoryInput] = useState('');
   const [itemDescription, setItemDescription] = useState('');
   const [itemFrequency, setItemFrequency] = useState<number>(12);
   const [itemIsOneTime, setItemIsOneTime] = useState<boolean>(false);
@@ -213,10 +221,14 @@ export const DetailedExpensesDialog: React.FC<DetailedExpensesDialogProps> = ({
     if (item) {
       setEditingItem(item);
       setItemName(item.name);
-      setItemCategory(item.category);
+      const cat = item.isOneTime
+        ? (item.category === 'One-Time Setup Costs' || item.category === 'One-Time Expense' || !item.category ? 'One-Time Expenses' : item.category)
+        : (item.category || catalog.categories[0] || 'Living');
+      setItemCategory(cat);
       setItemDescription(item.description || '');
-      setItemFrequency(frequencies[item.id] ?? item.defaultFrequency ?? 12);
-      setItemIsOneTime(!!item.isOneTime);
+      const isOneTime = !!item.isOneTime || cat === 'One-Time Expenses' || cat === 'One-Time Expense' || cat === 'One-Time Setup Costs';
+      setItemIsOneTime(isOneTime);
+      setItemFrequency(frequencies[item.id] ?? item.defaultFrequency ?? (isOneTime ? 1 : 12));
       setItemTargetYear(item.targetYear ?? simStartYear);
       
       const appStates = item.applicableStates || ['ALL'];
@@ -239,10 +251,13 @@ export const DetailedExpensesDialog: React.FC<DetailedExpensesDialogProps> = ({
     } else {
       setEditingItem(null);
       setItemName('');
-      setItemCategory(defaultCat || catalog.categories[0] || 'Living');
+      const cat = defaultCat || catalog.categories[0] || 'Living';
+      const normalizedCat = (cat === 'One-Time Expense' || cat === 'One-Time Setup Costs') ? 'One-Time Expenses' : cat;
+      setItemCategory(normalizedCat);
       setItemDescription('');
-      setItemFrequency(12);
-      setItemIsOneTime(defaultCat === 'One-Time Setup Costs' || !!defaultYear);
+      const isOneTime = normalizedCat === 'One-Time Expenses' || !!defaultYear;
+      setItemFrequency(isOneTime ? 1 : 12);
+      setItemIsOneTime(isOneTime);
       setItemTargetYear(defaultYear ?? simStartYear);
       setItemScopeMode('ALL');
       setItemSelectedStates(statesList.length > 0 ? [...statesList] : [activeState]);
@@ -253,7 +268,6 @@ export const DetailedExpensesDialog: React.FC<DetailedExpensesDialogProps> = ({
       });
       setItemCostsByState(stateMap);
     }
-    setCustomCategoryInput('');
     setItemModalOpen(true);
   };
 
@@ -270,21 +284,9 @@ export const DetailedExpensesDialog: React.FC<DetailedExpensesDialogProps> = ({
       return;
     }
 
-    let finalCategory = itemCategory;
-    if (itemCategory === '__NEW__' || itemCategory === '+ Create New Category...') {
-      const trimmedCat = customCategoryInput.trim();
-      if (!trimmedCat) {
-        setItemError('Please provide a name for the new category.');
-        return;
-      }
-      finalCategory = trimmedCat;
-      if (!catalog.categories.includes(finalCategory)) {
-        setCatalog((prev) => ({
-          ...prev,
-          categories: [...prev.categories, finalCategory]
-        }));
-      }
-    }
+    const finalCategory = (itemCategory === 'One-Time Setup Costs' || itemCategory === 'One-Time Expense')
+      ? 'One-Time Expenses'
+      : itemCategory;
 
     const finalApplicableStates = itemScopeMode === 'ALL' 
       ? ['ALL'] 
@@ -344,7 +346,10 @@ export const DetailedExpensesDialog: React.FC<DetailedExpensesDialogProps> = ({
       const updated = { ...prev };
       statesList.forEach((st) => {
         const applies = finalApplicableStates.includes('ALL') || finalApplicableStates.includes(st);
-        const stateCost = applies ? (itemCostsByState[st] ?? itemBaseCost ?? 0) : 0;
+        const specifiedCost = itemCostsByState[st];
+        const stateCost = applies
+          ? (specifiedCost !== undefined && specifiedCost > 0 ? specifiedCost : (itemBaseCost || 0))
+          : 0;
         updated[st] = { ...(updated[st] || {}), [itemId]: stateCost };
       });
       return updated;
@@ -539,6 +544,18 @@ export const DetailedExpensesDialog: React.FC<DetailedExpensesDialogProps> = ({
     });
   }, [oneTimeItems, searchFilter, showAllStatesItems, activeState]);
 
+  // Category options for item modal: show all categories defined in the Expense Categories Manager
+  const categoryOptions = useMemo(() => {
+    const cats = [...catalog.categories];
+    if (!cats.includes('One-Time Expenses')) {
+      cats.push('One-Time Expenses');
+    }
+    if (itemCategory && !cats.includes(itemCategory)) {
+      cats.push(itemCategory);
+    }
+    return cats;
+  }, [catalog.categories, itemCategory]);
+
   const oneTimeItemsByYear = useMemo(() => {
     const groups: { [year: number]: ExpenseItemDefinition[] } = {};
     for (const item of visibleOneTimeItems) {
@@ -709,16 +726,6 @@ export const DetailedExpensesDialog: React.FC<DetailedExpensesDialogProps> = ({
                     <Copy className="w-3 h-3" />
                     Copy Costs...
                   </button>
-
-                  <div className="h-4 w-px bg-slate-800 mx-1" />
-
-                  <button
-                    onClick={() => handleOpenItemModal()}
-                    className="px-3.5 py-1.5 text-xs font-bold text-slate-950 bg-emerald-400 hover:bg-emerald-300 rounded-lg transition-all flex items-center gap-1.5 cursor-pointer shadow-sm shadow-emerald-500/20"
-                  >
-                    <Plus className="w-3.5 h-3.5" />
-                    Add Line Item
-                  </button>
                 </div>
               </div>
 
@@ -765,25 +772,26 @@ export const DetailedExpensesDialog: React.FC<DetailedExpensesDialogProps> = ({
               </div>
 
               {/* Recurring Categories Groups */}
-              {catalog.items.length === 0 ? (
+              {catalog.categories.length === 0 ? (
                 <div className="p-8 text-center bg-slate-950/40 rounded-xl border border-slate-800/80 space-y-3 my-4">
                   <div className="w-12 h-12 rounded-full bg-slate-800/80 text-emerald-400 flex items-center justify-center mx-auto border border-slate-700/50">
-                    <Plus className="w-6 h-6" />
+                    <FolderPlus className="w-6 h-6" />
                   </div>
-                  <h4 className="text-sm font-bold text-slate-200">No Expense Line Items Configured</h4>
+                  <h4 className="text-sm font-bold text-slate-200">No Expense Categories Configured</h4>
                   <p className="text-xs text-slate-400 max-w-md mx-auto">
-                    Start from a clean slate by adding recurring living expenses or one-time outlays tailored to your retirement plan.
+                    Configure your expense categories and states in the Categories & States tab before adding expense line items.
                   </p>
                   <button
-                    onClick={() => handleOpenItemModal()}
+                    onClick={() => setActiveTab('catalog')}
                     className="px-4 py-2 text-xs font-bold text-slate-950 bg-emerald-400 hover:bg-emerald-300 rounded-lg transition-all inline-flex items-center gap-1.5 cursor-pointer shadow-sm shadow-emerald-500/20 mt-2"
                   >
-                    <Plus className="w-4 h-4" />
-                    Add Your First Line Item
+                    <Layers className="w-4 h-4" />
+                    Open Categories & States
                   </button>
                 </div>
               ) : (
                 catalog.categories.map((catName) => {
+                  if (selectedCategoryFilter !== 'ALL' && selectedCategoryFilter !== catName) return null;
                   const catItems = visibleRecurringItems.filter((i) => i.category === catName);
                   if (catItems.length === 0) return null;
 
@@ -813,7 +821,7 @@ export const DetailedExpensesDialog: React.FC<DetailedExpensesDialogProps> = ({
                             className="text-[10px] font-semibold text-slate-400 hover:text-emerald-300 flex items-center gap-1 transition-colors cursor-pointer"
                           >
                             <Plus className="w-3 h-3" />
-                            Add to {catName}
+                            Add Expense
                           </button>
                         </div>
                       </div>
@@ -823,7 +831,7 @@ export const DetailedExpensesDialog: React.FC<DetailedExpensesDialogProps> = ({
                           <thead>
                             <tr className="border-b border-slate-800/50 text-[10px] text-slate-500 font-bold uppercase">
                               <th className="py-2 pr-4 w-5/12">Expense Name</th>
-                              <th className="py-2 px-2 text-center w-28">State Scope</th>
+                                <th className="py-2 px-2 text-center w-28">State Scope</th>
                               <th className="py-2 px-2 text-center w-28">Freq / Year</th>
                               <th className="py-2 px-2 text-right w-36">Budget Cost</th>
                               <th className="py-2 px-2 text-right w-36">Annualized</th>
@@ -950,24 +958,24 @@ export const DetailedExpensesDialog: React.FC<DetailedExpensesDialogProps> = ({
                 <div className="flex items-center justify-between pb-2 border-b border-slate-800">
                   <div className="flex items-center gap-2">
                     <h4 className="text-xs font-bold text-amber-400 uppercase tracking-wider">
-                      One-Time Capital Outlays
+                      One-Time Expenses
                     </h4>
                     <span className="text-[10px] text-slate-500 font-mono">
                       ({visibleOneTimeItems.length} {visibleOneTimeItems.length === 1 ? 'item' : 'items'})
                     </span>
                   </div>
                   <button
-                    onClick={() => handleOpenItemModal(undefined, 'One-Time Setup Costs', relocationYear ?? simStartYear)}
+                    onClick={() => handleOpenItemModal(undefined, 'One-Time Expenses', relocationYear ?? simStartYear)}
                     className="text-[10px] font-semibold text-slate-400 hover:text-amber-300 flex items-center gap-1 transition-colors cursor-pointer"
                   >
                     <Plus className="w-3 h-3" />
-                    Add One-Time Outlay
+                    Add Expense
                   </button>
                 </div>
 
                 {visibleOneTimeItems.length === 0 ? (
                   <p className="text-xs text-slate-500 italic py-2">
-                    No one-time capital outlays configured for {activeState}. (e.g. moving costs, initial furnishings, golf cart purchase).
+                    No one-time expenses configured for {activeState}. (e.g. moving costs, initial furnishings, golf cart purchase).
                   </p>
                 ) : (
                   oneTimeItemsByYear.map(({ year, items }) => {
@@ -983,7 +991,7 @@ export const DetailedExpensesDialog: React.FC<DetailedExpensesDialogProps> = ({
                           <table className="w-full text-left border-collapse">
                             <thead>
                               <tr className="text-[10px] text-slate-500 font-bold uppercase">
-                                <th className="py-1 pr-4 w-6/12">Outlay Name</th>
+                                <th className="py-1 pr-4 w-6/12">Expense Name</th>
                                 <th className="py-1 px-2 text-center w-28">State Scope</th>
                                 <th className="py-1 px-2 text-right w-36">Budget Cost</th>
                                 <th className="py-1 pl-2 text-right w-16"></th>
@@ -1043,14 +1051,14 @@ export const DetailedExpensesDialog: React.FC<DetailedExpensesDialogProps> = ({
                                         <button
                                           onClick={() => handleOpenItemModal(item)}
                                           className="p-1 text-slate-400 hover:text-amber-300 rounded hover:bg-slate-800 transition-colors cursor-pointer"
-                                          title="Edit Outlay"
+                                          title="Edit Expense"
                                         >
                                           <Edit2 className="w-3.5 h-3.5" />
                                         </button>
                                         <button
                                           onClick={() => handleDeleteItem(item.id)}
                                           className="p-1 text-slate-500 hover:text-red-400 rounded hover:bg-slate-800 transition-colors cursor-pointer"
-                                          title="Delete Outlay"
+                                          title="Delete Expense"
                                         >
                                           <Trash2 className="w-3.5 h-3.5" />
                                         </button>
@@ -1150,6 +1158,16 @@ export const DetailedExpensesDialog: React.FC<DetailedExpensesDialogProps> = ({
                         </div>
                         <div className="flex items-center gap-1">
                           <button
+                            onClick={() => {
+                              setActiveTab('expenses');
+                              handleOpenItemModal(undefined, cat);
+                            }}
+                            className="p-1 text-slate-400 hover:text-emerald-300 rounded hover:bg-slate-800 transition-colors cursor-pointer"
+                            title={`Add Expense to ${cat}`}
+                          >
+                            <Plus className="w-3.5 h-3.5" />
+                          </button>
+                          <button
                             onClick={() => handleOpenCategoryModal(cat)}
                             className="p-1 text-slate-400 hover:text-emerald-300 rounded hover:bg-slate-800 transition-colors cursor-pointer"
                             title="Rename Category"
@@ -1198,7 +1216,7 @@ export const DetailedExpensesDialog: React.FC<DetailedExpensesDialogProps> = ({
             </div>
             {activeStateTotals.oneTime > 0 && (
               <div>
-                <span className="text-slate-400">One-Time Outlays:</span>{' '}
+                <span className="text-slate-400">One-Time Expenses:</span>{' '}
                 <span className="font-bold font-mono text-amber-400">
                   {formatCurrency(activeStateTotals.oneTime)}
                 </span>
@@ -1263,13 +1281,22 @@ export const DetailedExpensesDialog: React.FC<DetailedExpensesDialogProps> = ({
                   <label className="block text-slate-300 font-semibold mb-1">Category</label>
                   <select
                     value={itemCategory}
-                    onChange={(e) => setItemCategory(e.target.value)}
+                    onChange={(e) => {
+                      const newCat = e.target.value;
+                      setItemCategory(newCat);
+                      if (newCat === 'One-Time Expenses' || newCat === 'One-Time Setup Costs' || newCat === 'One-Time Expense') {
+                        setItemIsOneTime(true);
+                        setItemFrequency(1);
+                      } else if (itemCategory === 'One-Time Expenses' || itemCategory === 'One-Time Setup Costs' || itemCategory === 'One-Time Expense') {
+                        setItemIsOneTime(false);
+                        setItemFrequency(12);
+                      }
+                    }}
                     className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-lg text-slate-200 text-xs focus:outline-none focus:border-emerald-500/50"
                   >
-                    {catalog.categories.map((c) => (
+                    {categoryOptions.map((c) => (
                       <option key={c} value={c}>{c}</option>
                     ))}
-                    <option value="__NEW__">+ Create New Category...</option>
                   </select>
                 </div>
 
@@ -1290,19 +1317,6 @@ export const DetailedExpensesDialog: React.FC<DetailedExpensesDialogProps> = ({
                   </select>
                 </div>
               </div>
-
-              {itemCategory === '__NEW__' && (
-                <div>
-                  <label className="block text-slate-300 font-semibold mb-1">New Category Name *</label>
-                  <input
-                    type="text"
-                    value={customCategoryInput}
-                    onChange={(e) => setCustomCategoryInput(e.target.value)}
-                    placeholder="Enter custom category name..."
-                    className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-lg text-slate-100 text-xs focus:outline-none focus:border-emerald-500/50"
-                  />
-                </div>
-              )}
 
               {/* State Scope Selector */}
               <div className="p-3 bg-slate-950 rounded-lg border border-slate-800 space-y-2">
@@ -1388,12 +1402,24 @@ export const DetailedExpensesDialog: React.FC<DetailedExpensesDialogProps> = ({
                   <input
                     type="number"
                     min="0"
-                    step="1"
+                    step="any"
                     value={itemBaseCost || ''}
                     placeholder="0"
                     onChange={(e) => {
-                      const val = Number(e.target.value) || 0;
+                      const val = e.target.value === '' ? 0 : Number(e.target.value);
                       setItemBaseCost(val);
+                      setItemCostsByState((prev) => {
+                        const updated: Record<string, number> = {};
+                        statesList.forEach((st) => {
+                          const prevCost = prev[st];
+                          if (prevCost !== undefined && prevCost !== itemBaseCost && prevCost > 0) {
+                            updated[st] = prevCost;
+                          } else {
+                            updated[st] = val;
+                          }
+                        });
+                        return updated;
+                      });
                     }}
                     className="w-full pl-7 pr-3 py-2 bg-slate-900 border border-slate-700/60 rounded-lg text-slate-100 font-mono text-xs focus:outline-none focus:border-emerald-500/50"
                   />
@@ -1418,11 +1444,11 @@ export const DetailedExpensesDialog: React.FC<DetailedExpensesDialogProps> = ({
                           <input
                             type="number"
                             min="0"
-                            step="1"
-                            value={itemCostsByState[st] ?? itemBaseCost ?? ''}
+                            step="any"
+                            value={itemCostsByState[st] !== undefined && itemCostsByState[st] > 0 ? itemCostsByState[st] : (itemBaseCost || '')}
                             placeholder={String(itemBaseCost || 0)}
                             onChange={(e) => {
-                              const val = Number(e.target.value) || 0;
+                              const val = e.target.value === '' ? 0 : Number(e.target.value);
                               setItemCostsByState((prev) => ({
                                 ...prev,
                                 [st]: val
@@ -1445,10 +1471,20 @@ export const DetailedExpensesDialog: React.FC<DetailedExpensesDialogProps> = ({
                     <input
                       type="checkbox"
                       checked={itemIsOneTime}
-                      onChange={(e) => setItemIsOneTime(e.target.checked)}
-                      className="rounded bg-slate-950 border-slate-700 text-amber-500 focus:ring-0"
+                      onChange={(e) => {
+                        const checked = e.target.checked;
+                        setItemIsOneTime(checked);
+                        if (checked && itemCategory !== 'One-Time Expenses') {
+                          setItemCategory('One-Time Expenses');
+                          setItemFrequency(1);
+                        } else if (!checked && (itemCategory === 'One-Time Expenses' || itemCategory === 'One-Time Setup Costs' || itemCategory === 'One-Time Expense')) {
+                          setItemCategory(catalog.categories[0] || 'Housing');
+                          setItemFrequency(12);
+                        }
+                      }}
+                      className="rounded bg-slate-950 border-slate-700 text-amber-500 focus:ring-0 cursor-pointer"
                     />
-                    <span>One-Time Outlay</span>
+                    <span>One-Time Expenses</span>
                   </label>
                 </div>
 

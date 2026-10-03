@@ -1096,7 +1096,7 @@ export const ConfigurationPDF: React.FC<PDFProps> = ({ inputs }) => {
                   {/* One-Time Subtotal Row */}
                   <View style={[styles.tableRow, { backgroundColor: '#fffbeb', borderBottomWidth: 1, borderBottomColor: '#fde68a' }]}>
                     <Text style={[styles.colExpName, styles.tableCell, { fontFamily: 'Helvetica-Bold', color: '#b45309' }]}>
-                      Total One-Time Capital Outlays
+                      Total One-Time Expenses
                     </Text>
                     <Text style={[styles.colExpCat, styles.tableCell, { color: '#64748b' }]}>-</Text>
                     <Text style={[styles.colExpFreq, styles.tableCell, { color: '#64748b', textAlign: 'center' }]}>-</Text>

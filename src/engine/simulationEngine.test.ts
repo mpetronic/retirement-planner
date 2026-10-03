@@ -1766,6 +1766,165 @@ describe('runRetirementSimulation fixes', () => {
       // and surplus gap should not flag a false $15,210 deficit
       expect(row2026?.actualSurplusGap).toBeGreaterThanOrEqual(0);
     });
+
+    it('should handle actual years with zero logged spending without injecting projected OOP maximum into actual living expenses', () => {
+      const inputs = getBaseActualsTestInputs();
+      inputs.you.birthDate = '1965-01-01'; // Age 61 in 2026 (Pre-65)
+      inputs.annualLivingExpenses = 61883;
+      inputs.you.healthcare = {
+        fileSSA44LifeChangingEvent: true,
+        medicarePartBPremium: null,
+        FL: {
+          pre65MedicalPremium: 500,
+          pre65MedicalOOP: 5000,
+          pre65DentalPremium: 50,
+          pre65DentalOOP: 1000,
+          pre65VisionPremium: 20,
+          pre65VisionOOP: 200,
+          supplementPremium: null,
+          supplementOOP: null,
+          medicarePartDPremium: null,
+          medicarePartDDeductibleCopays: null,
+          post65HearingCare: null,
+          post65DentalPremium: null,
+          post65DentalOOP: null,
+          post65VisionPremium: null,
+          post65VisionOOP: null,
+        },
+        MD: {
+          pre65MedicalPremium: 500,
+          pre65MedicalOOP: 5000,
+          pre65DentalPremium: 50,
+          pre65DentalOOP: 1000,
+          pre65VisionPremium: 20,
+          pre65VisionOOP: 200,
+          supplementPremium: null,
+          supplementOOP: null,
+          medicarePartDPremium: null,
+          medicarePartDDeductibleCopays: null,
+          post65HearingCare: null,
+          post65DentalPremium: null,
+          post65DentalOOP: null,
+          post65VisionPremium: null,
+          post65VisionOOP: null,
+        },
+      };
+
+      // 2026 actual record with ZERO logged transactions / no totalLivingExpenses entered
+      inputs.actualTracking = {
+        2026: {
+          year: 2026,
+          equityReturnRate: 0.08,
+          fixedIncomeReturnRate: 0.04,
+          totalLivingExpenses: null,
+          healthcareOOP: null,
+        },
+      };
+
+      const ledger = runRetirementSimulation(inputs);
+      const row2026 = ledger.find(r => r.year === 2026);
+      expect(row2026).toBeDefined();
+
+      // Living expenses and realized OOP should be 0 because nothing was logged/entered
+      expect(row2026?.livingExpenses).toBe(0);
+      expect(row2026?.healthcareOOP).toBe(0);
+
+      // Planned OOP allowance is preserved as the planning ceiling (5000 + 1000 + 200 = 6200)
+      expect(row2026?.plannedHealthcareOOP).toBeCloseTo(6200, 0);
+
+      // Un-logged spending should NOT flag an overspending penalty
+      expect(row2026?.actualSurplusGap).toBeGreaterThanOrEqual(0);
+    });
+
+    it('should track realized healthcare OOP against maximum planned allowance and calculate spending savings', () => {
+      const inputs = getBaseActualsTestInputs();
+      inputs.you.birthDate = '1965-01-01'; // Age 61 in 2026 (Pre-65)
+      inputs.annualLivingExpenses = 60000;
+      inputs.you.healthcare = {
+        fileSSA44LifeChangingEvent: true,
+        medicarePartBPremium: null,
+        FL: {
+          pre65MedicalPremium: 500,
+          pre65MedicalOOP: 5000,
+          pre65DentalPremium: 50,
+          pre65DentalOOP: 1000,
+          pre65VisionPremium: 20,
+          pre65VisionOOP: 200,
+          supplementPremium: null,
+          supplementOOP: null,
+          medicarePartDPremium: null,
+          medicarePartDDeductibleCopays: null,
+          post65HearingCare: null,
+          post65DentalPremium: null,
+          post65DentalOOP: null,
+          post65VisionPremium: null,
+          post65VisionOOP: null,
+        },
+        MD: {
+          pre65MedicalPremium: 500,
+          pre65MedicalOOP: 5000,
+          pre65DentalPremium: 50,
+          pre65DentalOOP: 1000,
+          pre65VisionPremium: 20,
+          pre65VisionOOP: 200,
+          supplementPremium: null,
+          supplementOOP: null,
+          medicarePartDPremium: null,
+          medicarePartDDeductibleCopays: null,
+          post65HearingCare: null,
+          post65DentalPremium: null,
+          post65DentalOOP: null,
+          post65VisionPremium: null,
+          post65VisionOOP: null,
+        },
+      };
+
+      // User logged $55,000 living expenses and only $400 out-of-pocket medical co-pays
+      inputs.actualTracking = {
+        2026: {
+          year: 2026,
+          totalLivingExpenses: 55000,
+          healthcareOOP: 400,
+          equityReturnRate: 0.08,
+          fixedIncomeReturnRate: 0.04,
+        },
+      };
+
+      const ledger = runRetirementSimulation(inputs);
+      const row2026 = ledger.find(r => r.year === 2026);
+      expect(row2026).toBeDefined();
+
+      expect(row2026?.livingExpenses).toBeCloseTo(55400, 1);
+      expect(row2026?.healthcareOOP).toBeCloseTo(400, 1);
+      expect(row2026?.plannedHealthcareOOP).toBeCloseTo(6200, 0);
+
+      // Planned total budget = $60,000 base + $6,200 OOP max = $66,200
+      // Actual total spend = $55,400
+      // Spending savings = $66,200 - $55,400 = +$10,800 savings!
+      expect(row2026?.actualSurplusGap).toBeGreaterThan(10000);
+    });
+
+    it('should use explicit priorTaxReturnMAGI for 2-year lookback IRMAA evaluation in initial simulation years', () => {
+      const inputs = getBaseActualsTestInputs();
+      inputs.isSingleFiler = true;
+      // Primary is 66 in 2026 (born 1960), meaning on Medicare Part B
+      inputs.you.birthDate = '1960-01-01';
+      inputs.you.plannedRetirementAge = 65;
+
+      // Provide explicit 2024 tax return MAGI that lands in IRMAA Tier 2 (> $133,000 for single in 2024)
+      inputs.priorTaxReturnMAGI = {
+        2024: 165000,
+      };
+
+      const ledger = runRetirementSimulation(inputs);
+      const row2026 = ledger.find(r => r.year === 2026);
+      expect(row2026).toBeDefined();
+
+      // Lookback MAGI two years ago should be exactly 165,000
+      expect(row2026?.magiTwoYearsAgo).toBe(165000);
+      expect(row2026?.surchargeTier).toBeGreaterThan(0);
+      expect(row2026?.combinedSurchargeAnnual).toBeGreaterThan(0);
+    });
   });
 
   describe('Custom Roth Conversion Scenarios', () => {
