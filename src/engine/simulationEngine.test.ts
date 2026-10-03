@@ -1713,6 +1713,59 @@ describe('runRetirementSimulation fixes', () => {
       expect(row2026?.actualSurplusGap).toBeGreaterThan(15000);
       expect(row2026?.permittedSpendingBonus).toBeLessThanOrEqual(15000.01); // Capped by upper guardrail ceiling ($115k - $100k = $15k)
     });
+
+    it('should compute Guardrail planned budget from detailed expenses when useDetailedExpenses is true', () => {
+      const inputs = getBaseActualsTestInputs();
+      inputs.guardrailSettings = {
+        enabled: true,
+        upperGuardrailPct: 0.15,
+        lowerGuardrailPct: 0.15,
+        marketSurplusSharePct: 0.10,
+        applyToSimulation: false,
+      };
+      // Stale flat budget from prior configuration
+      inputs.annualLivingExpenses = 54603;
+      inputs.useDetailedExpenses = true;
+      inputs.detailedExpenses = {
+        catalog: {
+          categories: ['Housing', 'Food'],
+          items: [
+            { id: 'rent', name: 'Rent', category: 'Housing', defaultFrequency: 12 },
+            { id: 'groceries', name: 'Groceries', category: 'Food', defaultFrequency: 12 },
+          ],
+        },
+        costs: {
+          FL: {
+            rent: 4000,     // 48,000 / yr
+            groceries: 1817.75, // 21,813 / yr => Total $69,813 / yr
+          },
+        },
+        frequencies: {
+          rent: 12,
+          groceries: 12,
+        },
+      };
+      inputs.actualTracking = {
+        2026: {
+          year: 2026,
+          totalLivingExpenses: 69813, // 100% on target with detailed budget
+          equityReturnRate: 0.07,
+          fixedIncomeReturnRate: 0.04,
+        },
+      };
+
+      const ledger = runRetirementSimulation(inputs);
+      const row2026 = ledger.find(r => r.year === 2026);
+      expect(row2026).toBeDefined();
+
+      // Guardrail upper/lower limits should be based on $69,813, NOT $54,603
+      expect(row2026?.guardrailUpperLimit).toBeCloseTo(69813 * 1.15, 0);
+      expect(row2026?.guardrailLowerLimit).toBeCloseTo(69813 * 0.85, 0);
+
+      // Spending variance should be 0 because actuals exactly equaled the detailed budget
+      // and surplus gap should not flag a false $15,210 deficit
+      expect(row2026?.actualSurplusGap).toBeGreaterThanOrEqual(0);
+    });
   });
 
   describe('Custom Roth Conversion Scenarios', () => {

@@ -500,6 +500,38 @@ export const ActualsWorkspace: React.FC<ActualsWorkspaceProps> = ({
     onUpdateActuals(nextActuals);
   };
 
+  // Helper to compute planned recurring budget for a given year (considering relocation)
+  const getPlannedRecurringBudgetForYear = useCallback((year: number) => {
+    if (inputs.useDetailedExpenses && inputs.detailedExpenses) {
+      const activeState = (inputs.jurisdiction.relocationYear !== null && year >= inputs.jurisdiction.relocationYear)
+        ? inputs.jurisdiction.targetState
+        : inputs.jurisdiction.currentState;
+      const norm = normalizeDetailedExpenses(inputs.detailedExpenses);
+      const stateCosts = norm.costs[activeState] || {};
+      const allCosts = norm.costs['ALL'] || {};
+      const defaultStateCosts = norm.costs[inputs.jurisdiction.currentState] || {};
+      const freqs = norm.frequencies;
+      const sum = norm.catalog.items
+        .filter((i) => !i.isOneTime)
+        .reduce((acc, item) => {
+          const applies = !item.applicableStates || item.applicableStates.includes('ALL') || item.applicableStates.includes(activeState);
+          if (!applies) return acc;
+          const cost = stateCosts[item.id] ?? allCosts[item.id] ?? defaultStateCosts[item.id] ?? 0;
+          const freq = freqs[item.id] ?? item.defaultFrequency ?? 12;
+          return acc + cost * freq;
+        }, 0);
+      if (sum > 0) return sum;
+    }
+    return inputs.annualLivingExpenses ?? 100000;
+  }, [
+    inputs.useDetailedExpenses,
+    inputs.detailedExpenses,
+    inputs.jurisdiction.relocationYear,
+    inputs.jurisdiction.targetState,
+    inputs.jurisdiction.currentState,
+    inputs.annualLivingExpenses,
+  ]);
+
   // Add a new year
   const handleAddYear = () => {
     const existingYears = Object.keys(actualTracking).map(Number);
@@ -510,7 +542,7 @@ export const ActualsWorkspace: React.FC<ActualsWorkspaceProps> = ({
       fixedIncomeReturnRate: inputs.growthAssumptions.fixedIncomeReturnRate,
       cpiInflationRate: inputs.growthAssumptions.cpiInflationRate,
       healthcareInflationRate: inputs.growthAssumptions.healthcareInflationRate,
-      totalLivingExpenses: inputs.annualLivingExpenses,
+      totalLivingExpenses: getPlannedRecurringBudgetForYear(nextYear),
     };
     const nextActuals = {
       ...actualTracking,
@@ -540,30 +572,18 @@ export const ActualsWorkspace: React.FC<ActualsWorkspaceProps> = ({
     return actualRows[actualRows.length - 1];
   }, [ledger]);
 
-  // Baseline recurring budget before discretionary bonuses
+  // Baseline recurring budget for current calendar year
   const baselineRecurringAnnual = useMemo(() => {
-    if (inputs.useDetailedExpenses && inputs.detailedExpenses) {
-      const norm = normalizeDetailedExpenses(inputs.detailedExpenses);
-      const stateCosts = norm.costs[inputs.jurisdiction.currentState] || {};
-      const freqs = norm.frequencies;
-      const sum = norm.catalog.items
-        .filter((i) => !i.isOneTime)
-        .reduce((acc, item) => {
-          const cost = stateCosts[item.id] ?? 0;
-          const freq = freqs[item.id] ?? item.defaultFrequency ?? 12;
-          return acc + cost * freq;
-        }, 0);
-      if (sum > 0) return sum;
-    }
-    return 100000;
-  }, [inputs.useDetailedExpenses, inputs.detailedExpenses, inputs.jurisdiction.currentState]);
+    return getPlannedRecurringBudgetForYear(currentCalendarYear);
+  }, [getPlannedRecurringBudgetForYear, currentCalendarYear]);
 
   // Guardrail metrics
-  const guardrailUpperLimit = latestActualRow?.guardrailUpperLimit ?? ((inputs.annualLivingExpenses ?? 100000) * 1.15);
-  const guardrailLowerLimit = latestActualRow?.guardrailLowerLimit ?? ((inputs.annualLivingExpenses ?? 100000) * 0.85);
+  const plannedBudgetBase = getPlannedRecurringBudgetForYear(latestActualRow?.year ?? currentCalendarYear);
+  const plannedBudget = plannedBudgetBase * (latestActualRow?.cpiFactor ?? 1.0);
+  const guardrailUpperLimit = latestActualRow?.guardrailUpperLimit ?? (plannedBudget * (1 + (guardrailSettings.upperGuardrailPct ?? 0.15)));
+  const guardrailLowerLimit = latestActualRow?.guardrailLowerLimit ?? (plannedBudget * (1 - (guardrailSettings.lowerGuardrailPct ?? 0.15)));
   const currentSurplusGap = latestActualRow?.actualSurplusGap ?? 0;
   const permittedBonus = latestActualRow?.permittedSpendingBonus ?? 0;
-  const plannedBudget = (inputs.annualLivingExpenses ?? 100000) * (latestActualRow?.cpiFactor ?? 1.0);
   const actualSpend = latestActualRow?.livingExpenses ?? plannedBudget;
   const spendingSavings = plannedBudget - actualSpend;
   const marketSurplusShare = currentSurplusGap - spendingSavings;
@@ -579,7 +599,7 @@ export const ActualsWorkspace: React.FC<ActualsWorkspaceProps> = ({
       datasets: [
         {
           label: 'Planned Budget ($)',
-          data: rowsToChart.map((r) => (inputs.annualLivingExpenses ?? 100000) * r.cpiFactor),
+          data: rowsToChart.map((r) => getPlannedRecurringBudgetForYear(r.year) * r.cpiFactor),
           borderColor: '#60a5fa',
           backgroundColor: 'rgba(96, 165, 250, 0.1)',
           borderWidth: 1.75,
@@ -616,7 +636,7 @@ export const ActualsWorkspace: React.FC<ActualsWorkspaceProps> = ({
         },
       ],
     };
-  }, [ledger, inputs.annualLivingExpenses]);
+  }, [ledger, getPlannedRecurringBudgetForYear]);
 
   return (
     <div className="flex-1 overflow-y-auto p-4 md:p-6 space-y-6 custom-scrollbar bg-slate-950 text-slate-100">
@@ -1480,7 +1500,7 @@ export const ActualsWorkspace: React.FC<ActualsWorkspaceProps> = ({
               <input
                 type="number"
                 step="100"
-                placeholder={`Budgeted: ${formatCurrency((inputs.annualLivingExpenses ?? 100000) * (activeLedgerRow?.cpiFactor || 1))}`}
+                placeholder={`Budgeted: ${formatCurrency(getPlannedRecurringBudgetForYear(selectedYear) * (activeLedgerRow?.cpiFactor || 1))}`}
                 value={activeRecord.totalLivingExpenses !== null && activeRecord.totalLivingExpenses !== undefined ? activeRecord.totalLivingExpenses : ''}
                 onChange={(e) =>
                   handleFieldChange(

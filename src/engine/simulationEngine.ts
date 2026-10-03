@@ -668,10 +668,8 @@ export function runRetirementSimulation(
       wifeMedicarePremiums = 0;
     }
 
-    let baseLivingExpensesAnnual = inputs.annualLivingExpenses ?? 100000;
-    if (actualRec?.totalLivingExpenses !== undefined && actualRec?.totalLivingExpenses !== null) {
-      baseLivingExpensesAnnual = actualRec.totalLivingExpenses / (cpiFactor || 1);
-    } else if (inputs.useDetailedExpenses && inputs.detailedExpenses) {
+    let plannedBaseLivingExpensesAnnual = inputs.annualLivingExpenses ?? 100000;
+    if (inputs.useDetailedExpenses && inputs.detailedExpenses) {
       const de = normalizeDetailedExpenses(inputs.detailedExpenses);
       const items = de.catalog?.items ?? [];
       let detailedSum = 0;
@@ -687,7 +685,12 @@ export function runRetirementSimulation(
         const freq = freqs[item.id] ?? item.defaultFrequency ?? 12;
         detailedSum += cost * freq;
       }
-      baseLivingExpensesAnnual = detailedSum;
+      plannedBaseLivingExpensesAnnual = detailedSum;
+    }
+
+    let baseLivingExpensesAnnual = plannedBaseLivingExpensesAnnual;
+    if (actualRec?.totalLivingExpenses !== undefined && actualRec?.totalLivingExpenses !== null) {
+      baseLivingExpensesAnnual = actualRec.totalLivingExpenses / (cpiFactor || 1);
     }
 
     // Dynamic Guardrail policy adjustment during forward simulation (post-actuals)
@@ -699,7 +702,7 @@ export function runRetirementSimulation(
       }
     }
 
-    const baseMinCashDollars = inputs.growthAssumptions.minCashReserveDollars ?? inputs.annualLivingExpenses ?? 100000;
+    const baseMinCashDollars = inputs.growthAssumptions.minCashReserveDollars ?? plannedBaseLivingExpensesAnnual;
     const minCashReserveTarget = Math.max(0, baseMinCashDollars * cpiFactor);
 
     // Declaring yearly loop scope variables
@@ -1844,7 +1847,7 @@ export function runRetirementSimulation(
     const netTakeHomeSalary = Math.max(0, grossSalary - annualTotal401k - annualTotalFICA - annualTotalTaxWithholding);
 
     // Guardrails calculation
-    const plannedLivingExpenses = (inputs.annualLivingExpenses ?? 100000) * cpiFactor;
+    const plannedLivingExpenses = (plannedBaseLivingExpensesAnnual + oneTimeCosts) * cpiFactor;
     const spendingVariance = plannedLivingExpenses - annualLivingExpenses; // positive if spent less than budget
     const modeledGrowthRate = (preTaxEquityPortion * inputs.growthAssumptions.equityReturnRate) + ((1 - preTaxEquityPortion) * inputs.growthAssumptions.fixedIncomeReturnRate);
     const startYearPortfolio = (ledger.length > 0) ? ledger[ledger.length - 1].totalPortfolioValue : (
