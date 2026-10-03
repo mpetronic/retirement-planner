@@ -2284,6 +2284,188 @@ describe('runRetirementSimulation fixes', () => {
       expect(row2028?.livingExpenses).toBe(3360);
     });
   });
+
+  describe('Spouse Healthcare Covered by Working Partner Plan', () => {
+    const getBaseHealthcareInputs = (coveredByWorkingSpouse: boolean): AppStateInputs => ({
+      you: {
+        name: 'Primary',
+        birthDate: '1960-06-27',
+        plannedRetirementAge: 66,
+        plannedRetirementMonth: 11, // Retires Nov 2026 (works Jan - Oct 2026, 10 months)
+        targetSSClaimingAge: 70,
+        estimatedPIA: 4000,
+        activeSalary: 200000, // Working Jan - Oct 2026
+        healthcare: {
+          fileSSA44LifeChangingEvent: true,
+          medicareStartMode: 'customDate' as const,
+          medicareStartDate: '2026-11-01', // Starts Medicare Nov 2026
+          MD: {
+            pre65MedicalPremium: null,
+            pre65MedicalOOP: null,
+            pre65DentalPremium: null,
+            pre65DentalOOP: null,
+            pre65VisionPremium: null,
+            pre65VisionOOP: null,
+            medicarePartDPremium: null,
+            medicarePartDDeductibleCopays: null,
+            supplementPremium: 250,
+            supplementOOP: 283,
+            post65HearingCare: null,
+            post65DentalPremium: 50,
+            post65DentalOOP: 250,
+            post65VisionPremium: 25,
+            post65VisionOOP: 250,
+          },
+          FL: {
+            pre65MedicalPremium: null,
+            pre65MedicalOOP: null,
+            pre65DentalPremium: null,
+            pre65DentalOOP: null,
+            pre65VisionPremium: null,
+            pre65VisionOOP: null,
+            medicarePartDPremium: null,
+            medicarePartDDeductibleCopays: null,
+            supplementPremium: 250,
+            supplementOOP: 283,
+            post65HearingCare: null,
+            post65DentalPremium: 50,
+            post65DentalOOP: 250,
+            post65VisionPremium: 25,
+            post65VisionOOP: 250,
+          },
+          medicarePartBPremium: null,
+        },
+      },
+      wife: {
+        name: 'Spouse',
+        birthDate: '1964-03-11', // Age 62 in 2026, reaches 65 in 2029
+        plannedRetirementAge: 61,
+        plannedRetirementMonth: 6,
+        targetSSClaimingAge: 70,
+        estimatedPIA: 2500,
+        activeSalary: 0,
+        healthcare: {
+          fileSSA44LifeChangingEvent: true,
+          coveredByWorkingSpousePlan: coveredByWorkingSpouse,
+          medicareStartMode: 'age65' as const,
+          medicareStartDate: null,
+          MD: {
+            pre65MedicalPremium: 590,
+            pre65DentalPremium: 30,
+            pre65VisionPremium: 10,
+            pre65MedicalOOP: 6000,
+            pre65DentalOOP: 250,
+            pre65VisionOOP: 250,
+            medicarePartDPremium: null,
+            medicarePartDDeductibleCopays: null,
+            supplementPremium: 280,
+            supplementOOP: 337,
+            post65HearingCare: null,
+            post65DentalPremium: 50,
+            post65DentalOOP: 250,
+            post65VisionPremium: 25,
+            post65VisionOOP: 250,
+          },
+          FL: {
+            pre65MedicalPremium: 590,
+            pre65DentalPremium: 30,
+            pre65VisionPremium: 10,
+            pre65MedicalOOP: 6000,
+            pre65DentalOOP: 250,
+            pre65VisionOOP: 250,
+            medicarePartDPremium: null,
+            medicarePartDDeductibleCopays: null,
+            supplementPremium: 280,
+            supplementOOP: 337,
+            post65HearingCare: null,
+            post65DentalPremium: 50,
+            post65DentalOOP: 250,
+            post65VisionPremium: 25,
+            post65VisionOOP: 250,
+          },
+          medicarePartBPremium: null,
+        },
+      },
+      portfolio: {
+        yourPreTaxIRA: 500000,
+        yourRothIRA: 50000,
+        yourTaxableBrokerage: 0,
+        yourTaxableBasis: 0,
+        yourCash: 50000,
+        wifePreTaxIRA: 200000,
+        wifeRothIRA: 20000,
+        wifeTaxableBrokerage: 0,
+        wifeTaxableBasis: 0,
+        wifeCash: 0,
+      },
+      jurisdiction: {
+        currentState: 'MD',
+        targetState: 'MD',
+        relocationYear: null,
+      },
+      growthAssumptions: {
+        equityReturnRate: 0.05,
+        fixedIncomeReturnRate: 0.03,
+        cpiInflationRate: 0.0,
+        healthcareInflationRate: 0.0,
+      },
+      annualLivingExpenses: 60000,
+      annualRothConversion: 0,
+      rothConversionTargetValue: null,
+      rothConversionStartYear: 2027,
+      rothConversionEndYear: 2030,
+      rothConversionStrategy: 'flat' as const,
+      monteCarloSettings: {
+        mode: 'monte-carlo',
+        equityVolatility: 0.0,
+        fixedIncomeVolatility: 0.0,
+        correlation: 0.0,
+        trials: 1,
+        seed: 42,
+      },
+      isConfigured: true,
+      isSingleFiler: false,
+    });
+
+    it('should waive spouse pre-65 premiums and OOP during working months and activate post-retirement', () => {
+      const inputs = getBaseHealthcareInputs(true);
+      const ledger = runRetirementSimulation(inputs);
+      const row2026 = ledger.find((r) => r.year === 2026);
+      const row2027 = ledger.find((r) => r.year === 2027);
+
+      expect(row2026).toBeDefined();
+      expect(row2027).toBeDefined();
+
+      // In 2026: Primary works Jan-Oct (10 mo). Spouse is covered on primary's plan for 10 mo ($0).
+      // Spouse only pays Pre-65 for Nov & Dec (2 mo):
+      // Monthly pre-65 = $590 + $30 + $10 = $630.
+      // 2 mo pre-65 = $630 * 2 = $1,260.
+      expect(row2026?.preMedicareHealthcareCost).toBe(1260);
+
+      // Spouse planned OOP is pro-rated for 2 months: ($6,000 + $250 + $250) * (2/12) = $6,500 * (2/12) = $1,083.33
+      // Primary Medicare OOP for 2 months (Nov & Dec): ($283 + $250 + $250) * (2/12) = $783 * (2/12) = $130.50
+      // Total plannedHealthcareOOP = 1083.33 + 130.50 = $1,213.83
+      expect(Math.round(row2026?.plannedHealthcareOOP ?? 0)).toBe(1214);
+
+      // In 2027: Primary is fully retired all 12 months. Spouse is on pre-65 all 12 months:
+      // Annual pre-65 = $630 * 12 = $7,560.
+      expect(row2027?.preMedicareHealthcareCost).toBe(7560);
+      // Annual spouse OOP = $6,500, primary Medicare OOP = $783 -> Total = $7,283
+      expect(Math.round(row2027?.plannedHealthcareOOP ?? 0)).toBe(7283);
+    });
+
+    it('should charge full 12 months pre-65 premiums when option is disabled', () => {
+      const inputs = getBaseHealthcareInputs(false);
+      const ledger = runRetirementSimulation(inputs);
+      const row2026 = ledger.find((r) => r.year === 2026);
+
+      expect(row2026).toBeDefined();
+      // When disabled, spouse incurs all 12 months of pre-65 premiums in 2026: $630 * 12 = $7,560
+      expect(row2026?.preMedicareHealthcareCost).toBe(7560);
+      // Spouse full year OOP ($6,500) + Primary 2 mo Medicare OOP ($130.50) = $6,630.50
+      expect(Math.round(row2026?.plannedHealthcareOOP ?? 0)).toBe(6631);
+    });
+  });
 });
 
 

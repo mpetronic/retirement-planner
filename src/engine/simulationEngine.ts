@@ -673,31 +673,43 @@ export function runRetirementSimulation(
     const isWifeWorkingDec = !wifeDeceased && !inputs.isSingleFiler && (decMonthIdx < wifeRetireMonthIdx) && ((inputs.wife.activeSalary ?? 0) > 0);
 
     const startYearMonthIdx = (year - simStartYear) * 12;
-    const endYearMonthIdx = startYearMonthIdx + 11;
 
     // Determine planned annual healthcare OOP maximum allowance for this year
     let yourPlannedAnnualOOP = 0;
-    if (!youDeceased && !isYouWorkingDec) {
-      if (yourMedicareMonthIdx <= startYearMonthIdx) {
-        yourPlannedAnnualOOP = yourMedicareOOP;
-      } else if (yourMedicareMonthIdx > endYearMonthIdx) {
-        yourPlannedAnnualOOP = yourPreMedicareOOP;
-      } else {
-        const preMonths = yourMedicareMonthIdx - startYearMonthIdx;
-        const medMonths = 12 - preMonths;
-        yourPlannedAnnualOOP = preMonths * (yourPreMedicareOOP / 12) + medMonths * (yourMedicareOOP / 12);
+    for (let m = 0; m < 12; m++) {
+      const mIdx = startYearMonthIdx + m;
+      const isWorking = !youDeceased && (mIdx < yourRetireMonthIdx) && ((inputs.you.activeSalary ?? 0) > 0);
+      const isSpouseWorking = !wifeDeceased && !inputs.isSingleFiler && (mIdx < wifeRetireMonthIdx) && ((inputs.wife.activeSalary ?? 0) > 0);
+      
+      if (!youDeceased && !isWorking) {
+        if (mIdx < yourMedicareMonthIdx) {
+          if (inputs.you.healthcare?.coveredByWorkingSpousePlan && isSpouseWorking) {
+            // Covered under working spouse's employer plan
+          } else {
+            yourPlannedAnnualOOP += yourPreMedicareOOP / 12;
+          }
+        } else {
+          yourPlannedAnnualOOP += yourMedicareOOP / 12;
+        }
       }
     }
+
     let wifePlannedAnnualOOP = 0;
-    if (!wifeDeceased && !isWifeWorkingDec) {
-      if (wifeMedicareMonthIdx <= startYearMonthIdx) {
-        wifePlannedAnnualOOP = wifeMedicareOOP;
-      } else if (wifeMedicareMonthIdx > endYearMonthIdx) {
-        wifePlannedAnnualOOP = wifePreMedicareOOP;
-      } else {
-        const preMonths = wifeMedicareMonthIdx - startYearMonthIdx;
-        const medMonths = 12 - preMonths;
-        wifePlannedAnnualOOP = preMonths * (wifePreMedicareOOP / 12) + medMonths * (wifeMedicareOOP / 12);
+    for (let m = 0; m < 12; m++) {
+      const mIdx = startYearMonthIdx + m;
+      const isWorking = !wifeDeceased && !inputs.isSingleFiler && (mIdx < wifeRetireMonthIdx) && ((inputs.wife.activeSalary ?? 0) > 0);
+      const isPrimaryWorking = !youDeceased && (mIdx < yourRetireMonthIdx) && ((inputs.you.activeSalary ?? 0) > 0);
+      
+      if (!wifeDeceased && !isWorking) {
+        if (mIdx < wifeMedicareMonthIdx) {
+          if (inputs.wife.healthcare?.coveredByWorkingSpousePlan && isPrimaryWorking) {
+            // Covered under working spouse's employer plan
+          } else {
+            wifePlannedAnnualOOP += wifePreMedicareOOP / 12;
+          }
+        } else {
+          wifePlannedAnnualOOP += wifeMedicareOOP / 12;
+        }
       }
     }
     const plannedHealthcareOOP = yourPlannedAnnualOOP + wifePlannedAnnualOOP;
@@ -1087,14 +1099,22 @@ export function runRetirementSimulation(
       } else {
         if (!youDeceased && !isYouWorking) {
           if (monthIdx < yourMedicareMonthIdx) {
-            monthlyYourOOP = yourPreMedicareOOP / 12;
+            if (inputs.you.healthcare?.coveredByWorkingSpousePlan && isWifeWorking) {
+              monthlyYourOOP = 0;
+            } else {
+              monthlyYourOOP = yourPreMedicareOOP / 12;
+            }
           } else {
             monthlyYourOOP = yourMedicareOOP / 12;
           }
         }
         if (!wifeDeceased && !isWifeWorking) {
           if (monthIdx < wifeMedicareMonthIdx) {
-            monthlyWifeOOP = wifePreMedicareOOP / 12;
+            if (inputs.wife.healthcare?.coveredByWorkingSpousePlan && isYouWorking) {
+              monthlyWifeOOP = 0;
+            } else {
+              monthlyWifeOOP = wifePreMedicareOOP / 12;
+            }
           } else {
             monthlyWifeOOP = wifeMedicareOOP / 12;
           }
@@ -1108,7 +1128,11 @@ export function runRetirementSimulation(
       let monthlyYourPremium = 0;
       if (!youDeceased && !isYouWorking) {
         if (monthIdx < yourMedicareMonthIdx) {
-          monthlyYourPremium = yourPreMedicareAnnual / 12;
+          if (inputs.you.healthcare?.coveredByWorkingSpousePlan && isWifeWorking) {
+            monthlyYourPremium = 0;
+          } else {
+            monthlyYourPremium = yourPreMedicareAnnual / 12;
+          }
         } else {
           monthlyYourPremium = yourMedicarePremiums / 12;
           yourMedicareMonthCount++; // tally for pro-rated surcharge at year end
@@ -1117,7 +1141,11 @@ export function runRetirementSimulation(
       let monthlyWifePremium = 0;
       if (!wifeDeceased && !isWifeWorking) {
         if (monthIdx < wifeMedicareMonthIdx) {
-          monthlyWifePremium = wifePreMedicareAnnual / 12;
+          if (inputs.wife.healthcare?.coveredByWorkingSpousePlan && isYouWorking) {
+            monthlyWifePremium = 0;
+          } else {
+            monthlyWifePremium = wifePreMedicareAnnual / 12;
+          }
         } else {
           monthlyWifePremium = wifeMedicarePremiums / 12;
           wifeMedicareMonthCount++; // tally for pro-rated surcharge at year end
@@ -1622,8 +1650,16 @@ export function runRetirementSimulation(
         monthlyYourOOPDec = (wifeDeceased || inputs.isSingleFiler) ? monthlyActualOOP : (monthlyActualOOP / 2);
         monthlyWifeOOPDec = (!wifeDeceased && !inputs.isSingleFiler) ? (monthlyActualOOP / 2) : 0;
       } else {
-        monthlyYourOOPDec = (!youDeceased && !isYouWorkingDec) ? (decMonthIdx < yourMedicareMonthIdx ? yourPreMedicareOOP / 12 : yourMedicareOOP / 12) : 0;
-        monthlyWifeOOPDec = (!wifeDeceased && !isWifeWorkingDec) ? (decMonthIdx < wifeMedicareMonthIdx ? wifePreMedicareOOP / 12 : wifeMedicareOOP / 12) : 0;
+        monthlyYourOOPDec = (!youDeceased && !isYouWorkingDec)
+          ? (decMonthIdx < yourMedicareMonthIdx
+              ? ((inputs.you.healthcare?.coveredByWorkingSpousePlan && isWifeWorkingDec) ? 0 : yourPreMedicareOOP / 12)
+              : yourMedicareOOP / 12)
+          : 0;
+        monthlyWifeOOPDec = (!wifeDeceased && !isWifeWorkingDec)
+          ? (decMonthIdx < wifeMedicareMonthIdx
+              ? ((inputs.wife.healthcare?.coveredByWorkingSpousePlan && isYouWorkingDec) ? 0 : wifePreMedicareOOP / 12)
+              : wifeMedicareOOP / 12)
+          : 0;
       }
       annualHealthcareOOP += monthlyYourOOPDec + monthlyWifeOOPDec;
       decLiving = (baseLivingExpensesAnnual * cpiFactor) / 12 + monthlyYourOOPDec + monthlyWifeOOPDec;
@@ -1631,7 +1667,11 @@ export function runRetirementSimulation(
       monthlyYourPremDec = 0;
       if (!youDeceased && !isYouWorkingDec) {
         if (decMonthIdx < yourMedicareMonthIdx) {
-          monthlyYourPremDec = yourPreMedicareAnnual / 12;
+          if (inputs.you.healthcare?.coveredByWorkingSpousePlan && isWifeWorkingDec) {
+            monthlyYourPremDec = 0;
+          } else {
+            monthlyYourPremDec = yourPreMedicareAnnual / 12;
+          }
         } else {
           monthlyYourPremDec = yourMedicarePremiums / 12;
         }
@@ -1639,7 +1679,11 @@ export function runRetirementSimulation(
       monthlyWifePremDec = 0;
       if (!wifeDeceased && !isWifeWorkingDec) {
         if (decMonthIdx < wifeMedicareMonthIdx) {
-          monthlyWifePremDec = wifePreMedicareAnnual / 12;
+          if (inputs.wife.healthcare?.coveredByWorkingSpousePlan && isYouWorkingDec) {
+            monthlyWifePremDec = 0;
+          } else {
+            monthlyWifePremDec = wifePreMedicareAnnual / 12;
+          }
         } else {
           monthlyWifePremDec = wifeMedicarePremiums / 12;
         }
