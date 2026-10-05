@@ -125,9 +125,9 @@ export const DocumentationDialog: React.FC<DocumentationDialogProps> = ({
           <div className="p-4 bg-slate-900/40 border border-slate-800/80 rounded-2xl space-y-3">
             <h4 className="text-xs font-bold text-slate-200 uppercase tracking-wider flex items-center gap-2">
               <Layers className="w-3.5 h-3.5 text-indigo-400" />
-              Quick Navigation to the 4 Core Workspaces
+              Quick Navigation to Core Workspaces
             </h4>
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2.5">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2.5">
               <button
                 type="button"
                 onClick={() => {
@@ -139,11 +139,11 @@ export const DocumentationDialog: React.FC<DocumentationDialogProps> = ({
                 <div className="flex items-center justify-between">
                   <span className="text-xs font-bold text-slate-200 group-hover:text-emerald-400 flex items-center gap-1.5">
                     <TrendingUp className="w-3.5 h-3.5 text-emerald-400" />
-                    Workspace 1
+                    Overview
                   </span>
                   <ExternalLink className="w-3 h-3 text-slate-500 group-hover:text-emerald-400" />
                 </div>
-                <div className="text-[10px] text-slate-400 mt-1">Overview & Cash Flow</div>
+                <div className="text-[10px] text-slate-400 mt-1">Cash Flow & Estate Trajectory</div>
               </button>
 
               <button
@@ -216,6 +216,24 @@ export const DocumentationDialog: React.FC<DocumentationDialogProps> = ({
                   <ExternalLink className="w-3 h-3 text-slate-500 group-hover:text-emerald-400" />
                 </div>
                 <div className="text-[10px] text-slate-400 mt-1">Plan Comparison Sandbox</div>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  onNavigateTab?.(5);
+                  onClose();
+                }}
+                className="p-3 bg-slate-950/70 hover:bg-emerald-950/30 border border-slate-800 hover:border-emerald-500/40 rounded-xl text-left transition-all group cursor-pointer"
+              >
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-bold text-slate-200 group-hover:text-emerald-400 flex items-center gap-1.5">
+                    <ClipboardCheck className="w-3.5 h-3.5 text-emerald-400" />
+                    Actuals & Guardrails
+                  </span>
+                  <ExternalLink className="w-3 h-3 text-slate-500 group-hover:text-emerald-400" />
+                </div>
+                <div className="text-[10px] text-slate-400 mt-1">Reconciliation & Guardrails</div>
               </button>
             </div>
           </div>
@@ -382,7 +400,7 @@ export const DocumentationDialog: React.FC<DocumentationDialogProps> = ({
             <button
               type="button"
               onClick={() => {
-                onNavigateTab?.(1);
+                onNavigateTab?.(2);
                 onClose();
               }}
               className="px-3.5 py-1.5 bg-blue-600 hover:bg-blue-500 text-white font-bold rounded-xl text-xs flex items-center gap-1.5 transition-all cursor-pointer"
@@ -495,7 +513,7 @@ export const DocumentationDialog: React.FC<DocumentationDialogProps> = ({
             <button
               type="button"
               onClick={() => {
-                onNavigateTab?.(2);
+                onNavigateTab?.(3);
                 onClose();
               }}
               className="px-3.5 py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white font-bold rounded-xl text-xs flex items-center gap-1.5 transition-all cursor-pointer"
@@ -1056,7 +1074,7 @@ export const DocumentationDialog: React.FC<DocumentationDialogProps> = ({
             <button
               type="button"
               onClick={() => {
-                onNavigateTab?.(2);
+                onNavigateTab?.(3);
                 onClose();
               }}
               className="px-3.5 py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white font-bold rounded-xl text-xs flex items-center gap-1.5 transition-all cursor-pointer"
