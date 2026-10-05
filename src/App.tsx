@@ -315,7 +315,16 @@ function App() {
   const [showAboutDialog, setShowAboutDialog] = useState<boolean>(false);
   const [showCloudModal, setShowCloudModal] = useState<boolean>(false);
   const [isAuthenticated, setIsAuthenticated] = useState<boolean>(() => AuthService.isAuthenticated());
-  const [isDemoMode, setIsDemoMode] = useState<boolean>(false);
+  const [isDemoMode, setIsDemoMode] = useState<boolean>(() => {
+    if (typeof window === 'undefined') return false;
+    try {
+      const params = new URLSearchParams(window.location.search);
+      const demoParam = params.get('demo');
+      return demoParam === 'true' || demoParam === '1';
+    } catch {
+      return false;
+    }
+  });
   const [currentUserEmail, setCurrentUserEmail] = useState<string>(() => AuthService.getSession()?.email || '');
   const [isPlanSyncing, setIsPlanSyncing] = useState<boolean>(false);
   const [documentationSectionId, setDocumentationSectionId] = useState<string>('overview');
@@ -324,12 +333,62 @@ function App() {
     setDemoInputs(JSON.parse(JSON.stringify(SAMPLE_DEMO_PLAN)));
     setIsDemoMode(true);
     PlanSyncService.setDemoMode(true);
+    if (typeof window !== 'undefined') {
+      try {
+        const url = new URL(window.location.href);
+        url.searchParams.set('demo', 'true');
+        window.history.replaceState(null, '', url.pathname + url.search + url.hash);
+      } catch {
+        // Ignore
+      }
+    }
   };
 
   const handleExitDemo = () => {
     setIsDemoMode(false);
     PlanSyncService.setDemoMode(false);
+    if (typeof window !== 'undefined') {
+      try {
+        const url = new URL(window.location.href);
+        if (url.searchParams.has('demo')) {
+          url.searchParams.delete('demo');
+          window.history.replaceState(null, '', url.pathname + (url.search ? url.search : '') + url.hash);
+        }
+      } catch {
+        // Ignore
+      }
+    }
   };
+
+  // Synchronize PlanSyncService demo mode and listen to popstate URL changes
+  useEffect(() => {
+    if (isDemoMode) {
+      PlanSyncService.setDemoMode(true);
+    }
+
+    const handlePopState = () => {
+      try {
+        const params = new URLSearchParams(window.location.search);
+        const demo = params.get('demo');
+        const shouldBeDemo = demo === 'true' || demo === '1';
+        setIsDemoMode((prev) => {
+          if (prev !== shouldBeDemo) {
+            PlanSyncService.setDemoMode(shouldBeDemo);
+            if (shouldBeDemo) {
+              setDemoInputs(JSON.parse(JSON.stringify(SAMPLE_DEMO_PLAN)));
+            }
+            return shouldBeDemo;
+          }
+          return prev;
+        });
+      } catch {
+        // Ignore
+      }
+    };
+
+    window.addEventListener('popstate', handlePopState);
+    return () => window.removeEventListener('popstate', handlePopState);
+  }, [isDemoMode]);
 
   // Active inputs: isolated in-memory sample plan for Demo Sandbox, or real plan otherwise
   const activeInputs = isDemoMode ? demoInputs : inputs;

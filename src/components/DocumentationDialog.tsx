@@ -1031,11 +1031,11 @@ export const DocumentationDialog: React.FC<DocumentationDialogProps> = ({
                   Retirement Planner 2.0 uses a zero-centered historical shock decomposition:
                 </p>
                 <div className="p-2 bg-slate-900 border border-slate-800 rounded font-mono text-[10px] text-slate-200">
-                  Shock_Year = Historical_CPI_Year - Historical_Mean_CPI (4.0%)<br />
+                  Shock_Year = Historical_CPI_Year - Historical_Mean_CPI (~4.0%)<br />
                   Simulated_CPI_Year = Target_CMA_CPI (e.g. 2.4%) + Shock_Year
                 </div>
                 <p className="text-[10px] text-slate-400 leading-relaxed">
-                  This mathematical formulation preserves historical crisis fat-tails, sequence spikes, and high-inflation clusters (such as 1970s stagflation or 2022 supply shocks) while ensuring the median multi-decade inflation rate converges to your selected CMA secular benchmark.
+                  This mathematical formulation preserves historical crisis fat-tails, sequence spikes, and continuous multi-year stagflation clusters (via joint-vector block bootstrapping) while ensuring the long-term expected average (arithmetic mean) converges to your selected CMA secular benchmark. Because historical inflation is right-skewed, the median single-year inflation sits slightly below the mean (~1.7%–2.0%), and additive shocks are bounded by a -2.0% deflation floor.
                 </p>
               </div>
 

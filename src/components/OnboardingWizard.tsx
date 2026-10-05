@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { AppStateInputs, DEFAULT_DETAILED_EXPENSES_STATE, DEFAULT_CHARITY_SETTINGS } from '../types';
+import { SAMPLE_DEMO_PLAN } from '../shared/utils/sampleDemoPlan';
 import {
   User,
   Coins,
@@ -287,6 +288,15 @@ export const OnboardingWizard: React.FC<OnboardingWizardProps> = ({ onComplete, 
             </div>
           </div>
           <div className="z-10 flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => onComplete(JSON.parse(JSON.stringify(SAMPLE_DEMO_PLAN)))}
+              className="cursor-pointer px-3.5 py-2 bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/40 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 shadow-sm"
+              title="Quickly fill in a realistic sample retirement plan for instant testing"
+            >
+              <Sparkles className="w-3.5 h-3.5 text-amber-400" />
+              <span>Load Sample Plan</span>
+            </button>
             {onOpenCloudModal && (
               <button
                 type="button"

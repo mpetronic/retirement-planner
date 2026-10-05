@@ -26,7 +26,9 @@ import {
   FileText,
   Percent,
   Building,
+  Sparkles,
 } from 'lucide-react';
+import { SAMPLE_DEMO_PLAN } from '../shared/utils/sampleDemoPlan';
 import { NumericInput } from './NumericInput';
 import { RangeSlider } from './RangeSlider';
 import { DetailedExpensesDialog } from './DetailedExpensesDialog';
@@ -1465,13 +1467,24 @@ export const ParametersWorkspace: React.FC<ParametersWorkspaceProps> = ({
             </p>
 
             {!showResetConfirm ? (
-              <button
-                type="button"
-                onClick={() => setShowResetConfirm(true)}
-                className="px-5 py-2.5 bg-rose-500/20 hover:bg-rose-500/30 text-rose-300 border border-rose-500/40 rounded-xl text-xs font-bold transition-all cursor-pointer"
-              >
-                Reset Plan Configuration
-              </button>
+              <div className="flex flex-wrap items-center gap-3">
+                <button
+                  type="button"
+                  onClick={() => onChange(JSON.parse(JSON.stringify(SAMPLE_DEMO_PLAN)))}
+                  className="px-5 py-2.5 bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/40 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center gap-2"
+                  title="Overwrite current inputs with realistic sample demonstration plan for testing"
+                >
+                  <Sparkles className="w-4 h-4 text-amber-400" />
+                  <span>Load Sample Demo Plan</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setShowResetConfirm(true)}
+                  className="px-5 py-2.5 bg-rose-500/20 hover:bg-rose-500/30 text-rose-300 border border-rose-500/40 rounded-xl text-xs font-bold transition-all cursor-pointer"
+                >
+                  Reset Plan Configuration
+                </button>
+              </div>
             ) : (
               <div className="p-4 bg-rose-950/20 border border-rose-900/40 rounded-xl space-y-3 max-w-md">
                 <span className="text-xs text-slate-200 font-semibold block">

@@ -19,8 +19,10 @@ import {
   Upload,
   FileText,
   FileSpreadsheet,
-  X
+  X,
+  Sparkles,
 } from 'lucide-react';
+import { SAMPLE_DEMO_PLAN } from '../shared/utils/sampleDemoPlan';
 import { DetailedExpensesDialog } from './DetailedExpensesDialog';
 import { HealthcareConfigDialog } from './HealthcareConfigDialog';
 import { CharityControlPanel } from './CharityControlPanel';
@@ -1302,14 +1304,25 @@ export const InputControlSidebar: React.FC<InputControlSidebarProps> = ({
             <h2 className="text-xs uppercase font-bold tracking-wider">Danger Zone</h2>
           </div>
           {!showResetConfirm ? (
-            <button
-              type="button"
-              onClick={() => setShowResetConfirm(true)}
-              className="w-full flex items-center justify-center gap-2 px-4 py-2.5 bg-red-950/20 hover:bg-red-950/40 border border-red-900/30 hover:border-red-900/50 text-red-400 rounded-xl text-xs font-bold transition-all hover:scale-102 cursor-pointer"
-            >
-              <RefreshCw className="w-4 h-4" />
-              <span>Reset Plan & Configuration</span>
-            </button>
+            <div className="space-y-2">
+              <button
+                type="button"
+                onClick={() => onChange(JSON.parse(JSON.stringify(SAMPLE_DEMO_PLAN)))}
+                className="w-full flex items-center justify-center gap-2 px-4 py-2.5 bg-amber-500/10 hover:bg-amber-500/20 border border-amber-500/30 hover:border-amber-500/50 text-amber-300 rounded-xl text-xs font-bold transition-all hover:scale-102 cursor-pointer"
+                title="Load realistic sample demonstration plan for quick testing"
+              >
+                <Sparkles className="w-4 h-4 text-amber-400" />
+                <span>Load Sample Demo Plan</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setShowResetConfirm(true)}
+                className="w-full flex items-center justify-center gap-2 px-4 py-2 bg-red-950/20 hover:bg-red-950/40 border border-red-900/30 hover:border-red-900/50 text-red-400 rounded-xl text-xs font-semibold transition-all cursor-pointer"
+              >
+                <RefreshCw className="w-4 h-4" />
+                <span>Reset Plan & Configuration</span>
+              </button>
+            </div>
           ) : (
             <div className="space-y-2 p-3 bg-red-950/10 border border-red-900/20 rounded-xl">
               <span className="text-[11px] text-slate-300 block text-center leading-normal">

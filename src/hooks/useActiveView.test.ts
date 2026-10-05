@@ -141,5 +141,11 @@ describe('useActiveView navigation utilities', () => {
       syncViewToUrl('bucket-management', false);
       expect(currentHref).toBe('http://localhost:5173/planner?view=bucket-management');
     });
+
+    it('preserves existing query parameters such as demo=true when syncing view', () => {
+      currentHref = 'http://localhost:5173/planner?demo=true&view=overview';
+      syncViewToUrl('lookback-ledger', false);
+      expect(currentHref).toBe('http://localhost:5173/planner?demo=true&view=lookback-ledger');
+    });
   });
 });

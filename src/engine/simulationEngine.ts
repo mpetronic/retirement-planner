@@ -418,9 +418,7 @@ export function runRetirementSimulation(
       } else if (activeSeq && activeSeq.inflationRates) {
         const prevYearElapsed = yearsElapsed - 1;
         if (activeSeq.inflationRates[prevYearElapsed] !== undefined) {
-          const historicalRate = activeSeq.inflationRates[prevYearElapsed];
-          const historicalMean = 0.039942857142857155;
-          annualInflation = Math.max(-0.02, historicalRate + (inputs.growthAssumptions.cpiInflationRate - historicalMean));
+          annualInflation = activeSeq.inflationRates[prevYearElapsed];
         }
       }
       cpiFactor *= (1 + annualInflation);
