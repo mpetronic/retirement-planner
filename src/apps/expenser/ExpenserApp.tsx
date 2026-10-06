@@ -76,6 +76,31 @@ const COLOR_PRESETS = [
   '#6b7280', // gray
 ];
 
+/**
+ * Detects whether the current client is running on an actual mobile device
+ * (smartphone/tablet) or running as an installed standalone PWA.
+ * The Android Phone Simulator frame is intended exclusively for desktop browsers.
+ */
+const checkIsMobileOrInstalledPwa = (): boolean => {
+  if (typeof window === 'undefined') return false;
+
+  // 1. Installed Standalone PWA detection (Web App manifest display mode)
+  const isStandalone =
+    window.matchMedia?.('(display-mode: standalone)').matches ||
+    window.matchMedia?.('(display-mode: fullscreen)').matches ||
+    window.matchMedia?.('(display-mode: minimal-ui)').matches ||
+    (window.navigator as unknown as { standalone?: boolean }).standalone === true ||
+    document.referrer.includes('android-app://');
+
+  // 2. Physical Mobile / Phone detection (Android, iPhone, etc.)
+  const isMobileUserAgent =
+    /Android|iPhone|iPod|webOS|BlackBerry|IEMobile|Opera Mini|Mobile/i.test(navigator.userAgent);
+  const isTouchPhoneScreen =
+    Boolean(window.matchMedia?.('(pointer: coarse) and (max-width: 768px)').matches);
+
+  return isStandalone || isMobileUserAgent || isTouchPhoneScreen;
+};
+
 export const ExpenserApp: React.FC = () => {
   const adapter = useMemo(() => getStorageAdapter(), []);
   const [payerName, setPayerName] = useState<string>(() => resolveLoggedInPayerName());
@@ -126,6 +151,17 @@ export const ExpenserApp: React.FC = () => {
   const [isSavingEdit, setIsSavingEdit] = useState<boolean>(false);
   const [editError, setEditError] = useState<string | null>(null);
 
+  // Mobile / PWA vs Desktop Browser Detection
+  const [isMobileOrPwa, setIsMobileOrPwa] = useState<boolean>(() => checkIsMobileOrInstalledPwa());
+
+  useEffect(() => {
+    const handleDeviceCheck = () => {
+      setIsMobileOrPwa(checkIsMobileOrInstalledPwa());
+    };
+    window.addEventListener('resize', handleDeviceCheck);
+    return () => window.removeEventListener('resize', handleDeviceCheck);
+  }, []);
+
   // Android Phone Simulation Mode (useful for desktop / Debian browser simulation)
   const [isSimulatePhone, setIsSimulatePhone] = useState<boolean>(() => {
     if (typeof window === 'undefined') return false;
@@ -153,6 +189,33 @@ export const ExpenserApp: React.FC = () => {
       return next;
     });
   }, []);
+
+  // Recent Expenses sort order: 'occurred' (expense date, default) or 'entered' (date logged)
+  const [recentSortBy, setRecentSortBy] = useState<'occurred' | 'entered'>(() => {
+    if (typeof window === 'undefined') return 'occurred';
+    try {
+      const saved = window.localStorage.getItem('expenser_recent_sort');
+      if (saved === 'occurred' || saved === 'entered') return saved;
+      return 'occurred';
+    } catch {
+      return 'occurred';
+    }
+  });
+
+  const handleToggleSort = useCallback(async (newSort: 'occurred' | 'entered') => {
+    setRecentSortBy(newSort);
+    try {
+      window.localStorage.setItem('expenser_recent_sort', newSort);
+    } catch {
+      // ignore
+    }
+    try {
+      const recents = await adapter.getRecentExpenses(50, newSort);
+      setRecentExpenses(recents);
+    } catch (err) {
+      console.error('Failed to load sorted recent expenses:', err);
+    }
+  }, [adapter]);
 
   const allowedPlannerCategories = useMemo(() => getPlannerCategories(), []);
 
@@ -329,7 +392,7 @@ export const ExpenserApp: React.FC = () => {
         setSelectedCategoryId(merged[0].id);
       }
 
-      const recents = await adapter.getRecentExpenses(30);
+      const recents = await adapter.getRecentExpenses(50, recentSortBy);
       setRecentExpenses(recents);
 
       const pending = await adapter.getPendingSyncExpenses();
@@ -337,7 +400,7 @@ export const ExpenserApp: React.FC = () => {
     } catch (err) {
       console.error('Failed to load storage data:', err);
     }
-  }, [adapter, selectedCategoryId]);
+  }, [adapter, selectedCategoryId, recentSortBy]);
 
   useEffect(() => {
     loadData();
@@ -695,20 +758,22 @@ export const ExpenserApp: React.FC = () => {
             )}
           </div>
 
-          {/* Android Phone Simulation Toggle Button */}
-          <button
-            type="button"
-            onClick={toggleSimulatePhone}
-            className={`p-2 rounded-xl border transition-colors flex items-center justify-center cursor-pointer ${
-              isSimulatePhone
-                ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/50 shadow-sm shadow-emerald-950'
-                : 'bg-slate-800/80 hover:bg-slate-700 text-slate-300 hover:text-white border-slate-700/60'
-            }`}
-            title={isSimulatePhone ? 'Exit Android Phone Simulation (412 × 915)' : 'Simulate Android Phone Layout (412 × 915)'}
-            aria-label="Toggle Android phone layout simulation"
-          >
-            <Smartphone className="w-4 h-4" />
-          </button>
+          {/* Android Phone Simulation Toggle Button (Visible exclusively in desktop browsers) */}
+          {!isMobileOrPwa && (
+            <button
+              type="button"
+              onClick={toggleSimulatePhone}
+              className={`p-2 rounded-xl border transition-colors flex items-center justify-center cursor-pointer ${
+                isSimulatePhone
+                  ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/50 shadow-sm shadow-emerald-950'
+                  : 'bg-slate-800/80 hover:bg-slate-700 text-slate-300 hover:text-white border-slate-700/60'
+              }`}
+              title={isSimulatePhone ? 'Exit Android Phone Simulation (412 × 915)' : 'Simulate Android Phone Layout (412 × 915)'}
+              aria-label="Toggle Android phone layout simulation"
+            >
+              <Smartphone className="w-4 h-4" />
+            </button>
+          )}
 
           {/* Hamburger Menu Toggle Button */}
           <button
@@ -1229,6 +1294,35 @@ export const ExpenserApp: React.FC = () => {
               )}
             </div>
 
+            {/* Sort Order Selector */}
+            <div className="px-4 py-2 bg-slate-950/70 border-b border-slate-800/80 flex items-center justify-between text-xs shrink-0">
+              <span className="text-[11px] font-medium text-slate-400">Order by:</span>
+              <div className="flex items-center space-x-1 bg-slate-900 border border-slate-800 p-0.5 rounded-lg">
+                <button
+                  type="button"
+                  onClick={() => handleToggleSort('occurred')}
+                  className={`px-2.5 py-1 rounded-md text-[11px] font-medium transition-colors cursor-pointer ${
+                    recentSortBy === 'occurred'
+                      ? 'bg-emerald-500/20 text-emerald-300 font-semibold border border-emerald-500/30 shadow-sm'
+                      : 'text-slate-400 hover:text-slate-200 border border-transparent'
+                  }`}
+                >
+                  Expense Date (Occurred)
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleToggleSort('entered')}
+                  className={`px-2.5 py-1 rounded-md text-[11px] font-medium transition-colors cursor-pointer ${
+                    recentSortBy === 'entered'
+                      ? 'bg-emerald-500/20 text-emerald-300 font-semibold border border-emerald-500/30 shadow-sm'
+                      : 'text-slate-400 hover:text-slate-200 border border-transparent'
+                  }`}
+                >
+                  Date Logged (Entered)
+                </button>
+              </div>
+            </div>
+
             <div className="p-4 overflow-y-auto space-y-2 flex-1 divide-y divide-slate-800/60 custom-scrollbar">
               {recentExpenses.length === 0 ? (
                 <div className="text-center py-10 text-slate-500 text-sm">
@@ -1272,13 +1366,26 @@ export const ExpenserApp: React.FC = () => {
                               {exp.categoryName}
                             </span>
                           </div>
-                          <div className="text-[11px] text-slate-400 mt-0.5 flex items-center space-x-2">
-                            <span>{exp.date}</span>
-                            <span>•</span>
+                          <div className="text-[11px] text-slate-400 mt-0.5 flex items-center space-x-1.5 flex-wrap">
+                            <span className={recentSortBy === 'occurred' ? 'text-emerald-300 font-semibold' : 'text-slate-300'}>
+                              {exp.date}
+                            </span>
+                            {exp.createdAt && (
+                              <>
+                                <span className="text-slate-600">•</span>
+                                <span
+                                  className={`text-[10px] ${recentSortBy === 'entered' ? 'text-emerald-300 font-semibold' : 'text-slate-500'}`}
+                                  title={`Logged at ${exp.createdAt}`}
+                                >
+                                  Logged {exp.createdAt.slice(0, 10)}
+                                </span>
+                              </>
+                            )}
+                            <span className="text-slate-600">•</span>
                             <span>{exp.enteredBy}</span>
                             {exp.notes && (
                               <>
-                                <span>•</span>
+                                <span className="text-slate-600">•</span>
                                 <span className="text-amber-300 truncate max-w-[130px]">{exp.notes}</span>
                               </>
                             )}
@@ -1802,7 +1909,7 @@ export const ExpenserApp: React.FC = () => {
     </div>
   );
 
-  if (isSimulatePhone) {
+  if (isSimulatePhone && !isMobileOrPwa) {
     return (
       <div className="min-h-screen min-h-[100dvh] bg-slate-950 flex flex-col items-center justify-center p-2 sm:p-4 selection:bg-emerald-500/30 font-sans antialiased overflow-y-auto">
         {/* Simulator Control Banner */}

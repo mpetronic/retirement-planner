@@ -70,7 +70,7 @@ export interface StorageAdapter {
   deleteCategory?(id: string): Promise<void>;
 
   getExpenses(year: number, month?: number): Promise<ActualExpense[]>;
-  getRecentExpenses(limit?: number): Promise<ActualExpense[]>;
+  getRecentExpenses(limit?: number, sortBy?: 'occurred' | 'entered'): Promise<ActualExpense[]>;
   getExpenseById?(id: string): Promise<ActualExpense | null>;
   saveExpense(expense: Omit<ActualExpense, 'expenseId' | 'createdAt' | 'updatedAt' | 'syncStatus'> & {
     expenseId?: string;

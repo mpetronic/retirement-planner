@@ -192,8 +192,8 @@ export class AwsCloudStorageAdapter implements StorageAdapter {
     }
   }
 
-  async getRecentExpenses(limit: number = 20): Promise<ActualExpense[]> {
-    return this.localAdapter.getRecentExpenses(limit);
+  async getRecentExpenses(limit: number = 20, sortBy: 'occurred' | 'entered' = 'occurred'): Promise<ActualExpense[]> {
+    return this.localAdapter.getRecentExpenses(limit, sortBy);
   }
 
   async saveExpense(expense: Omit<ActualExpense, 'expenseId' | 'createdAt' | 'updatedAt' | 'syncStatus'>): Promise<ActualExpense> {

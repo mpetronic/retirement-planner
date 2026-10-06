@@ -150,10 +150,19 @@ export class IndexedDbStorageAdapter implements StorageAdapter {
     });
   }
 
-  async getRecentExpenses(limit: number = 20): Promise<ActualExpense[]> {
+  async getRecentExpenses(limit: number = 20, sortBy: 'occurred' | 'entered' = 'occurred'): Promise<ActualExpense[]> {
     const all = await this.getAllExpenses();
     return all
-      .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
+      .sort((a, b) => {
+        if (sortBy === 'entered') {
+          const createdDiff = new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
+          if (createdDiff !== 0) return createdDiff;
+          return b.date.localeCompare(a.date);
+        }
+        const dateDiff = b.date.localeCompare(a.date);
+        if (dateDiff !== 0) return dateDiff;
+        return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
+      })
       .slice(0, limit);
   }
 
