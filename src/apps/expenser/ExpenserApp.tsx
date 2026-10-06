@@ -42,9 +42,10 @@ import { AboutDialog } from '../../components/AboutDialog';
 import { getVersionInfo } from '../../utils/version';
 import {
   getPlannerExpenseCatalog,
+  getPlannerCategories,
   mergeWithCustomCategories,
   savePlannerExpenseLineItem,
-  syncCustomCategoriesToPlanner,
+  syncPlannerCatalogToCloudStorage,
   PlannerExpenseLineItem,
 } from '../../shared/utils/plannerCategories';
 
@@ -95,7 +96,6 @@ export const ExpenserApp: React.FC = () => {
   const [showRecentModal, setShowRecentModal] = useState<boolean>(false);
   const [showCategoryModal, setShowCategoryModal] = useState<boolean>(false);
   const [showDateModal, setShowDateModal] = useState<boolean>(false);
-  const [showNotesDrawer, setShowNotesDrawer] = useState<boolean>(false);
   const [showCloudModal, setShowCloudModal] = useState<boolean>(false);
   const [showAboutModal, setShowAboutModal] = useState<boolean>(false);
   const [isMenuOpen, setIsMenuOpen] = useState<boolean>(false);
@@ -125,8 +125,13 @@ export const ExpenserApp: React.FC = () => {
   const [isSavingEdit, setIsSavingEdit] = useState<boolean>(false);
   const [editError, setEditError] = useState<string | null>(null);
 
+  const allowedPlannerCategories = useMemo(() => getPlannerCategories(), []);
+
   // New Category Modal form
-  const [newCatGroup, setNewCatGroup] = useState<string>('Living');
+  const [newCatGroup, setNewCatGroup] = useState<string>(() => {
+    const cats = getPlannerCategories();
+    return cats[0] || 'Living';
+  });
   const [newCatName, setNewCatName] = useState<string>('');
   const [newCatBudget, setNewCatBudget] = useState<string>('0');
   const [newCatColor, setNewCatColor] = useState<string>(COLOR_PRESETS[0]);
@@ -135,8 +140,16 @@ export const ExpenserApp: React.FC = () => {
   // Unified Catalog Items (Planner detailed line items + custom categories)
   const allCatalogItems: PlannerExpenseLineItem[] = useMemo(() => {
     const plannerItems = getPlannerExpenseCatalog();
-    return mergeWithCustomCategories(plannerItems, categories);
-  }, [categories]);
+    const merged = mergeWithCustomCategories(plannerItems, categories, allowedPlannerCategories);
+
+    return merged.filter(item => {
+      const groupLower = item.groupCategory.trim().toLowerCase();
+      if (allowedPlannerCategories.length > 0 && !allowedPlannerCategories.some(c => c.trim().toLowerCase() === groupLower)) {
+        return false;
+      }
+      return true;
+    });
+  }, [categories, allowedPlannerCategories]);
 
   // Filtered Catalog Items by Search Query
   const filteredCatalogItems: PlannerExpenseLineItem[] = useMemo(() => {
@@ -232,21 +245,57 @@ export const ExpenserApp: React.FC = () => {
 
     return sortedIds
       .map(id => itemsMap.get(id))
-      .filter((item): item is PlannerExpenseLineItem => Boolean(item))
+      .filter((item): item is PlannerExpenseLineItem => {
+        if (!item) return false;
+        const groupLower = item.groupCategory.trim().toLowerCase();
+        if (allowedPlannerCategories.length > 0 && !allowedPlannerCategories.some(c => c.trim().toLowerCase() === groupLower)) {
+          return false;
+        }
+        return true;
+      })
       .slice(0, 8);
-  }, [recentExpenses, allCatalogItems]);
+  }, [recentExpenses, allCatalogItems, allowedPlannerCategories]);
 
   // Load Categories & Expenses
   const loadData = useCallback(async () => {
     try {
+      // 1. Read Detailed Expenses SSOT from localStorage
+      const raw = typeof window !== 'undefined' ? window.localStorage.getItem('retirement_planner_inputs') : null;
+      let detailedExpenses = null;
+      let activeState: string | undefined;
+      let profileNames: { primaryName: string; spouseName: string; isSingleFiler: boolean } | undefined;
+
+      if (raw) {
+        try {
+          const parsed = JSON.parse(raw);
+          detailedExpenses = parsed.detailedExpenses;
+          const currentYear = new Date().getFullYear();
+          const relocYear = parsed.jurisdiction?.relocationYear;
+          activeState = (relocYear !== null && relocYear !== undefined && currentYear >= Number(relocYear))
+            ? (parsed.jurisdiction?.targetState || parsed.jurisdiction?.currentState || 'MD')
+            : (parsed.jurisdiction?.currentState || 'MD');
+          profileNames = {
+            primaryName: parsed.you?.name || 'Primary',
+            spouseName: parsed.wife?.name || 'Spouse',
+            isSingleFiler: Boolean(parsed.isSingleFiler),
+          };
+        } catch {
+          // ignore
+        }
+      }
+
+      // 2. Actively purge obsolete/stale categories (e.g. Housing - Home Maintenance & Repairs) from storage
+      if (detailedExpenses) {
+        await syncPlannerCatalogToCloudStorage(detailedExpenses, adapter, profileNames, activeState);
+      }
+
+      // 3. Fetch pruned categories
       const cats = await adapter.getCategories();
       setCategories(cats);
 
-      // Ensure any custom line items are synced into Planner SSOT
-      syncCustomCategoriesToPlanner(cats);
-
-      const plannerItems = getPlannerExpenseCatalog();
-      const merged = mergeWithCustomCategories(plannerItems, cats);
+      const plannerItems = getPlannerExpenseCatalog(activeState);
+      const allowedCategories = getPlannerCategories();
+      const merged = mergeWithCustomCategories(plannerItems, cats, allowedCategories);
       if (merged.length > 0 && !selectedCategoryId) {
         setSelectedCategoryId(merged[0].id);
       }
@@ -578,9 +627,9 @@ export const ExpenserApp: React.FC = () => {
   const selectedCategoryObj = allCatalogItems.find(c => c.id === selectedCategoryId);
 
   return (
-    <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col justify-between select-none font-sans antialiased max-w-md mx-auto shadow-2xl relative border-x border-slate-800/60 pb-safe">
+    <div className="h-screen h-[100dvh] max-h-screen max-h-[100dvh] overflow-hidden bg-slate-950 text-slate-100 flex flex-col justify-between select-none font-sans antialiased max-w-md mx-auto shadow-2xl relative border-x border-slate-800/60 pb-safe">
       {/* Top App Header */}
-      <header className="px-4 py-3 bg-slate-900/90 backdrop-blur border-b border-slate-800/80 sticky top-0 z-30 flex items-center justify-between">
+      <header className="px-4 py-2.5 bg-slate-900/90 backdrop-blur border-b border-slate-800/80 shrink-0 z-30 flex items-center justify-between">
         <div className="flex items-center space-x-2.5">
           <div className="w-8 h-8 rounded-xl bg-gradient-to-tr from-emerald-600 to-teal-400 flex items-center justify-center shadow-lg shadow-emerald-900/30">
             <Sparkles className="w-4 h-4 text-white" />
@@ -783,42 +832,56 @@ export const ExpenserApp: React.FC = () => {
       )}
 
       {/* Main Content Area */}
-      <main className="flex-1 flex flex-col justify-between p-4 space-y-3">
-        {/* Amount Display with Today's Stat */}
-        <div className="bg-gradient-to-b from-slate-900/90 to-slate-900/50 rounded-2xl p-4 border border-slate-800/80 shadow-inner flex flex-col items-center justify-center relative overflow-hidden">
-          {/* Today's Running Spend Indicator */}
+      <main className="flex-1 flex flex-col justify-between p-3 sm:p-4 gap-2 overflow-hidden min-h-0">
+        {/* Amount Display with Today's Stat & Interactive Date Link */}
+        <div className="bg-gradient-to-b from-slate-900/90 to-slate-900/50 rounded-2xl p-2.5 sm:p-3 border border-slate-800/80 shadow-inner flex flex-col items-center justify-center relative overflow-hidden shrink-0">
+          {/* Header Row: Clickable Date Selector (Left) & Today's Total (Right) */}
           <div className="w-full flex items-center justify-between text-xs text-slate-400 mb-1">
-            <span className="flex items-center gap-1">
-              <Calendar className="w-3.5 h-3.5 text-slate-500" />
-              {expenseDate === todayStr ? 'Today' : expenseDate}
-            </span>
-            <span className="font-medium text-slate-300">
+            <button
+              type="button"
+              onClick={() => {
+                triggerHaptic(8);
+                setShowDateModal(true);
+              }}
+              className={`flex items-center gap-1.5 px-2 py-0.5 -ml-1 rounded-lg text-xs font-medium transition-all cursor-pointer group active:scale-95 border ${
+                expenseDate === todayStr
+                  ? 'text-slate-300 hover:text-emerald-300 bg-slate-800/40 hover:bg-slate-800/80 border-slate-700/40 hover:border-emerald-500/40'
+                  : 'text-amber-300 bg-amber-500/15 border-amber-500/40 shadow-sm'
+              }`}
+              title="Click to change expense date"
+            >
+              <Calendar className={`w-3.5 h-3.5 ${expenseDate === todayStr ? 'text-emerald-400' : 'text-amber-400'} group-hover:scale-110 transition-transform`} />
+              <span className="underline decoration-current underline-offset-2 font-medium">
+                {expenseDate === todayStr ? 'Today' : expenseDate}
+              </span>
+            </button>
+            <span className="font-medium text-slate-300 text-[11px] sm:text-xs">
               Today's Total: <strong className="text-emerald-400">${todayTotal.toFixed(2)}</strong>
             </span>
           </div>
 
           {/* Big Amount Number */}
-          <div className="text-4xl sm:text-5xl font-extrabold tracking-tight text-white my-2 flex items-baseline justify-center">
-            <span className="text-2xl sm:text-3xl text-slate-500 mr-1 font-semibold">$</span>
+          <div className="text-3xl sm:text-4xl font-extrabold tracking-tight text-white my-1 sm:my-1.5 flex items-baseline justify-center">
+            <span className="text-xl sm:text-2xl text-slate-500 mr-1 font-semibold">$</span>
             <span>{amountStr}</span>
           </div>
 
           {/* Active Category & Payer Sub-badge */}
-          <div className="flex items-center space-x-2 text-xs">
+          <div className="flex items-center space-x-1.5 text-xs">
             {selectedCategoryObj && (
               <span
-                className="px-2.5 py-0.5 rounded-full font-medium text-white flex items-center gap-1 shadow-sm"
+                className="px-2.5 py-0.5 rounded-full font-medium text-white flex items-center gap-1 shadow-sm text-[11px] sm:text-xs"
                 style={{ backgroundColor: selectedCategoryObj.color || '#3b82f6' }}
               >
                 {ICON_MAP[selectedCategoryObj.icon || 'Tag'] || <Tag className="w-3.5 h-3.5" />}
                 {selectedCategoryObj.name}
               </span>
             )}
-            <span className="px-2.5 py-0.5 rounded-full bg-slate-800 text-slate-300 border border-slate-700 font-medium">
+            <span className="px-2.5 py-0.5 rounded-full bg-slate-800 text-slate-300 border border-slate-700 font-medium text-[11px] sm:text-xs">
               👤 {payerName}
             </span>
             {notes && (
-              <span className="px-2.5 py-0.5 rounded-full bg-slate-800/80 text-amber-300 border border-amber-500/30 flex items-center gap-1">
+              <span className="px-2.5 py-0.5 rounded-full bg-slate-800/80 text-amber-300 border border-amber-500/30 flex items-center gap-1 text-[11px] sm:text-xs">
                 <FileText className="w-3 h-3" /> Note
               </span>
             )}
@@ -834,8 +897,8 @@ export const ExpenserApp: React.FC = () => {
         </div>
 
         {/* Category Search & Autocomplete Selector */}
-        <div className="relative z-20">
-          <div className="flex items-center justify-between text-xs font-semibold text-slate-400 uppercase tracking-wider mb-1.5 px-1">
+        <div className="relative z-20 shrink-0">
+          <div className="flex items-center justify-between text-[11px] sm:text-xs font-semibold text-slate-400 uppercase tracking-wider mb-1 px-1">
             <span>Budgeted Line Item</span>
             <button
               onClick={() => {
@@ -844,7 +907,7 @@ export const ExpenserApp: React.FC = () => {
                 }
                 setShowCategoryModal(true);
               }}
-              className="text-emerald-400 hover:text-emerald-300 flex items-center gap-0.5 lowercase font-normal"
+              className="text-emerald-400 hover:text-emerald-300 flex items-center gap-0.5 lowercase font-normal cursor-pointer"
             >
               <Plus className="w-3.5 h-3.5" /> new line item
             </button>
@@ -852,7 +915,7 @@ export const ExpenserApp: React.FC = () => {
 
           {/* Search / Select Bar */}
           <div className="relative">
-            <div className="flex items-center bg-slate-900 border border-slate-800 rounded-xl px-3 py-2.5 focus-within:border-emerald-500 focus-within:ring-1 focus-within:ring-emerald-500 transition-all">
+            <div className="flex items-center bg-slate-900 border border-slate-800 rounded-xl px-2.5 py-1.5 sm:py-2 focus-within:border-emerald-500 focus-within:ring-1 focus-within:ring-emerald-500 transition-all">
               <Search className="w-4 h-4 text-slate-500 shrink-0 mr-2" />
               <input
                 type="text"
@@ -868,7 +931,7 @@ export const ExpenserApp: React.FC = () => {
                     ? selectedCategoryObj.displayName
                     : 'Search line items (e.g. Living, Groceries)...'
                 }
-                className="w-full bg-transparent text-xs sm:text-sm text-white placeholder-slate-400 focus:outline-none"
+                className="w-full bg-transparent text-xs text-white placeholder-slate-400 focus:outline-none"
               />
               {categorySearchQuery ? (
                 <button
@@ -877,7 +940,7 @@ export const ExpenserApp: React.FC = () => {
                     setCategorySearchQuery('');
                     setIsCategorySearchOpen(false);
                   }}
-                  className="p-1 text-slate-400 hover:text-white"
+                  className="p-1 text-slate-400 hover:text-white cursor-pointer"
                 >
                   <X className="w-3.5 h-3.5" />
                 </button>
@@ -885,7 +948,7 @@ export const ExpenserApp: React.FC = () => {
                 <button
                   type="button"
                   onClick={() => setIsCategorySearchOpen(prev => !prev)}
-                  className="p-1 text-slate-400 hover:text-white"
+                  className="p-1 text-slate-400 hover:text-white cursor-pointer"
                 >
                   <ChevronDown className="w-3.5 h-3.5" />
                 </button>
@@ -894,7 +957,7 @@ export const ExpenserApp: React.FC = () => {
 
             {/* Autocomplete Dropdown List */}
             {isCategorySearchOpen && (
-              <div className="absolute top-full left-0 right-0 mt-1 bg-slate-900/98 backdrop-blur-xl border border-slate-700/80 rounded-2xl shadow-2xl max-h-56 overflow-y-auto z-50 p-1 divide-y divide-slate-800/60 custom-scrollbar animate-in fade-in zoom-in-95">
+              <div className="absolute top-full left-0 right-0 mt-1 bg-slate-900/98 backdrop-blur-xl border border-slate-700/80 rounded-2xl shadow-2xl max-h-52 overflow-y-auto z-50 p-1 divide-y divide-slate-800/60 custom-scrollbar animate-in fade-in zoom-in-95">
                 {filteredCatalogItems.length === 0 ? (
                   <div className="p-3 text-center space-y-2">
                     <p className="text-xs text-slate-400">
@@ -907,7 +970,7 @@ export const ExpenserApp: React.FC = () => {
                         setShowCategoryModal(true);
                         setIsCategorySearchOpen(false);
                       }}
-                      className="px-3 py-1.5 bg-emerald-600/20 hover:bg-emerald-600/30 text-emerald-300 border border-emerald-500/40 rounded-xl text-xs font-semibold inline-flex items-center gap-1"
+                      className="px-3 py-1.5 bg-emerald-600/20 hover:bg-emerald-600/30 text-emerald-300 border border-emerald-500/40 rounded-xl text-xs font-semibold inline-flex items-center gap-1 cursor-pointer"
                     >
                       <Plus className="w-3 h-3" /> Add as new line item
                     </button>
@@ -927,7 +990,7 @@ export const ExpenserApp: React.FC = () => {
                           setCategorySearchQuery('');
                           setIsCategorySearchOpen(false);
                         }}
-                        className={`w-full p-2 rounded-xl text-left flex items-center justify-between transition-all ${
+                        className={`w-full p-2 rounded-xl text-left flex items-center justify-between transition-all cursor-pointer ${
                           isHighlighted
                             ? 'bg-emerald-500/25 border border-emerald-500/60 text-white ring-1 ring-emerald-500/40 shadow-sm'
                             : isSelected
@@ -955,9 +1018,9 @@ export const ExpenserApp: React.FC = () => {
             )}
           </div>
 
-          {/* Frequently Logged Shortcuts (Dynamic Smart Recents) */}
+          {/* Frequently Logged Shortcuts */}
           {frequentShortcutItems.length > 0 && (
-            <div className="flex space-x-1.5 overflow-x-auto pt-1.5 pb-0.5 scrollbar-none snap-x items-center">
+            <div className="flex space-x-1.5 overflow-x-auto pt-1 pb-0.5 scrollbar-none snap-x items-center">
               <span className="text-[10px] uppercase font-bold text-slate-500 tracking-wider shrink-0 mr-0.5">
                 Frequent:
               </span>
@@ -973,7 +1036,7 @@ export const ExpenserApp: React.FC = () => {
                       setCategorySearchQuery('');
                       setIsCategorySearchOpen(false);
                     }}
-                    className={`flex-shrink-0 snap-start px-2.5 py-1 rounded-lg text-[11px] font-medium flex items-center space-x-1.5 transition-all border ${
+                    className={`flex-shrink-0 snap-start px-2 py-0.5 sm:px-2.5 sm:py-1 rounded-lg text-[11px] font-medium flex items-center space-x-1.5 transition-all border cursor-pointer ${
                       isSelected
                         ? 'bg-emerald-600/30 text-emerald-300 border-emerald-500/60 shadow-sm'
                         : 'bg-slate-900/90 text-slate-400 hover:text-slate-200 border-slate-800 hover:border-slate-700'
@@ -991,57 +1054,32 @@ export const ExpenserApp: React.FC = () => {
           )}
         </div>
 
-        {/* Controls Row (Date & Notes) */}
-        <div className="grid grid-cols-2 gap-2">
-          {/* Date Picker Button */}
-          <button
-            type="button"
-            onClick={() => {
-              triggerHaptic(8);
-              setShowDateModal(true);
-            }}
-            className="bg-slate-900/80 hover:bg-slate-800 border border-slate-800 rounded-xl p-2 flex items-center justify-center space-x-1.5 text-xs font-medium text-slate-300 transition-all cursor-pointer active:scale-95"
-          >
-            <Calendar className="w-3.5 h-3.5 text-emerald-400" />
-            <span>{expenseDate === todayStr ? 'Today' : expenseDate.slice(5)}</span>
-          </button>
-
-          {/* Notes Button */}
-          <button
-            type="button"
-            onClick={() => setShowNotesDrawer(prev => !prev)}
-            className={`bg-slate-900/80 border rounded-xl p-2 flex items-center justify-center space-x-1.5 text-xs font-medium transition-all cursor-pointer active:scale-95 ${
-              notes
-                ? 'border-amber-500/50 text-amber-300 bg-amber-500/10'
-                : 'border-slate-800 text-slate-300 hover:bg-slate-800'
-            }`}
-          >
-            <FileText className="w-3.5 h-3.5" />
-            <span>{notes ? 'Edit Note' : 'Add Note'}</span>
-          </button>
-        </div>
-
-        {/* Collapsible Note Drawer */}
-        {showNotesDrawer && (
-          <div className="bg-slate-900 border border-slate-800 rounded-xl p-2.5 animate-in fade-in slide-in-from-top-2">
-            <div className="flex items-center justify-between mb-1.5 text-xs text-slate-400">
-              <span>Transaction Note / Tag</span>
-              <button onClick={() => setShowNotesDrawer(false)} className="text-slate-500 hover:text-slate-300">
-                <X className="w-3.5 h-3.5" />
-              </button>
-            </div>
+        {/* Note Edit Field (Always Visible & Optional) */}
+        <div className="relative shrink-0">
+          <div className="flex items-center bg-slate-900 border border-slate-800 rounded-xl px-2.5 py-1.5 focus-within:border-emerald-500 focus-within:ring-1 focus-within:ring-emerald-500 transition-all">
+            <FileText className={`w-3.5 h-3.5 shrink-0 mr-2 transition-colors ${notes ? 'text-amber-400' : 'text-slate-500'}`} />
             <input
               type="text"
-              placeholder="e.g. Hawaii anniversary dinner, groceries at Costco"
               value={notes}
               onChange={e => setNotes(e.target.value)}
-              className="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-emerald-500"
+              placeholder="Note (optional, e.g. Costco, dinner tag)..."
+              className="w-full bg-transparent text-xs text-white placeholder-slate-500 focus:outline-none"
             />
+            {notes && (
+              <button
+                type="button"
+                onClick={() => setNotes('')}
+                className="p-0.5 text-slate-500 hover:text-slate-300 ml-1 transition-colors cursor-pointer"
+                title="Clear note"
+              >
+                <X className="w-3.5 h-3.5" />
+              </button>
+            )}
           </div>
-        )}
+        </div>
 
         {/* Touch Numeric Keypad */}
-        <div className="grid grid-cols-3 gap-2 pt-1">
+        <div className="grid grid-cols-3 gap-1.5 sm:gap-2 flex-1 min-h-0 max-h-56 items-stretch">
           {['1', '2', '3', '4', '5', '6', '7', '8', '9', '.', '0', 'BACKSPACE'].map(key => {
             const isBackspace = key === 'BACKSPACE';
             return (
@@ -1051,7 +1089,7 @@ export const ExpenserApp: React.FC = () => {
                 onClick={() => handleKeypadPress(key)}
                 aria-label={isBackspace ? 'Backspace' : key}
                 title={isBackspace ? 'Backspace' : undefined}
-                className={`h-12 sm:h-14 rounded-2xl font-bold text-xl flex items-center justify-center transition-all active:scale-95 shadow-sm ${
+                className={`h-full min-h-[38px] max-h-[52px] rounded-xl sm:rounded-2xl font-bold text-lg sm:text-xl flex items-center justify-center transition-all active:scale-95 shadow-sm cursor-pointer ${
                   isBackspace
                     ? 'bg-slate-900/90 hover:bg-slate-800 text-slate-300 border border-slate-800'
                     : 'bg-slate-900 hover:bg-slate-800/90 text-white border border-slate-800/80 hover:border-slate-700'
@@ -1068,7 +1106,7 @@ export const ExpenserApp: React.FC = () => {
           type="button"
           disabled={parsedAmount <= 0 || isSubmitting}
           onClick={handleSaveExpense}
-          className={`w-full py-3.5 rounded-2xl font-bold text-base flex items-center justify-center space-x-2 transition-all shadow-xl ${
+          className={`w-full py-2.5 sm:py-3.5 rounded-xl sm:rounded-2xl font-bold text-sm sm:text-base flex items-center justify-center space-x-2 transition-all shadow-xl shrink-0 cursor-pointer ${
             parsedAmount > 0
               ? 'bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-400 hover:to-teal-400 text-slate-950 shadow-emerald-950/40 active:scale-[0.98]'
               : 'bg-slate-900 text-slate-500 border border-slate-800 cursor-not-allowed'
@@ -1508,7 +1546,10 @@ export const ExpenserApp: React.FC = () => {
                   Parent Group Category *
                 </label>
                 <div className="grid grid-cols-3 gap-1.5 mb-1.5">
-                  {['Living', 'Housing', 'Transportation', 'Healthcare', 'Leisure', 'Charities'].map(grp => (
+                  {(allowedPlannerCategories.length > 0
+                    ? allowedPlannerCategories
+                    : ['Living', 'Home', 'Transportation', 'Healthcare', 'Leisure', 'Charities']
+                  ).map(grp => (
                     <button
                       key={grp}
                       type="button"

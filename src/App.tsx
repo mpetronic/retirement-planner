@@ -436,20 +436,36 @@ function App() {
     }
   }, [inputs, savedPlans, isAuthenticated, simulateSurvivor, isDemoMode]);
 
-  // Automatically sync planner line items & profile names to cloud DynamoDB when authenticated or when inputs change
+  // Automatically sync planner line items & profile names to cloud DynamoDB / local IndexedDB when authenticated or on localhost
   useEffect(() => {
-    if (!isDemoMode && !isLocalhostEnvironment() && isAuthenticated && activeInputs.detailedExpenses && activeInputs.detailedExpenses.catalog) {
+    if (!isDemoMode && (isLocalhostEnvironment() || isAuthenticated) && activeInputs.detailedExpenses && activeInputs.detailedExpenses.catalog) {
       const adapter = getStorageAdapter();
       const profileNames = {
         primaryName: activeInputs.you?.name || 'Primary',
         spouseName: activeInputs.wife?.name || 'Spouse',
         isSingleFiler: Boolean(activeInputs.isSingleFiler),
       };
-      syncPlannerCatalogToCloudStorage(activeInputs.detailedExpenses, adapter, profileNames).catch((err) => {
+      const currentYear = new Date().getFullYear();
+      const relocYear = activeInputs.jurisdiction?.relocationYear;
+      const activeState = (relocYear !== null && relocYear !== undefined && currentYear >= Number(relocYear))
+        ? (activeInputs.jurisdiction?.targetState || activeInputs.jurisdiction?.currentState || 'MD')
+        : (activeInputs.jurisdiction?.currentState || 'MD');
+
+      syncPlannerCatalogToCloudStorage(activeInputs.detailedExpenses, adapter, profileNames, activeState).catch((err) => {
         console.warn('Failed to background sync catalog to storage:', err);
       });
     }
-  }, [activeInputs.detailedExpenses, activeInputs.you?.name, activeInputs.wife?.name, activeInputs.isSingleFiler, isAuthenticated, isDemoMode]);
+  }, [
+    activeInputs.detailedExpenses,
+    activeInputs.you?.name,
+    activeInputs.wife?.name,
+    activeInputs.isSingleFiler,
+    activeInputs.jurisdiction?.currentState,
+    activeInputs.jurisdiction?.targetState,
+    activeInputs.jurisdiction?.relocationYear,
+    isAuthenticated,
+    isDemoMode,
+  ]);
 
   // Pull and synchronize custom categories from storage (e.g. created in Expenser app) into Detailed Expenses
   useEffect(() => {

@@ -60,7 +60,7 @@ export class IndexedDbStorageAdapter implements StorageAdapter {
       const req = store.getAll();
 
       req.onsuccess = () => {
-        // Only purge legacy hardcoded mock seed IDs so real cloud categories are preserved
+        // Purge legacy hardcoded mock seed IDs and orphaned category records so real cloud categories are preserved
         const legacyMockIds = new Set([
           'cat_living',
           'cat_housing',

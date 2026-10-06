@@ -32,8 +32,6 @@ import {
   normalizeDetailedExpenses
 } from '../types';
 import { BASE_MEDICARE_PART_B, BASE_MEDICARE_PART_D } from '../engine/taxRates2026';
-import { getStorageAdapter } from '../shared/storage';
-import { syncCustomCategoriesToPlanner } from '../shared/utils/plannerCategories';
 
 interface DetailedExpensesDialogProps {
   isOpen: boolean;
@@ -96,13 +94,6 @@ export const DetailedExpensesDialog: React.FC<DetailedExpensesDialogProps> = ({
   // Re-sync when dialog opens or props change
   useEffect(() => {
     if (isOpen) {
-      const adapter = getStorageAdapter();
-      adapter.getCategories().then((cats) => {
-        if (cats && cats.length > 0) {
-          syncCustomCategoriesToPlanner(cats);
-        }
-      }).catch(console.warn);
-
       const norm = normalizeDetailedExpenses(detailedExpenses);
       setCatalog(norm.catalog);
       const sList = norm.states && norm.states.length > 0 ? [...norm.states] : [currentState || 'MD', targetState || 'FL'];
