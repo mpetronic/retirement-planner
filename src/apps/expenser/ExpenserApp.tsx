@@ -31,6 +31,7 @@ import {
   Info,
   Pencil,
   Check,
+  Smartphone,
 } from 'lucide-react';
 import { getStorageAdapter } from '../../shared/storage';
 import { ActualExpense, ExpenseCategory } from '../../shared/types/expenses';
@@ -124,6 +125,34 @@ export const ExpenserApp: React.FC = () => {
   const [editNotes, setEditNotes] = useState<string>('');
   const [isSavingEdit, setIsSavingEdit] = useState<boolean>(false);
   const [editError, setEditError] = useState<string | null>(null);
+
+  // Android Phone Simulation Mode (useful for desktop / Debian browser simulation)
+  const [isSimulatePhone, setIsSimulatePhone] = useState<boolean>(() => {
+    if (typeof window === 'undefined') return false;
+    try {
+      const urlParams = new URLSearchParams(window.location.search);
+      if (urlParams.get('simulate') === 'android' || urlParams.get('phone') === '1') {
+        return true;
+      }
+      return window.localStorage.getItem('expenser_simulate_android') === 'true';
+    } catch {
+      return false;
+    }
+  });
+
+  const toggleSimulatePhone = useCallback(() => {
+    setIsSimulatePhone(prev => {
+      const next = !prev;
+      if (typeof window !== 'undefined') {
+        try {
+          window.localStorage.setItem('expenser_simulate_android', String(next));
+        } catch {
+          // ignore
+        }
+      }
+      return next;
+    });
+  }, []);
 
   const allowedPlannerCategories = useMemo(() => getPlannerCategories(), []);
 
@@ -625,8 +654,8 @@ export const ExpenserApp: React.FC = () => {
 
   const selectedCategoryObj = allCatalogItems.find(c => c.id === selectedCategoryId);
 
-  return (
-    <div className="h-screen h-[100dvh] max-h-screen max-h-[100dvh] overflow-hidden bg-slate-950 text-slate-100 flex flex-col justify-between select-none font-sans antialiased max-w-md mx-auto shadow-2xl relative border-x border-slate-800/60 pb-safe">
+  const appContent = (
+    <div className="h-full w-full max-h-full overflow-hidden bg-slate-950 text-slate-100 flex flex-col justify-between select-none font-sans antialiased relative pb-safe">
       {/* Top App Header */}
       <header className="px-4 py-2.5 bg-slate-900/90 backdrop-blur border-b border-slate-800/80 shrink-0 z-30 flex items-center justify-between">
         <div className="flex items-center space-x-2.5">
@@ -665,6 +694,21 @@ export const ExpenserApp: React.FC = () => {
               </>
             )}
           </div>
+
+          {/* Android Phone Simulation Toggle Button */}
+          <button
+            type="button"
+            onClick={toggleSimulatePhone}
+            className={`p-2 rounded-xl border transition-colors flex items-center justify-center cursor-pointer ${
+              isSimulatePhone
+                ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/50 shadow-sm shadow-emerald-950'
+                : 'bg-slate-800/80 hover:bg-slate-700 text-slate-300 hover:text-white border-slate-700/60'
+            }`}
+            title={isSimulatePhone ? 'Exit Android Phone Simulation (412 × 915)' : 'Simulate Android Phone Layout (412 × 915)'}
+            aria-label="Toggle Android phone layout simulation"
+          >
+            <Smartphone className="w-4 h-4" />
+          </button>
 
           {/* Hamburger Menu Toggle Button */}
           <button
@@ -1755,6 +1799,48 @@ export const ExpenserApp: React.FC = () => {
         title="Expenser"
         subtitle="Retirement Actuals Tracker & Mobile Companion"
       />
+    </div>
+  );
+
+  if (isSimulatePhone) {
+    return (
+      <div className="min-h-screen min-h-[100dvh] bg-slate-950 flex flex-col items-center justify-center p-2 sm:p-4 selection:bg-emerald-500/30 font-sans antialiased overflow-y-auto">
+        {/* Simulator Control Banner */}
+        <div className="mb-2 flex items-center justify-between w-full max-w-[412px] px-2 text-xs text-slate-400 shrink-0">
+          <div className="flex items-center space-x-2">
+            <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+            <span className="font-mono text-slate-200 font-semibold">Android Simulation</span>
+            <span className="text-slate-500 text-[11px] font-mono">412 × 915</span>
+          </div>
+          <button
+            type="button"
+            onClick={toggleSimulatePhone}
+            className="text-xs text-slate-300 hover:text-white bg-slate-900 hover:bg-slate-800 border border-slate-700/80 px-2.5 py-1 rounded-lg transition-colors cursor-pointer shadow-sm"
+          >
+            Exit Frame
+          </button>
+        </div>
+
+        {/* Realistic Android Phone Bezel Shell */}
+        <div className="w-[412px] h-[915px] max-h-[calc(100dvh-44px)] rounded-[42px] border-[10px] border-slate-800 bg-slate-950 shadow-[0_25px_60px_-15px_rgba(0,0,0,0.9),0_0_0_1px_rgba(255,255,255,0.06)] relative overflow-hidden flex flex-col ring-1 ring-slate-700/60 [transform:translateZ(0)] shrink-0">
+          {/* Top Camera Punch Hole */}
+          <div className="absolute top-2.5 left-1/2 -translate-x-1/2 w-3.5 h-3.5 rounded-full bg-slate-900 border border-slate-700/80 z-[60] pointer-events-none shadow-inner" />
+
+          {/* Inner Phone Viewport */}
+          <div className="flex-1 w-full h-full overflow-hidden flex flex-col relative pt-1">
+            {appContent}
+          </div>
+
+          {/* Android Home Navigation Gesture Bar */}
+          <div className="absolute bottom-1.5 left-1/2 -translate-x-1/2 w-28 h-1 bg-slate-600/70 rounded-full z-[60] pointer-events-none" />
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="h-screen h-[100dvh] max-h-screen max-h-[100dvh] overflow-hidden bg-slate-950 text-slate-100 flex flex-col justify-between select-none font-sans antialiased max-w-md mx-auto shadow-2xl relative border-x border-slate-800/60 pb-safe">
+      {appContent}
     </div>
   );
 };
