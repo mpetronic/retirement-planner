@@ -463,7 +463,6 @@ export const ExpenserApp: React.FC = () => {
       // Reset entry inputs
       setAmountStr('0');
       setNotes('');
-      setShowNotesDrawer(false);
       setCategorySearchQuery('');
       setIsCategorySearchOpen(false);
 
