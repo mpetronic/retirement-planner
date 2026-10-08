@@ -192,6 +192,63 @@ export class AwsCloudStorageAdapter implements StorageAdapter {
     }
   }
 
+  /**
+   * Fetches all expenses across all years and months directly from AWS DynamoDB.
+   * Returns the complete unstripped database item records with all fields.
+   */
+  async getAllExpensesFromCloud(): Promise<Array<Record<string, unknown>>> {
+    const headers = await this.getAuthHeaders();
+    if (!headers) {
+      throw new Error('Not authenticated with AWS. Please sign in to fetch all expenses from DynamoDB.');
+    }
+
+    const endpoint = `${this.getApiEndpoint()}/api/expenses`;
+    const response = await fetch(endpoint, {
+      method: 'GET',
+      headers,
+    });
+
+    if (!response.ok) {
+      const errText = await response.text();
+      throw new Error(`Failed to fetch expenses from DynamoDB (${response.status}): ${errText}`);
+    }
+
+    const data = await response.json();
+    const rawList: Record<string, unknown>[] = Array.isArray(data)
+      ? (data as Record<string, unknown>[])
+      : Array.isArray(data.expenses)
+      ? (data.expenses as Record<string, unknown>[])
+      : [];
+
+    // Also update local cache for items with standard expense shape
+    try {
+      const pending = await this.localAdapter.getPendingSyncExpenses();
+      const pendingIds = new Set(pending.map(p => p.expenseId));
+      for (const item of rawList) {
+        const expId = typeof item.expenseId === 'string' ? item.expenseId : undefined;
+        if (expId && !pendingIds.has(expId)) {
+          await this.localAdapter.saveExpense({
+            expenseId: expId,
+            date: typeof item.date === 'string' ? item.date : '',
+            amount: Number(item.amount) || 0,
+            categoryId: typeof item.categoryId === 'string' ? item.categoryId : 'uncategorized',
+            categoryName: typeof item.categoryName === 'string' ? item.categoryName : 'Uncategorized',
+            enteredBy: typeof item.enteredBy === 'string' ? item.enteredBy : 'Primary',
+            notes: typeof item.notes === 'string' ? item.notes : undefined,
+            tags: Array.isArray(item.tags) ? (item.tags as string[]) : undefined,
+            createdAt: typeof item.createdAt === 'string' ? item.createdAt : undefined,
+            updatedAt: typeof item.updatedAt === 'string' ? item.updatedAt : undefined,
+            syncStatus: 'SYNCED',
+          });
+        }
+      }
+    } catch (cacheErr) {
+      console.warn('Failed to update local cache with full cloud expenses:', cacheErr);
+    }
+
+    return rawList;
+  }
+
   async getRecentExpenses(limit: number = 20, sortBy: 'occurred' | 'entered' = 'occurred'): Promise<ActualExpense[]> {
     return this.localAdapter.getRecentExpenses(limit, sortBy);
   }

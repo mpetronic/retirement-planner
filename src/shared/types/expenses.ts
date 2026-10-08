@@ -92,6 +92,7 @@ export interface StorageAdapter {
   markExpensesSynced(expenseIds: string[]): Promise<void>;
 
   // Full backup & sovereign export
+  getAllExpensesFromCloud?(): Promise<Array<Record<string, unknown>>>;
   exportArchive(): Promise<FullHouseholdArchive>;
   importArchive(archive: FullHouseholdArchive): Promise<void>;
 }

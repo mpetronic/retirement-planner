@@ -224,17 +224,19 @@ export const DetailedExpensesDialog: React.FC<DetailedExpensesDialogProps> = ({
   // Item Add/Edit open
   const handleOpenItemModal = (item?: ExpenseItemDefinition, defaultCat?: string, defaultYear?: number) => {
     setItemError(null);
+    const fallbackCategory = catalog.categories.find((c) => !c.startsWith('One-Time')) || 'Living';
+
     if (item) {
       setEditingItem(item);
       setItemName(item.name);
-      const cat = item.isOneTime
-        ? (item.category === 'One-Time Setup Costs' || item.category === 'One-Time Expense' || !item.category ? 'One-Time Expenses' : item.category)
-        : (item.category || catalog.categories[0] || 'Living');
+      const isOneTime = !!item.isOneTime || item.category === 'One-Time Expenses' || item.category === 'One-Time Expense' || item.category === 'One-Time Setup Costs';
+      setItemIsOneTime(isOneTime);
+      const cat = (!item.category || item.category.startsWith('One-Time'))
+        ? fallbackCategory
+        : item.category;
       setItemCategory(cat);
       setItemDescription(item.description || '');
-      const isOneTime = !!item.isOneTime || cat === 'One-Time Expenses' || cat === 'One-Time Expense' || cat === 'One-Time Setup Costs';
-      setItemIsOneTime(isOneTime);
-      setItemFrequency(frequencies[item.id] ?? item.defaultFrequency ?? (isOneTime ? 1 : 12));
+      setItemFrequency(isOneTime ? 1 : (frequencies[item.id] ?? item.defaultFrequency ?? 12));
       setItemDueMonths(item.dueMonths ? [...item.dueMonths] : []);
       setItemTargetYear(item.targetYear ?? simStartYear);
       
@@ -258,14 +260,15 @@ export const DetailedExpensesDialog: React.FC<DetailedExpensesDialogProps> = ({
     } else {
       setEditingItem(null);
       setItemName('');
-      const cat = defaultCat || catalog.categories[0] || 'Living';
-      const normalizedCat = (cat === 'One-Time Expense' || cat === 'One-Time Setup Costs') ? 'One-Time Expenses' : cat;
-      setItemCategory(normalizedCat);
+      const isOneTime = !!defaultYear || defaultCat === 'One-Time Expenses' || defaultCat === 'One-Time Expense' || defaultCat === 'One-Time Setup Costs';
+      const cat = (!defaultCat || defaultCat.startsWith('One-Time'))
+        ? fallbackCategory
+        : defaultCat;
+      setItemCategory(cat);
       setItemDescription('');
-      const isOneTime = normalizedCat === 'One-Time Expenses' || !!defaultYear;
+      setItemIsOneTime(isOneTime);
       setItemFrequency(isOneTime ? 1 : 12);
       setItemDueMonths([]);
-      setItemIsOneTime(isOneTime);
       setItemTargetYear(defaultYear ?? simStartYear);
       setItemScopeMode('ALL');
       setItemSelectedStates(statesList.length > 0 ? [...statesList] : [activeState]);
@@ -292,8 +295,18 @@ export const DetailedExpensesDialog: React.FC<DetailedExpensesDialogProps> = ({
       return;
     }
 
-    const finalCategory = (itemCategory === 'One-Time Setup Costs' || itemCategory === 'One-Time Expense')
-      ? 'One-Time Expenses'
+    const maxYear = simStartYear + 50;
+    if (itemIsOneTime) {
+      const parsedYear = Number(itemTargetYear);
+      if (!itemTargetYear || isNaN(parsedYear) || parsedYear < simStartYear || parsedYear > maxYear) {
+        setItemError(`Please specify a valid Target Year between ${simStartYear} and ${maxYear} for this one-time expense.`);
+        return;
+      }
+    }
+
+    const fallbackCat = catalog.categories.find((c) => !c.startsWith('One-Time')) || 'Living';
+    const finalCategory = (!itemCategory || itemCategory.startsWith('One-Time'))
+      ? fallbackCat
       : itemCategory;
 
     const finalApplicableStates = itemScopeMode === 'ALL' 
@@ -301,6 +314,8 @@ export const DetailedExpensesDialog: React.FC<DetailedExpensesDialogProps> = ({
       : (itemSelectedStates.length > 0 ? itemSelectedStates : [activeState]);
 
     const itemId = editingItem ? editingItem.id : `item_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
+    const finalFrequency = itemIsOneTime ? 1 : itemFrequency;
+    const finalTargetYear = itemIsOneTime ? Number(itemTargetYear) : undefined;
 
     if (editingItem) {
       // Edit existing
@@ -313,10 +328,10 @@ export const DetailedExpensesDialog: React.FC<DetailedExpensesDialogProps> = ({
                 name: trimmedName,
                 category: finalCategory,
                 description: itemDescription.trim() || undefined,
-                defaultFrequency: itemFrequency,
-                dueMonths: (itemFrequency < 12 || itemIsOneTime) && itemDueMonths.length > 0 ? itemDueMonths : undefined,
+                defaultFrequency: finalFrequency,
+                dueMonths: (finalFrequency < 12 || itemIsOneTime) && itemDueMonths.length > 0 ? itemDueMonths : undefined,
                 isOneTime: itemIsOneTime,
-                targetYear: itemIsOneTime ? (Number(itemTargetYear) || simStartYear) : undefined,
+                targetYear: finalTargetYear,
                 applicableStates: finalApplicableStates
               }
             : it
@@ -324,7 +339,7 @@ export const DetailedExpensesDialog: React.FC<DetailedExpensesDialogProps> = ({
       }));
       setFrequencies((prev) => ({
         ...prev,
-        [editingItem.id]: itemFrequency
+        [editingItem.id]: finalFrequency
       }));
     } else {
       // Create new
@@ -333,10 +348,10 @@ export const DetailedExpensesDialog: React.FC<DetailedExpensesDialogProps> = ({
         name: trimmedName,
         category: finalCategory,
         description: itemDescription.trim() || undefined,
-        defaultFrequency: itemFrequency,
-        dueMonths: (itemFrequency < 12 || itemIsOneTime) && itemDueMonths.length > 0 ? itemDueMonths : undefined,
+        defaultFrequency: finalFrequency,
+        dueMonths: (finalFrequency < 12 || itemIsOneTime) && itemDueMonths.length > 0 ? itemDueMonths : undefined,
         isOneTime: itemIsOneTime,
-        targetYear: itemIsOneTime ? (Number(itemTargetYear) || simStartYear) : undefined,
+        targetYear: finalTargetYear,
         applicableStates: finalApplicableStates
       };
 
@@ -544,6 +559,9 @@ export const DetailedExpensesDialog: React.FC<DetailedExpensesDialogProps> = ({
         const matches = item.name.toLowerCase().includes(q) || item.category.toLowerCase().includes(q);
         if (!matches) return false;
       }
+      if (selectedCategoryFilter !== 'ALL' && item.category !== selectedCategoryFilter) {
+        return false;
+      }
       if (!showAllStatesItems) {
         const applies = !item.applicableStates || 
           item.applicableStates.includes('ALL') || 
@@ -552,15 +570,18 @@ export const DetailedExpensesDialog: React.FC<DetailedExpensesDialogProps> = ({
       }
       return true;
     });
-  }, [oneTimeItems, searchFilter, showAllStatesItems, activeState]);
+  }, [oneTimeItems, searchFilter, selectedCategoryFilter, showAllStatesItems, activeState]);
 
-  // Category options for item modal: show all categories defined in the Expense Categories Manager
+  // Category options for item modal: show all functional categories, excluding One-Time pseudo-categories
   const categoryOptions = useMemo(() => {
-    const cats = [...catalog.categories];
-    if (!cats.includes('One-Time Expenses')) {
-      cats.push('One-Time Expenses');
-    }
-    if (itemCategory && !cats.includes(itemCategory)) {
+    const cats = [...catalog.categories].filter(
+      (c) => c !== 'One-Time Expenses' && c !== 'One-Time Expense' && c !== 'One-Time Setup Costs'
+    );
+    if (
+      itemCategory &&
+      !cats.includes(itemCategory) &&
+      !itemCategory.startsWith('One-Time')
+    ) {
       cats.push(itemCategory);
     }
     return cats;
@@ -1080,126 +1101,143 @@ export const DetailedExpensesDialog: React.FC<DetailedExpensesDialogProps> = ({
               )}
 
               {/* One-Time Outlays Section */}
-              <div className="space-y-3 bg-slate-950/40 p-4 rounded-xl border border-slate-800/60 mt-6">
-                <div className="flex items-center justify-between pb-2 border-b border-slate-800">
-                  <div className="flex items-center gap-2">
-                    <h4 className="text-xs font-bold text-amber-400 uppercase tracking-wider">
-                      One-Time Expenses
-                    </h4>
-                    <span className="text-[10px] text-slate-500 font-mono">
-                      ({visibleOneTimeItems.length} {visibleOneTimeItems.length === 1 ? 'item' : 'items'})
-                    </span>
+              {!(selectedCategoryFilter !== 'ALL' && visibleOneTimeItems.length === 0) && (
+                <div className="space-y-3 bg-slate-950/40 p-4 rounded-xl border border-slate-800/60 mt-6">
+                  <div className="flex items-center justify-between pb-2 border-b border-slate-800">
+                    <div className="flex items-center gap-2">
+                      <h4 className="text-xs font-bold text-amber-400 uppercase tracking-wider">
+                        One-Time Expenses
+                      </h4>
+                      <span className="text-[10px] text-slate-500 font-mono">
+                        ({visibleOneTimeItems.length} {visibleOneTimeItems.length === 1 ? 'item' : 'items'})
+                      </span>
+                    </div>
+                    <button
+                      onClick={() => handleOpenItemModal(undefined, undefined, relocationYear ?? simStartYear)}
+                      className="text-[10px] font-semibold text-slate-400 hover:text-amber-300 flex items-center gap-1 transition-colors cursor-pointer"
+                    >
+                      <Plus className="w-3 h-3" />
+                      Add Expense
+                    </button>
                   </div>
-                  <button
-                    onClick={() => handleOpenItemModal(undefined, 'One-Time Expenses', relocationYear ?? simStartYear)}
-                    className="text-[10px] font-semibold text-slate-400 hover:text-amber-300 flex items-center gap-1 transition-colors cursor-pointer"
-                  >
-                    <Plus className="w-3 h-3" />
-                    Add Expense
-                  </button>
-                </div>
 
-                {visibleOneTimeItems.length === 0 ? (
-                  <p className="text-xs text-slate-500 italic py-2">
-                    No one-time expenses configured for {activeState}. (e.g. moving costs, initial furnishings, golf cart purchase).
-                  </p>
-                ) : (
-                  oneTimeItemsByYear.map(({ year, items }) => {
-                    const yearTotal = items.reduce((sum, it) => sum + (costs[activeState]?.[it.id] ?? 0), 0);
-                    return (
-                      <div key={year} className="space-y-2 bg-slate-900/40 p-3 rounded-lg border border-slate-800/50">
-                        <div className="flex items-center justify-between text-xs font-bold text-slate-300 pb-1 border-b border-slate-800/40">
-                          <span>Target Year: <span className="text-amber-300 font-mono">{year}</span></span>
-                          <span className="font-mono text-slate-400">Total ({activeState}): <span className="text-amber-400 font-bold">{formatCurrency(yearTotal)}</span></span>
-                        </div>
+                  {visibleOneTimeItems.length === 0 ? (
+                    <p className="text-xs text-slate-500 italic py-2">
+                      No one-time expenses configured for {activeState}. (e.g. moving costs, initial furnishings, golf cart purchase).
+                    </p>
+                  ) : (
+                    oneTimeItemsByYear.map(({ year, items }) => {
+                      const yearTotal = items.reduce((sum, it) => sum + (costs[activeState]?.[it.id] ?? 0), 0);
+                      return (
+                        <div key={year} className="space-y-2 bg-slate-900/40 p-3 rounded-lg border border-slate-800/50">
+                          <div className="flex items-center justify-between text-xs font-bold text-slate-300 pb-1 border-b border-slate-800/40">
+                            <span>Target Year: <span className="text-amber-300 font-mono">{year}</span></span>
+                            <span className="font-mono text-slate-400">Total ({activeState}): <span className="text-amber-400 font-bold">{formatCurrency(yearTotal)}</span></span>
+                          </div>
 
-                        <div className="min-w-full overflow-x-auto">
-                          <table className="w-full text-left border-collapse">
-                            <thead>
-                              <tr className="text-[10px] text-slate-500 font-bold uppercase">
-                                <th className="py-1 pr-4 w-6/12">Expense Name</th>
-                                <th className="py-1 px-2 text-center w-28">State Scope</th>
-                                <th className="py-1 px-2 text-right w-36">Budget Cost</th>
-                                <th className="py-1 pl-2 text-right w-16"></th>
-                              </tr>
-                            </thead>
-                            <tbody className="divide-y divide-slate-800/20 text-xs">
-                              {items.map((item) => {
-                                const currentCost = costs[activeState]?.[item.id] ?? 0;
-                                const appStates = item.applicableStates || ['ALL'];
-                                const isUniversal = appStates.includes('ALL');
-                                const hasDifferingStateCosts = statesList.length > 1 && (() => {
-                                  const applicableList = isUniversal ? statesList : statesList.filter((s) => appStates.includes(s));
-                                  if (applicableList.length <= 1) return false;
-                                  const firstCost = costs[applicableList[0]]?.[item.id] ?? 0;
-                                  return applicableList.some((s) => (costs[s]?.[item.id] ?? 0) !== firstCost);
-                                })();
+                          <div className="min-w-full overflow-x-auto">
+                            <table className="w-full text-left border-collapse">
+                              <thead>
+                                <tr className="text-[10px] text-slate-500 font-bold uppercase">
+                                  <th className="py-1 pr-4 w-5/12">Expense Name</th>
+                                  <th className="py-1 px-2 w-3/12">Category</th>
+                                  <th className="py-1 px-2 text-center w-28">State Scope</th>
+                                  <th className="py-1 px-2 text-right w-36">Budget Cost</th>
+                                  <th className="py-1 pl-2 text-right w-16"></th>
+                                </tr>
+                              </thead>
+                              <tbody className="divide-y divide-slate-800/20 text-xs">
+                                {items.map((item) => {
+                                  const currentCost = costs[activeState]?.[item.id] ?? 0;
+                                  const appStates = item.applicableStates || ['ALL'];
+                                  const isUniversal = appStates.includes('ALL');
+                                  const hasDifferingStateCosts = statesList.length > 1 && (() => {
+                                    const applicableList = isUniversal ? statesList : statesList.filter((s) => appStates.includes(s));
+                                    if (applicableList.length <= 1) return false;
+                                    const firstCost = costs[applicableList[0]]?.[item.id] ?? 0;
+                                    return applicableList.some((s) => (costs[s]?.[item.id] ?? 0) !== firstCost);
+                                  })();
 
-                                return (
-                                  <tr key={item.id} className="hover:bg-slate-900/50 transition-colors group">
-                                    <td className="py-1.5 pr-4">
-                                      <div className="flex items-center gap-1.5 flex-wrap">
-                                        <span className="text-slate-200 font-medium">{item.name}</span>
-                                        {hasDifferingStateCosts && (
-                                          <span className="text-[9px] font-semibold text-amber-400/90 bg-amber-400/10 px-1.5 py-0.5 rounded border border-amber-400/20" title="Cost varies across states">
-                                            State Rates
+                                  return (
+                                    <tr key={item.id} className="hover:bg-slate-900/50 transition-colors group">
+                                      <td className="py-1.5 pr-4">
+                                        <div className="flex items-center gap-1.5 flex-wrap">
+                                          <span className="text-slate-200 font-medium">{item.name}</span>
+                                          {hasDifferingStateCosts && (
+                                            <span className="text-[9px] font-semibold text-amber-400/90 bg-amber-400/10 px-1.5 py-0.5 rounded border border-amber-400/20" title="Cost varies across states">
+                                              State Rates
+                                            </span>
+                                          )}
+                                          {item.description && (
+                                            <div className="relative group/tip cursor-help">
+                                              <Info className="w-3.5 h-3.5 text-slate-500 hover:text-slate-300 transition-colors" />
+                                              <div className="absolute left-0 bottom-full mb-1 hidden group-hover/tip:block bg-slate-800 text-slate-200 text-[11px] p-2 rounded-lg shadow-lg max-w-xs z-30 border border-slate-700 pointer-events-none">
+                                                {item.description}
+                                              </div>
+                                            </div>
+                                          )}
+                                        </div>
+                                      </td>
+                                      <td className="py-1.5 px-2">
+                                        <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-medium bg-slate-800/80 text-slate-300 border border-slate-700/60">
+                                          {item.category && !item.category.startsWith('One-Time') ? item.category : 'General'}
+                                        </span>
+                                      </td>
+                                      <td className="py-1.5 px-2 text-center">
+                                        {isUniversal ? (
+                                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-500/10 text-emerald-400 border border-emerald-500/30">
+                                            <Globe className="w-2.5 h-2.5" /> All States
+                                          </span>
+                                        ) : (
+                                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-blue-500/10 text-blue-400 border border-blue-500/30">
+                                            <MapPin className="w-2.5 h-2.5" /> {appStates.join(', ')}
                                           </span>
                                         )}
-                                      </div>
-                                    </td>
-                                    <td className="py-1.5 px-2 text-center">
-                                      {isUniversal ? (
-                                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-500/10 text-emerald-400 border border-emerald-500/30">
-                                          <Globe className="w-2.5 h-2.5" /> All States
-                                        </span>
-                                      ) : (
-                                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-blue-500/10 text-blue-400 border border-blue-500/30">
-                                          <MapPin className="w-2.5 h-2.5" /> {appStates.join(', ')}
-                                        </span>
-                                      )}
-                                    </td>
-                                    <td className="py-1.5 px-2 text-right font-mono">
-                                      <div className="relative inline-block w-28">
-                                        <span className="absolute left-2 top-1/2 -translate-y-1/2 text-slate-500 text-xs">$</span>
-                                        <input
-                                          type="number"
-                                          min="0"
-                                          step="1"
-                                          value={currentCost || ''}
-                                          placeholder="0"
-                                          onChange={(e) => handleCostChange(activeState, item.id, Number(e.target.value) || 0)}
-                                          className="w-full pl-5 pr-2 py-1 bg-slate-900/90 border border-slate-700/60 rounded text-right text-xs text-slate-100 font-mono font-medium focus:outline-none focus:border-amber-500/50"
-                                        />
-                                      </div>
-                                    </td>
-                                    <td className="py-1.5 pl-2 text-right">
-                                      <div className="flex items-center justify-end gap-1 opacity-60 group-hover:opacity-100 transition-opacity">
-                                        <button
-                                          onClick={() => handleOpenItemModal(item)}
-                                          className="p-1 text-slate-400 hover:text-amber-300 rounded hover:bg-slate-800 transition-colors cursor-pointer"
-                                          title="Edit Expense"
-                                        >
-                                          <Edit2 className="w-3.5 h-3.5" />
-                                        </button>
-                                        <button
-                                          onClick={() => handleDeleteItem(item.id)}
-                                          className="p-1 text-slate-500 hover:text-red-400 rounded hover:bg-slate-800 transition-colors cursor-pointer"
-                                          title="Delete Expense"
-                                        >
-                                          <Trash2 className="w-3.5 h-3.5" />
-                                        </button>
-                                      </div>
-                                    </td>
-                                  </tr>
-                                );
-                              })}
-                            </tbody>
-                          </table>
+                                      </td>
+                                      <td className="py-1.5 px-2 text-right font-mono">
+                                        <div className="relative inline-block w-28">
+                                          <span className="absolute left-2 top-1/2 -translate-y-1/2 text-slate-500 text-xs">$</span>
+                                          <input
+                                            type="number"
+                                            min="0"
+                                            step="1"
+                                            value={currentCost || ''}
+                                            placeholder="0"
+                                            onChange={(e) => handleCostChange(activeState, item.id, Number(e.target.value) || 0)}
+                                            className="w-full pl-5 pr-2 py-1 bg-slate-900/90 border border-slate-700/60 rounded text-right text-xs text-slate-100 font-mono font-medium focus:outline-none focus:border-amber-500/50"
+                                          />
+                                        </div>
+                                      </td>
+                                      <td className="py-1.5 pl-2 text-right">
+                                        <div className="flex items-center justify-end gap-1 opacity-60 group-hover:opacity-100 transition-opacity">
+                                          <button
+                                            onClick={() => handleOpenItemModal(item)}
+                                            className="p-1 text-slate-400 hover:text-amber-300 rounded hover:bg-slate-800 transition-colors cursor-pointer"
+                                            title="Edit Expense"
+                                          >
+                                            <Edit2 className="w-3.5 h-3.5" />
+                                          </button>
+                                          <button
+                                            onClick={() => handleDeleteItem(item.id)}
+                                            className="p-1 text-slate-500 hover:text-red-400 rounded hover:bg-slate-800 transition-colors cursor-pointer"
+                                            title="Delete Expense"
+                                          >
+                                            <Trash2 className="w-3.5 h-3.5" />
+                                          </button>
+                                        </div>
+                                      </td>
+                                    </tr>
+                                  );
+                                })}
+                              </tbody>
+                            </table>
+                          </div>
                         </div>
-                      </div>
-                    );
-                  })
-                )}
+                      );
+                    })
+                  )}
+                </div>
+              )}
 
                 {/* Synchronized Healthcare & Medicare Category */}
                 {showHealthcareCategory && activeHealthcareSummary && (
@@ -1309,8 +1347,6 @@ export const DetailedExpensesDialog: React.FC<DetailedExpensesDialogProps> = ({
                     </div>
                   </div>
                 )}
-              </div>
-
             </div>
           )}
 
@@ -1522,22 +1558,12 @@ export const DetailedExpensesDialog: React.FC<DetailedExpensesDialogProps> = ({
                 />
               </div>
 
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
                   <label className="block text-slate-300 font-semibold mb-1">Category</label>
                   <select
                     value={itemCategory}
-                    onChange={(e) => {
-                      const newCat = e.target.value;
-                      setItemCategory(newCat);
-                      if (newCat === 'One-Time Expenses' || newCat === 'One-Time Setup Costs' || newCat === 'One-Time Expense') {
-                        setItemIsOneTime(true);
-                        setItemFrequency(1);
-                      } else if (itemCategory === 'One-Time Expenses' || itemCategory === 'One-Time Setup Costs' || itemCategory === 'One-Time Expense') {
-                        setItemIsOneTime(false);
-                        setItemFrequency(12);
-                      }
-                    }}
+                    onChange={(e) => setItemCategory(e.target.value)}
                     className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-lg text-slate-200 text-xs focus:outline-none focus:border-emerald-500/50"
                   >
                     {categoryOptions.map((c) => (
@@ -1549,10 +1575,21 @@ export const DetailedExpensesDialog: React.FC<DetailedExpensesDialogProps> = ({
                 <div>
                   <label className="block text-slate-300 font-semibold mb-1">Frequency</label>
                   <select
-                    value={itemFrequency}
-                    onChange={(e) => setItemFrequency(Number(e.target.value))}
-                    disabled={itemIsOneTime}
-                    className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-lg text-slate-200 text-xs focus:outline-none focus:border-emerald-500/50 disabled:opacity-40"
+                    value={itemIsOneTime ? 'one-time' : itemFrequency}
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      if (val === 'one-time') {
+                        setItemIsOneTime(true);
+                        setItemFrequency(1);
+                        if (!itemTargetYear) {
+                          setItemTargetYear(simStartYear);
+                        }
+                      } else {
+                        setItemIsOneTime(false);
+                        setItemFrequency(Number(val));
+                      }
+                    }}
+                    className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-lg text-slate-200 text-xs focus:outline-none focus:border-emerald-500/50"
                   >
                     <option value={12}>Monthly (12x/yr)</option>
                     <option value={4}>Quarterly (4x/yr)</option>
@@ -1560,9 +1597,37 @@ export const DetailedExpensesDialog: React.FC<DetailedExpensesDialogProps> = ({
                     <option value={1}>Annual (1x/yr)</option>
                     <option value={26}>Bi-Weekly (26x/yr)</option>
                     <option value={52}>Weekly (52x/yr)</option>
+                    <option value="one-time">One-Time Outlay</option>
                   </select>
                 </div>
               </div>
+
+              {itemIsOneTime && (
+                <div className="p-3 bg-amber-500/5 rounded-lg border border-amber-500/30 space-y-1.5">
+                  <div className="flex items-center justify-between">
+                    <label className="block text-amber-300 font-semibold text-xs flex items-center gap-1.5">
+                      <span>Target Year</span>
+                      <span className="text-amber-400 font-bold">*</span>
+                    </label>
+                    <span className="text-[10px] text-slate-400">
+                      Range: {simStartYear} – {simStartYear + 50}
+                    </span>
+                  </div>
+                  <input
+                    type="number"
+                    required
+                    min={simStartYear}
+                    max={simStartYear + 50}
+                    value={itemTargetYear}
+                    onChange={(e) => setItemTargetYear(e.target.value)}
+                    placeholder={`e.g. ${simStartYear}`}
+                    className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-lg text-slate-100 font-mono text-xs focus:outline-none focus:border-amber-500/50"
+                  />
+                  <p className="text-[10px] text-slate-400">
+                    This one-time expense will occur exclusively in the specified plan year.
+                  </p>
+                </div>
+              )}
 
               {/* Scheduled Due Months Selector for Non-Monthly Expenses */}
               {(itemFrequency < 12 || itemIsOneTime) && (
@@ -1760,46 +1825,6 @@ export const DetailedExpensesDialog: React.FC<DetailedExpensesDialogProps> = ({
                     ))}
                   </div>
                 </div>
-              </div>
-
-              {/* Expense Type & Target Year */}
-              <div className="grid grid-cols-2 gap-3 items-center">
-                <div>
-                  <label className="block text-slate-300 font-semibold mb-1">Expense Type</label>
-                  <label className="flex items-center gap-2 py-2 cursor-pointer text-slate-300">
-                    <input
-                      type="checkbox"
-                      checked={itemIsOneTime}
-                      onChange={(e) => {
-                        const checked = e.target.checked;
-                        setItemIsOneTime(checked);
-                        if (checked && itemCategory !== 'One-Time Expenses') {
-                          setItemCategory('One-Time Expenses');
-                          setItemFrequency(1);
-                        } else if (!checked && (itemCategory === 'One-Time Expenses' || itemCategory === 'One-Time Setup Costs' || itemCategory === 'One-Time Expense')) {
-                          setItemCategory(catalog.categories[0] || 'Housing');
-                          setItemFrequency(12);
-                        }
-                      }}
-                      className="rounded bg-slate-950 border-slate-700 text-amber-500 focus:ring-0 cursor-pointer"
-                    />
-                    <span>One-Time Expenses</span>
-                  </label>
-                </div>
-
-                {itemIsOneTime && (
-                  <div>
-                    <label className="block text-slate-300 font-semibold mb-1">Target Year</label>
-                    <input
-                      type="number"
-                      min={simStartYear}
-                      max={2080}
-                      value={itemTargetYear}
-                      onChange={(e) => setItemTargetYear(e.target.value)}
-                      className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-lg text-slate-100 font-mono text-xs focus:outline-none focus:border-amber-500/50"
-                    />
-                  </div>
-                )}
               </div>
 
               <div>

@@ -44,18 +44,21 @@ import {
   Table,
   EyeOff,
   Upload,
+  FileSpreadsheet,
 } from 'lucide-react';
-import { getStorageAdapter } from '../shared/storage';
+import { getStorageAdapter, fetchAllExpensesFromDynamoDb } from '../shared/storage';
 import { ActualExpense } from '../shared/types/expenses';
 import { AuthService } from '../shared/auth/AuthService';
 import { isLocalhostEnvironment } from '../shared/utils/appMode';
 import { syncCustomCategoriesToPlanner, savePlannerExpenseLineItem } from '../shared/utils/plannerCategories';
+import { downloadExpensesSpreadsheet } from '../utils/expensesExcelExport';
 import { ActiveViewType } from './SidebarNavigation';
 import { RangeSlider } from './RangeSlider';
 import { NumericInput } from './NumericInput';
 import { Chart } from 'react-chartjs-2';
 import { Chart as ChartJS, registerables, ChartEvent, LegendItem } from 'chart.js';
 import { ImportExpensesModal } from './ImportExpensesModal';
+import { CloudAuthModal } from './CloudAuthModal';
 
 ChartJS.register(...registerables);
 
@@ -175,6 +178,11 @@ export const ActualsWorkspace: React.FC<ActualsWorkspaceProps> = ({
   const [editExpenseNotes, setEditExpenseNotes] = useState<string>('');
   const [isSavingExpenseEdit, setIsSavingExpenseEdit] = useState<boolean>(false);
   const [expenseEditError, setExpenseEditError] = useState<string | null>(null);
+
+  // DynamoDB Expenses spreadsheet export state
+  const [isDownloadingDbExpenses, setIsDownloadingDbExpenses] = useState<boolean>(false);
+  const [dbExportMessage, setDbExportMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+  const [showCloudAuthModal, setShowCloudAuthModal] = useState<boolean>(false);
 
   const loadLoggedExpenses = useCallback(async () => {
     setIsLoadingExpenses(true);
@@ -495,6 +503,46 @@ export const ActualsWorkspace: React.FC<ActualsWorkspaceProps> = ({
       ...actualTracking,
       [selectedYear]: updatedRecord,
     });
+  };
+
+  const handleDownloadDbExpensesSpreadsheet = async () => {
+    // If not authenticated, prompt for auth
+    if (!AuthService.isAuthenticated()) {
+      setShowCloudAuthModal(true);
+      return;
+    }
+
+    setIsDownloadingDbExpenses(true);
+    setDbExportMessage(null);
+
+    try {
+      const records = await fetchAllExpensesFromDynamoDb();
+      if (!records || records.length === 0) {
+        setDbExportMessage({
+          type: 'error',
+          text: 'No expense records found in DynamoDB to export.',
+        });
+        return;
+      }
+
+      await downloadExpensesSpreadsheet(records);
+      setDbExportMessage({
+        type: 'success',
+        text: `Successfully exported ${records.length} expense records from DynamoDB!`,
+      });
+      setTimeout(() => {
+        setDbExportMessage(null);
+      }, 6000);
+    } catch (err: unknown) {
+      console.error('Failed to export DynamoDB expenses:', err);
+      const errMsg = err instanceof Error ? err.message : 'Unknown error occurred while exporting expenses';
+      setDbExportMessage({
+        type: 'error',
+        text: `Export failed: ${errMsg}`,
+      });
+    } finally {
+      setIsDownloadingDbExpenses(false);
+    }
   };
 
   // Comparison list between Planned Detailed Budget and Logged Actuals
@@ -1607,6 +1655,21 @@ export const ActualsWorkspace: React.FC<ActualsWorkspaceProps> = ({
           <div className="flex items-center gap-2 self-start sm:self-auto flex-nowrap shrink-0">
             <button
               type="button"
+              onClick={handleDownloadDbExpensesSpreadsheet}
+              disabled={isDownloadingDbExpenses}
+              className="px-3 py-1.5 rounded-xl bg-slate-800/90 hover:bg-slate-700 text-slate-200 hover:text-white border border-slate-700/80 text-xs font-semibold flex items-center gap-1.5 transition-all shadow-sm shrink-0 whitespace-nowrap cursor-pointer disabled:opacity-50"
+              title="Download an Excel spreadsheet (.xlsx) of all expenses recorded in AWS DynamoDB"
+            >
+              {isDownloadingDbExpenses ? (
+                <RefreshCw className="w-3.5 h-3.5 text-emerald-400 animate-spin" />
+              ) : (
+                <FileSpreadsheet className="w-3.5 h-3.5 text-emerald-400" />
+              )}
+              <span>{isDownloadingDbExpenses ? 'Fetching DB...' : 'Download Spreadsheet'}</span>
+            </button>
+
+            <button
+              type="button"
               onClick={() => setShowImportModal(true)}
               className="px-3 py-1.5 rounded-xl bg-slate-800/90 hover:bg-slate-700 text-slate-200 hover:text-white border border-slate-700/80 text-xs font-semibold flex items-center gap-1.5 transition-all shadow-sm shrink-0 whitespace-nowrap cursor-pointer"
               title="Import and backfill expenses from CSV"
@@ -1638,6 +1701,32 @@ export const ActualsWorkspace: React.FC<ActualsWorkspaceProps> = ({
             </button>
           </div>
         </div>
+
+        {dbExportMessage && (
+          <div
+            className={`p-3 rounded-xl border text-xs flex items-center justify-between gap-2 transition-all animate-in fade-in ${
+              dbExportMessage.type === 'success'
+                ? 'bg-emerald-950/40 border-emerald-500/40 text-emerald-200'
+                : 'bg-red-950/40 border-red-500/40 text-red-200'
+            }`}
+          >
+            <div className="flex items-center gap-2">
+              {dbExportMessage.type === 'success' ? (
+                <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
+              ) : (
+                <AlertTriangle className="w-4 h-4 text-red-400 shrink-0" />
+              )}
+              <span>{dbExportMessage.text}</span>
+            </div>
+            <button
+              type="button"
+              onClick={() => setDbExportMessage(null)}
+              className="text-slate-400 hover:text-white p-0.5 cursor-pointer"
+            >
+              <X className="w-3.5 h-3.5" />
+            </button>
+          </div>
+        )}
 
         {/* Month Filter Selector Strip */}
         <div className="flex items-center gap-1.5 overflow-x-auto pb-1 custom-scrollbar text-xs">
@@ -3091,6 +3180,17 @@ export const ActualsWorkspace: React.FC<ActualsWorkspaceProps> = ({
             await loadLoggedExpenses();
           }}
           onUpdateActualsLivingExpenses={handleUpdateActualsLivingExpenses}
+        />
+      )}
+      {/* Cloud Auth Modal for DynamoDB Access */}
+      {showCloudAuthModal && (
+        <CloudAuthModal
+          isOpen={showCloudAuthModal}
+          onClose={() => setShowCloudAuthModal(false)}
+          onSyncComplete={() => {
+            setShowCloudAuthModal(false);
+            handleDownloadDbExpensesSpreadsheet();
+          }}
         />
       )}
     </div>

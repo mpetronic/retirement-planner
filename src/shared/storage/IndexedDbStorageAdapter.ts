@@ -166,7 +166,7 @@ export class IndexedDbStorageAdapter implements StorageAdapter {
       .slice(0, limit);
   }
 
-  private async getAllExpenses(): Promise<ActualExpense[]> {
+  async getAllExpenses(): Promise<ActualExpense[]> {
     const db = await this.getDB();
     return new Promise<ActualExpense[]>((resolve, reject) => {
       const tx = db.transaction(STORE_EXPENSES, 'readonly');
@@ -176,6 +176,10 @@ export class IndexedDbStorageAdapter implements StorageAdapter {
       req.onsuccess = () => resolve(req.result || []);
       req.onerror = () => reject(req.error);
     });
+  }
+
+  async getAllExpensesFromCloud(): Promise<Array<Record<string, unknown>>> {
+    return (await this.getAllExpenses()) as unknown as Array<Record<string, unknown>>;
   }
 
   async saveExpense(

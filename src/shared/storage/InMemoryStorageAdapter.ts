@@ -61,6 +61,10 @@ export class InMemoryStorageAdapter implements StorageAdapter {
       .slice(0, limit);
   }
 
+  async getAllExpensesFromCloud(): Promise<Array<Record<string, unknown>>> {
+    return [...this.expenses] as unknown as Array<Record<string, unknown>>;
+  }
+
   async getExpenseById(id: string): Promise<ActualExpense | null> {
     const found = this.expenses.find(e => e.expenseId === id);
     return found || null;
