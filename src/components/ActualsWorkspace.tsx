@@ -557,6 +557,7 @@ export const ActualsWorkspace: React.FC<ActualsWorkspaceProps> = ({
       percentUsed: number;
       transactionCount: number;
       payers: Record<string, number>;
+      isOneTime?: boolean;
     }> = [];
 
     // 1. Detailed Living Expenses (or fallback to general living expenses if detailed expenses disabled)
@@ -583,10 +584,19 @@ export const ActualsWorkspace: React.FC<ActualsWorkspaceProps> = ({
           continue;
         }
 
+        const isItemOneTime = Boolean(
+          catItem.isOneTime ||
+          catItem.category === 'One-Time Expenses' ||
+          catItem.category === 'One-Time Expense' ||
+          catItem.category === 'One-Time Setup Costs'
+        );
+
         const cost = appliesToActiveState ? (stateCosts[catItem.id] ?? 0) : 0;
-        const freq = freqs[catItem.id] ?? catItem.defaultFrequency ?? 12;
-        const plannedFullYear = catItem.isOneTime ? cost : cost * freq;
-        const plannedAmount = selectedMonthFilter ? cost * (freq / 12) : plannedFullYear;
+        const freq = freqs[catItem.id] ?? catItem.defaultFrequency ?? (isItemOneTime ? 1 : 12);
+        const plannedFullYear = isItemOneTime ? cost : cost * freq;
+        const plannedAmount = selectedMonthFilter
+          ? (isItemOneTime ? cost : cost * (freq / 12))
+          : plannedFullYear;
 
         const variance = plannedAmount - actualAmount;
         const percentUsed = plannedAmount > 0 ? (actualAmount / plannedAmount) * 100 : actualAmount > 0 ? 999 : 0;
@@ -601,6 +611,7 @@ export const ActualsWorkspace: React.FC<ActualsWorkspaceProps> = ({
           percentUsed,
           transactionCount: actualEntry?.count || 0,
           payers: actualEntry?.payers || {},
+          isOneTime: isItemOneTime,
         });
       }
     } else {
@@ -698,16 +709,19 @@ export const ActualsWorkspace: React.FC<ActualsWorkspaceProps> = ({
     for (const [catId, entry] of Object.entries(actualsSummary.byLineItem)) {
       if (!items.some((i) => i.id === catId)) {
         const parts = entry.name.includes(' - ') ? entry.name.split(' - ') : ['Custom', entry.name];
+        const groupName = parts[0].trim();
+        const isOneTimeGroup = groupName === 'One-Time Expenses' || groupName === 'One-Time Expense' || groupName === 'One-Time Setup Costs';
         items.push({
           id: catId,
           name: parts[1] ? parts[1].trim() : entry.name,
-          group: parts[0].trim(),
+          group: groupName,
           plannedAnnual: 0,
           actualAnnual: entry.total,
           variance: -entry.total,
           percentUsed: 999,
           transactionCount: entry.count,
           payers: entry.payers,
+          isOneTime: isOneTimeGroup,
         });
       }
     }
@@ -2086,6 +2100,11 @@ export const ActualsWorkspace: React.FC<ActualsWorkspaceProps> = ({
                                 <div>
                                   <div className="font-semibold text-slate-100 group-hover:text-emerald-300 transition-colors flex items-center gap-1.5">
                                     <span>{item.name}</span>
+                                    {item.isOneTime && (
+                                      <span className="text-[9px] px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-300 border border-amber-500/30 font-medium">
+                                        One-Time
+                                      </span>
+                                    )}
                                     {item.transactionCount > 0 && (
                                       <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-emerald-500/20 text-emerald-400 font-semibold font-mono">
                                         {item.transactionCount}
@@ -2125,7 +2144,11 @@ export const ActualsWorkspace: React.FC<ActualsWorkspaceProps> = ({
                                     <div className="w-full bg-slate-800 rounded-full h-1.5 overflow-hidden">
                                       <div
                                         className={`h-full rounded-full transition-all ${
-                                          item.percentUsed > 100
+                                          item.isOneTime
+                                            ? item.percentUsed > 100
+                                              ? 'bg-rose-500'
+                                              : 'bg-emerald-400'
+                                            : item.percentUsed > 100
                                             ? 'bg-rose-500'
                                             : item.percentUsed > 80
                                             ? 'bg-amber-400'
