@@ -558,6 +558,7 @@ export const ActualsWorkspace: React.FC<ActualsWorkspaceProps> = ({
       transactionCount: number;
       payers: Record<string, number>;
       isOneTime?: boolean;
+      isAnnual?: boolean;
     }> = [];
 
     // 1. Detailed Living Expenses (or fallback to general living expenses if detailed expenses disabled)
@@ -593,9 +594,12 @@ export const ActualsWorkspace: React.FC<ActualsWorkspaceProps> = ({
 
         const cost = appliesToActiveState ? (stateCosts[catItem.id] ?? 0) : 0;
         const freq = freqs[catItem.id] ?? catItem.defaultFrequency ?? (isItemOneTime ? 1 : 12);
+        const isItemAnnual = !isItemOneTime && freq === 1;
+        const isSingleOccurrence = isItemOneTime || isItemAnnual;
+
         const plannedFullYear = isItemOneTime ? cost : cost * freq;
         const plannedAmount = selectedMonthFilter
-          ? (isItemOneTime ? cost : cost * (freq / 12))
+          ? (isSingleOccurrence ? cost : cost * (freq / 12))
           : plannedFullYear;
 
         const variance = plannedAmount - actualAmount;
@@ -612,6 +616,7 @@ export const ActualsWorkspace: React.FC<ActualsWorkspaceProps> = ({
           transactionCount: actualEntry?.count || 0,
           payers: actualEntry?.payers || {},
           isOneTime: isItemOneTime,
+          isAnnual: isItemAnnual,
         });
       }
     } else {
@@ -2100,11 +2105,15 @@ export const ActualsWorkspace: React.FC<ActualsWorkspaceProps> = ({
                                 <div>
                                   <div className="font-semibold text-slate-100 group-hover:text-emerald-300 transition-colors flex items-center gap-1.5">
                                     <span>{item.name}</span>
-                                    {item.isOneTime && (
+                                    {item.isOneTime ? (
                                       <span className="text-[9px] px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-300 border border-amber-500/30 font-medium">
                                         One-Time
                                       </span>
-                                    )}
+                                    ) : item.isAnnual ? (
+                                      <span className="text-[9px] px-1.5 py-0.5 rounded bg-sky-500/20 text-sky-300 border border-sky-500/30 font-medium">
+                                        Annual
+                                      </span>
+                                    ) : null}
                                     {item.transactionCount > 0 && (
                                       <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-emerald-500/20 text-emerald-400 font-semibold font-mono">
                                         {item.transactionCount}
@@ -2144,7 +2153,7 @@ export const ActualsWorkspace: React.FC<ActualsWorkspaceProps> = ({
                                     <div className="w-full bg-slate-800 rounded-full h-1.5 overflow-hidden">
                                       <div
                                         className={`h-full rounded-full transition-all ${
-                                          item.isOneTime
+                                          (item.isOneTime || item.isAnnual)
                                             ? item.percentUsed > 100
                                               ? 'bg-rose-500'
                                               : 'bg-emerald-400'
