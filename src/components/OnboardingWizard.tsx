@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { AppStateInputs, DEFAULT_DETAILED_EXPENSES_STATE, DEFAULT_CHARITY_SETTINGS } from '../types';
+import { getSupportedStates, getSubJurisdictions } from '../engine/stateTaxRegistry';
 import { SAMPLE_DEMO_PLAN } from '../shared/utils/sampleDemoPlan';
 import {
   User,
@@ -103,8 +104,10 @@ export const OnboardingWizard: React.FC<OnboardingWizardProps> = ({ onComplete, 
 
   const currentYear = new Date().getFullYear();
   const [livingExpenses, setLivingExpenses] = useState<number>(100000);
-  const [currentState, setCurrentState] = useState<'MD' | 'FL'>('MD');
-  const [targetState, setTargetState] = useState<'MD' | 'FL'>('FL');
+  const [currentState, setCurrentState] = useState<string>('');
+  const [currentCounty, setCurrentCounty] = useState<string>('');
+  const [targetState, setTargetState] = useState<string>('');
+  const [targetCounty, setTargetCounty] = useState<string>('');
   const [relocationYear, setRelocationYear] = useState<number | null>(currentYear + 6);
   const [enableRelocation, setEnableRelocation] = useState(false);
 
@@ -192,6 +195,37 @@ export const OnboardingWizard: React.FC<OnboardingWizardProps> = ({ onComplete, 
       return;
     }
 
+    if (!currentState) {
+      setError('Please select your current state of residence.');
+      return;
+    }
+
+    const currentSubJurisdictions = getSubJurisdictions(currentState);
+    if (currentSubJurisdictions.length > 0 && !currentCounty) {
+      setError(`Please select your current county / local jurisdiction for ${currentState}.`);
+      return;
+    }
+
+    if (enableRelocation) {
+      if (!targetState) {
+        setError('Please select your target relocation state.');
+        return;
+      }
+      const targetSubJurisdictions = getSubJurisdictions(targetState);
+      if (targetSubJurisdictions.length > 0 && !targetCounty) {
+        setError(`Please select your target county / local jurisdiction for ${targetState}.`);
+        return;
+      }
+      if (currentState === targetState && currentCounty === targetCounty) {
+        setError('Target residence must be different from current residence when planning relocation.');
+        return;
+      }
+      if (relocationYear === null || relocationYear < currentYear) {
+        setError('Please enter a valid future relocation year.');
+        return;
+      }
+    }
+
     const finalInputs: AppStateInputs = {
       you: {
         name: youName,
@@ -228,8 +262,12 @@ export const OnboardingWizard: React.FC<OnboardingWizardProps> = ({ onComplete, 
         taxableNonQualifiedPortion: 0.30,
       },
       jurisdiction: {
-        currentState,
-        targetState: enableRelocation ? targetState : (currentState === 'MD' ? 'FL' : 'MD'),
+        currentState: currentState as 'MD' | 'FL',
+        currentCounty: currentCounty || null,
+        currentLocalTaxRate: null,
+        targetState: enableRelocation ? (targetState as 'MD' | 'FL') : (currentState as 'MD' | 'FL'),
+        targetCounty: enableRelocation ? (targetCounty || null) : (currentCounty || null),
+        targetLocalTaxRate: null,
         relocationYear: enableRelocation ? relocationYear : null,
       },
       growthAssumptions: {
@@ -853,61 +891,127 @@ export const OnboardingWizard: React.FC<OnboardingWizardProps> = ({ onComplete, 
                   </p>
                 </div>
 
-                <div className="p-4 bg-slate-950/40 border border-slate-800 rounded-2xl space-y-3">
+                <div className="p-4 bg-slate-950/40 border border-slate-800 rounded-2xl space-y-4">
                   <span className="text-xs font-bold text-emerald-400 flex items-center gap-1.5 pb-1 border-b border-slate-800/40">
                     <MapPin className="w-3.5 h-3.5" />
-                    <span>Jurisdiction State Taxes & Relocation Planning</span>
+                    <span>Jurisdiction State & Local Taxes</span>
                   </span>
 
-                  <div className="grid grid-cols-2 gap-3 pt-1">
-                    <div className="space-y-1">
-                      <label className="text-[10px] font-bold text-slate-400 block">Current Residence</label>
-                      <select
-                        value={currentState}
-                        onChange={(e) => setCurrentState(e.target.value as 'MD' | 'FL')}
-                        className="w-full bg-slate-950 border border-slate-850 focus:border-emerald-500 rounded-xl px-2.5 py-1.5 text-xs text-slate-100 focus:outline-none"
-                      >
-                        <option value="MD">Maryland (MD)</option>
-                        <option value="FL">Florida (FL)</option>
-                      </select>
-                    </div>
+                  {/* Primary Residence */}
+                  <div className="space-y-2">
+                    <span className="text-[11px] font-bold text-slate-300">Primary Residence</span>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      <div className="space-y-1">
+                        <label className="text-[10px] font-bold text-slate-400 block uppercase">Current State *</label>
+                        <select
+                          value={currentState}
+                          onChange={(e) => {
+                            setCurrentState(e.target.value);
+                            setCurrentCounty('');
+                          }}
+                          className="w-full bg-slate-950 border border-slate-850 focus:border-emerald-500 rounded-xl px-2.5 py-1.5 text-xs text-slate-100 focus:outline-none"
+                        >
+                          <option value="">Select State...</option>
+                          {getSupportedStates().map((st) => (
+                            <option key={st.code} value={st.code}>
+                              {st.name} ({st.code})
+                            </option>
+                          ))}
+                        </select>
+                      </div>
 
-                    <div className="space-y-1">
-                      <label className="text-[10px] font-bold text-slate-400 block">Target Residence</label>
-                      <select
-                        value={targetState}
-                        onChange={(e) => setTargetState(e.target.value as 'MD' | 'FL')}
-                        disabled={!enableRelocation}
-                        className="w-full bg-slate-950 border border-slate-850 focus:border-emerald-500 rounded-xl px-2.5 py-1.5 text-xs text-slate-100 focus:outline-none disabled:opacity-40"
-                      >
-                        <option value="FL">Florida (FL)</option>
-                        <option value="MD">Maryland (MD)</option>
-                      </select>
+                      {currentState && getSubJurisdictions(currentState).length > 0 && (
+                        <div className="space-y-1">
+                          <label className="text-[10px] font-bold text-slate-400 block uppercase">County / Local Jurisdiction *</label>
+                          <select
+                            value={currentCounty}
+                            onChange={(e) => setCurrentCounty(e.target.value)}
+                            className="w-full bg-slate-950 border border-slate-850 focus:border-emerald-500 rounded-xl px-2.5 py-1.5 text-xs text-slate-100 focus:outline-none"
+                          >
+                            <option value="">Select County...</option>
+                            {getSubJurisdictions(currentState).map((c) => (
+                              <option key={c.id} value={c.id}>
+                                {c.name} ({(c.defaultLocalRate * 100).toFixed(2)}%)
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+                      )}
                     </div>
                   </div>
 
-                  <div className="flex items-center justify-between pt-2 border-t border-slate-850/40">
-                    <div className="flex items-center gap-1.5">
-                      <span className="text-xs font-bold text-slate-300">Plan Relocation?</span>
-                      <input
-                        type="checkbox"
-                        checked={enableRelocation}
-                        onChange={(e) => setEnableRelocation(e.target.checked)}
-                        className="w-4 h-4 rounded border-slate-800 text-emerald-500 focus:ring-emerald-500 bg-slate-950 cursor-pointer"
-                      />
+                  {/* Relocation Planning */}
+                  <div className="pt-2 border-t border-slate-850/40 space-y-3">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-1.5">
+                        <span className="text-xs font-bold text-slate-300">Plan Relocation?</span>
+                        <input
+                          type="checkbox"
+                          checked={enableRelocation}
+                          onChange={(e) => {
+                            setEnableRelocation(e.target.checked);
+                            if (e.target.checked && !targetState) {
+                              setTargetState(currentState === 'MD' ? 'FL' : 'MD');
+                              setTargetCounty('');
+                            }
+                          }}
+                          className="w-4 h-4 rounded border-slate-800 text-emerald-500 focus:ring-emerald-500 bg-slate-950 cursor-pointer"
+                        />
+                      </div>
+
+                      {enableRelocation && (
+                        <div className="flex items-center gap-2 shrink-0">
+                          <span className="text-[10px] font-bold text-slate-400 uppercase">Relocation Year:</span>
+                          <input
+                            type="number"
+                            min={currentYear}
+                            max={currentYear + 34}
+                            value={relocationYear === null ? '' : relocationYear}
+                            onChange={(e) => setRelocationYear(e.target.value === '' ? null : Number(e.target.value))}
+                            className="w-20 bg-slate-950 border border-slate-850 focus:border-emerald-500 rounded-xl px-2 py-1 text-xs text-center text-slate-100 font-mono focus:outline-none"
+                          />
+                        </div>
+                      )}
                     </div>
 
                     {enableRelocation && (
-                      <div className="flex items-center gap-2 shrink-0">
-                        <span className="text-[10px] font-bold text-slate-400 uppercase">Relocation Year:</span>
-                        <input
-                          type="number"
-                          min={currentYear}
-                          max={currentYear + 34}
-                          value={relocationYear === null ? '' : relocationYear}
-                          onChange={(e) => setRelocationYear(e.target.value === '' ? null : Number(e.target.value))}
-                          className="w-20 bg-slate-950 border border-slate-850 focus:border-emerald-500 rounded-xl px-2 py-1 text-xs text-center text-slate-100 font-mono focus:outline-none"
-                        />
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
+                        <div className="space-y-1">
+                          <label className="text-[10px] font-bold text-slate-400 block uppercase">Target State *</label>
+                          <select
+                            value={targetState}
+                            onChange={(e) => {
+                              setTargetState(e.target.value);
+                              setTargetCounty('');
+                            }}
+                            className="w-full bg-slate-950 border border-slate-850 focus:border-emerald-500 rounded-xl px-2.5 py-1.5 text-xs text-slate-100 focus:outline-none"
+                          >
+                            <option value="">Select State...</option>
+                            {getSupportedStates().map((st) => (
+                              <option key={st.code} value={st.code}>
+                                {st.name} ({st.code})
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+
+                        {targetState && getSubJurisdictions(targetState).length > 0 && (
+                          <div className="space-y-1">
+                            <label className="text-[10px] font-bold text-slate-400 block uppercase">Target County *</label>
+                            <select
+                              value={targetCounty}
+                              onChange={(e) => setTargetCounty(e.target.value)}
+                              className="w-full bg-slate-950 border border-slate-850 focus:border-emerald-500 rounded-xl px-2.5 py-1.5 text-xs text-slate-100 focus:outline-none"
+                            >
+                              <option value="">Select County...</option>
+                              {getSubJurisdictions(targetState).map((c) => (
+                                <option key={c.id} value={c.id}>
+                                  {c.name} ({(c.defaultLocalRate * 100).toFixed(2)}%)
+                                </option>
+                              ))}
+                            </select>
+                          </div>
+                        )}
                       </div>
                     )}
                   </div>

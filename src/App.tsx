@@ -36,6 +36,7 @@ import { BucketManagementWorkspace } from './components/BucketManagementWorkspac
 import { DocumentationDialog } from './components/DocumentationDialog';
 import { AboutDialog } from './components/AboutDialog';
 import { OnboardingWizard } from './components/OnboardingWizard';
+import { LegacyCountyModal } from './components/LegacyCountyModal';
 import { CloudAuthModal } from './components/CloudAuthModal';
 import { LandingPage } from './components/LandingPage';
 import { NotFoundPage } from './components/NotFoundPage';
@@ -87,6 +88,7 @@ const DEFAULT_INPUTS: AppStateInputs = {
   },
   jurisdiction: {
     currentState: 'MD',
+    currentCounty: 'montgomery',
     targetState: 'FL',
     relocationYear: null,
   },
@@ -555,6 +557,17 @@ function App() {
       handleSetSimulateSurvivor(loadedInputs.simulateSurvivor);
     }
     handleInputsChange(loadedInputs);
+  };
+
+  const handleLegacyCountyConfirm = (currentCounty: string, targetCounty?: string) => {
+    handleInputsChange((prev) => ({
+      ...prev,
+      jurisdiction: {
+        ...prev.jurisdiction,
+        currentCounty,
+        ...(targetCounty ? { targetCounty } : {}),
+      },
+    }));
   };
 
   // Global focus auto-select: automatically select text on number/text inputs so typing replaces default/0 values immediately
@@ -1164,6 +1177,15 @@ function App() {
         isOpen={showCloudModal}
         onClose={() => setShowCloudModal(false)}
       />
+
+      {/* Legacy Plan Maryland County Selection Modal */}
+      {Boolean(activeInputs.isConfigured && activeInputs.jurisdiction?.currentState === 'MD' && !activeInputs.jurisdiction?.currentCounty) && (
+        <LegacyCountyModal
+          isOpen={true}
+          needsTargetCounty={Boolean(activeInputs.jurisdiction?.targetState === 'MD' && !activeInputs.jurisdiction?.targetCounty && activeInputs.jurisdiction?.relocationYear !== null)}
+          onConfirm={handleLegacyCountyConfirm}
+        />
+      )}
     </div>
   );
 }

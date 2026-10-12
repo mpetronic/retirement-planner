@@ -17,6 +17,7 @@ import {
   MD_PENSION_EXCLUSION_BASE_CAP,
   getTargetPresetInfo,
 } from './taxRates2026';
+import { getEffectiveLocalTaxRate } from './stateTaxRegistry';
 
 const BASE_401K_LIMIT = 23500;
 const CATCHUP_401K_LIMIT = 7500;
@@ -227,7 +228,8 @@ export function calculateMDStateTax(
   taxableSS: number,
   isSingle: boolean,
   cpiFactor: number = 1,
-  mdPensionExclusion: number = 0
+  mdPensionExclusion: number = 0,
+  effectiveLocalRate: number = MD_PIGGYBACK_RATE
 ): number {
   const stdDeductionRate = 0.15 * fedAGI;
   let stdDeduction = 0;
@@ -255,7 +257,7 @@ export function calculateMDStateTax(
     }
   }
   
-  const piggybackTax = mdTaxableIncome * MD_PIGGYBACK_RATE;
+  const piggybackTax = mdTaxableIncome * effectiveLocalRate;
   return stateTax + piggybackTax;
 }
 
@@ -278,7 +280,8 @@ export function applyBucketLiquidityConstraintToConversion(
   standardDeductionTotal: number,
   nonQcdTithe: number,
   isStateFL: boolean,
-  mdPensionExclusion: number
+  mdPensionExclusion: number,
+  effectiveLocalRate: number = MD_PIGGYBACK_RATE
 ): number {
   if (targetConversion <= 0) return 0;
 
@@ -294,7 +297,7 @@ export function applyBucketLiquidityConstraintToConversion(
 
     const stateTax = isStateFL
       ? 0
-      : calculateMDStateTax(fedAGI, taxableSS, isSingle, cpiFactor, mdPensionExclusion);
+      : calculateMDStateTax(fedAGI, taxableSS, isSingle, cpiFactor, mdPensionExclusion, effectiveLocalRate);
 
     const saltCap = 10000 * cpiFactor;
     const saltDeduction = Math.min(saltCap, stateTax);
@@ -462,13 +465,26 @@ export function runRetirementSimulation(
     const monthlyCashRate = Math.pow(1 + cashRate, 1 / 12) - 1;
 
     // State determination
-    const resolvedTargetState = (inputs.jurisdiction.targetState && inputs.jurisdiction.targetState !== inputs.jurisdiction.currentState)
-      ? inputs.jurisdiction.targetState
-      : (inputs.jurisdiction.currentState === 'MD' ? 'FL' : 'MD');
+    const isRelocated = inputs.jurisdiction.relocationYear !== null && year >= inputs.jurisdiction.relocationYear;
+    const isIntraStateRelocation = Boolean(
+      inputs.jurisdiction.targetState === inputs.jurisdiction.currentState &&
+      inputs.jurisdiction.targetCounty &&
+      inputs.jurisdiction.targetCounty !== inputs.jurisdiction.currentCounty
+    );
 
-    const activeState = (inputs.jurisdiction.relocationYear !== null && year >= inputs.jurisdiction.relocationYear)
+    const resolvedTargetState = isIntraStateRelocation
+      ? inputs.jurisdiction.targetState
+      : (inputs.jurisdiction.targetState && inputs.jurisdiction.targetState !== inputs.jurisdiction.currentState)
+        ? inputs.jurisdiction.targetState
+        : (inputs.jurisdiction.currentState === 'MD' ? 'FL' : 'MD');
+
+    const activeState = isRelocated
       ? resolvedTargetState
       : inputs.jurisdiction.currentState;
+
+    const activeCounty = isRelocated ? inputs.jurisdiction.targetCounty : inputs.jurisdiction.currentCounty;
+    const activeCustomRate = isRelocated ? inputs.jurisdiction.targetLocalTaxRate : inputs.jurisdiction.currentLocalTaxRate;
+    const effectiveLocalRate = getEffectiveLocalTaxRate(activeState, activeCounty, activeCustomRate);
 
     const isStateFL = activeState === 'FL';
 
@@ -643,7 +659,7 @@ export function runRetirementSimulation(
       taxableYourSalary = Math.max(0, annualYourGrossSalary - annualYour401k);
 
       const estFedRate = taxableYourSalary > 100000 * cpiFactor ? 0.22 : 0.12;
-      const estStateRate = isStateFL ? 0 : 0.0575;
+      const estStateRate = isStateFL ? 0 : (0.0575 + effectiveLocalRate);
       const annualEstTaxWithholding = taxableYourSalary * (estFedRate + estStateRate);
       monthlyYourTaxWithholding = annualEstTaxWithholding / yourWorkingMonthsThisYear;
 
@@ -684,7 +700,7 @@ export function runRetirementSimulation(
       taxableWifeSalary = Math.max(0, annualWifeGrossSalary - annualWife401k);
 
       const estFedRate = taxableWifeSalary > 100000 * cpiFactor ? 0.22 : 0.12;
-      const estStateRate = isStateFL ? 0 : 0.0575;
+      const estStateRate = isStateFL ? 0 : (0.0575 + effectiveLocalRate);
       const annualEstTaxWithholding = taxableWifeSalary * (estFedRate + estStateRate);
       monthlyWifeTaxWithholding = annualEstTaxWithholding / wifeWorkingMonthsThisYear;
 
@@ -701,7 +717,7 @@ export function runRetirementSimulation(
     let yourMedicarePremiums = 0;
     let yourMedicareOOP = 0;
     if (inputs.you.healthcare) {
-      const stateHc = inputs.you.healthcare[activeState];
+      const stateHc = inputs.you.healthcare[activeState as 'MD' | 'FL'];
       const itemizedPre65 = ((stateHc?.pre65MedicalPremium ?? 0) + (stateHc?.pre65DentalPremium ?? 0) + (stateHc?.pre65VisionPremium ?? 0));
       yourPreMedicareAnnual = (itemizedPre65 > 0 ? itemizedPre65 : (inputs.you.preMedicareMonthlyPremium ?? 0)) * 12 * healthcareFactor;
       yourPreMedicareOOP = ((stateHc?.pre65MedicalOOP ?? 0) + (stateHc?.pre65DentalOOP ?? 0) + (stateHc?.pre65VisionOOP ?? 0)) * healthcareFactor;
@@ -726,7 +742,7 @@ export function runRetirementSimulation(
     let wifeMedicareOOP = 0;
     if (!wifeDeceased) {
       if (inputs.wife.healthcare) {
-        const stateHc = inputs.wife.healthcare[activeState];
+        const stateHc = inputs.wife.healthcare[activeState as 'MD' | 'FL'];
         const itemizedPre65 = ((stateHc?.pre65MedicalPremium ?? 0) + (stateHc?.pre65DentalPremium ?? 0) + (stateHc?.pre65VisionPremium ?? 0));
         wifePreMedicareAnnual = (itemizedPre65 > 0 ? itemizedPre65 : (inputs.wife.preMedicareMonthlyPremium ?? 0)) * 12 * healthcareFactor;
         wifePreMedicareOOP = ((stateHc?.pre65MedicalOOP ?? 0) + (stateHc?.pre65DentalOOP ?? 0) + (stateHc?.pre65VisionOOP ?? 0)) * healthcareFactor;
@@ -945,7 +961,8 @@ export function runRetirementSimulation(
           estStdDeductionTotal,
           nonQcdTithe,
           isStateFL,
-          estMdPensionExcl
+          estMdPensionExcl,
+          effectiveLocalRate
         );
       }
 
@@ -1665,7 +1682,8 @@ export function runRetirementSimulation(
             effectiveDeduction,
             nonQcdTithe,
             isStateFL,
-            estMdPensionExcl
+            estMdPensionExcl,
+            effectiveLocalRate
           );
         }
 
@@ -1758,7 +1776,7 @@ export function runRetirementSimulation(
       if (isStateFL) {
         stateIncomeTax = 0;
       } else {
-        stateIncomeTax = calculateMDStateTax(fedAGI, taxableSS, isSingle, cpiFactor, mdPensionExclusion);
+        stateIncomeTax = calculateMDStateTax(fedAGI, taxableSS, isSingle, cpiFactor, mdPensionExclusion, effectiveLocalRate);
       }
 
       // Itemized deduction optimization:
@@ -2105,7 +2123,7 @@ export function runRetirementSimulation(
 
     if (qcdAmount > 0) {
       const marginalFedRate = fedAGI > (isSingle ? 100000 * cpiFactor : 200000 * cpiFactor) ? 0.22 : 0.12;
-      const stateRate = isStateFL ? 0 : 0.0475;
+      const stateRate = isStateFL ? 0 : (0.0475 + effectiveLocalRate);
       qcdTaxSavings = qcdAmount * (marginalFedRate + stateRate);
     }
 

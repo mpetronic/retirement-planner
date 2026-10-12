@@ -4,6 +4,7 @@ import { SimulationResultRow, AppStateInputs, getSimulationStartYear } from '../
 import { TableProperties, Info, AlertTriangle, X } from 'lucide-react';
 import { IRMAA_TIERS_MFJ, IRMAA_TIERS_SINGLE, MD_PENSION_EXCLUSION_BASE_CAP } from '../engine/taxRates2026';
 import { calculateFedTaxWithLTCG, calculateTaxableSS, calculateMDStateTax } from '../engine/simulationEngine';
+import { getEffectiveLocalTaxRate } from '../engine/stateTaxRegistry';
 import { RowInspectionDialog } from './RowInspectionDialog';
 
 interface LookbackLedgerTableProps {
@@ -20,6 +21,7 @@ export const LookbackLedgerTable: React.FC<LookbackLedgerTableProps> = ({
   onNavigateToActuals,
 }) => {
   const [selectedRow, setSelectedRow] = useState<SimulationResultRow | null>(null);
+  const [scrollTop, setScrollTop] = useState(0);
   const simStartYear = getSimulationStartYear(inputs);
   const [showWarningsModal, setShowWarningsModal] = useState(false);
   const deathYear = useMemo(() => {
@@ -134,7 +136,10 @@ export const LookbackLedgerTable: React.FC<LookbackLedgerTableProps> = ({
       </div>
 
       {/* Ledger Table */}
-      <div className="overflow-auto max-h-[600px] rounded-xl border border-slate-800 bg-slate-950/20 custom-scrollbar">
+      <div
+        onScroll={(e) => setScrollTop(e.currentTarget.scrollTop)}
+        className="overflow-auto max-h-[600px] rounded-xl border border-slate-800 bg-slate-950/20 custom-scrollbar"
+      >
         <table className="w-full text-left border-collapse text-xs md:text-sm">
           <thead className="sticky top-0 z-10 bg-slate-900">
             <tr className="bg-slate-900/95 border-b border-slate-800 text-slate-400 text-xs font-semibold uppercase tracking-wider leading-tight">
@@ -244,12 +249,26 @@ export const LookbackLedgerTable: React.FC<LookbackLedgerTableProps> = ({
                 const taxableSSWithout = calculateTaxableSS(totalSS, otherAGIWithout, isSingle);
                 const agiWithout = otherAGIWithout + taxableSSWithout;
 
+                const isRelocated = inputs.jurisdiction.relocationYear !== null && r.year >= inputs.jurisdiction.relocationYear;
+                const isIntraStateRelocation = Boolean(
+                  inputs.jurisdiction.targetState === inputs.jurisdiction.currentState &&
+                  inputs.jurisdiction.targetCounty &&
+                  inputs.jurisdiction.targetCounty !== inputs.jurisdiction.currentCounty
+                );
+                const activeState = isRelocated
+                  ? (isIntraStateRelocation ? inputs.jurisdiction.targetState : (inputs.jurisdiction.targetState || 'FL'))
+                  : inputs.jurisdiction.currentState;
+                const activeCounty = isRelocated ? inputs.jurisdiction.targetCounty : inputs.jurisdiction.currentCounty;
+                const activeCustomRate = isRelocated ? inputs.jurisdiction.targetLocalTaxRate : inputs.jurisdiction.currentLocalTaxRate;
+                const effectiveLocalRate = getEffectiveLocalTaxRate(activeState, activeCounty, activeCustomRate);
+
                 const stateTaxWith = r.stateIncomeTax;
-                const stateTaxWithout = calculateMDStateTax(agiWithout, taxableSSWithout, isSingle, cpiFactor, mdPensionExclusion);
+                const stateTaxWithout = calculateMDStateTax(agiWithout, taxableSSWithout, isSingle, cpiFactor, mdPensionExclusion, effectiveLocalRate);
                 return Math.max(0, stateTaxWith - stateTaxWithout);
               })();
 
-              const isTopRow = idx < 4;
+              const topVisibleIdx = Math.max(0, Math.floor(scrollTop / 38));
+              const isTopRow = idx >= topVisibleIdx && idx < topVisibleIdx + 4;
 
               const prevRow = idx > 0 ? ledger[idx - 1] : null;
 
@@ -295,7 +314,7 @@ export const LookbackLedgerTable: React.FC<LookbackLedgerTableProps> = ({
                  <tr
                    key={r.year}
                    onClick={() => setSelectedRow(r)}
-                   className={`transition-colors hover:bg-slate-900/60 cursor-pointer ${
+                   className={`transition-colors hover:bg-slate-900/60 cursor-pointer relative hover:z-40 ${
                      isWarningRow 
                        ? 'bg-amber-950/20 text-amber-200 border-l-4 border-l-amber-500 font-medium' 
                        : 'text-slate-300 hover:text-slate-100'
@@ -339,7 +358,7 @@ export const LookbackLedgerTable: React.FC<LookbackLedgerTableProps> = ({
                       </span>
                     </div>
                   </td>
-                  <td className="px-2.5 py-2.5 font-mono relative group cursor-help text-slate-300">
+                  <td className="px-2.5 py-2.5 font-mono relative group cursor-help hover:z-50 text-slate-300">
                     <span>{formatCurrency(r.magi)}</span>
                     <div className={`absolute left-1/2 -translate-x-1/2 w-72 bg-slate-950/95 backdrop-blur-md border border-slate-800 rounded-2xl p-4 shadow-2xl opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 z-50 text-xs text-slate-300 pointer-events-none space-y-2 font-sans normal-case ${
                       isTopRow ? 'top-full mt-2' : 'bottom-full mb-2'
@@ -401,7 +420,7 @@ export const LookbackLedgerTable: React.FC<LookbackLedgerTableProps> = ({
                   </td>
 
                   {/* Portfolio Growth Return */}
-                  <td className={`px-2.5 py-2.5 font-mono relative group cursor-help ${
+                  <td className={`px-2.5 py-2.5 font-mono relative group cursor-help hover:z-50 ${
                     (r.portfolioGrowth || 0) < 0
                       ? 'text-rose-400 font-semibold'
                       : (r.portfolioGrowth || 0) > 0
@@ -430,7 +449,7 @@ export const LookbackLedgerTable: React.FC<LookbackLedgerTableProps> = ({
 
                   {/* Charitable Tithe & QCD */}
                   {inputs.charitySettings?.enabled && (
-                    <td className="px-2.5 py-2.5 font-mono text-rose-400 relative group cursor-help">
+                    <td className="px-2.5 py-2.5 font-mono text-rose-400 relative group cursor-help hover:z-50">
                       <span>{formatCurrency(r.charitableTithe || 0)}</span>
                       <div className={`absolute left-1/2 -translate-x-1/2 w-64 bg-slate-950/95 backdrop-blur-md border border-slate-800 rounded-2xl p-3.5 shadow-2xl opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 z-50 text-xs text-slate-300 pointer-events-none space-y-1.5 font-sans normal-case ${
                         isTopRow ? 'top-full mt-2' : 'bottom-full mb-2'
@@ -466,7 +485,7 @@ export const LookbackLedgerTable: React.FC<LookbackLedgerTableProps> = ({
                       <span className="text-slate-600 font-mono">$0</span>
                     )}
                   </td>
-                  <td className="px-2.5 py-2.5 font-mono relative group cursor-help">
+                  <td className="px-2.5 py-2.5 font-mono relative group cursor-help hover:z-50">
                     {r.intentionalRothConversion > 0 ? (
                       <>
                         <span className="text-amber-400/90 font-semibold font-mono">
@@ -506,7 +525,7 @@ export const LookbackLedgerTable: React.FC<LookbackLedgerTableProps> = ({
                       <span className="text-slate-600 font-mono">$0</span>
                     )}
                   </td>
-                  <td className="px-2.5 py-2.5 font-mono text-rose-400/90 relative group cursor-help">
+                  <td className="px-2.5 py-2.5 font-mono text-rose-400/90 relative group cursor-help hover:z-50">
                     <span>{formatCurrency(r.totalExpenses)}</span>
                     <div className={`absolute left-1/2 -translate-x-1/2 w-64 bg-slate-950/95 backdrop-blur-md border border-slate-800 rounded-2xl p-4 shadow-2xl opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 z-50 text-xs text-slate-300 pointer-events-none space-y-2 font-sans normal-case ${
                       isTopRow ? 'top-full mt-2' : 'bottom-full mb-2'
@@ -536,7 +555,7 @@ export const LookbackLedgerTable: React.FC<LookbackLedgerTableProps> = ({
                         </>
                       )}
                       <div className="flex justify-between items-center text-[11px]">
-                        <span className="text-slate-400">State Income Tax:</span>
+                        <span className="text-slate-400">State & Local Income Tax:</span>
                         <span className="font-mono text-slate-200 font-medium">{formatCurrency(r.stateIncomeTax)}</span>
                       </div>
                       {r.intentionalRothConversion > 0 && r.stateIncomeTax > 0 && (
@@ -578,7 +597,7 @@ export const LookbackLedgerTable: React.FC<LookbackLedgerTableProps> = ({
                     </div>
                   </td>
                   {/* Brokerage Assets Cell */}
-                  <td className="px-2.5 py-2.5 font-mono text-slate-300 relative group cursor-help">
+                  <td className="px-2.5 py-2.5 font-mono text-slate-300 relative group cursor-help hover:z-50">
                     <span>{formatCurrency(endBrokerage)}</span>
                     <div className={`absolute left-1/2 -translate-x-1/2 w-64 bg-slate-950/95 backdrop-blur-md border border-slate-800 rounded-2xl p-4 shadow-2xl opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 z-50 text-xs text-slate-300 pointer-events-none space-y-2 font-sans normal-case ${
                       isTopRow ? 'top-full mt-2' : 'bottom-full mb-2'
@@ -617,7 +636,7 @@ export const LookbackLedgerTable: React.FC<LookbackLedgerTableProps> = ({
                   </td>
 
                   {/* Cash Assets Cell */}
-                  <td className="px-2.5 py-2.5 font-mono text-slate-300 relative group cursor-help">
+                  <td className="px-2.5 py-2.5 font-mono text-slate-300 relative group cursor-help hover:z-50">
                     <span>{formatCurrency(endCash)}</span>
                     <div className={`absolute left-1/2 -translate-x-1/2 w-64 bg-slate-950/95 backdrop-blur-md border border-slate-800 rounded-2xl p-4 shadow-2xl opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 z-50 text-xs text-slate-300 pointer-events-none space-y-2 font-sans normal-case ${
                       isTopRow ? 'top-full mt-2' : 'bottom-full mb-2'
@@ -649,7 +668,7 @@ export const LookbackLedgerTable: React.FC<LookbackLedgerTableProps> = ({
                     </div>
                   </td>
                   {/* Traditional IRA Cell */}
-                  <td className="px-2.5 py-2.5 font-mono text-slate-300 relative group cursor-help">
+                  <td className="px-2.5 py-2.5 font-mono text-slate-300 relative group cursor-help hover:z-50">
                     <span>{formatCurrency(endPreTax)}</span>
                     <div className={`absolute left-1/2 -translate-x-1/2 w-64 bg-slate-950/95 backdrop-blur-md border border-slate-800 rounded-2xl p-4 shadow-2xl opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 z-50 text-xs text-slate-300 pointer-events-none space-y-2 font-sans normal-case ${
                       isTopRow ? 'top-full mt-2' : 'bottom-full mb-2'
@@ -705,7 +724,7 @@ export const LookbackLedgerTable: React.FC<LookbackLedgerTableProps> = ({
                     </div>
                   </td>
                   {/* Roth (Tax-Free) Cell */}
-                  <td className="px-2.5 py-2.5 font-mono text-emerald-400/90 relative group cursor-help">
+                  <td className="px-2.5 py-2.5 font-mono text-emerald-400/90 relative group cursor-help hover:z-50">
                     <span>{formatCurrency(endRoth)}</span>
                     <div className={`absolute left-1/2 -translate-x-1/2 w-64 bg-slate-950/95 backdrop-blur-md border border-slate-800 rounded-2xl p-4 shadow-2xl opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 z-50 text-xs text-slate-300 pointer-events-none space-y-2 font-sans normal-case ${
                       isTopRow ? 'top-full mt-2' : 'bottom-full mb-2'
@@ -743,7 +762,7 @@ export const LookbackLedgerTable: React.FC<LookbackLedgerTableProps> = ({
                     </div>
                   </td>
                   <td className="px-2.5 py-2.5 font-mono font-bold text-slate-100">{formatCurrency(r.totalPortfolioValue)}</td>
-                  <td className="px-2.5 py-2.5 whitespace-nowrap relative group cursor-help">
+                  <td className="px-2.5 py-2.5 whitespace-nowrap relative group cursor-help hover:z-50">
                     <span
                       className={`px-2 py-0.5 rounded-full text-xs font-semibold ${
                         r.surchargeTier > 0
