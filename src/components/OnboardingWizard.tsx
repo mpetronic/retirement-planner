@@ -229,7 +229,7 @@ export const OnboardingWizard: React.FC<OnboardingWizardProps> = ({ onComplete, 
       },
       jurisdiction: {
         currentState,
-        targetState: enableRelocation ? targetState : currentState,
+        targetState: enableRelocation ? targetState : (currentState === 'MD' ? 'FL' : 'MD'),
         relocationYear: enableRelocation ? relocationYear : null,
       },
       growthAssumptions: {

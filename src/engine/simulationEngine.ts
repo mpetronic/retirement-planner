@@ -462,8 +462,12 @@ export function runRetirementSimulation(
     const monthlyCashRate = Math.pow(1 + cashRate, 1 / 12) - 1;
 
     // State determination
-    const activeState = (inputs.jurisdiction.relocationYear !== null && year >= inputs.jurisdiction.relocationYear)
+    const resolvedTargetState = (inputs.jurisdiction.targetState && inputs.jurisdiction.targetState !== inputs.jurisdiction.currentState)
       ? inputs.jurisdiction.targetState
+      : (inputs.jurisdiction.currentState === 'MD' ? 'FL' : 'MD');
+
+    const activeState = (inputs.jurisdiction.relocationYear !== null && year >= inputs.jurisdiction.relocationYear)
+      ? resolvedTargetState
       : inputs.jurisdiction.currentState;
 
     const isStateFL = activeState === 'FL';

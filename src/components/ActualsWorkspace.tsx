@@ -1684,7 +1684,7 @@ export const ActualsWorkspace: React.FC<ActualsWorkspaceProps> = ({
               ) : (
                 <FileSpreadsheet className="w-3.5 h-3.5 text-emerald-400" />
               )}
-              <span>{isDownloadingDbExpenses ? 'Fetching DB...' : 'Download Spreadsheet'}</span>
+              <span>{isDownloadingDbExpenses ? 'Fetching DB...' : 'Export'}</span>
             </button>
 
             <button

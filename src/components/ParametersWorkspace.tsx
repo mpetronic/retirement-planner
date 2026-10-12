@@ -839,7 +839,15 @@ export const ParametersWorkspace: React.FC<ParametersWorkspaceProps> = ({
                       checked={inputs.jurisdiction.relocationYear !== null}
                       onChange={(e) => {
                         if (e.target.checked) {
-                          updateNestedState('jurisdiction', 'relocationYear', lastRelocationYear.current);
+                          const year = lastRelocationYear.current ?? simStartYear;
+                          onChange({
+                            ...inputs,
+                            jurisdiction: {
+                              ...inputs.jurisdiction,
+                              targetState: 'FL',
+                              relocationYear: year,
+                            },
+                          });
                         } else {
                           if (inputs.jurisdiction.relocationYear !== null) {
                             lastRelocationYear.current = inputs.jurisdiction.relocationYear;
@@ -858,7 +866,16 @@ export const ParametersWorkspace: React.FC<ParametersWorkspaceProps> = ({
                       min={simStartYear}
                       max={simStartYear + 35}
                       value={inputs.jurisdiction.relocationYear}
-                      onChange={(val) => updateNestedState('jurisdiction', 'relocationYear', val)}
+                      onChange={(val) => {
+                        onChange({
+                          ...inputs,
+                          jurisdiction: {
+                            ...inputs.jurisdiction,
+                            targetState: 'FL',
+                            relocationYear: val,
+                          },
+                        });
+                      }}
                       className="w-full h-1.5 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-amber-500"
                       renderLabel={(displayVal) => (
                         <div className="flex justify-between items-center text-xs mb-1">

@@ -244,6 +244,18 @@ describe('runRetirementSimulation', () => {
     expect(row2030!.stateIncomeTax).toBe(0);
   });
 
+  it('should safeguard and drop state income taxes to 0 when relocating even if targetState was erroneously stored as MD', () => {
+    const inputs = getMockInputs();
+    inputs.jurisdiction.relocationYear = 2026;
+    inputs.jurisdiction.currentState = 'MD';
+    inputs.jurisdiction.targetState = 'MD'; // Erroneously stored as MD
+
+    const results = runRetirementSimulation(inputs);
+    const row2026 = results.find(r => r.year === 2026);
+    expect(row2026).toBeDefined();
+    expect(row2026!.stateIncomeTax).toBe(0);
+  });
+
   it('should calculate Social Security income starting at target claiming ages', () => {
     const inputs = getMockInputs();
     inputs.you.targetSSClaimingAge = 67; // John born 1965 => claims at 2032
