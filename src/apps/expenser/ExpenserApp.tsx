@@ -162,6 +162,21 @@ export const ExpenserApp: React.FC = () => {
     return () => window.removeEventListener('resize', handleDeviceCheck);
   }, []);
 
+  // Sync document title and register Service Worker for offline PWA installation
+  useEffect(() => {
+    document.title = 'Expenser - Retirement Companion';
+    if (typeof window !== 'undefined' && 'serviceWorker' in navigator && (import.meta.env.PROD || process.env.NODE_ENV === 'production')) {
+      navigator.serviceWorker
+        .register('/sw.js')
+        .then((reg) => {
+          reg.update().catch(() => {});
+        })
+        .catch((err) => {
+          console.warn('Service worker registration failed:', err);
+        });
+    }
+  }, []);
+
   // Android Phone Simulation Mode (useful for desktop / Debian browser simulation)
   const [isSimulatePhone, setIsSimulatePhone] = useState<boolean>(() => {
     if (typeof window === 'undefined') return false;

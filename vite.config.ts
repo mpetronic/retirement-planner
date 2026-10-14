@@ -3,6 +3,7 @@ import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 import { execSync } from 'child_process';
 import { resolve } from 'path';
+import { copyFileSync, mkdirSync } from 'fs';
 import pkg from './package.json';
 
 function getTimestampYYYYMMDDHHMMSS(d: Date = new Date()): string {
@@ -149,9 +150,44 @@ function versionPlugin() {
   };
 }
 
+function expenserRewritePlugin() {
+  return {
+    name: 'vite-plugin-expenser-rewrite',
+    configureServer(server: import('vite').ViteDevServer) {
+      server.middlewares.use((req, _res, next) => {
+        const url = req.url ? req.url.split('?')[0] : '';
+        if (url === '/expenser' || url === '/expenser/') {
+          req.url = '/expenser.html' + (req.url && req.url.includes('?') ? '?' + req.url.split('?')[1] : '');
+        }
+        next();
+      });
+    },
+    configurePreviewServer(server: import('vite').PreviewServer) {
+      server.middlewares.use((req, _res, next) => {
+        const url = req.url ? req.url.split('?')[0] : '';
+        if (url === '/expenser' || url === '/expenser/') {
+          req.url = '/expenser.html' + (req.url && req.url.includes('?') ? '?' + req.url.split('?')[1] : '');
+        }
+        next();
+      });
+    },
+    closeBundle() {
+      try {
+        const outDir = resolve(__dirname, 'dist');
+        const expenserHtml = resolve(outDir, 'expenser.html');
+        const expenserDir = resolve(outDir, 'expenser');
+        mkdirSync(expenserDir, { recursive: true });
+        copyFileSync(expenserHtml, resolve(expenserDir, 'index.html'));
+      } catch {
+        /* ignore */
+      }
+    },
+  };
+}
+
 // https://vite.dev/config/
 export default defineConfig({
-  plugins: [react(), versionPlugin()],
+  plugins: [react(), versionPlugin(), expenserRewritePlugin()],
   define: {
     __APP_VERSION_INFO__: JSON.stringify(resolveScmVersionInfo()),
   },

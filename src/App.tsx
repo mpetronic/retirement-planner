@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useDeferredValue, useRef, useCallback } from 'react';
+import { useState, useEffect, useMemo, useDeferredValue, useRef, useCallback, lazy, Suspense } from 'react';
 import {
   AppStateInputs,
   LockedReturnSequence,
@@ -46,10 +46,17 @@ import { syncPlannerCatalogToCloudStorage, syncCustomCategoriesToPlanner } from 
 import { SAMPLE_DEMO_PLAN } from './shared/utils/sampleDemoPlan';
 import { isLocalhostEnvironment, resolveAppMode } from './shared/utils/appMode';
 
+const ExpenserApp = lazy(() => import('./apps/expenser/ExpenserApp').then((m) => ({ default: m.ExpenserApp })));
+
 const VALID_PLANNER_PATHS = new Set(['', '/', '/planner', '/planner/', '/index.html']);
+const EXPENSER_PATHS = new Set(['/expenser', '/expenser/', '/expenser.html']);
 
 function isKnownPlannerPath(pathname: string): boolean {
   return VALID_PLANNER_PATHS.has(pathname.trim().toLowerCase());
+}
+
+function isExpenserPath(pathname: string): boolean {
+  return EXPENSER_PATHS.has(pathname.trim().toLowerCase());
 }
 
 // Default initial state matching specifications
@@ -954,8 +961,23 @@ function App() {
 
   const isParamView = activeView.startsWith('params-');
 
-  // Check for unknown bogus paths (e.g. /abc, /whatever) and render 404 page
+  // Check for expenser route (e.g. when served via SPA fallback or npx serve -s dist)
   const currentPath = typeof window !== 'undefined' ? window.location.pathname : '/';
+  if (isExpenserPath(currentPath)) {
+    return (
+      <Suspense
+        fallback={
+          <div className="h-screen w-screen bg-slate-950 flex items-center justify-center">
+            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-emerald-400" />
+          </div>
+        }
+      >
+        <ExpenserApp />
+      </Suspense>
+    );
+  }
+
+  // Check for unknown bogus paths (e.g. /abc, /whatever) and render 404 page
   if (!isKnownPlannerPath(currentPath)) {
     return (
       <NotFoundPage
