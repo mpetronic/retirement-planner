@@ -33,7 +33,7 @@ import {
   Check,
   Smartphone,
 } from 'lucide-react';
-import { getStorageAdapter } from '../../shared/storage';
+import { getStorageAdapter, AwsCloudStorageAdapter } from '../../shared/storage';
 import { ActualExpense, ExpenseCategory } from '../../shared/types/expenses';
 import { resolveLoggedInPayerName } from '../../shared/utils/profileNames';
 import { AuthService } from '../../shared/auth/AuthService';
@@ -458,6 +458,51 @@ export const ExpenserApp: React.FC = () => {
     };
   }, [loadData]);
 
+  // Keep trying to push the offline queue: on startup, when connectivity returns, when the
+  // app is brought back to the foreground, and periodically while anything is still queued.
+  const retryQueuedSync = useCallback(async (): Promise<string | null> => {
+    if (!(adapter instanceof AwsCloudStorageAdapter)) return null;
+    if (typeof navigator !== 'undefined' && !navigator.onLine) return 'Offline';
+    if (!AuthService.isAuthenticated()) return 'Not signed in - sign in to sync queued expenses';
+    try {
+      await adapter.flushPendingExpenses();
+    } catch (err) {
+      console.warn('Queued expense retry failed:', err);
+    }
+    const pending = await adapter.getPendingSyncExpenses();
+    setPendingCount(pending.length);
+    return pending.length > 0 ? adapter.getLastSyncError() || 'Unknown sync failure' : null;
+  }, [adapter]);
+
+  useEffect(() => {
+    retryQueuedSync();
+    const handleVisible = () => {
+      if (document.visibilityState === 'visible') retryQueuedSync();
+    };
+    window.addEventListener('online', handleVisible);
+    document.addEventListener('visibilitychange', handleVisible);
+    return () => {
+      window.removeEventListener('online', handleVisible);
+      document.removeEventListener('visibilitychange', handleVisible);
+    };
+  }, [retryQueuedSync]);
+
+  useEffect(() => {
+    if (pendingCount <= 0) return;
+    const timer = window.setInterval(() => {
+      retryQueuedSync();
+    }, 30000);
+    return () => window.clearInterval(timer);
+  }, [pendingCount, retryQueuedSync]);
+
+  const handleSyncPillTap = async () => {
+    if (pendingCount <= 0) return;
+    const reason = await retryQueuedSync();
+    if (reason) {
+      alert(`Queued expenses are not synced yet.\n\n${reason}`);
+    }
+  };
+
   // Haptic feedback helper
   const triggerHaptic = (ms = 10) => {
     if (typeof navigator !== 'undefined' && 'vibrate' in navigator) {
@@ -751,13 +796,16 @@ export const ExpenserApp: React.FC = () => {
         {/* Status & Hamburger Action */}
         <div className="flex items-center space-x-2">
           {/* Sync / Offline Pill */}
-          <div
+          <button
+            type="button"
+            onClick={handleSyncPillTap}
+            title={pendingCount > 0 ? 'Tap to retry syncing queued expenses' : undefined}
             className={`flex items-center space-x-1.5 px-2.5 py-1 rounded-full text-xs font-medium border ${
               isOnline
                 ? pendingCount > 0
-                  ? 'bg-amber-500/10 text-amber-400 border-amber-500/30'
-                  : 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30'
-                : 'bg-rose-500/10 text-rose-400 border-rose-500/30'
+                  ? 'bg-amber-500/10 text-amber-400 border-amber-500/30 cursor-pointer'
+                  : 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30 cursor-default'
+                : 'bg-rose-500/10 text-rose-400 border-rose-500/30 cursor-default'
             }`}
           >
             {isOnline ? (
@@ -771,7 +819,7 @@ export const ExpenserApp: React.FC = () => {
                 <span>Offline</span>
               </>
             )}
-          </div>
+          </button>
 
           {/* Android Phone Simulation Toggle Button (Visible exclusively in desktop browsers) */}
           {!isMobileOrPwa && (
