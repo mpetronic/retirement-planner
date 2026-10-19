@@ -555,6 +555,7 @@ export interface SimulationResultRow {
   employee401kContribution?: number; // Total annual employee pre-tax 401(k) contributions
   ficaTaxesPaid?: number; // Social Security (6.2%) + Medicare (1.45% + 0.9%) payroll taxes paid
   incomeTaxWithheld?: number; // Estimated federal and state paycheck income tax withholdings
+  quarterlyEstimatedTaxesPaid?: number; // Estimated federal and state quarterly estimated taxes paid (months 3, 5, 8, 11)
   netTakeHomeSalary?: number; // Net take-home salary available for expenses
 
   // Charitable Giving & Tithing (with QCD)

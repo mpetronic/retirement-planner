@@ -86,12 +86,18 @@ Single Filer Thresholds (For Survivor Simulations):
 - **Qualification Condition:** IRMAA surcharges apply **only** when an individual is age 65+ (or custom start date) AND is not covered by an active employer plan (self or spouse).
 
 ## 6.1 The Tithing Engine & Charitable Giving Architecture
-- **Objective:** Provide smooth, predictable monthly financial support to ministries and missionaries across all market environments, preventing abrupt drops to $0 during market crashes.
-- **Monthly Yale Hybrid Smoothed Rule:** Giving is computed monthly:
-  `monthlyGiving[m] = (0.70 * priorMonthlyGiving * (1 + monthlyInflation)) + (0.30 * targetAnnualRate * totalPortfolio[m] / 12)`
-  - 70% weight anchors to prior giving (adjusted for inflation) for mission stability.
-  - 30% weight floats with portfolio size to scale generosity with wealth.
-  - Bounded by optional minimum monthly floor and maximum cap.
+- **Biblical Principle (First Fruits of Portfolio Gains):** Charitable tithing is based strictly on investment returns (capital growth, dividends, and interest) rather than total portfolio principal balance, ensuring that giving honors the "first fruits" of growth without depleting core retirement assets.
+- **Positive Gains Reserve Bank:**
+  - In positive return months, 10% (or user-configured growthPercentage) of total monthly investment earnings is credited to a persistent Tithe Reserve Bank.
+  - In down-market periods (zero or negative returns), zero is credited. Accumulated reserve credits remain intact and are not decremented by market losses.
+  - Monthly giving is drawn from the Tithe Reserve Bank, guaranteeing that total cumulative charitable giving over time is realistically limited to the tenth of gains earned over time.
+- **Monthly Yale Hybrid Smoothed Rule on Growth:**
+  - Target monthly giving scales with expected investment growth dollars:
+    targetMonthlyTithe = (growthPercentage * currentPortfolio * expectedAnnualReturnRate) / 12
+  - Dampening formula blends 70% prior giving with 30% target growth:
+    smoothedMonthlyTithe = (0.70 * priorMonthlyGiving * (1 + monthlyInflation)) + (0.30 * targetMonthlyTithe)
+  - Subject to optional annual dollar floor (minAnnualTithe) and cap (maxAnnualTithe).
+  - Actual payout is capped at available reserve: monthlyTithe = min(smoothedMonthlyTithe, titheReserveBank). In down markets, giving smoothly continues by drawing down the accumulated reserve. If a prolonged downturn exhausts the reserve, giving ramps down until market recovery generates new gains.
 - **Lifecycle & Tax Mechanics:**
   - *Pre-Age 70.5:* Funded from standard monthly cash flow; eligible for Schedule A itemized deductions (subject to SALT limits).
   - *Post-Age 70.5 (QCDs):* Distributed directly from the Traditional Pre-Tax IRA as Qualified Charitable Distributions (up to the statutory limit). QCDs satisfy statutory Required Minimum Distributions (RMDs) dollar-for-dollar under IRC Section 408(d)(8), completely bypassing Federal and State AGI and preserving lower IRMAA tiers.
