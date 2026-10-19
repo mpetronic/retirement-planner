@@ -1492,10 +1492,13 @@ export function runRetirementSimulation(
           deficit -= bufferDraw;
         }
 
-        // Step 1: Draw from pre-existing Cash savings above the configured minimum cash reserve target floor
+        // Step 1: Draw from pre-existing Cash savings
+        // In bear markets (negative equity return), freeze equity sales from brokerage and allow cash
+        // runway to deplete to absorb living deficits. In up markets, protect the minCashReserveTarget floor.
+        const isBearMarket = equityRate < 0;
         if (deficit > 0) {
           const currentTotalCash = (youDeceased ? 0 : yourCash) + (wifeDeceased || inputs.isSingleFiler ? 0 : wifeCash);
-          const availableCashForDraw = Math.max(0, currentTotalCash - minCashReserveTarget);
+          const availableCashForDraw = isBearMarket ? currentTotalCash : Math.max(0, currentTotalCash - minCashReserveTarget);
 
           if (availableCashForDraw > 0) {
             if (!youDeceased && yourCash > 0) {
@@ -1505,7 +1508,7 @@ export function runRetirementSimulation(
               yourCash -= draw;
             }
             if (deficit > 0 && !wifeDeceased && wifeCash > 0) {
-              const remAvail = Math.max(0, (yourCash + wifeCash) - minCashReserveTarget);
+              const remAvail = isBearMarket ? wifeCash : Math.max(0, (yourCash + wifeCash) - minCashReserveTarget);
               const draw = Math.min(deficit, remAvail, wifeCash);
               annualDrawdownCash += draw;
               deficit -= draw;
@@ -1610,11 +1613,23 @@ export function runRetirementSimulation(
       annualWifeInterest += wifeInterest;
       wifeCash = wifeCash + wifeInterest;
 
+      // Unspent intra-year cash buffer and dividend float earns monthly cash yield
+      let bufferInterest = 0;
+      if (annualCashBuffer > 0 && monthlyCashRate > 0) {
+        bufferInterest = annualCashBuffer * monthlyCashRate;
+        annualCashBuffer += bufferInterest;
+        if (!youDeceased) {
+          annualYourInterest += bufferInterest;
+        } else if (!wifeDeceased && !inputs.isSingleFiler) {
+          annualWifeInterest += bufferInterest;
+        }
+      }
+
       const monthlyPreTaxGain = (yourPreTax + wifePreTax) - startPreTax;
       const monthlyRothGain = (yourRoth + wifeRoth) - startRoth;
       const monthlyTaxableGain = (yourTaxable + wifeTaxable) - startTaxable;
       const monthlyDivGain = monthlyYourDividends + monthlyWifeDividends;
-      const monthlyIntGain = yourInterest + wifeInterest;
+      const monthlyIntGain = yourInterest + wifeInterest + bufferInterest;
       const totalMonthlyInvestmentReturn = monthlyPreTaxGain + monthlyRothGain + monthlyTaxableGain + monthlyDivGain + monthlyIntGain;
 
       if (inputs.charitySettings?.enabled && totalMonthlyInvestmentReturn > 0) {
@@ -1831,10 +1846,11 @@ export function runRetirementSimulation(
         annualCashBuffer -= draw;
         deficit -= draw;
       }
-      // Step 1: Cash savings above reserve floor
+      // Step 1: Cash savings (in bear markets, pay from cash first; in up markets, protect minCashReserveTarget floor)
       if (deficit > 0) {
+        const isBearMarket = equityRate < 0;
         const currentTotalCash = (youDeceased ? 0 : yourCash) + (wifeDeceased || inputs.isSingleFiler ? 0 : wifeCash);
-        const availableCashForDraw = Math.max(0, currentTotalCash - minCashReserveTarget);
+        const availableCashForDraw = isBearMarket ? currentTotalCash : Math.max(0, currentTotalCash - minCashReserveTarget);
         if (availableCashForDraw > 0) {
           if (!youDeceased && yourCash > 0) {
             const draw = Math.min(deficit, availableCashForDraw, yourCash);
@@ -1843,7 +1859,7 @@ export function runRetirementSimulation(
             yourCash -= draw;
           }
           if (deficit > 0 && !wifeDeceased && wifeCash > 0) {
-            const remAvail = Math.max(0, (yourCash + wifeCash) - minCashReserveTarget);
+            const remAvail = isBearMarket ? wifeCash : Math.max(0, (yourCash + wifeCash) - minCashReserveTarget);
             const draw = Math.min(deficit, remAvail, wifeCash);
             annualDrawdownCash += draw;
             deficit -= draw;

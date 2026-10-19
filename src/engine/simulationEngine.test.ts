@@ -420,8 +420,8 @@ describe('runRetirementSimulation', () => {
     
     
     const actualEndTaxable = row2040!.endYourTaxableBrokerage + row2040!.endWifeTaxableBrokerage;
-    // Expected value calibrated for the monthly-compounding engine without double-counted RMDs.
-    expect(actualEndTaxable).toBeCloseTo(653400, 0);
+    // Expected value calibrated for the monthly-compounding engine with cash buffer yield.
+    expect(actualEndTaxable).toBeCloseTo(664784, 0);
   });
 
   it('should apply pre-Medicare premiums and detailed health expenses correctly based on age, work status, and retirement', () => {
@@ -738,10 +738,9 @@ describe('runRetirementSimulation', () => {
     const row2026 = resultsMD.find(r => r.year === 2026);
     expect(row2026!.incomeInflow).toBeGreaterThanOrEqual(19500);
 
-    // Verify basis step-up in MD: 50% step-up (deceased's account stepped up to FMV at death).
-    // Expected value calibrated for the monthly-compounding engine without double-counted RMDs.
+    // Expected value calibrated for the monthly-compounding engine with cash buffer yield.
     const row2045MD = resultsMD.find(r => r.year === 2045);
-    expect(row2045MD!.endWifeTaxableBasis).toBeCloseTo(366179.1, 1);
+    expect(row2045MD!.endWifeTaxableBasis).toBeCloseTo(367370.1, 1);
 
     // Now set current and target state to FL
     inputs.jurisdiction.currentState = 'FL';
@@ -749,9 +748,9 @@ describe('runRetirementSimulation', () => {
     const resultsFL = runRetirementSimulation(inputs, true);
     const row2045FL = resultsFL.find(r => r.year === 2045);
     
-    // Expected values calibrated for the monthly-compounding engine without double-counted RMDs.
-    expect(row2045FL!.endWifeTaxableBasis).toBeCloseTo(1282335.5, 1);
-    expect(row2045FL!.endWifeTaxableBrokerage).toBeCloseTo(1329824.1, 1);
+    // Expected values calibrated for the monthly-compounding engine with cash buffer yield.
+    expect(row2045FL!.endWifeTaxableBasis).toBeCloseTo(1284322.9, 1);
+    expect(row2045FL!.endWifeTaxableBrokerage).toBeCloseTo(1331885.1, 1);
   });
 
   it('should draw from Cash Assets first and grow remaining cash at the fixed income rate', () => {
@@ -803,6 +802,34 @@ describe('runRetirementSimulation', () => {
     // Cash reserve floor (100k) is protected: end cash remains at or above the 100k target floor
     expect(row2026!.endYourCash).toBeGreaterThanOrEqual(100000);
     expect(row2026!.drawdownTaxable).toBeGreaterThan(0);
+  });
+
+  it('should expend cash runway and freeze equity sales during bear markets', () => {
+    const inputs = getMockInputs();
+    inputs.growthAssumptions.minCashReserveDollars = 100000;
+    inputs.isSingleFiler = true;
+    inputs.you.birthDate = '1960-01-01';
+    inputs.you.plannedRetirementAge = 60;
+    inputs.annualLivingExpenses = 50000;
+
+    // Set negative equity return (bear market)
+    inputs.growthAssumptions.equityReturnRate = -0.20;
+
+    // Starting balances
+    inputs.portfolio.yourCash = 100000;
+    inputs.portfolio.yourTaxableBrokerage = 200000;
+    inputs.portfolio.yourTaxableBasis = 150000;
+    inputs.portfolio.yourPreTaxIRA = 0;
+    inputs.portfolio.yourRothIRA = 0;
+
+    const results = runRetirementSimulation(inputs);
+    const row2026 = results.find(r => r.year === 2026);
+    expect(row2026).toBeDefined();
+
+    // In a bear market, cash runway absorbs the deficit to protect equities from being sold at a loss
+    expect(row2026!.drawdownCash).toBeGreaterThan(0);
+    expect(row2026!.drawdownTaxable).toBe(0);
+    expect(row2026!.endYourCash).toBeLessThan(100000);
   });
 });
 
