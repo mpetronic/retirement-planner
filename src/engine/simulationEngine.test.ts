@@ -1281,6 +1281,9 @@ describe('runRetirementSimulation fixes', () => {
 
       expect(row1.portfolioGrowth).toBe(0);
       expect(row1.charitableTithe).toBeGreaterThanOrEqual(5000);
+      expect(results[1].charitableTithe).toBeGreaterThanOrEqual(5000);
+      expect(results[2].charitableTithe).toBeGreaterThanOrEqual(5000);
+      expect(results[3].charitableTithe).toBeGreaterThanOrEqual(5000);
     });
 
     it('should preserve negative portfolio growth in down-market years while maintaining smoothed giving', () => {

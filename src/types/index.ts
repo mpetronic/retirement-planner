@@ -564,6 +564,7 @@ export interface SimulationResultRow {
   qcdAmount: number; // Portion funded via tax-free QCDs from Traditional IRAs (offsets RMDs)
   nonQcdTithe: number; // Portion funded from Cash and Taxable Brokerage
   qcdTaxSavings: number; // Estimated direct tax savings via QCD vs taking taxable RMDs
+  titheReserveBank?: number; // Accumulated positive gains tithe reserve balance at year-end
   
   // Ending Balances (after growth and drawdowns)
   endYourPreTaxIRA: number;

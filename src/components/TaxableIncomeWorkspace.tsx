@@ -194,7 +194,8 @@ export const TaxableIncomeWorkspace: React.FC<TaxableIncomeWorkspaceProps> = ({
       const grossSalary = (r.yourSalary || 0) + (r.wifeSalary || 0);
       const employee401k = r.employee401kContribution || 0;
       const taxableSalary = Math.max(0, grossSalary - employee401k);
-      const rmdsAndTradDraws = (r.yourRMD || 0) + (r.wifeRMD || 0) + (r.drawdownPreTax || 0);
+      const forcedRMDs = (r.yourRMD || 0) + (r.wifeRMD || 0);
+      const preTaxDraws = r.drawdownPreTax || 0;
       const investmentIncome = (r.taxableDividends || 0) + (r.taxableInterest || 0) + (r.capitalGainsTriggered || 0);
       const otherIncome = r.otherTaxableIncome || 0;
 
@@ -206,12 +207,13 @@ export const TaxableIncomeWorkspace: React.FC<TaxableIncomeWorkspaceProps> = ({
       // Scale all income components proportionally to their share of total gross income,
       // ensuring the stacked bar components exactly sum up to Total Taxable Income,
       // preserving visibility of dividends, interest, and capital gains in all years.
-      const totalGrossAGI = taxableSalary + taxableSS + rmdsAndTradDraws + investmentIncome + otherIncome + rothConv;
+      const totalGrossAGI = taxableSalary + taxableSS + forcedRMDs + preTaxDraws + investmentIncome + otherIncome + rothConv;
       const globalScale = (totalGrossAGI > 0 && totalTaxableIncome > 0) ? (totalTaxableIncome / totalGrossAGI) : 0;
 
       const netSS = taxableSS * globalScale;
       const netSalary = taxableSalary * globalScale;
-      const netRMDsDraws = rmdsAndTradDraws * globalScale;
+      const netForcedRMDs = forcedRMDs * globalScale;
+      const netPreTaxDraws = preTaxDraws * globalScale;
       const netInvestment = investmentIncome * globalScale;
       const netOther = otherIncome * globalScale;
       const taxableRothConv = rothConv * globalScale;
@@ -229,7 +231,8 @@ export const TaxableIncomeWorkspace: React.FC<TaxableIncomeWorkspaceProps> = ({
         taxableRothConv,
         netSS,
         netSalary,
-        netRMDsDraws,
+        netForcedRMDs,
+        netPreTaxDraws,
         netInvestment,
         netOther,
         rawDividends: (r.taxableDividends || 0) + (r.taxableInterest || 0),
@@ -285,7 +288,8 @@ export const TaxableIncomeWorkspace: React.FC<TaxableIncomeWorkspaceProps> = ({
 
     const ssData = processedRows.map((r) => r.netSS);
     const salaryData = processedRows.map((r) => r.netSalary);
-    const rmdsData = processedRows.map((r) => r.netRMDsDraws);
+    const forcedRMDsData = processedRows.map((r) => r.netForcedRMDs);
+    const preTaxDrawsData = processedRows.map((r) => r.netPreTaxDraws);
     const investmentData = processedRows.map((r) => r.netInvestment);
     const rothConvData = processedRows.map((r) => r.taxableRothConv);
 
@@ -294,6 +298,8 @@ export const TaxableIncomeWorkspace: React.FC<TaxableIncomeWorkspaceProps> = ({
         label: 'Taxable Social Security',
         data: ssData,
         backgroundColor: 'rgba(59, 130, 246, 0.75)', // blue-500
+        borderColor: '#3b82f6',
+        borderWidth: 1,
         stack: 'taxable',
         order: 2,
       },
@@ -301,29 +307,46 @@ export const TaxableIncomeWorkspace: React.FC<TaxableIncomeWorkspaceProps> = ({
         label: 'Taxable Active Salaries',
         data: salaryData,
         backgroundColor: 'rgba(139, 92, 246, 0.75)', // violet-500
+        borderColor: '#8b5cf6',
+        borderWidth: 1,
         stack: 'taxable',
         order: 3,
       },
-      isDataPresent(rmdsData) && {
-        label: 'Forced RMDs & Pre-Tax Draws',
-        data: rmdsData,
+      isDataPresent(forcedRMDsData) && {
+        label: 'Forced RMDs',
+        data: forcedRMDsData,
         backgroundColor: 'rgba(245, 158, 11, 0.75)', // amber-500
+        borderColor: '#f59e0b',
+        borderWidth: 1,
         stack: 'taxable',
         order: 4,
+      },
+      isDataPresent(preTaxDrawsData) && {
+        label: 'Pre-Tax IRA Draws',
+        data: preTaxDrawsData,
+        backgroundColor: 'rgba(217, 70, 239, 0.75)', // fuchsia-500
+        borderColor: '#d946ef',
+        borderWidth: 1,
+        stack: 'taxable',
+        order: 5,
       },
       isDataPresent(investmentData) && {
         label: 'Taxable Dividends & Capital Gains',
         data: investmentData,
         backgroundColor: 'rgba(236, 72, 153, 0.75)', // pink-500
+        borderColor: '#ec4899',
+        borderWidth: 1,
         stack: 'taxable',
-        order: 5,
+        order: 6,
       },
       isDataPresent(rothConvData) && {
         label: 'Roth Conversion',
         data: rothConvData,
         backgroundColor: 'rgba(16, 185, 129, 0.9)', // emerald-500
+        borderColor: '#10b981',
+        borderWidth: 1,
         stack: 'taxable',
-        order: 6,
+        order: 7,
       },
       benchmarkLineData && {
         type: 'line' as const,

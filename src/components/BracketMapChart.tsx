@@ -131,8 +131,8 @@ export const BracketMapChart: React.FC<BracketMapChartProps> = ({
         isDataPresent(cashBalances) && {
           label: 'Cash Reserves',
           data: cashBalances,
-          backgroundColor: 'rgba(56, 189, 248, 0.85)', // sky-400 @ 85%
-          borderColor: '#38bdf8',
+          backgroundColor: 'rgba(168, 85, 247, 0.85)', // purple-500 @ 85%
+          borderColor: '#a855f7',
           borderWidth: 1,
           stack: 'balances',
           order: 4,
@@ -167,21 +167,6 @@ export const BracketMapChart: React.FC<BracketMapChartProps> = ({
           stack: 'balances',
           order: 1,
           pointStyle: 'rect',
-        },
-        // BOLD Line for Total Net Estate overlay on top of stacked account bars
-        {
-          label: 'Total Net Estate (Portfolio)',
-          data: ledger.map((r) => r.totalPortfolioValue),
-          type: 'line' as const,
-          borderColor: '#ffffff', // crisp white
-          borderWidth: 3,
-          pointRadius: 2,
-          pointHoverRadius: 5,
-          fill: false,
-          yAxisID: 'y',
-          order: -1,
-          pointStyle: 'circle',
-          stack: 'line-estate',
         },
       ];
     } else {

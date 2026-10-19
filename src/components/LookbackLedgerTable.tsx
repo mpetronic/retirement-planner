@@ -543,6 +543,10 @@ export const LookbackLedgerTable: React.FC<LookbackLedgerTableProps> = ({
                             <span className="font-mono">+{formatCurrency(r.qcdTaxSavings)}</span>
                           </div>
                         )}
+                        <div className="flex justify-between items-center border-t border-slate-800/80 pt-1.5 mt-1 text-[11px]">
+                          <span className="text-slate-400">Accumulated Tithe Reserve:</span>
+                          <span className="font-mono text-amber-300 font-semibold">{formatCurrency(r.titheReserveBank || 0)}</span>
+                        </div>
                       </HoverPopup>
                     </td>
                   )}

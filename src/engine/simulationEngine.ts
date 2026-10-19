@@ -1339,15 +1339,24 @@ export function runRetirementSimulation(
 
         const rawMonthlyTithe = (0.70 * priorMonthlyTithe * (1 + monthlyInflation)) + (0.30 * targetMonthlyTithe);
         let smoothedMonthlyTithe = rawMonthlyTithe;
+        let monthlyFloor = 0;
         if (inputs.charitySettings.minAnnualTithe !== null && inputs.charitySettings.minAnnualTithe !== undefined && inputs.charitySettings.minAnnualTithe > 0) {
-          smoothedMonthlyTithe = Math.max(smoothedMonthlyTithe, (inputs.charitySettings.minAnnualTithe * cpiFactor) / 12);
+          monthlyFloor = (inputs.charitySettings.minAnnualTithe * cpiFactor) / 12;
+          smoothedMonthlyTithe = Math.max(smoothedMonthlyTithe, monthlyFloor);
         }
         if (inputs.charitySettings.maxAnnualTithe !== null && inputs.charitySettings.maxAnnualTithe !== undefined && inputs.charitySettings.maxAnnualTithe > 0) {
-          smoothedMonthlyTithe = Math.min(smoothedMonthlyTithe, (inputs.charitySettings.maxAnnualTithe * cpiFactor) / 12);
+          const maxMonthly = (inputs.charitySettings.maxAnnualTithe * cpiFactor) / 12;
+          smoothedMonthlyTithe = Math.min(smoothedMonthlyTithe, maxMonthly);
+          monthlyFloor = Math.min(monthlyFloor, maxMonthly);
         }
 
-        // Bounded by available accumulated Tithe Reserve Bank
-        const monthlyTithe = Math.min(smoothedMonthlyTithe, titheReserveBank);
+        // Bounded by available accumulated Tithe Reserve Bank, but guaranteeing at least the configured minimum floor as long as portfolio has assets
+        let monthlyTithe = Math.max(monthlyFloor, Math.min(smoothedMonthlyTithe, titheReserveBank));
+        if (currentPortfolio <= 0) {
+          monthlyTithe = 0;
+        } else {
+          monthlyTithe = Math.min(monthlyTithe, currentPortfolio);
+        }
         titheReserveBank = Math.max(0, titheReserveBank - monthlyTithe);
         priorMonthlyTithe = monthlyTithe > 0 ? monthlyTithe : (priorMonthlyTithe * 0.90);
 
@@ -2109,6 +2118,7 @@ export function runRetirementSimulation(
       qcdAmount,
       nonQcdTithe,
       qcdTaxSavings,
+      titheReserveBank,
       endYourPreTaxIRA: yourPreTax,
       endYourRothIRA: yourRoth,
       endYourTaxableBrokerage: yourTaxable,
