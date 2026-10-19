@@ -25,6 +25,19 @@ export function setStorageAdapter(adapter: StorageAdapter): void {
   defaultAdapter = adapter;
 }
 
+/**
+ * Fetches all expenses recorded in AWS DynamoDB for the current household.
+ * Connects directly through the cloud API endpoint using authenticated credentials.
+ */
+export async function fetchAllExpensesFromDynamoDb(): Promise<Array<Record<string, unknown>>> {
+  const adapter = getStorageAdapter();
+  if (adapter instanceof AwsCloudStorageAdapter && adapter.getAllExpensesFromCloud) {
+    return adapter.getAllExpensesFromCloud();
+  }
+  const cloud = new AwsCloudStorageAdapter();
+  return cloud.getAllExpensesFromCloud();
+}
+
 export * from '../types/expenses';
 export * from './defaultCategories';
 export * from './IndexedDbStorageAdapter';

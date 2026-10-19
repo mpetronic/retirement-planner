@@ -99,4 +99,32 @@ describe('InMemoryStorageAdapter', () => {
     expect(importedExpenses.length).toBe(1);
     expect(importedExpenses[0].amount).toBe(100.0);
   });
+
+  it('correctly sorts recent expenses by occurred date vs entered date', async () => {
+    const expA = await adapter.saveExpense({
+      date: '2026-12-01',
+      amount: 150.0,
+      categoryId: 'cat_groceries',
+      categoryName: 'Groceries',
+      enteredBy: 'Mike',
+      createdAt: '2026-10-01T10:00:00.000Z',
+    });
+
+    const expB = await adapter.saveExpense({
+      date: '2026-01-15',
+      amount: 45.0,
+      categoryId: 'cat_groceries',
+      categoryName: 'Groceries',
+      enteredBy: 'Mike',
+      createdAt: '2026-10-06T12:00:00.000Z',
+    });
+
+    const sortedByOccurred = await adapter.getRecentExpenses(10, 'occurred');
+    expect(sortedByOccurred[0].expenseId).toBe(expA.expenseId);
+    expect(sortedByOccurred[1].expenseId).toBe(expB.expenseId);
+
+    const sortedByEntered = await adapter.getRecentExpenses(10, 'entered');
+    expect(sortedByEntered[0].expenseId).toBe(expB.expenseId);
+    expect(sortedByEntered[1].expenseId).toBe(expA.expenseId);
+  });
 });

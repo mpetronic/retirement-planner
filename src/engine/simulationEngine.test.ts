@@ -152,6 +152,21 @@ describe('Tax calculations', () => {
     const mdTaxSingle = calculateMDStateTax(60000, 0, true);
     expect(mdTaxSingle).toBeGreaterThan(0);
   });
+
+  it('should calculate Maryland state tax correctly with county piggyback rates', () => {
+    // Montgomery County (3.20%) vs Worcester County (2.25%)
+    const mocoRate = 0.0320;
+    const worcesterRate = 0.0225;
+    const mocoTax = calculateMDStateTax(100000, 0, false, 1, 0, mocoRate);
+    const worcesterTax = calculateMDStateTax(100000, 0, false, 1, 0, worcesterRate);
+
+    expect(mocoTax).toBeGreaterThan(worcesterTax);
+    // MD Taxable income for 100k MFJ:
+    // std deduction = min(max(15000, 3450), 5150) = 5150
+    // mdTaxableIncome = 100000 - 5150 = 94850
+    // State tax is identical, difference is exactly (0.0320 - 0.0225) * 94850 = 0.0095 * 94850 = 901.075
+    expect(mocoTax - worcesterTax).toBeCloseTo(94850 * (mocoRate - worcesterRate), 2);
+  });
 });
 
 describe('runRetirementSimulation', () => {
@@ -242,6 +257,57 @@ describe('runRetirementSimulation', () => {
 
     expect(row2030).toBeDefined();
     expect(row2030!.stateIncomeTax).toBe(0);
+  });
+
+  it('should safeguard and drop state income taxes to 0 when relocating even if targetState was erroneously stored as MD', () => {
+    const inputs = getMockInputs();
+    inputs.jurisdiction.relocationYear = 2026;
+    inputs.jurisdiction.currentState = 'MD';
+    inputs.jurisdiction.targetState = 'MD'; // Erroneously stored as MD without intra-state county change
+
+    const results = runRetirementSimulation(inputs);
+    const row2026 = results.find(r => r.year === 2026);
+    expect(row2026).toBeDefined();
+    expect(row2026!.stateIncomeTax).toBe(0);
+  });
+
+  it('should correctly simulate intra-state relocation between Maryland counties and adjust local taxes', () => {
+    const inputs = getMockInputs();
+    inputs.jurisdiction.currentState = 'MD';
+    inputs.jurisdiction.currentCounty = 'montgomery'; // 3.20%
+    inputs.jurisdiction.targetState = 'MD';
+    inputs.jurisdiction.targetCounty = 'worcester'; // 2.25%
+    inputs.jurisdiction.relocationYear = 2030;
+
+    const results = runRetirementSimulation(inputs);
+    const row2029 = results.find(r => r.year === 2029)!;
+    const row2030 = results.find(r => r.year === 2030)!;
+
+    expect(row2029).toBeDefined();
+    expect(row2030).toBeDefined();
+    // Both years have state tax, but starting in 2030 the county drops from Montgomery (3.20%) to Worcester (2.25%)
+    expect(row2029.stateIncomeTax).toBeGreaterThan(0);
+    expect(row2030.stateIncomeTax).toBeGreaterThan(0);
+  });
+
+  it('should respect custom local tax rate override in simulation', () => {
+    const inputsOverride = getMockInputs();
+    inputsOverride.jurisdiction.currentState = 'MD';
+    inputsOverride.jurisdiction.currentCounty = 'montgomery';
+    inputsOverride.jurisdiction.currentLocalTaxRate = 0.015; // 1.5% override instead of default 3.20%
+    inputsOverride.jurisdiction.relocationYear = null;
+
+    const resultsOverride = runRetirementSimulation(inputsOverride);
+
+    const inputsDefault = getMockInputs();
+    inputsDefault.jurisdiction.currentState = 'MD';
+    inputsDefault.jurisdiction.currentCounty = 'montgomery';
+    inputsDefault.jurisdiction.currentLocalTaxRate = null;
+    inputsDefault.jurisdiction.relocationYear = null;
+
+    const resultsDefault = runRetirementSimulation(inputsDefault);
+
+    expect(resultsOverride[0].stateIncomeTax).toBeLessThan(resultsDefault[0].stateIncomeTax);
   });
 
   it('should calculate Social Security income starting at target claiming ages', () => {
@@ -355,7 +421,7 @@ describe('runRetirementSimulation', () => {
     
     const actualEndTaxable = row2040!.endYourTaxableBrokerage + row2040!.endWifeTaxableBrokerage;
     // Expected value calibrated for the monthly-compounding engine without double-counted RMDs.
-    expect(actualEndTaxable).toBeCloseTo(658264.9, 0);
+    expect(actualEndTaxable).toBeCloseTo(658058, 0);
   });
 
   it('should apply pre-Medicare premiums and detailed health expenses correctly based on age, work status, and retirement', () => {

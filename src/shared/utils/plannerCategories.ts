@@ -15,6 +15,7 @@ export interface PlannerExpenseLineItem {
 const GROUP_COLORS: Record<string, string> = {
   Living: '#10b981', // emerald
   Housing: '#f59e0b', // amber
+  Home: '#f59e0b', // amber
   Transportation: '#3b82f6', // blue
   Insurance: '#06b6d4', // cyan
   Healthcare: '#ef4444', // red
@@ -22,6 +23,23 @@ const GROUP_COLORS: Record<string, string> = {
   Charities: '#14b8a6', // teal
   Other: '#8b5cf6', // purple
 };
+
+export function getPlannerCategories(): string[] {
+  if (typeof window === 'undefined') return [];
+  try {
+    const raw = window.localStorage.getItem('retirement_planner_inputs');
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      const detailed = normalizeDetailedExpenses(parsed.detailedExpenses);
+      if (detailed && detailed.catalog && Array.isArray(detailed.catalog.categories)) {
+        return detailed.catalog.categories;
+      }
+    }
+  } catch (err) {
+    console.error('Failed to read planner categories from localStorage:', err);
+  }
+  return [];
+}
 
 export function getPlannerExpenseCatalog(activeState?: string): PlannerExpenseLineItem[] {
   const lineItems: PlannerExpenseLineItem[] = [];
@@ -34,17 +52,52 @@ export function getPlannerExpenseCatalog(activeState?: string): PlannerExpenseLi
       if (raw) {
         const parsed = JSON.parse(raw);
         const detailed = normalizeDetailedExpenses(parsed.detailedExpenses);
-        const currentResState = activeState || parsed.jurisdiction?.currentState || 'MD';
+        const currentYear = new Date().getFullYear();
+        const relocYear = parsed.jurisdiction?.relocationYear;
+        const currentResState = activeState ||
+          (relocYear !== null && relocYear !== undefined && currentYear >= Number(relocYear)
+            ? (parsed.jurisdiction?.targetState || parsed.jurisdiction?.currentState || 'MD')
+            : (parsed.jurisdiction?.currentState || 'MD'));
 
         if (detailed && detailed.catalog && Array.isArray(detailed.catalog.items) && detailed.catalog.items.length > 0) {
+          const allowedCategoriesSet = new Set(
+            (detailed.catalog.categories || []).map(c => c.trim().toLowerCase())
+          );
+
+          // Strictly filter to items whose category is defined in detailedExpenses.catalog.categories
+          const filteredCatalogItems: ExpenseItemDefinition[] = [];
+          let modified = false;
+
+          for (const item of detailed.catalog.items) {
+            const itemCatLower = (item.category || '').trim().toLowerCase();
+
+            // If an item's category is not in the defined categories list, it is not a valid defined expense
+            if (allowedCategoriesSet.size > 0 && !allowedCategoriesSet.has(itemCatLower)) {
+              modified = true;
+              continue;
+            }
+
+            filteredCatalogItems.push(item);
+          }
+
+          if (modified) {
+            detailed.catalog.items = filteredCatalogItems;
+            parsed.detailedExpenses = detailed;
+            try {
+              window.localStorage.setItem('retirement_planner_inputs', JSON.stringify(parsed));
+            } catch {
+              // ignore
+            }
+          }
+
           const stateCosts = detailed.costs?.[currentResState] || {};
           const allCosts = detailed.costs?.['ALL'] || {};
           const costsMD = detailed.costs?.MD || detailed.MD || {};
           const costsFL = detailed.costs?.FL || detailed.FL || {};
           const frequencies = detailed.frequencies || {};
 
-          for (const item of detailed.catalog.items) {
-            // Check state applicability if activeState is specified or derived
+          for (const item of filteredCatalogItems) {
+            // Strictly check state applicability: ONLY items valid for the active state are included
             const applies = !item.applicableStates || 
               item.applicableStates.includes('ALL') || 
               item.applicableStates.includes(currentResState);
@@ -316,13 +369,18 @@ export function batchRegisterPlannerExpenseLineItems(
 
 export function syncCustomCategoriesToPlanner(customCategories: ExpenseCategory[]): void {
   if (typeof window === 'undefined' || !customCategories || customCategories.length === 0) return;
+
   for (const cat of customCategories) {
     if (cat.id === '__household_profiles__') continue;
     if (cat.id === 'healthcare-oop' || cat.id === 'healthcare-premiums' || cat.id === 'healthcare-irmaa') continue;
 
+    // Strict guard: ONLY sync items that are explicitly flagged as custom user-created categories
+    if (!cat.isCustom) continue;
+
     const parts = cat.name.includes(' - ') ? cat.name.split(' - ') : ['Living', cat.name];
     const group = parts[0].trim();
     const name = parts[1] ? parts[1].trim() : cat.name.trim();
+
     savePlannerExpenseLineItem({
       id: cat.id,
       name,
@@ -334,12 +392,17 @@ export function syncCustomCategoriesToPlanner(customCategories: ExpenseCategory[
 
 export function mergeWithCustomCategories(
   plannerItems: PlannerExpenseLineItem[],
-  customCategories: ExpenseCategory[]
+  customCategories: ExpenseCategory[],
+  allowedCategories?: string[]
 ): PlannerExpenseLineItem[] {
   const result = [...plannerItems];
   const seenIds = new Set(plannerItems.map(p => p.id));
   const seenDisplayNames = new Set(plannerItems.map(p => p.displayName.toLowerCase()));
   const seenNames = new Set(plannerItems.map(p => p.name.toLowerCase()));
+
+  const allowedSet = allowedCategories && allowedCategories.length > 0
+    ? new Set(allowedCategories.map(c => c.trim().toLowerCase()))
+    : null;
 
   for (const cat of customCategories) {
     // Intercept internal household profile configuration category
@@ -359,12 +422,26 @@ export function mergeWithCustomCategories(
 
     if (seenIds.has(cat.id)) continue;
 
+    // ONLY merge items that are genuinely custom categories created by the user in Expenser!
+    // Standard catalog items that are NOT in plannerItems were excluded (e.g. for other states)
+    // and must NOT be leaked back in!
+    if (!cat.isCustom) {
+      continue;
+    }
+
     const parts = cat.name.includes(' - ') ? cat.name.split(' - ') : ['Living', cat.name];
     const groupCategory = parts[0].trim();
     const name = parts[1] ? parts[1].trim() : cat.name.trim();
     const displayName = cat.name.includes(' - ') ? cat.name : `${groupCategory} - ${name}`;
 
+    const groupLower = groupCategory.toLowerCase();
+
     if (seenDisplayNames.has(displayName.toLowerCase()) || seenNames.has(name.toLowerCase())) {
+      continue;
+    }
+
+    // If allowedCategories is provided, ensure groupCategory is valid in Detailed Expenses
+    if (allowedSet && !allowedSet.has(groupLower)) {
       continue;
     }
 
@@ -376,7 +453,7 @@ export function mergeWithCustomCategories(
       plannedMonthlyDefault: cat.plannedMonthlyDefault || 0,
       color: cat.color || GROUP_COLORS[groupCategory] || '#8b5cf6',
       icon: cat.icon || 'Tag',
-      isCustom: Boolean(cat.isCustom),
+      isCustom: true,
     });
     seenIds.add(cat.id);
     seenDisplayNames.add(displayName.toLowerCase());
@@ -411,14 +488,51 @@ export async function syncPlannerCatalogToCloudStorage(
     return;
   }
   const norm = normalizeDetailedExpenses(detailedExpenses);
-  const state = activeState || 'MD';
+
+  // Derive active residency state if not explicitly passed
+  let effectiveState = activeState;
+  if (!effectiveState && typeof window !== 'undefined') {
+    try {
+      const raw = window.localStorage.getItem('retirement_planner_inputs');
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        const currentYear = new Date().getFullYear();
+        const relocYear = parsed.jurisdiction?.relocationYear;
+        if (relocYear !== null && relocYear !== undefined && currentYear >= Number(relocYear)) {
+          effectiveState = parsed.jurisdiction?.targetState || parsed.jurisdiction?.currentState || 'MD';
+        } else {
+          effectiveState = parsed.jurisdiction?.currentState || 'MD';
+        }
+      }
+    } catch {
+      // fallback
+    }
+  }
+  const state = effectiveState || 'MD';
+
   const stateCosts = norm.costs?.[state] || {};
   const allCosts = norm.costs?.['ALL'] || {};
   const costsMD = norm.costs?.MD || norm.MD || {};
   const costsFL = norm.costs?.FL || norm.FL || {};
   const frequencies = norm.frequencies || {};
 
+  const allowedCategoriesSet = new Set((norm.catalog.categories || []).map(c => c.trim().toLowerCase()));
+  const validActiveItemIds = new Set<string>();
+
   for (const item of norm.catalog.items) {
+    // Check state applicability so only items valid for current residency are active
+    const applies = !item.applicableStates || 
+      item.applicableStates.includes('ALL') || 
+      item.applicableStates.includes(state);
+    
+    if (!applies) continue;
+
+    // Check that item's category is actually in catalog.categories
+    const itemCatLower = (item.category || '').trim().toLowerCase();
+    if (allowedCategoriesSet.size > 0 && !allowedCategoriesSet.has(itemCatLower)) continue;
+
+    validActiveItemIds.add(item.id);
+
     const group = item.category || 'Living';
     const cost = stateCosts[item.id] ?? allCosts[item.id] ?? costsMD[item.id] ?? costsFL[item.id] ?? 0;
     const freq = frequencies[item.id] ?? item.defaultFrequency ?? 12;
@@ -439,14 +553,24 @@ export async function syncPlannerCatalogToCloudStorage(
     }
   }
 
-  // Remove any obsolete categories from storage that were deleted from planner catalog
+  // Remove any obsolete, state-inapplicable, or purged categories from storage
   try {
     const existingStorageCats = await adapter.getCategories();
-    const currentCatalogItemIds = new Set(norm.catalog.items.map((i) => i.id));
     for (const cat of existingStorageCats) {
       if (cat.id === '__household_profiles__') continue;
       if (cat.id === 'healthcare-oop' || cat.id === 'healthcare-premiums' || cat.id === 'healthcare-irmaa') continue;
-      if (!currentCatalogItemIds.has(cat.id) && adapter.deleteCategory) {
+
+      const parts = cat.name.includes(' - ') ? cat.name.split(' - ') : ['', cat.name];
+      const group = parts[0].trim();
+      const groupLower = group.toLowerCase();
+
+      const isGroupValid = group ? allowedCategoriesSet.has(groupLower) : false;
+
+      // Keep if it is an active valid line item for the current state,
+      // or if it is a custom item whose group category still exists in detailedExpenses
+      const shouldKeep = validActiveItemIds.has(cat.id) || (Boolean(cat.isCustom) && isGroupValid);
+
+      if (!shouldKeep && adapter.deleteCategory) {
         await adapter.deleteCategory(cat.id);
       }
     }

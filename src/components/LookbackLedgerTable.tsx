@@ -1,9 +1,10 @@
-import React, { useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { SimulationResultRow, AppStateInputs, getSimulationStartYear } from '../types';
 import { TableProperties, Info, AlertTriangle, X } from 'lucide-react';
 import { IRMAA_TIERS_MFJ, IRMAA_TIERS_SINGLE, MD_PENSION_EXCLUSION_BASE_CAP } from '../engine/taxRates2026';
 import { calculateFedTaxWithLTCG, calculateTaxableSS, calculateMDStateTax } from '../engine/simulationEngine';
+import { getEffectiveLocalTaxRate } from '../engine/stateTaxRegistry';
 import { RowInspectionDialog } from './RowInspectionDialog';
 
 interface LookbackLedgerTableProps {
@@ -12,6 +13,89 @@ interface LookbackLedgerTableProps {
   simulateSurvivor: boolean;
   onNavigateToActuals?: (year: number) => void;
 }
+
+/**
+ * Hover popup rendered in a portal with fixed positioning so it can never be clipped by the
+ * table's scroll container or the panel header. It attaches to its parent element, opens on
+ * hover, and picks above/below placement from the space available in the viewport.
+ */
+const HoverPopup: React.FC<{
+  align?: 'center' | 'right';
+  className?: string;
+  children: React.ReactNode;
+}> = ({ align = 'center', className = '', children }) => {
+  const anchorRef = useRef<HTMLSpanElement>(null);
+  const popupRef = useRef<HTMLDivElement>(null);
+  const [open, setOpen] = useState(false);
+  const [pos, setPos] = useState<{ top: number; left: number } | null>(null);
+
+  const reposition = useCallback(() => {
+    const host = anchorRef.current?.parentElement;
+    const popup = popupRef.current;
+    if (!host || !popup) return;
+    const rect = host.getBoundingClientRect();
+    const h = popup.offsetHeight;
+    const w = popup.offsetWidth;
+    const margin = 8;
+    const spaceBelow = window.innerHeight - rect.bottom - margin;
+    const spaceAbove = rect.top - margin;
+    const placeBelow = spaceBelow >= h || spaceBelow >= spaceAbove;
+    let top = placeBelow ? rect.bottom + margin : rect.top - margin - h;
+    top = Math.min(Math.max(top, margin), Math.max(margin, window.innerHeight - h - margin));
+    let left = align === 'right' ? rect.right - w : rect.left + rect.width / 2 - w / 2;
+    left = Math.min(Math.max(left, margin), Math.max(margin, window.innerWidth - w - margin));
+    setPos({ top, left });
+  }, [align]);
+
+  useEffect(() => {
+    const host = anchorRef.current?.parentElement;
+    if (!host) return;
+    const show = () => setOpen(true);
+    const hide = () => {
+      setOpen(false);
+      setPos(null);
+    };
+    host.addEventListener('mouseenter', show);
+    host.addEventListener('mouseleave', hide);
+    return () => {
+      host.removeEventListener('mouseenter', show);
+      host.removeEventListener('mouseleave', hide);
+    };
+  }, []);
+
+  useLayoutEffect(() => {
+    if (!open) return;
+    reposition();
+    window.addEventListener('scroll', reposition, true);
+    window.addEventListener('resize', reposition);
+    return () => {
+      window.removeEventListener('scroll', reposition, true);
+      window.removeEventListener('resize', reposition);
+    };
+  }, [open, reposition]);
+
+  return (
+    <>
+      <span ref={anchorRef} className="hidden" aria-hidden="true" />
+      {open &&
+        createPortal(
+          <div
+            ref={popupRef}
+            style={{
+              position: 'fixed',
+              top: pos?.top ?? 0,
+              left: pos?.left ?? 0,
+              visibility: pos ? 'visible' : 'hidden',
+            }}
+            className={`bg-slate-950/95 backdrop-blur-md border border-slate-800 rounded-2xl shadow-2xl z-[90] text-xs text-slate-300 pointer-events-none font-sans normal-case ${className}`}
+          >
+            {children}
+          </div>,
+          document.body
+        )}
+    </>
+  );
+};
 
 export const LookbackLedgerTable: React.FC<LookbackLedgerTableProps> = ({
   ledger,
@@ -244,12 +328,24 @@ export const LookbackLedgerTable: React.FC<LookbackLedgerTableProps> = ({
                 const taxableSSWithout = calculateTaxableSS(totalSS, otherAGIWithout, isSingle);
                 const agiWithout = otherAGIWithout + taxableSSWithout;
 
+                const isRelocated = inputs.jurisdiction.relocationYear !== null && r.year >= inputs.jurisdiction.relocationYear;
+                const isIntraStateRelocation = Boolean(
+                  inputs.jurisdiction.targetState === inputs.jurisdiction.currentState &&
+                  inputs.jurisdiction.targetCounty &&
+                  inputs.jurisdiction.targetCounty !== inputs.jurisdiction.currentCounty
+                );
+                const activeState = isRelocated
+                  ? (isIntraStateRelocation ? inputs.jurisdiction.targetState : (inputs.jurisdiction.targetState || 'FL'))
+                  : inputs.jurisdiction.currentState;
+                const activeCounty = isRelocated ? inputs.jurisdiction.targetCounty : inputs.jurisdiction.currentCounty;
+                const activeCustomRate = isRelocated ? inputs.jurisdiction.targetLocalTaxRate : inputs.jurisdiction.currentLocalTaxRate;
+                const effectiveLocalRate = getEffectiveLocalTaxRate(activeState, activeCounty, activeCustomRate);
+
                 const stateTaxWith = r.stateIncomeTax;
-                const stateTaxWithout = calculateMDStateTax(agiWithout, taxableSSWithout, isSingle, cpiFactor, mdPensionExclusion);
+                const stateTaxWithout = calculateMDStateTax(agiWithout, taxableSSWithout, isSingle, cpiFactor, mdPensionExclusion, effectiveLocalRate);
                 return Math.max(0, stateTaxWith - stateTaxWithout);
               })();
 
-              const isTopRow = idx < 4;
 
               const prevRow = idx > 0 ? ledger[idx - 1] : null;
 
@@ -341,9 +437,7 @@ export const LookbackLedgerTable: React.FC<LookbackLedgerTableProps> = ({
                   </td>
                   <td className="px-2.5 py-2.5 font-mono relative group cursor-help text-slate-300">
                     <span>{formatCurrency(r.magi)}</span>
-                    <div className={`absolute left-1/2 -translate-x-1/2 w-72 bg-slate-950/95 backdrop-blur-md border border-slate-800 rounded-2xl p-4 shadow-2xl opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 z-50 text-xs text-slate-300 pointer-events-none space-y-2 font-sans normal-case ${
-                      isTopRow ? 'top-full mt-2' : 'bottom-full mb-2'
-                    }`}>
+                    <HoverPopup align="center" className="w-72 bg-slate-950/95 backdrop-blur-md border border-slate-800 rounded-2xl p-4 shadow-2xl text-xs text-slate-300 pointer-events-none space-y-2 font-sans normal-case">
                       <div className="flex items-center justify-between border-b border-slate-800/80 pb-1.5 mb-1">
                         <span className="font-bold text-slate-200 uppercase tracking-wider text-[9px]">Income / MAGI Component</span>
                         <span className="font-bold text-emerald-400 uppercase tracking-wider text-[9px]">Amount</span>
@@ -397,7 +491,7 @@ export const LookbackLedgerTable: React.FC<LookbackLedgerTableProps> = ({
                         <span className="text-slate-200">Total MAGI (Income):</span>
                         <span className="font-mono text-emerald-400">{formatCurrency(r.magi)}</span>
                       </div>
-                    </div>
+                    </HoverPopup>
                   </td>
 
                   {/* Portfolio Growth Return */}
@@ -409,9 +503,7 @@ export const LookbackLedgerTable: React.FC<LookbackLedgerTableProps> = ({
                         : 'text-slate-500'
                   }`}>
                     <span>{formatCurrency(r.portfolioGrowth || 0)}</span>
-                    <div className={`absolute left-1/2 -translate-x-1/2 w-64 bg-slate-950/95 backdrop-blur-md border border-slate-800 rounded-2xl p-3.5 shadow-2xl opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 z-50 text-xs text-slate-300 pointer-events-none space-y-1.5 font-sans normal-case ${
-                      isTopRow ? 'top-full mt-2' : 'bottom-full mb-2'
-                    }`}>
+                    <HoverPopup align="center" className="w-64 bg-slate-950/95 backdrop-blur-md border border-slate-800 rounded-2xl p-3.5 shadow-2xl text-xs text-slate-300 pointer-events-none space-y-1.5 font-sans normal-case">
                       <div className="flex items-center justify-between border-b border-slate-800/80 pb-1 mb-1">
                         <span className="font-bold text-slate-200 uppercase tracking-wider text-[9px]">
                           {(r.portfolioGrowth || 0) < 0 ? 'Portfolio Loss' : 'Portfolio Growth Return'}
@@ -425,16 +517,14 @@ export const LookbackLedgerTable: React.FC<LookbackLedgerTableProps> = ({
                           ? `Net investment loss across all portfolio accounts in ${r.year} due to market downturn.`
                           : `Total investment gains, dividends, and interest generated across all portfolio accounts in ${r.year}.`}
                       </div>
-                    </div>
+                    </HoverPopup>
                   </td>
 
                   {/* Charitable Tithe & QCD */}
                   {inputs.charitySettings?.enabled && (
                     <td className="px-2.5 py-2.5 font-mono text-rose-400 relative group cursor-help">
                       <span>{formatCurrency(r.charitableTithe || 0)}</span>
-                      <div className={`absolute left-1/2 -translate-x-1/2 w-64 bg-slate-950/95 backdrop-blur-md border border-slate-800 rounded-2xl p-3.5 shadow-2xl opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 z-50 text-xs text-slate-300 pointer-events-none space-y-1.5 font-sans normal-case ${
-                        isTopRow ? 'top-full mt-2' : 'bottom-full mb-2'
-                      }`}>
+                      <HoverPopup align="center" className="w-64 bg-slate-950/95 backdrop-blur-md border border-slate-800 rounded-2xl p-3.5 shadow-2xl text-xs text-slate-300 pointer-events-none space-y-1.5 font-sans normal-case">
                         <div className="flex items-center justify-between border-b border-slate-800/80 pb-1 mb-1">
                           <span className="font-bold text-slate-200 uppercase tracking-wider text-[9px]">Tithe Breakdown</span>
                           <span className="font-bold text-rose-400 font-mono text-[10px]">{formatCurrency(r.charitableTithe || 0)}</span>
@@ -453,7 +543,7 @@ export const LookbackLedgerTable: React.FC<LookbackLedgerTableProps> = ({
                             <span className="font-mono">+{formatCurrency(r.qcdTaxSavings)}</span>
                           </div>
                         )}
-                      </div>
+                      </HoverPopup>
                     </td>
                   )}
 
@@ -472,9 +562,7 @@ export const LookbackLedgerTable: React.FC<LookbackLedgerTableProps> = ({
                         <span className="text-amber-400/90 font-semibold font-mono">
                           {formatCurrency(conversionTax + conversionStateTax)}
                         </span>
-                        <div className={`absolute left-1/2 -translate-x-1/2 w-64 bg-slate-950/95 backdrop-blur-md border border-slate-800 rounded-2xl p-4 shadow-2xl opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 z-50 text-xs text-slate-300 pointer-events-none space-y-2 font-sans normal-case ${
-                          isTopRow ? 'top-full mt-2' : 'bottom-full mb-2'
-                        }`}>
+                        <HoverPopup align="center" className="w-64 bg-slate-950/95 backdrop-blur-md border border-slate-800 rounded-2xl p-4 shadow-2xl text-xs text-slate-300 pointer-events-none space-y-2 font-sans normal-case">
                           <div className="flex items-center justify-between border-b border-slate-800/80 pb-1.5 mb-1">
                             <span className="font-bold text-slate-200 uppercase tracking-wider text-[9px]">Conversion Tax Breakdown</span>
                             <span className="font-bold text-amber-400 uppercase tracking-wider text-[9px]">Amount</span>
@@ -500,7 +588,7 @@ export const LookbackLedgerTable: React.FC<LookbackLedgerTableProps> = ({
                           <p className="text-[9px] text-slate-500 leading-relaxed border-t border-slate-800/40 pt-1.5">
                             Marginal bracket-accurate estimate. Hover Total Expenses for full tax breakdown.
                           </p>
-                        </div>
+                        </HoverPopup>
                       </>
                     ) : (
                       <span className="text-slate-600 font-mono">$0</span>
@@ -508,9 +596,7 @@ export const LookbackLedgerTable: React.FC<LookbackLedgerTableProps> = ({
                   </td>
                   <td className="px-2.5 py-2.5 font-mono text-rose-400/90 relative group cursor-help">
                     <span>{formatCurrency(r.totalExpenses)}</span>
-                    <div className={`absolute left-1/2 -translate-x-1/2 w-64 bg-slate-950/95 backdrop-blur-md border border-slate-800 rounded-2xl p-4 shadow-2xl opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 z-50 text-xs text-slate-300 pointer-events-none space-y-2 font-sans normal-case ${
-                      isTopRow ? 'top-full mt-2' : 'bottom-full mb-2'
-                    }`}>
+                    <HoverPopup align="center" className="w-64 bg-slate-950/95 backdrop-blur-md border border-slate-800 rounded-2xl p-4 shadow-2xl text-xs text-slate-300 pointer-events-none space-y-2 font-sans normal-case">
                       <div className="flex items-center justify-between border-b border-slate-800/80 pb-1.5 mb-1">
                         <span className="font-bold text-slate-200 uppercase tracking-wider text-[9px]">Expense Component</span>
                         <span className="font-bold text-rose-400 uppercase tracking-wider text-[9px]">Amount</span>
@@ -536,7 +622,7 @@ export const LookbackLedgerTable: React.FC<LookbackLedgerTableProps> = ({
                         </>
                       )}
                       <div className="flex justify-between items-center text-[11px]">
-                        <span className="text-slate-400">State Income Tax:</span>
+                        <span className="text-slate-400">State & Local Income Tax:</span>
                         <span className="font-mono text-slate-200 font-medium">{formatCurrency(r.stateIncomeTax)}</span>
                       </div>
                       {r.intentionalRothConversion > 0 && r.stateIncomeTax > 0 && (
@@ -575,14 +661,12 @@ export const LookbackLedgerTable: React.FC<LookbackLedgerTableProps> = ({
                         <span className="text-slate-200">Total Outflow:</span>
                         <span className="font-mono text-rose-400">{formatCurrency(r.totalExpenses)}</span>
                       </div>
-                    </div>
+                    </HoverPopup>
                   </td>
                   {/* Brokerage Assets Cell */}
                   <td className="px-2.5 py-2.5 font-mono text-slate-300 relative group cursor-help">
                     <span>{formatCurrency(endBrokerage)}</span>
-                    <div className={`absolute left-1/2 -translate-x-1/2 w-64 bg-slate-950/95 backdrop-blur-md border border-slate-800 rounded-2xl p-4 shadow-2xl opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 z-50 text-xs text-slate-300 pointer-events-none space-y-2 font-sans normal-case ${
-                      isTopRow ? 'top-full mt-2' : 'bottom-full mb-2'
-                    }`}>
+                    <HoverPopup align="center" className="w-64 bg-slate-950/95 backdrop-blur-md border border-slate-800 rounded-2xl p-4 shadow-2xl text-xs text-slate-300 pointer-events-none space-y-2 font-sans normal-case">
                       <div className="flex items-center justify-between border-b border-slate-800/80 pb-1.5 mb-1">
                         <span className="font-bold text-slate-200 uppercase tracking-wider text-[9px]">Brokerage Asset Roll-Forward</span>
                         <span className="font-bold text-emerald-400 font-mono text-[10px]">{formatCurrency(endBrokerage)}</span>
@@ -613,15 +697,13 @@ export const LookbackLedgerTable: React.FC<LookbackLedgerTableProps> = ({
                         <span className="text-slate-200">Ending Balance:</span>
                         <span className="font-mono text-slate-100">{formatCurrency(endBrokerage)}</span>
                       </div>
-                    </div>
+                    </HoverPopup>
                   </td>
 
                   {/* Cash Assets Cell */}
                   <td className="px-2.5 py-2.5 font-mono text-slate-300 relative group cursor-help">
                     <span>{formatCurrency(endCash)}</span>
-                    <div className={`absolute left-1/2 -translate-x-1/2 w-64 bg-slate-950/95 backdrop-blur-md border border-slate-800 rounded-2xl p-4 shadow-2xl opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 z-50 text-xs text-slate-300 pointer-events-none space-y-2 font-sans normal-case ${
-                      isTopRow ? 'top-full mt-2' : 'bottom-full mb-2'
-                    }`}>
+                    <HoverPopup align="center" className="w-64 bg-slate-950/95 backdrop-blur-md border border-slate-800 rounded-2xl p-4 shadow-2xl text-xs text-slate-300 pointer-events-none space-y-2 font-sans normal-case">
                       <div className="flex items-center justify-between border-b border-slate-800/80 pb-1.5 mb-1">
                         <span className="font-bold text-slate-200 uppercase tracking-wider text-[9px]">Cash Asset Roll-Forward</span>
                         <span className="font-bold text-emerald-400 font-mono text-[10px]">{formatCurrency(endCash)}</span>
@@ -646,14 +728,12 @@ export const LookbackLedgerTable: React.FC<LookbackLedgerTableProps> = ({
                         <span className="text-slate-200">Ending Balance:</span>
                         <span className="font-mono text-slate-100">{formatCurrency(endCash)}</span>
                       </div>
-                    </div>
+                    </HoverPopup>
                   </td>
                   {/* Traditional IRA Cell */}
                   <td className="px-2.5 py-2.5 font-mono text-slate-300 relative group cursor-help">
                     <span>{formatCurrency(endPreTax)}</span>
-                    <div className={`absolute left-1/2 -translate-x-1/2 w-64 bg-slate-950/95 backdrop-blur-md border border-slate-800 rounded-2xl p-4 shadow-2xl opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 z-50 text-xs text-slate-300 pointer-events-none space-y-2 font-sans normal-case ${
-                      isTopRow ? 'top-full mt-2' : 'bottom-full mb-2'
-                    }`}>
+                    <HoverPopup align="center" className="w-64 bg-slate-950/95 backdrop-blur-md border border-slate-800 rounded-2xl p-4 shadow-2xl text-xs text-slate-300 pointer-events-none space-y-2 font-sans normal-case">
                       <div className="flex items-center justify-between border-b border-slate-800/80 pb-1.5 mb-1">
                         <span className="font-bold text-slate-200 uppercase tracking-wider text-[9px]">Traditional IRA Roll-Forward</span>
                         <span className="font-bold text-emerald-400 font-mono text-[10px]">{formatCurrency(endPreTax)}</span>
@@ -702,14 +782,12 @@ export const LookbackLedgerTable: React.FC<LookbackLedgerTableProps> = ({
                         <span className="text-slate-200">Ending Balance:</span>
                         <span className="font-mono text-slate-100">{formatCurrency(endPreTax)}</span>
                       </div>
-                    </div>
+                    </HoverPopup>
                   </td>
                   {/* Roth (Tax-Free) Cell */}
                   <td className="px-2.5 py-2.5 font-mono text-emerald-400/90 relative group cursor-help">
                     <span>{formatCurrency(endRoth)}</span>
-                    <div className={`absolute left-1/2 -translate-x-1/2 w-64 bg-slate-950/95 backdrop-blur-md border border-slate-800 rounded-2xl p-4 shadow-2xl opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 z-50 text-xs text-slate-300 pointer-events-none space-y-2 font-sans normal-case ${
-                      isTopRow ? 'top-full mt-2' : 'bottom-full mb-2'
-                    }`}>
+                    <HoverPopup align="center" className="w-64 bg-slate-950/95 backdrop-blur-md border border-slate-800 rounded-2xl p-4 shadow-2xl text-xs text-slate-300 pointer-events-none space-y-2 font-sans normal-case">
                       <div className="flex items-center justify-between border-b border-slate-800/80 pb-1.5 mb-1">
                         <span className="font-bold text-slate-200 uppercase tracking-wider text-[9px]">Roth IRA Roll-Forward</span>
                         <span className="font-bold text-emerald-400 font-mono text-[10px]">{formatCurrency(endRoth)}</span>
@@ -740,7 +818,7 @@ export const LookbackLedgerTable: React.FC<LookbackLedgerTableProps> = ({
                         <span className="text-slate-200">Ending Balance:</span>
                         <span className="font-mono text-slate-100">{formatCurrency(endRoth)}</span>
                       </div>
-                    </div>
+                    </HoverPopup>
                   </td>
                   <td className="px-2.5 py-2.5 font-mono font-bold text-slate-100">{formatCurrency(r.totalPortfolioValue)}</td>
                   <td className="px-2.5 py-2.5 whitespace-nowrap relative group cursor-help">
@@ -762,9 +840,7 @@ export const LookbackLedgerTable: React.FC<LookbackLedgerTableProps> = ({
                       const cpiFactor = r.cpiFactor;
                       const healthcareFactor = Math.pow(1 + inputs.growthAssumptions.healthcareInflationRate, r.year - simStartYear);
                       return (
-                        <div className={`absolute right-0 w-[380px] whitespace-normal bg-slate-950/95 backdrop-blur-md border border-slate-800 rounded-2xl p-4 shadow-2xl opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 z-50 text-xs text-slate-300 pointer-events-none font-sans normal-case ${
-                          isTopRow ? 'top-full mt-2' : 'bottom-full mb-2'
-                        }`}>
+                        <HoverPopup align="right" className="w-[380px] whitespace-normal bg-slate-950/95 backdrop-blur-md border border-slate-800 rounded-2xl p-4 shadow-2xl text-xs text-slate-300 pointer-events-none font-sans normal-case">
                           <div className="flex items-center justify-between border-b border-slate-800/80 pb-1.5 mb-2">
                             <span className="font-bold text-slate-200 uppercase tracking-wider text-[9px]">IRMAA Tier Reference — {r.year}</span>
                             <span className="font-bold text-amber-400 uppercase tracking-wider text-[9px]">{isSingle ? 'Single' : 'MFJ'}</span>
@@ -807,7 +883,7 @@ export const LookbackLedgerTable: React.FC<LookbackLedgerTableProps> = ({
                           <p className="text-[9px] text-slate-500 leading-relaxed border-t border-slate-800/40 pt-1.5 mt-2">
                             MAGI limits inflated by CPI. Surcharges inflated by healthcare rate. Applied in {r.year} based on {lookbackYear} MAGI ({formatCurrency(r.magiTwoYearsAgo)}{r.isSSA44Applied ? ' via SSA-44 reset' : ''}).
                           </p>
-                        </div>
+                        </HoverPopup>
                       );
                     })()}
                   </td>

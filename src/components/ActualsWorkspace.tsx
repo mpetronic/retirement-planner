@@ -44,18 +44,21 @@ import {
   Table,
   EyeOff,
   Upload,
+  FileSpreadsheet,
 } from 'lucide-react';
-import { getStorageAdapter } from '../shared/storage';
+import { getStorageAdapter, fetchAllExpensesFromDynamoDb } from '../shared/storage';
 import { ActualExpense } from '../shared/types/expenses';
 import { AuthService } from '../shared/auth/AuthService';
 import { isLocalhostEnvironment } from '../shared/utils/appMode';
 import { syncCustomCategoriesToPlanner, savePlannerExpenseLineItem } from '../shared/utils/plannerCategories';
+import { downloadExpensesSpreadsheet } from '../utils/expensesExcelExport';
 import { ActiveViewType } from './SidebarNavigation';
 import { RangeSlider } from './RangeSlider';
 import { NumericInput } from './NumericInput';
 import { Chart } from 'react-chartjs-2';
 import { Chart as ChartJS, registerables, ChartEvent, LegendItem } from 'chart.js';
 import { ImportExpensesModal } from './ImportExpensesModal';
+import { CloudAuthModal } from './CloudAuthModal';
 
 ChartJS.register(...registerables);
 
@@ -175,6 +178,11 @@ export const ActualsWorkspace: React.FC<ActualsWorkspaceProps> = ({
   const [editExpenseNotes, setEditExpenseNotes] = useState<string>('');
   const [isSavingExpenseEdit, setIsSavingExpenseEdit] = useState<boolean>(false);
   const [expenseEditError, setExpenseEditError] = useState<string | null>(null);
+
+  // DynamoDB Expenses spreadsheet export state
+  const [isDownloadingDbExpenses, setIsDownloadingDbExpenses] = useState<boolean>(false);
+  const [dbExportMessage, setDbExportMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+  const [showCloudAuthModal, setShowCloudAuthModal] = useState<boolean>(false);
 
   const loadLoggedExpenses = useCallback(async () => {
     setIsLoadingExpenses(true);
@@ -497,6 +505,46 @@ export const ActualsWorkspace: React.FC<ActualsWorkspaceProps> = ({
     });
   };
 
+  const handleDownloadDbExpensesSpreadsheet = async () => {
+    // If not authenticated, prompt for auth
+    if (!AuthService.isAuthenticated()) {
+      setShowCloudAuthModal(true);
+      return;
+    }
+
+    setIsDownloadingDbExpenses(true);
+    setDbExportMessage(null);
+
+    try {
+      const records = await fetchAllExpensesFromDynamoDb();
+      if (!records || records.length === 0) {
+        setDbExportMessage({
+          type: 'error',
+          text: 'No expense records found in DynamoDB to export.',
+        });
+        return;
+      }
+
+      await downloadExpensesSpreadsheet(records);
+      setDbExportMessage({
+        type: 'success',
+        text: `Successfully exported ${records.length} expense records from DynamoDB!`,
+      });
+      setTimeout(() => {
+        setDbExportMessage(null);
+      }, 6000);
+    } catch (err: unknown) {
+      console.error('Failed to export DynamoDB expenses:', err);
+      const errMsg = err instanceof Error ? err.message : 'Unknown error occurred while exporting expenses';
+      setDbExportMessage({
+        type: 'error',
+        text: `Export failed: ${errMsg}`,
+      });
+    } finally {
+      setIsDownloadingDbExpenses(false);
+    }
+  };
+
   // Comparison list between Planned Detailed Budget and Logged Actuals
   const comparisonItems = useMemo(() => {
     const items: Array<{
@@ -509,6 +557,8 @@ export const ActualsWorkspace: React.FC<ActualsWorkspaceProps> = ({
       percentUsed: number;
       transactionCount: number;
       payers: Record<string, number>;
+      isOneTime?: boolean;
+      isAnnual?: boolean;
     }> = [];
 
     // 1. Detailed Living Expenses (or fallback to general living expenses if detailed expenses disabled)
@@ -535,10 +585,22 @@ export const ActualsWorkspace: React.FC<ActualsWorkspaceProps> = ({
           continue;
         }
 
+        const isItemOneTime = Boolean(
+          catItem.isOneTime ||
+          catItem.category === 'One-Time Expenses' ||
+          catItem.category === 'One-Time Expense' ||
+          catItem.category === 'One-Time Setup Costs'
+        );
+
         const cost = appliesToActiveState ? (stateCosts[catItem.id] ?? 0) : 0;
-        const freq = freqs[catItem.id] ?? catItem.defaultFrequency ?? 12;
-        const plannedFullYear = catItem.isOneTime ? cost : cost * freq;
-        const plannedAmount = selectedMonthFilter ? cost * (freq / 12) : plannedFullYear;
+        const freq = freqs[catItem.id] ?? catItem.defaultFrequency ?? (isItemOneTime ? 1 : 12);
+        const isItemAnnual = !isItemOneTime && freq === 1;
+        const isSingleOccurrence = isItemOneTime || isItemAnnual;
+
+        const plannedFullYear = isItemOneTime ? cost : cost * freq;
+        const plannedAmount = selectedMonthFilter
+          ? (isSingleOccurrence ? cost : cost * (freq / 12))
+          : plannedFullYear;
 
         const variance = plannedAmount - actualAmount;
         const percentUsed = plannedAmount > 0 ? (actualAmount / plannedAmount) * 100 : actualAmount > 0 ? 999 : 0;
@@ -553,6 +615,8 @@ export const ActualsWorkspace: React.FC<ActualsWorkspaceProps> = ({
           percentUsed,
           transactionCount: actualEntry?.count || 0,
           payers: actualEntry?.payers || {},
+          isOneTime: isItemOneTime,
+          isAnnual: isItemAnnual,
         });
       }
     } else {
@@ -650,16 +714,19 @@ export const ActualsWorkspace: React.FC<ActualsWorkspaceProps> = ({
     for (const [catId, entry] of Object.entries(actualsSummary.byLineItem)) {
       if (!items.some((i) => i.id === catId)) {
         const parts = entry.name.includes(' - ') ? entry.name.split(' - ') : ['Custom', entry.name];
+        const groupName = parts[0].trim();
+        const isOneTimeGroup = groupName === 'One-Time Expenses' || groupName === 'One-Time Expense' || groupName === 'One-Time Setup Costs';
         items.push({
           id: catId,
           name: parts[1] ? parts[1].trim() : entry.name,
-          group: parts[0].trim(),
+          group: groupName,
           plannedAnnual: 0,
           actualAnnual: entry.total,
           variance: -entry.total,
           percentUsed: 999,
           transactionCount: entry.count,
           payers: entry.payers,
+          isOneTime: isOneTimeGroup,
         });
       }
     }
@@ -1607,6 +1674,21 @@ export const ActualsWorkspace: React.FC<ActualsWorkspaceProps> = ({
           <div className="flex items-center gap-2 self-start sm:self-auto flex-nowrap shrink-0">
             <button
               type="button"
+              onClick={handleDownloadDbExpensesSpreadsheet}
+              disabled={isDownloadingDbExpenses}
+              className="px-3 py-1.5 rounded-xl bg-slate-800/90 hover:bg-slate-700 text-slate-200 hover:text-white border border-slate-700/80 text-xs font-semibold flex items-center gap-1.5 transition-all shadow-sm shrink-0 whitespace-nowrap cursor-pointer disabled:opacity-50"
+              title="Download an Excel spreadsheet (.xlsx) of all expenses recorded in AWS DynamoDB"
+            >
+              {isDownloadingDbExpenses ? (
+                <RefreshCw className="w-3.5 h-3.5 text-emerald-400 animate-spin" />
+              ) : (
+                <FileSpreadsheet className="w-3.5 h-3.5 text-emerald-400" />
+              )}
+              <span>{isDownloadingDbExpenses ? 'Fetching DB...' : 'Export'}</span>
+            </button>
+
+            <button
+              type="button"
               onClick={() => setShowImportModal(true)}
               className="px-3 py-1.5 rounded-xl bg-slate-800/90 hover:bg-slate-700 text-slate-200 hover:text-white border border-slate-700/80 text-xs font-semibold flex items-center gap-1.5 transition-all shadow-sm shrink-0 whitespace-nowrap cursor-pointer"
               title="Import and backfill expenses from CSV"
@@ -1638,6 +1720,32 @@ export const ActualsWorkspace: React.FC<ActualsWorkspaceProps> = ({
             </button>
           </div>
         </div>
+
+        {dbExportMessage && (
+          <div
+            className={`p-3 rounded-xl border text-xs flex items-center justify-between gap-2 transition-all animate-in fade-in ${
+              dbExportMessage.type === 'success'
+                ? 'bg-emerald-950/40 border-emerald-500/40 text-emerald-200'
+                : 'bg-red-950/40 border-red-500/40 text-red-200'
+            }`}
+          >
+            <div className="flex items-center gap-2">
+              {dbExportMessage.type === 'success' ? (
+                <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
+              ) : (
+                <AlertTriangle className="w-4 h-4 text-red-400 shrink-0" />
+              )}
+              <span>{dbExportMessage.text}</span>
+            </div>
+            <button
+              type="button"
+              onClick={() => setDbExportMessage(null)}
+              className="text-slate-400 hover:text-white p-0.5 cursor-pointer"
+            >
+              <X className="w-3.5 h-3.5" />
+            </button>
+          </div>
+        )}
 
         {/* Month Filter Selector Strip */}
         <div className="flex items-center gap-1.5 overflow-x-auto pb-1 custom-scrollbar text-xs">
@@ -1997,6 +2105,15 @@ export const ActualsWorkspace: React.FC<ActualsWorkspaceProps> = ({
                                 <div>
                                   <div className="font-semibold text-slate-100 group-hover:text-emerald-300 transition-colors flex items-center gap-1.5">
                                     <span>{item.name}</span>
+                                    {item.isOneTime ? (
+                                      <span className="text-[9px] px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-300 border border-amber-500/30 font-medium">
+                                        One-Time
+                                      </span>
+                                    ) : item.isAnnual ? (
+                                      <span className="text-[9px] px-1.5 py-0.5 rounded bg-sky-500/20 text-sky-300 border border-sky-500/30 font-medium">
+                                        Annual
+                                      </span>
+                                    ) : null}
                                     {item.transactionCount > 0 && (
                                       <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-emerald-500/20 text-emerald-400 font-semibold font-mono">
                                         {item.transactionCount}
@@ -2036,7 +2153,11 @@ export const ActualsWorkspace: React.FC<ActualsWorkspaceProps> = ({
                                     <div className="w-full bg-slate-800 rounded-full h-1.5 overflow-hidden">
                                       <div
                                         className={`h-full rounded-full transition-all ${
-                                          item.percentUsed > 100
+                                          (item.isOneTime || item.isAnnual)
+                                            ? item.percentUsed > 100
+                                              ? 'bg-rose-500'
+                                              : 'bg-emerald-400'
+                                            : item.percentUsed > 100
                                             ? 'bg-rose-500'
                                             : item.percentUsed > 80
                                             ? 'bg-amber-400'
@@ -3091,6 +3212,17 @@ export const ActualsWorkspace: React.FC<ActualsWorkspaceProps> = ({
             await loadLoggedExpenses();
           }}
           onUpdateActualsLivingExpenses={handleUpdateActualsLivingExpenses}
+        />
+      )}
+      {/* Cloud Auth Modal for DynamoDB Access */}
+      {showCloudAuthModal && (
+        <CloudAuthModal
+          isOpen={showCloudAuthModal}
+          onClose={() => setShowCloudAuthModal(false)}
+          onSyncComplete={() => {
+            setShowCloudAuthModal(false);
+            handleDownloadDbExpensesSpreadsheet();
+          }}
         />
       )}
     </div>

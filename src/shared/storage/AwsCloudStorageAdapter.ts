@@ -3,13 +3,33 @@ import { IndexedDbStorageAdapter } from './IndexedDbStorageAdapter';
 import { AuthService } from '../auth/AuthService';
 import { getCloudConfig } from '../auth/config';
 
+const FLUSH_BATCH_SIZE = 25;
+const FLUSH_MAX_ATTEMPTS = 3;
+
+function sleep(ms: number): Promise<void> {
+  return new Promise(resolve => setTimeout(resolve, ms));
+}
+
 export class AwsCloudStorageAdapter implements StorageAdapter {
   private localAdapter: IndexedDbStorageAdapter;
   private isSyncingExpenses: boolean = false;
   private isSyncingCategories: boolean = false;
+  private lastCategorySyncTime: number = 0;
+  private readonly CATEGORY_CACHE_TTL_MS: number = 15 * 60 * 1000; // 15-minute in-memory throttle
+  private flushInFlight: Promise<{ syncedCount: number; errors: number }> | null = null;
+  private flushRerunRequested: boolean = false;
+  private lastSyncError: string | null = null;
+  // Category pushes are serialized so a catalog sync of dozens of items does not
+  // fan out into dozens of concurrent Lambda invocations (account limit is low).
+  private categoryPushChain: Promise<void> = Promise.resolve();
 
   constructor(localAdapter?: IndexedDbStorageAdapter) {
     this.localAdapter = localAdapter || new IndexedDbStorageAdapter();
+  }
+
+  /** Human-readable reason the last expense sync attempt failed, or null if it succeeded. */
+  public getLastSyncError(): string | null {
+    return this.lastSyncError;
   }
 
   private getApiEndpoint(): string {
@@ -27,12 +47,23 @@ export class AwsCloudStorageAdapter implements StorageAdapter {
 
   // --- Category Operations ---
 
-  async getCategories(): Promise<ExpenseCategory[]> {
+  /** Invalidate in-memory category cache timestamp so next call fetches fresh data */
+  public invalidateCategoryCache(): void {
+    this.lastCategorySyncTime = 0;
+  }
+
+  async getCategories(forceRefresh: boolean = false): Promise<ExpenseCategory[]> {
+    const now = Date.now();
+    const isExpired = now - this.lastCategorySyncTime > this.CATEGORY_CACHE_TTL_MS;
+
     if (typeof window !== 'undefined' && navigator.onLine && AuthService.isAuthenticated()) {
-      try {
-        await this.syncCategoriesFromCloud();
-      } catch (err) {
-        console.warn('Background category cloud sync failed, using local cache:', err);
+      if (forceRefresh || isExpired) {
+        this.lastCategorySyncTime = now;
+        try {
+          await this.syncCategoriesFromCloud();
+        } catch (err) {
+          console.warn('Background category cloud sync failed, using local cache:', err);
+        }
       }
     }
 
@@ -82,15 +113,33 @@ export class AwsCloudStorageAdapter implements StorageAdapter {
   }
 
   async saveCategory(category: Omit<ExpenseCategory, 'createdAt'>): Promise<ExpenseCategory> {
-    const saved = await this.localAdapter.saveCategory(category);
-
-    // Sync to DynamoDB
-    if (typeof window !== 'undefined' && navigator.onLine && AuthService.isAuthenticated()) {
-      this.pushCategoryToCloud(saved).catch(err => {
-        console.warn('Failed to push category to cloud:', err);
-      });
+    let unchanged = false;
+    try {
+      const existing = (await this.localAdapter.getCategories()).find(c => c.id === category.id);
+      unchanged = Boolean(
+        existing &&
+          existing.name === category.name &&
+          existing.plannedMonthlyDefault === category.plannedMonthlyDefault &&
+          existing.color === category.color &&
+          existing.icon === category.icon &&
+          Boolean(existing.isCustom) === Boolean(category.isCustom)
+      );
+    } catch {
+      unchanged = false;
     }
 
+    const saved = await this.localAdapter.saveCategory(category);
+
+    // Sync to DynamoDB only when something actually changed, one request at a time
+    if (!unchanged && typeof window !== 'undefined' && navigator.onLine && AuthService.isAuthenticated()) {
+      this.categoryPushChain = this.categoryPushChain
+        .then(() => this.pushCategoryToCloud(saved))
+        .catch(err => {
+          console.warn('Failed to push category to cloud:', err);
+        });
+    }
+
+    this.lastCategorySyncTime = Date.now();
     return saved;
   }
 
@@ -106,6 +155,7 @@ export class AwsCloudStorageAdapter implements StorageAdapter {
   }
 
   async deleteCategory(id: string): Promise<void> {
+    this.lastCategorySyncTime = Date.now();
     await this.localAdapter.deleteCategory(id);
 
     if (typeof window !== 'undefined' && navigator.onLine && AuthService.isAuthenticated()) {
@@ -192,8 +242,65 @@ export class AwsCloudStorageAdapter implements StorageAdapter {
     }
   }
 
-  async getRecentExpenses(limit: number = 20): Promise<ActualExpense[]> {
-    return this.localAdapter.getRecentExpenses(limit);
+  /**
+   * Fetches all expenses across all years and months directly from AWS DynamoDB.
+   * Returns the complete unstripped database item records with all fields.
+   */
+  async getAllExpensesFromCloud(): Promise<Array<Record<string, unknown>>> {
+    const headers = await this.getAuthHeaders();
+    if (!headers) {
+      throw new Error('Not authenticated with AWS. Please sign in to fetch all expenses from DynamoDB.');
+    }
+
+    const endpoint = `${this.getApiEndpoint()}/api/expenses`;
+    const response = await fetch(endpoint, {
+      method: 'GET',
+      headers,
+    });
+
+    if (!response.ok) {
+      const errText = await response.text();
+      throw new Error(`Failed to fetch expenses from DynamoDB (${response.status}): ${errText}`);
+    }
+
+    const data = await response.json();
+    const rawList: Record<string, unknown>[] = Array.isArray(data)
+      ? (data as Record<string, unknown>[])
+      : Array.isArray(data.expenses)
+      ? (data.expenses as Record<string, unknown>[])
+      : [];
+
+    // Also update local cache for items with standard expense shape
+    try {
+      const pending = await this.localAdapter.getPendingSyncExpenses();
+      const pendingIds = new Set(pending.map(p => p.expenseId));
+      for (const item of rawList) {
+        const expId = typeof item.expenseId === 'string' ? item.expenseId : undefined;
+        if (expId && !pendingIds.has(expId)) {
+          await this.localAdapter.saveExpense({
+            expenseId: expId,
+            date: typeof item.date === 'string' ? item.date : '',
+            amount: Number(item.amount) || 0,
+            categoryId: typeof item.categoryId === 'string' ? item.categoryId : 'uncategorized',
+            categoryName: typeof item.categoryName === 'string' ? item.categoryName : 'Uncategorized',
+            enteredBy: typeof item.enteredBy === 'string' ? item.enteredBy : 'Primary',
+            notes: typeof item.notes === 'string' ? item.notes : undefined,
+            tags: Array.isArray(item.tags) ? (item.tags as string[]) : undefined,
+            createdAt: typeof item.createdAt === 'string' ? item.createdAt : undefined,
+            updatedAt: typeof item.updatedAt === 'string' ? item.updatedAt : undefined,
+            syncStatus: 'SYNCED',
+          });
+        }
+      }
+    } catch (cacheErr) {
+      console.warn('Failed to update local cache with full cloud expenses:', cacheErr);
+    }
+
+    return rawList;
+  }
+
+  async getRecentExpenses(limit: number = 20, sortBy: 'occurred' | 'entered' = 'occurred'): Promise<ActualExpense[]> {
+    return this.localAdapter.getRecentExpenses(limit, sortBy);
   }
 
   async saveExpense(expense: Omit<ActualExpense, 'expenseId' | 'createdAt' | 'updatedAt' | 'syncStatus'>): Promise<ActualExpense> {
@@ -309,42 +416,101 @@ export class AwsCloudStorageAdapter implements StorageAdapter {
     return this.localAdapter.markExpensesSynced(expenseIds);
   }
 
-  public async flushPendingExpenses(): Promise<{ syncedCount: number; errors: number }> {
+  /**
+   * Pushes all PENDING_SYNC expenses to DynamoDB. Single-flight: concurrent callers share
+   * the running flush, and a caller arriving mid-flush triggers one follow-up pass so
+   * expenses saved during the flush are not left queued.
+   */
+  public flushPendingExpenses(): Promise<{ syncedCount: number; errors: number }> {
+    if (this.flushInFlight) {
+      this.flushRerunRequested = true;
+      return this.flushInFlight;
+    }
+
+    const run = (async () => {
+      let totalSynced = 0;
+      let totalErrors = 0;
+      do {
+        this.flushRerunRequested = false;
+        const result = await this.flushPendingExpensesOnce();
+        totalSynced += result.syncedCount;
+        totalErrors = result.errors;
+        if (result.errors > 0) break;
+      } while (this.flushRerunRequested);
+      return { syncedCount: totalSynced, errors: totalErrors };
+    })();
+
+    this.flushInFlight = run;
+    const clear = () => {
+      this.flushInFlight = null;
+    };
+    run.then(clear, clear);
+    return run;
+  }
+
+  private async flushPendingExpensesOnce(): Promise<{ syncedCount: number; errors: number }> {
     const pending = await this.localAdapter.getPendingSyncExpenses();
     if (pending.length === 0) {
+      this.lastSyncError = null;
       return { syncedCount: 0, errors: 0 };
     }
 
-    const headers = await this.getAuthHeaders();
-    if (!headers) {
-      return { syncedCount: 0, errors: pending.length };
-    }
+    let syncedCount = 0;
 
-    try {
-      const response = await fetch(`${this.getApiEndpoint()}/api/expenses/batch`, {
-        method: 'POST',
-        headers,
-        body: JSON.stringify({
-          expenses: pending,
-        }),
-      });
+    for (let i = 0; i < pending.length; i += FLUSH_BATCH_SIZE) {
+      const chunk = pending.slice(i, i + FLUSH_BATCH_SIZE);
+      let chunkSynced = false;
 
-      if (!response.ok) {
-        throw new Error(`Batch expense sync failed with status ${response.status}`);
+      for (let attempt = 1; attempt <= FLUSH_MAX_ATTEMPTS && !chunkSynced; attempt++) {
+        // Re-resolve headers every attempt so an expired token gets refreshed
+        const headers = await this.getAuthHeaders();
+        if (!headers) {
+          this.lastSyncError = 'Not signed in - sign in to sync queued expenses';
+          console.warn(this.lastSyncError);
+          return { syncedCount, errors: pending.length - syncedCount };
+        }
+
+        try {
+          const response = await fetch(`${this.getApiEndpoint()}/api/expenses/batch`, {
+            method: 'POST',
+            headers,
+            body: JSON.stringify({ expenses: chunk }),
+          });
+
+          if (response.ok) {
+            const ids = chunk.map(p => p.expenseId);
+            await this.localAdapter.markExpensesSynced(ids);
+            syncedCount += ids.length;
+            chunkSynced = true;
+            break;
+          }
+
+          const retryable = response.status === 429 || response.status >= 500;
+          this.lastSyncError = `Cloud sync failed (HTTP ${response.status})`;
+          console.error(`Batch expense sync failed with status ${response.status} (attempt ${attempt}/${FLUSH_MAX_ATTEMPTS})`);
+          if (!retryable) break;
+        } catch (err) {
+          this.lastSyncError = `Cloud sync failed (${err instanceof Error ? err.message : 'network error'})`;
+          console.error(`Error flushing pending expenses (attempt ${attempt}/${FLUSH_MAX_ATTEMPTS}):`, err);
+        }
+
+        if (attempt < FLUSH_MAX_ATTEMPTS) {
+          await sleep(500 * attempt * attempt);
+        }
       }
 
-      const syncedIds = pending.map(p => p.expenseId);
-      await this.localAdapter.markExpensesSynced(syncedIds);
-
-      if (typeof window !== 'undefined' && typeof CustomEvent !== 'undefined') {
-        window.dispatchEvent(new CustomEvent('cloud_sync_completed', { detail: { count: syncedIds.length } }));
+      if (!chunkSynced) {
+        return { syncedCount, errors: pending.length - syncedCount };
       }
-
-      return { syncedCount: syncedIds.length, errors: 0 };
-    } catch (err) {
-      console.error('Error flushing pending expenses:', err);
-      return { syncedCount: 0, errors: pending.length };
     }
+
+    this.lastSyncError = null;
+
+    if (syncedCount > 0 && typeof window !== 'undefined' && typeof CustomEvent !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('cloud_sync_completed', { detail: { count: syncedCount } }));
+    }
+
+    return { syncedCount, errors: 0 };
   }
 
   // --- Full Backup & Sovereign Export ---

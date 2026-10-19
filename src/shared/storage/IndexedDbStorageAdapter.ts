@@ -60,7 +60,7 @@ export class IndexedDbStorageAdapter implements StorageAdapter {
       const req = store.getAll();
 
       req.onsuccess = () => {
-        // Only purge legacy hardcoded mock seed IDs so real cloud categories are preserved
+        // Purge legacy hardcoded mock seed IDs and orphaned category records so real cloud categories are preserved
         const legacyMockIds = new Set([
           'cat_living',
           'cat_housing',
@@ -150,14 +150,23 @@ export class IndexedDbStorageAdapter implements StorageAdapter {
     });
   }
 
-  async getRecentExpenses(limit: number = 20): Promise<ActualExpense[]> {
+  async getRecentExpenses(limit: number = 20, sortBy: 'occurred' | 'entered' = 'occurred'): Promise<ActualExpense[]> {
     const all = await this.getAllExpenses();
     return all
-      .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
+      .sort((a, b) => {
+        if (sortBy === 'entered') {
+          const createdDiff = new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
+          if (createdDiff !== 0) return createdDiff;
+          return b.date.localeCompare(a.date);
+        }
+        const dateDiff = b.date.localeCompare(a.date);
+        if (dateDiff !== 0) return dateDiff;
+        return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
+      })
       .slice(0, limit);
   }
 
-  private async getAllExpenses(): Promise<ActualExpense[]> {
+  async getAllExpenses(): Promise<ActualExpense[]> {
     const db = await this.getDB();
     return new Promise<ActualExpense[]>((resolve, reject) => {
       const tx = db.transaction(STORE_EXPENSES, 'readonly');
@@ -167,6 +176,10 @@ export class IndexedDbStorageAdapter implements StorageAdapter {
       req.onsuccess = () => resolve(req.result || []);
       req.onerror = () => reject(req.error);
     });
+  }
+
+  async getAllExpensesFromCloud(): Promise<Array<Record<string, unknown>>> {
+    return (await this.getAllExpenses()) as unknown as Array<Record<string, unknown>>;
   }
 
   async saveExpense(

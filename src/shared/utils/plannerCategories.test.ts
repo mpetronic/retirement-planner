@@ -3,7 +3,9 @@ import {
   savePlannerExpenseLineItem,
   syncCustomCategoriesToPlanner,
   getPlannerExpenseCatalog,
+  getPlannerCategories,
   syncPlannerCatalogToCloudStorage,
+  mergeWithCustomCategories,
 } from './plannerCategories';
 import { DEFAULT_DETAILED_EXPENSES_STATE } from '../../types';
 import type { StorageAdapter } from '../storage';
@@ -143,5 +145,96 @@ describe('plannerCategories synchronization', () => {
     expect(deletedIds).not.toContain('item_keep');
     expect(deletedIds).not.toContain('__household_profiles__');
     expect(deletedIds).not.toContain('healthcare-oop');
+  });
+
+  it('should exclude state-inapplicable items and deleted categories from getPlannerExpenseCatalog', () => {
+    const detailedExpenses = {
+      ...DEFAULT_DETAILED_EXPENSES_STATE,
+      catalog: {
+        categories: ['Home', 'Living'],
+        items: [
+          { id: 'md_mortgage', name: 'MD Mortgage', category: 'Home', defaultFrequency: 12, applicableStates: ['MD'] },
+          { id: 'fl_condo', name: 'FL Condo Fee', category: 'Housing', defaultFrequency: 12, applicableStates: ['FL'] },
+        ],
+      },
+      costs: {
+        MD: { md_mortgage: 2000 },
+        FL: { fl_condo: 800 },
+      },
+    };
+    mockStorage.setItem('retirement_planner_inputs', JSON.stringify({ detailedExpenses, jurisdiction: { currentState: 'MD' } }));
+
+    const itemsMD = getPlannerExpenseCatalog('MD');
+    expect(itemsMD.some(i => i.id === 'md_mortgage')).toBe(true);
+    // fl_condo is for FL, so must not appear when querying MD
+    expect(itemsMD.some(i => i.id === 'fl_condo')).toBe(false);
+    // Housing is not in catalog.categories, so must not appear
+    expect(itemsMD.some(i => i.groupCategory === 'Housing')).toBe(false);
+  });
+
+  it('should strictly prevent mergeWithCustomCategories from leaking obsolete or non-custom categories', () => {
+    const plannerItems = [
+      { id: 'md_mortgage', groupCategory: 'Home', name: 'Mortgage', displayName: 'Home - Mortgage', plannedMonthlyDefault: 2000, isCustom: false },
+    ];
+    const storageCats = [
+      // Standard item excluded for other state (isCustom: false) - MUST NOT BE MERGED
+      { id: 'fl_tax', name: 'Housing - FL Tax', plannedMonthlyDefault: 400, isCustom: false, createdAt: '' },
+      // Custom category with invalid group not in allowedCategories - MUST NOT BE MERGED
+      { id: 'item_custom_old', name: 'Housing - Old Item', plannedMonthlyDefault: 50, isCustom: true, createdAt: '' },
+      // Valid custom category with group Home - SHOULD BE MERGED
+      { id: 'item_custom_new', name: 'Home - Pool Maintenance', plannedMonthlyDefault: 100, isCustom: true, createdAt: '' },
+    ];
+
+    const merged = mergeWithCustomCategories(plannerItems, storageCats, ['Home', 'Living']);
+    expect(merged.some(i => i.id === 'md_mortgage')).toBe(true);
+    expect(merged.some(i => i.id === 'fl_tax')).toBe(false);
+    expect(merged.some(i => i.id === 'item_custom_old')).toBe(false);
+    expect(merged.some(i => i.id === 'item_custom_new')).toBe(true);
+    expect(merged.some(i => i.groupCategory === 'Housing')).toBe(false);
+  });
+
+  it('should return exactly whatever categories are defined in detailedExpenses', () => {
+    const detailedExpenses = {
+      ...DEFAULT_DETAILED_EXPENSES_STATE,
+      catalog: {
+        categories: ['My Place Stuff', 'Vehicles', 'Living'],
+        items: [],
+      },
+    };
+    mockStorage.setItem('retirement_planner_inputs', JSON.stringify({ detailedExpenses }));
+
+    const categories = getPlannerCategories();
+    expect(categories).toEqual(['My Place Stuff', 'Vehicles', 'Living']);
+  });
+
+  it('should only return line items belonging to defined categories and valid for the active state', () => {
+    const detailedExpenses = {
+      ...DEFAULT_DETAILED_EXPENSES_STATE,
+      catalog: {
+        categories: ['My Place Stuff', 'Living'],
+        items: [
+          { id: 'item_valid_1', name: 'Apartment Rent', category: 'My Place Stuff', defaultFrequency: 12, applicableStates: ['ALL'] },
+          { id: 'item_valid_md', name: 'MD Condo Dues', category: 'My Place Stuff', defaultFrequency: 12, applicableStates: ['MD'] },
+          { id: 'item_other_state', name: 'FL Pool Fee', category: 'My Place Stuff', defaultFrequency: 12, applicableStates: ['FL'] },
+          { id: 'item_deleted_category', name: 'Old Boat Fuel', category: 'Boating', defaultFrequency: 12, applicableStates: ['ALL'] },
+        ],
+      },
+      costs: {
+        MD: { item_valid_1: 1500, item_valid_md: 300 },
+        FL: { item_other_state: 200 },
+      },
+    };
+    mockStorage.setItem('retirement_planner_inputs', JSON.stringify({ detailedExpenses, jurisdiction: { currentState: 'MD' } }));
+
+    const catalog = getPlannerExpenseCatalog('MD');
+    // Active state items in defined categories should be present
+    expect(catalog.some(i => i.id === 'item_valid_1')).toBe(true);
+    expect(catalog.some(i => i.id === 'item_valid_md')).toBe(true);
+
+    // Other-state item must not be present
+    expect(catalog.some(i => i.id === 'item_other_state')).toBe(false);
+
+    // Item belonging to undefined/deleted category 'Boating' must not be present
+    expect(catalog.some(i => i.id === 'item_deleted_category')).toBe(false);
   });
 });

@@ -445,8 +445,12 @@ export interface AppStateInputs {
   wife: SpouseProfile;
   portfolio: PortfolioBalances;
   jurisdiction: {
-    currentState: 'MD' | 'FL';
-    targetState: 'MD' | 'FL';
+    currentState: string;
+    currentCounty?: string | null;
+    currentLocalTaxRate?: number | null;
+    targetState: string;
+    targetCounty?: string | null;
+    targetLocalTaxRate?: number | null;
     relocationYear: number | null;
   };
   growthAssumptions: GrowthAssumptions;

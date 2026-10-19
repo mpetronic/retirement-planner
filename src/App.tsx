@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useDeferredValue, useRef, useCallback } from 'react';
+import { useState, useEffect, useMemo, useDeferredValue, useRef, useCallback, lazy, Suspense } from 'react';
 import {
   AppStateInputs,
   LockedReturnSequence,
@@ -36,6 +36,7 @@ import { BucketManagementWorkspace } from './components/BucketManagementWorkspac
 import { DocumentationDialog } from './components/DocumentationDialog';
 import { AboutDialog } from './components/AboutDialog';
 import { OnboardingWizard } from './components/OnboardingWizard';
+import { LegacyCountyModal } from './components/LegacyCountyModal';
 import { CloudAuthModal } from './components/CloudAuthModal';
 import { LandingPage } from './components/LandingPage';
 import { NotFoundPage } from './components/NotFoundPage';
@@ -45,10 +46,17 @@ import { syncPlannerCatalogToCloudStorage, syncCustomCategoriesToPlanner } from 
 import { SAMPLE_DEMO_PLAN } from './shared/utils/sampleDemoPlan';
 import { isLocalhostEnvironment, resolveAppMode } from './shared/utils/appMode';
 
+const ExpenserApp = lazy(() => import('./apps/expenser/ExpenserApp').then((m) => ({ default: m.ExpenserApp })));
+
 const VALID_PLANNER_PATHS = new Set(['', '/', '/planner', '/planner/', '/index.html']);
+const EXPENSER_PATHS = new Set(['/expenser', '/expenser/', '/expenser.html']);
 
 function isKnownPlannerPath(pathname: string): boolean {
   return VALID_PLANNER_PATHS.has(pathname.trim().toLowerCase());
+}
+
+function isExpenserPath(pathname: string): boolean {
+  return EXPENSER_PATHS.has(pathname.trim().toLowerCase());
 }
 
 // Default initial state matching specifications
@@ -87,6 +95,7 @@ const DEFAULT_INPUTS: AppStateInputs = {
   },
   jurisdiction: {
     currentState: 'MD',
+    currentCounty: 'montgomery',
     targetState: 'FL',
     relocationYear: null,
   },
@@ -315,7 +324,16 @@ function App() {
   const [showAboutDialog, setShowAboutDialog] = useState<boolean>(false);
   const [showCloudModal, setShowCloudModal] = useState<boolean>(false);
   const [isAuthenticated, setIsAuthenticated] = useState<boolean>(() => AuthService.isAuthenticated());
-  const [isDemoMode, setIsDemoMode] = useState<boolean>(false);
+  const [isDemoMode, setIsDemoMode] = useState<boolean>(() => {
+    if (typeof window === 'undefined') return false;
+    try {
+      const params = new URLSearchParams(window.location.search);
+      const demoParam = params.get('demo');
+      return demoParam === 'true' || demoParam === '1';
+    } catch {
+      return false;
+    }
+  });
   const [currentUserEmail, setCurrentUserEmail] = useState<string>(() => AuthService.getSession()?.email || '');
   const [isPlanSyncing, setIsPlanSyncing] = useState<boolean>(false);
   const [documentationSectionId, setDocumentationSectionId] = useState<string>('overview');
@@ -324,12 +342,62 @@ function App() {
     setDemoInputs(JSON.parse(JSON.stringify(SAMPLE_DEMO_PLAN)));
     setIsDemoMode(true);
     PlanSyncService.setDemoMode(true);
+    if (typeof window !== 'undefined') {
+      try {
+        const url = new URL(window.location.href);
+        url.searchParams.set('demo', 'true');
+        window.history.replaceState(null, '', url.pathname + url.search + url.hash);
+      } catch {
+        // Ignore
+      }
+    }
   };
 
   const handleExitDemo = () => {
     setIsDemoMode(false);
     PlanSyncService.setDemoMode(false);
+    if (typeof window !== 'undefined') {
+      try {
+        const url = new URL(window.location.href);
+        if (url.searchParams.has('demo')) {
+          url.searchParams.delete('demo');
+          window.history.replaceState(null, '', url.pathname + (url.search ? url.search : '') + url.hash);
+        }
+      } catch {
+        // Ignore
+      }
+    }
   };
+
+  // Synchronize PlanSyncService demo mode and listen to popstate URL changes
+  useEffect(() => {
+    if (isDemoMode) {
+      PlanSyncService.setDemoMode(true);
+    }
+
+    const handlePopState = () => {
+      try {
+        const params = new URLSearchParams(window.location.search);
+        const demo = params.get('demo');
+        const shouldBeDemo = demo === 'true' || demo === '1';
+        setIsDemoMode((prev) => {
+          if (prev !== shouldBeDemo) {
+            PlanSyncService.setDemoMode(shouldBeDemo);
+            if (shouldBeDemo) {
+              setDemoInputs(JSON.parse(JSON.stringify(SAMPLE_DEMO_PLAN)));
+            }
+            return shouldBeDemo;
+          }
+          return prev;
+        });
+      } catch {
+        // Ignore
+      }
+    };
+
+    window.addEventListener('popstate', handlePopState);
+    return () => window.removeEventListener('popstate', handlePopState);
+  }, [isDemoMode]);
 
   // Active inputs: isolated in-memory sample plan for Demo Sandbox, or real plan otherwise
   const activeInputs = isDemoMode ? demoInputs : inputs;
@@ -377,20 +445,36 @@ function App() {
     }
   }, [inputs, savedPlans, isAuthenticated, simulateSurvivor, isDemoMode]);
 
-  // Automatically sync planner line items & profile names to cloud DynamoDB when authenticated or when inputs change
+  // Automatically sync planner line items & profile names to cloud DynamoDB / local IndexedDB when authenticated or on localhost
   useEffect(() => {
-    if (!isDemoMode && !isLocalhostEnvironment() && isAuthenticated && activeInputs.detailedExpenses && activeInputs.detailedExpenses.catalog) {
+    if (!isDemoMode && (isLocalhostEnvironment() || isAuthenticated) && activeInputs.detailedExpenses && activeInputs.detailedExpenses.catalog) {
       const adapter = getStorageAdapter();
       const profileNames = {
         primaryName: activeInputs.you?.name || 'Primary',
         spouseName: activeInputs.wife?.name || 'Spouse',
         isSingleFiler: Boolean(activeInputs.isSingleFiler),
       };
-      syncPlannerCatalogToCloudStorage(activeInputs.detailedExpenses, adapter, profileNames).catch((err) => {
+      const currentYear = new Date().getFullYear();
+      const relocYear = activeInputs.jurisdiction?.relocationYear;
+      const activeState = (relocYear !== null && relocYear !== undefined && currentYear >= Number(relocYear))
+        ? (activeInputs.jurisdiction?.targetState || activeInputs.jurisdiction?.currentState || 'MD')
+        : (activeInputs.jurisdiction?.currentState || 'MD');
+
+      syncPlannerCatalogToCloudStorage(activeInputs.detailedExpenses, adapter, profileNames, activeState).catch((err) => {
         console.warn('Failed to background sync catalog to storage:', err);
       });
     }
-  }, [activeInputs.detailedExpenses, activeInputs.you?.name, activeInputs.wife?.name, activeInputs.isSingleFiler, isAuthenticated, isDemoMode]);
+  }, [
+    activeInputs.detailedExpenses,
+    activeInputs.you?.name,
+    activeInputs.wife?.name,
+    activeInputs.isSingleFiler,
+    activeInputs.jurisdiction?.currentState,
+    activeInputs.jurisdiction?.targetState,
+    activeInputs.jurisdiction?.relocationYear,
+    isAuthenticated,
+    isDemoMode,
+  ]);
 
   // Pull and synchronize custom categories from storage (e.g. created in Expenser app) into Detailed Expenses
   useEffect(() => {
@@ -480,6 +564,17 @@ function App() {
       handleSetSimulateSurvivor(loadedInputs.simulateSurvivor);
     }
     handleInputsChange(loadedInputs);
+  };
+
+  const handleLegacyCountyConfirm = (currentCounty: string, targetCounty?: string) => {
+    handleInputsChange((prev) => ({
+      ...prev,
+      jurisdiction: {
+        ...prev.jurisdiction,
+        currentCounty,
+        ...(targetCounty ? { targetCounty } : {}),
+      },
+    }));
   };
 
   // Global focus auto-select: automatically select text on number/text inputs so typing replaces default/0 values immediately
@@ -866,8 +961,23 @@ function App() {
 
   const isParamView = activeView.startsWith('params-');
 
-  // Check for unknown bogus paths (e.g. /abc, /whatever) and render 404 page
+  // Check for expenser route (e.g. when served via SPA fallback or npx serve -s dist)
   const currentPath = typeof window !== 'undefined' ? window.location.pathname : '/';
+  if (isExpenserPath(currentPath)) {
+    return (
+      <Suspense
+        fallback={
+          <div className="h-screen w-screen bg-slate-950 flex items-center justify-center">
+            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-emerald-400" />
+          </div>
+        }
+      >
+        <ExpenserApp />
+      </Suspense>
+    );
+  }
+
+  // Check for unknown bogus paths (e.g. /abc, /whatever) and render 404 page
   if (!isKnownPlannerPath(currentPath)) {
     return (
       <NotFoundPage
@@ -1089,6 +1199,15 @@ function App() {
         isOpen={showCloudModal}
         onClose={() => setShowCloudModal(false)}
       />
+
+      {/* Legacy Plan Maryland County Selection Modal */}
+      {Boolean(activeInputs.isConfigured && activeInputs.jurisdiction?.currentState === 'MD' && !activeInputs.jurisdiction?.currentCounty) && (
+        <LegacyCountyModal
+          isOpen={true}
+          needsTargetCounty={Boolean(activeInputs.jurisdiction?.targetState === 'MD' && !activeInputs.jurisdiction?.targetCounty && activeInputs.jurisdiction?.relocationYear !== null)}
+          onConfirm={handleLegacyCountyConfirm}
+        />
+      )}
     </div>
   );
 }

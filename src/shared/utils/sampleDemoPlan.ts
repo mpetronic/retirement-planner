@@ -53,6 +53,7 @@ export const SAMPLE_DEMO_PLAN: AppStateInputs = {
   },
   jurisdiction: {
     currentState: 'MD',
+    currentCounty: 'montgomery',
     targetState: 'FL',
     relocationYear: 2028,
   },

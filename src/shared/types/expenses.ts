@@ -70,7 +70,7 @@ export interface StorageAdapter {
   deleteCategory?(id: string): Promise<void>;
 
   getExpenses(year: number, month?: number): Promise<ActualExpense[]>;
-  getRecentExpenses(limit?: number): Promise<ActualExpense[]>;
+  getRecentExpenses(limit?: number, sortBy?: 'occurred' | 'entered'): Promise<ActualExpense[]>;
   getExpenseById?(id: string): Promise<ActualExpense | null>;
   saveExpense(expense: Omit<ActualExpense, 'expenseId' | 'createdAt' | 'updatedAt' | 'syncStatus'> & {
     expenseId?: string;
@@ -92,6 +92,7 @@ export interface StorageAdapter {
   markExpensesSynced(expenseIds: string[]): Promise<void>;
 
   // Full backup & sovereign export
+  getAllExpensesFromCloud?(): Promise<Array<Record<string, unknown>>>;
   exportArchive(): Promise<FullHouseholdArchive>;
   importArchive(archive: FullHouseholdArchive): Promise<void>;
 }

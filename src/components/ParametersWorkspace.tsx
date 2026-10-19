@@ -26,7 +26,17 @@ import {
   FileText,
   Percent,
   Building,
+  Sparkles,
+  RotateCcw,
+  Receipt,
 } from 'lucide-react';
+import {
+  getSupportedStates,
+  getStateTaxProfile,
+  getSubJurisdictions,
+  getEffectiveLocalTaxRate,
+} from '../engine/stateTaxRegistry';
+import { SAMPLE_DEMO_PLAN } from '../shared/utils/sampleDemoPlan';
 import { NumericInput } from './NumericInput';
 import { RangeSlider } from './RangeSlider';
 import { DetailedExpensesDialog } from './DetailedExpensesDialog';
@@ -800,7 +810,221 @@ export const ParametersWorkspace: React.FC<ParametersWorkspaceProps> = ({
           </div>
 
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-            {/* Relocation Transition Card */}
+            {/* Card 1: Primary Tax Jurisdiction */}
+            <div className="glass-panel bg-slate-900/80 border border-slate-800 rounded-2xl p-5 space-y-4 shadow-lg">
+              <div className="flex items-center justify-between border-b border-slate-800 pb-3">
+                <div className="flex items-center gap-2.5">
+                  <div className="p-1.5 rounded-lg bg-emerald-500/20 text-emerald-400">
+                    <MapPin className="w-4 h-4" />
+                  </div>
+                  <div>
+                    <h3 className="text-sm font-bold text-slate-100">Primary Residence</h3>
+                    <p className="text-[10px] text-slate-400">Starting tax jurisdiction and county residency</p>
+                  </div>
+                </div>
+                <span className="text-xs px-2.5 py-1 rounded-lg font-mono font-bold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+                  {inputs.jurisdiction.currentState}
+                  {inputs.jurisdiction.currentCounty ? ` • ${inputs.jurisdiction.currentCounty}` : ''}
+                </span>
+              </div>
+
+              <div className="space-y-4">
+                <div>
+                  <label className="text-xs font-bold text-slate-200 block mb-1">State of Residence</label>
+                  <select
+                    value={inputs.jurisdiction.currentState || 'MD'}
+                    onChange={(e) => {
+                      const newState = e.target.value;
+                      const profile = getStateTaxProfile(newState);
+                      if (profile?.hasLocalTax) {
+                        const defaultCounty = profile.subJurisdictions[0]?.id || 'montgomery';
+                        onChange({
+                          ...inputs,
+                          jurisdiction: {
+                            ...inputs.jurisdiction,
+                            currentState: newState,
+                            currentCounty: defaultCounty,
+                            currentLocalTaxRate: null,
+                          },
+                        });
+                      } else {
+                        onChange({
+                          ...inputs,
+                          jurisdiction: {
+                            ...inputs.jurisdiction,
+                            currentState: newState,
+                            currentCounty: null,
+                            currentLocalTaxRate: null,
+                          },
+                        });
+                      }
+                    }}
+                    className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2 text-xs font-medium text-slate-100 focus:outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500"
+                  >
+                    {getSupportedStates().map((st) => (
+                      <option key={st.code} value={st.code}>
+                        {st.name} ({st.code})
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                {getStateTaxProfile(inputs.jurisdiction.currentState || 'MD')?.hasLocalTax && (
+                  <div className="space-y-3 p-3.5 bg-slate-950/60 rounded-xl border border-slate-800">
+                    <div>
+                      <div className="flex items-center justify-between mb-1">
+                        <label className="text-xs font-bold text-slate-200">
+                          {getStateTaxProfile(inputs.jurisdiction.currentState || 'MD')?.subJurisdictionLabel || 'County'}
+                        </label>
+                        <span className="text-[10px] text-slate-400 font-mono">
+                          Local Piggyback Tax
+                        </span>
+                      </div>
+                      <select
+                        value={inputs.jurisdiction.currentCounty || ''}
+                        onChange={(e) => {
+                          onChange({
+                            ...inputs,
+                            jurisdiction: {
+                              ...inputs.jurisdiction,
+                              currentCounty: e.target.value,
+                              currentLocalTaxRate: null,
+                            },
+                          });
+                        }}
+                        className="w-full bg-slate-900 border border-slate-800 rounded-xl px-3 py-2 text-xs font-medium text-slate-100 focus:outline-none focus:border-emerald-500"
+                      >
+                        <option value="" disabled>Select County...</option>
+                        {getSubJurisdictions(inputs.jurisdiction.currentState || 'MD').map((c) => (
+                          <option key={c.id} value={c.id}>
+                            {c.name} ({(c.defaultLocalRate * 100).toFixed(2)}%)
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+
+                    <div>
+                      <div className="flex items-center justify-between mb-1">
+                        <label className="text-[11px] font-semibold text-slate-300">
+                          Effective Local Piggyback Rate
+                        </label>
+                        {inputs.jurisdiction.currentLocalTaxRate !== undefined &&
+                          inputs.jurisdiction.currentLocalTaxRate !== null && (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                onChange({
+                                  ...inputs,
+                                  jurisdiction: {
+                                    ...inputs.jurisdiction,
+                                    currentLocalTaxRate: null,
+                                  },
+                                });
+                              }}
+                              className="text-[10px] text-amber-400 hover:text-amber-300 flex items-center gap-1 cursor-pointer"
+                            >
+                              <RotateCcw className="w-3 h-3" />
+                              Reset to default
+                            </button>
+                          )}
+                      </div>
+                      <div className="relative">
+                        <input
+                          type="number"
+                          step="0.01"
+                          min="0"
+                          max="10"
+                          value={(
+                            getEffectiveLocalTaxRate(
+                              inputs.jurisdiction.currentState || 'MD',
+                              inputs.jurisdiction.currentCounty,
+                              inputs.jurisdiction.currentLocalTaxRate
+                            ) * 100
+                          ).toFixed(2)}
+                          onChange={(e) => {
+                            const val = parseFloat(e.target.value);
+                            onChange({
+                              ...inputs,
+                              jurisdiction: {
+                                ...inputs.jurisdiction,
+                                currentLocalTaxRate: isNaN(val) ? 0 : val / 100,
+                              },
+                            });
+                          }}
+                          className="w-full bg-slate-900 border border-slate-800 rounded-xl px-3 py-1.5 pr-8 text-xs font-mono font-bold text-emerald-400 focus:outline-none focus:border-emerald-500"
+                        />
+                        <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-slate-400 font-mono">%</span>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* Total Effective State & Local Tax Display */}
+                {(() => {
+                  const primaryProfile = getStateTaxProfile(inputs.jurisdiction.currentState || 'MD');
+                  const primaryLocalRate = getEffectiveLocalTaxRate(
+                    inputs.jurisdiction.currentState || 'MD',
+                    inputs.jurisdiction.currentCounty,
+                    inputs.jurisdiction.currentLocalTaxRate
+                  );
+                  const primaryTopCombinedRate = (primaryProfile?.hasIncomeTax ? 0.0575 : 0) + primaryLocalRate;
+                  const year1Row = ledger && ledger.length > 0 ? ledger[0] : null;
+                  const year1EffectiveRate = year1Row && year1Row.fedAGI > 0
+                    ? (year1Row.stateIncomeTax / year1Row.fedAGI) * 100
+                    : 0;
+
+                  return (
+                    <div className="p-4 bg-slate-950/80 rounded-xl border border-slate-800 space-y-2.5">
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-2">
+                          <div className="p-1 rounded-md bg-emerald-500/20 text-emerald-400">
+                            <Receipt className="w-3.5 h-3.5" />
+                          </div>
+                          <div>
+                            <span className="text-xs font-bold text-slate-200 block">
+                              Total Effective State &amp; Local Tax
+                            </span>
+                            <span className="text-[10px] text-slate-400">
+                              {primaryProfile?.hasIncomeTax
+                                ? `Combined top rate: ${(primaryTopCombinedRate * 100).toFixed(2)}% (State up to 5.75% + Local ${(primaryLocalRate * 100).toFixed(2)}%)`
+                                : '0.00% (No state or local income tax)'}
+                            </span>
+                          </div>
+                        </div>
+                        <div className="text-right">
+                          <span className="text-sm font-mono font-extrabold text-emerald-400 block">
+                            {primaryProfile?.hasIncomeTax
+                              ? `${(primaryTopCombinedRate * 100).toFixed(2)}%`
+                              : '0.00%'}
+                          </span>
+                          <span className="text-[10px] text-slate-500 font-mono">
+                            Top Combined
+                          </span>
+                        </div>
+                      </div>
+
+                      {year1Row && (
+                        <div className="pt-2 border-t border-slate-800/80 flex items-center justify-between text-xs">
+                          <span className="text-slate-400 text-[11px]">
+                            Year 1 ({year1Row.year}) Projected State Tax:
+                          </span>
+                          <div className="flex items-center gap-2 font-mono">
+                            <span className="text-slate-200 font-bold">
+                              ${Math.round(year1Row.stateIncomeTax).toLocaleString()}
+                            </span>
+                            <span className="text-[11px] px-1.5 py-0.5 rounded bg-emerald-500/10 text-emerald-400 font-bold border border-emerald-500/20">
+                              {year1EffectiveRate.toFixed(2)}% effective
+                            </span>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })()}
+              </div>
+            </div>
+
+            {/* Card 2: Relocation Planning */}
             <div className="glass-panel bg-slate-900/80 border border-slate-800 rounded-2xl p-5 space-y-4 shadow-lg">
               <div className="flex items-center justify-between border-b border-slate-800 pb-3">
                 <div className="flex items-center gap-2.5">
@@ -808,8 +1032,8 @@ export const ParametersWorkspace: React.FC<ParametersWorkspaceProps> = ({
                     <MapPin className="w-4 h-4" />
                   </div>
                   <div>
-                    <h3 className="text-sm font-bold text-slate-100">State Relocation (MD → FL)</h3>
-                    <p className="text-[10px] text-slate-400">Maryland to Florida transition timing</p>
+                    <h3 className="text-sm font-bold text-slate-100">Relocation Planning</h3>
+                    <p className="text-[10px] text-slate-400">Future state or county relocation timing</p>
                   </div>
                 </div>
                 <span className={`text-xs px-2.5 py-1 rounded-lg font-mono font-bold ${
@@ -819,15 +1043,15 @@ export const ParametersWorkspace: React.FC<ParametersWorkspaceProps> = ({
                 }`}>
                   {inputs.jurisdiction.relocationYear !== null
                     ? `Relocating in ${inputs.jurisdiction.relocationYear}`
-                    : 'Maryland Only'}
+                    : 'Continuous Residency'}
                 </span>
               </div>
 
               <div className="space-y-4">
                 <div className="flex items-center justify-between p-3.5 bg-slate-950/60 rounded-xl border border-slate-800">
                   <div>
-                    <label className="text-xs font-bold text-slate-200 block">Relocate to Florida?</label>
-                    <span className="text-[10px] text-slate-400">0% state income tax & 0% local piggyback tax</span>
+                    <label className="text-xs font-bold text-slate-200 block">Enable Relocation?</label>
+                    <span className="text-[10px] text-slate-400">Transition to a new state or county in a future year</span>
                   </div>
                   <div className="flex items-center gap-2">
                     <span className="text-xs font-semibold text-slate-300">Enable</span>
@@ -837,7 +1061,20 @@ export const ParametersWorkspace: React.FC<ParametersWorkspaceProps> = ({
                       checked={inputs.jurisdiction.relocationYear !== null}
                       onChange={(e) => {
                         if (e.target.checked) {
-                          updateNestedState('jurisdiction', 'relocationYear', lastRelocationYear.current);
+                          const year = lastRelocationYear.current ?? simStartYear;
+                          const targetSt = inputs.jurisdiction.targetState || (inputs.jurisdiction.currentState === 'MD' ? 'FL' : 'MD');
+                          const profile = getStateTaxProfile(targetSt);
+                          const defaultTargetCounty = profile?.hasLocalTax ? (profile.subJurisdictions[0]?.id || 'montgomery') : null;
+                          onChange({
+                            ...inputs,
+                            jurisdiction: {
+                              ...inputs.jurisdiction,
+                              targetState: targetSt,
+                              targetCounty: defaultTargetCounty,
+                              targetLocalTaxRate: null,
+                              relocationYear: year,
+                            },
+                          });
                         } else {
                           if (inputs.jurisdiction.relocationYear !== null) {
                             lastRelocationYear.current = inputs.jurisdiction.relocationYear;
@@ -851,12 +1088,135 @@ export const ParametersWorkspace: React.FC<ParametersWorkspaceProps> = ({
                 </div>
 
                 {inputs.jurisdiction.relocationYear !== null ? (
-                  <div className="space-y-2 p-4 bg-slate-950/60 rounded-xl border border-amber-500/30">
+                  <div className="space-y-3.5 p-4 bg-slate-950/60 rounded-xl border border-amber-500/30">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      <div>
+                        <label className="text-xs font-bold text-slate-200 block mb-1">Destination State</label>
+                        <select
+                          value={inputs.jurisdiction.targetState || (inputs.jurisdiction.currentState === 'MD' ? 'FL' : 'MD')}
+                          onChange={(e) => {
+                            const newTargetState = e.target.value;
+                            const profile = getStateTaxProfile(newTargetState);
+                            const defaultCounty = profile?.hasLocalTax ? (profile.subJurisdictions[0]?.id || 'montgomery') : null;
+                            onChange({
+                              ...inputs,
+                              jurisdiction: {
+                                ...inputs.jurisdiction,
+                                targetState: newTargetState,
+                                targetCounty: defaultCounty,
+                                targetLocalTaxRate: null,
+                              },
+                            });
+                          }}
+                          className="w-full bg-slate-900 border border-slate-800 rounded-xl px-3 py-2 text-xs font-medium text-slate-100 focus:outline-none focus:border-amber-500"
+                        >
+                          {getSupportedStates().map((st) => (
+                            <option key={st.code} value={st.code}>
+                              {st.name} ({st.code})
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+
+                      {getStateTaxProfile(inputs.jurisdiction.targetState || 'FL')?.hasLocalTax && (
+                        <div>
+                          <label className="text-xs font-bold text-slate-200 block mb-1">
+                            Destination {getStateTaxProfile(inputs.jurisdiction.targetState || 'FL')?.subJurisdictionLabel || 'County'}
+                          </label>
+                          <select
+                            value={inputs.jurisdiction.targetCounty || ''}
+                            onChange={(e) => {
+                              onChange({
+                                ...inputs,
+                                jurisdiction: {
+                                  ...inputs.jurisdiction,
+                                  targetCounty: e.target.value,
+                                  targetLocalTaxRate: null,
+                                },
+                              });
+                            }}
+                            className="w-full bg-slate-900 border border-slate-800 rounded-xl px-3 py-2 text-xs font-medium text-slate-100 focus:outline-none focus:border-amber-500"
+                          >
+                            <option value="" disabled>Select Destination County...</option>
+                            {getSubJurisdictions(inputs.jurisdiction.targetState || 'FL').map((c) => (
+                              <option key={c.id} value={c.id}>
+                                {c.name} ({(c.defaultLocalRate * 100).toFixed(2)}%)
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+                      )}
+                    </div>
+
+                    {getStateTaxProfile(inputs.jurisdiction.targetState || 'FL')?.hasLocalTax && (
+                      <div>
+                        <div className="flex items-center justify-between mb-1">
+                          <label className="text-[11px] font-semibold text-slate-300">
+                            Destination Local Piggyback Rate
+                          </label>
+                          {inputs.jurisdiction.targetLocalTaxRate !== undefined &&
+                            inputs.jurisdiction.targetLocalTaxRate !== null && (
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  onChange({
+                                    ...inputs,
+                                    jurisdiction: {
+                                      ...inputs.jurisdiction,
+                                      targetLocalTaxRate: null,
+                                    },
+                                  });
+                                }}
+                                className="text-[10px] text-amber-400 hover:text-amber-300 flex items-center gap-1 cursor-pointer"
+                              >
+                                <RotateCcw className="w-3 h-3" />
+                                Reset to default
+                              </button>
+                            )}
+                        </div>
+                        <div className="relative">
+                          <input
+                            type="number"
+                            step="0.01"
+                            min="0"
+                            max="10"
+                            value={(
+                              getEffectiveLocalTaxRate(
+                                inputs.jurisdiction.targetState || 'FL',
+                                inputs.jurisdiction.targetCounty,
+                                inputs.jurisdiction.targetLocalTaxRate
+                              ) * 100
+                            ).toFixed(2)}
+                            onChange={(e) => {
+                              const val = parseFloat(e.target.value);
+                              onChange({
+                                ...inputs,
+                                jurisdiction: {
+                                  ...inputs.jurisdiction,
+                                  targetLocalTaxRate: isNaN(val) ? 0 : val / 100,
+                                },
+                              });
+                            }}
+                            className="w-full bg-slate-900 border border-slate-800 rounded-xl px-3 py-1.5 pr-8 text-xs font-mono font-bold text-amber-400 focus:outline-none focus:border-amber-500"
+                          />
+                          <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-slate-400 font-mono">%</span>
+                        </div>
+                      </div>
+                    )}
+
                     <RangeSlider
                       min={simStartYear}
                       max={simStartYear + 35}
                       value={inputs.jurisdiction.relocationYear}
-                      onChange={(val) => updateNestedState('jurisdiction', 'relocationYear', val)}
+                      onChange={(val) => {
+                        onChange({
+                          ...inputs,
+                          jurisdiction: {
+                            ...inputs.jurisdiction,
+                            relocationYear: val,
+                          },
+                        });
+                      }}
                       className="w-full h-1.5 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-amber-500"
                       renderLabel={(displayVal) => (
                         <div className="flex justify-between items-center text-xs mb-1">
@@ -874,61 +1234,105 @@ export const ParametersWorkspace: React.FC<ParametersWorkspaceProps> = ({
                   </div>
                 ) : (
                   <div className="p-3.5 bg-slate-950/40 rounded-xl border border-slate-800/80 text-[11px] text-slate-400 leading-relaxed">
-                    Continuous Maryland residency with standard state (up to 5.75%) and local county income tax rates applied for all 35 years.
+                    Continuous residency in {getStateTaxProfile(inputs.jurisdiction.currentState || 'MD')?.name || inputs.jurisdiction.currentState}
+                    {inputs.jurisdiction.currentCounty ? ` (${inputs.jurisdiction.currentCounty})` : ''} with standard state and local tax rates applied for all simulation years.
                   </div>
                 )}
               </div>
             </div>
+          </div>
 
-            {/* Jurisdiction Comparison Card */}
-            <div className="glass-panel bg-slate-900/80 border border-slate-800 rounded-2xl p-5 space-y-4 shadow-lg">
-              <div className="flex items-center justify-between border-b border-slate-800 pb-3">
-                <div className="flex items-center gap-2.5">
-                  <div className="p-1.5 rounded-lg bg-emerald-500/20 text-emerald-400">
-                    <Building className="w-4 h-4" />
-                  </div>
-                  <div>
-                    <h3 className="text-sm font-bold text-slate-100">State Tax Jurisdictions</h3>
-                    <p className="text-[10px] text-slate-400">Tax comparison: Maryland vs Florida</p>
-                  </div>
+          {/* Dynamic Jurisdiction Comparison Card */}
+          <div className="glass-panel bg-slate-900/80 border border-slate-800 rounded-2xl p-5 space-y-4 shadow-lg">
+            <div className="flex items-center justify-between border-b border-slate-800 pb-3">
+              <div className="flex items-center gap-2.5">
+                <div className="p-1.5 rounded-lg bg-emerald-500/20 text-emerald-400">
+                  <Building className="w-4 h-4" />
                 </div>
-                <span className="text-xs px-2.5 py-1 rounded-lg font-mono font-bold bg-slate-800 text-slate-400 border border-slate-700">
-                  MD vs FL
-                </span>
+                <div>
+                  <h3 className="text-sm font-bold text-slate-100">Jurisdiction Tax Profile Comparison</h3>
+                  <p className="text-[10px] text-slate-400">Comparative state income and local piggyback tax criteria</p>
+                </div>
+              </div>
+              <span className="text-xs px-2.5 py-1 rounded-lg font-mono font-bold bg-slate-800 text-slate-400 border border-slate-700">
+                {inputs.jurisdiction.currentState}
+                {inputs.jurisdiction.relocationYear !== null ? ` → ${inputs.jurisdiction.targetState || 'FL'}` : ' (Continuous)'}
+              </span>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
+              {/* Left: Current Jurisdiction */}
+              <div className="p-3.5 bg-slate-950/60 rounded-xl border border-slate-800 space-y-1.5">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-bold text-slate-200">
+                    {getStateTaxProfile(inputs.jurisdiction.currentState || 'MD')?.name || inputs.jurisdiction.currentState} ({inputs.jurisdiction.currentState})
+                  </span>
+                  <span className="text-[10px] font-mono text-emerald-400 font-semibold">Current</span>
+                </div>
+                {getStateTaxProfile(inputs.jurisdiction.currentState || 'MD')?.hasIncomeTax ? (
+                  <>
+                    <p className="text-[10px] text-slate-400 leading-normal">
+                      State income tax rate: <strong>2.00% – 5.75%</strong>
+                    </p>
+                    <p className="text-[10px] text-slate-400 leading-normal">
+                      Local county piggyback tax: <strong>{(getEffectiveLocalTaxRate(inputs.jurisdiction.currentState || 'MD', inputs.jurisdiction.currentCounty, inputs.jurisdiction.currentLocalTaxRate) * 100).toFixed(2)}%</strong>
+                      {inputs.jurisdiction.currentCounty ? ` (${inputs.jurisdiction.currentCounty})` : ''}
+                    </p>
+                    <p className="text-[10px] text-slate-500 pt-1">
+                      Graduated state brackets, standard deductions, and Maryland pension exclusion.
+                    </p>
+                  </>
+                ) : (
+                  <>
+                    <p className="text-[10px] text-emerald-400 font-semibold leading-normal">0.00% State Income Tax</p>
+                    <p className="text-[10px] text-emerald-400 font-semibold leading-normal">0.00% Local County Tax</p>
+                    <p className="text-[10px] text-slate-500 pt-1">
+                      $0 state tax on IRA withdrawals, salaries, and capital gains.
+                    </p>
+                  </>
+                )}
               </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
-                <div className="p-3.5 bg-slate-950/60 rounded-xl border border-slate-800 space-y-1.5">
-                  <div className="flex items-center justify-between">
-                    <span className="text-xs font-bold text-slate-200">Maryland (MD)</span>
-                    <span className="text-[10px] font-mono text-slate-400">Current</span>
-                  </div>
-                  <p className="text-[10px] text-slate-400 leading-normal">
-                    State income tax rate: <strong>2.00% – 5.75%</strong>
-                  </p>
-                  <p className="text-[10px] text-slate-400 leading-normal">
-                    County piggyback tax: <strong>up to 3.20%</strong>
-                  </p>
-                  <p className="text-[10px] text-slate-500 pt-1">
-                    Taxes IRA distributions, pensions, and capital gains.
-                  </p>
+              {/* Right: Target Jurisdiction or Continuous */}
+              <div className="p-3.5 bg-slate-950/60 rounded-xl border border-slate-800 space-y-1.5">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-bold text-amber-300">
+                    {inputs.jurisdiction.relocationYear !== null
+                      ? `${getStateTaxProfile(inputs.jurisdiction.targetState || 'FL')?.name || inputs.jurisdiction.targetState} (${inputs.jurisdiction.targetState || 'FL'})`
+                      : 'Continuous Plan'}
+                  </span>
+                  <span className="text-[10px] font-mono text-amber-400 font-semibold">
+                    {inputs.jurisdiction.relocationYear !== null ? `Starting ${inputs.jurisdiction.relocationYear}` : '35 Years'}
+                  </span>
                 </div>
-
-                <div className="p-3.5 bg-slate-950/60 rounded-xl border border-slate-800 space-y-1.5">
-                  <div className="flex items-center justify-between">
-                    <span className="text-xs font-bold text-amber-300">Florida (FL)</span>
-                    <span className="text-[10px] font-mono text-amber-400">Target</span>
-                  </div>
-                  <p className="text-[10px] text-emerald-400 font-semibold leading-normal">
-                    0.00% State Income Tax
+                {inputs.jurisdiction.relocationYear !== null ? (
+                  getStateTaxProfile(inputs.jurisdiction.targetState || 'FL')?.hasIncomeTax ? (
+                    <>
+                      <p className="text-[10px] text-slate-400 leading-normal">
+                        State income tax rate: <strong>2.00% – 5.75%</strong>
+                      </p>
+                      <p className="text-[10px] text-slate-400 leading-normal">
+                        Destination county tax: <strong>{(getEffectiveLocalTaxRate(inputs.jurisdiction.targetState || 'FL', inputs.jurisdiction.targetCounty, inputs.jurisdiction.targetLocalTaxRate) * 100).toFixed(2)}%</strong>
+                        {inputs.jurisdiction.targetCounty ? ` (${inputs.jurisdiction.targetCounty})` : ''}
+                      </p>
+                      <p className="text-[10px] text-slate-500 pt-1">
+                        State tax begins in calendar year {inputs.jurisdiction.relocationYear}.
+                      </p>
+                    </>
+                  ) : (
+                    <>
+                      <p className="text-[10px] text-emerald-400 font-semibold leading-normal">0.00% State Income Tax</p>
+                      <p className="text-[10px] text-emerald-400 font-semibold leading-normal">0.00% Local County Tax</p>
+                      <p className="text-[10px] text-slate-500 pt-1">
+                        Full zero state income tax transition starting in {inputs.jurisdiction.relocationYear}.
+                      </p>
+                    </>
+                  )
+                ) : (
+                  <p className="text-[10px] text-slate-400 leading-relaxed pt-1">
+                    Continuous residency models no state relocation over the simulated horizon. Enable relocation above to test migration savings.
                   </p>
-                  <p className="text-[10px] text-emerald-400 font-semibold leading-normal">
-                    0.00% Local County Tax
-                  </p>
-                  <p className="text-[10px] text-slate-500 pt-1">
-                    $0 state tax on IRA withdrawals, pensions, and capital gains.
-                  </p>
-                </div>
+                )}
               </div>
             </div>
           </div>
@@ -1465,13 +1869,24 @@ export const ParametersWorkspace: React.FC<ParametersWorkspaceProps> = ({
             </p>
 
             {!showResetConfirm ? (
-              <button
-                type="button"
-                onClick={() => setShowResetConfirm(true)}
-                className="px-5 py-2.5 bg-rose-500/20 hover:bg-rose-500/30 text-rose-300 border border-rose-500/40 rounded-xl text-xs font-bold transition-all cursor-pointer"
-              >
-                Reset Plan Configuration
-              </button>
+              <div className="flex flex-wrap items-center gap-3">
+                <button
+                  type="button"
+                  onClick={() => onChange(JSON.parse(JSON.stringify(SAMPLE_DEMO_PLAN)))}
+                  className="px-5 py-2.5 bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/40 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center gap-2"
+                  title="Overwrite current inputs with realistic sample demonstration plan for testing"
+                >
+                  <Sparkles className="w-4 h-4 text-amber-400" />
+                  <span>Load Sample Demo Plan</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setShowResetConfirm(true)}
+                  className="px-5 py-2.5 bg-rose-500/20 hover:bg-rose-500/30 text-rose-300 border border-rose-500/40 rounded-xl text-xs font-bold transition-all cursor-pointer"
+                >
+                  Reset Plan Configuration
+                </button>
+              </div>
             ) : (
               <div className="p-4 bg-rose-950/20 border border-rose-900/40 rounded-xl space-y-3 max-w-md">
                 <span className="text-xs text-slate-200 font-semibold block">

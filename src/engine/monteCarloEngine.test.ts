@@ -12,7 +12,12 @@ import {
   BOND_RETURN_MAX,
   INFLATION_RATE_MIN,
   INFLATION_RATE_MAX,
+  HISTORICAL_RETURNS,
+  HISTORICAL_STOCK_MEAN,
+  HISTORICAL_BOND_MEAN,
+  HISTORICAL_CPI_MEAN,
 } from './monteCarloEngine';
+import { runRetirementSimulation } from './simulationEngine';
 import { AppStateInputs } from '../types';
 
 describe('mulberry32 seedable PRNG', () => {
@@ -1004,7 +1009,145 @@ describe('Constant vs Randomized CPI Simulation', () => {
       expect(summary.percentiles.length).toBe(35);
     });
   });
+
+  describe('Forward Secular Inflation Calibration & Joint Behavior', () => {
+    it('converges to target CMA inflation rate across multi-trial averages', () => {
+      const targetCpi = 0.024;
+      let totalInfl = 0;
+      let totalCount = 0;
+      const rand = mulberry32(12345);
+
+      for (let t = 0; t < 300; t++) {
+        const seq = generateHistoricalSequence(false, undefined, rand, true, null, true, 0.068, 0.046, targetCpi);
+        for (const r of seq.inflationRates!) {
+          totalInfl += r;
+          totalCount++;
+        }
+      }
+      const sampleMean = totalInfl / totalCount;
+      // Expected arithmetic mean converges closely to the 2.4% CMA target
+      expect(Math.abs(sampleMean - targetCpi)).toBeLessThan(0.002);
+    });
+
+    it('bounds all simulated inflation shocks by the -2.0% deflation floor', () => {
+      const rand = mulberry32(54321);
+      let minObserved = Infinity;
+
+      for (let t = 0; t < 200; t++) {
+        const seq = generateHistoricalSequence(false, undefined, rand, true, null, true, 0.068, 0.046, 0.024);
+        for (const rate of seq.inflationRates!) {
+          if (rate < minObserved) minObserved = rate;
+        }
+      }
+
+      expect(minObserved).toBeGreaterThanOrEqual(INFLATION_RATE_MIN);
+      expect(INFLATION_RATE_MIN).toBe(-0.02);
+    });
+
+    it('demonstrates empirical right-skewness where median sits below the arithmetic mean', () => {
+      const rand = mulberry32(99999);
+      const allRates: number[] = [];
+
+      for (let t = 0; t < 300; t++) {
+        const seq = generateHistoricalSequence(false, undefined, rand, true, null, true, 0.068, 0.046, 0.024);
+        allRates.push(...(seq.inflationRates!));
+      }
+
+      const mean = allRates.reduce((a, b) => a + b, 0) / allRates.length;
+      allRates.sort((a, b) => a - b);
+      const median = allRates[Math.floor(allRates.length / 2)];
+
+      // Arithmetic mean converges near 2.4%, but due to stagflation right-skewness, the median is lower
+      expect(mean).toBeGreaterThan(median);
+      expect(median).toBeGreaterThanOrEqual(0.012);
+      expect(median).toBeLessThanOrEqual(0.022);
+    });
+
+    it('preserves joint-vector asset return and inflation coupling in block bootstrap sampling', () => {
+      const rand = mulberry32(777);
+      const startIdx = 10;
+      const targetEquity = 0.068;
+      const targetBond = 0.046;
+      const targetCpi = 0.024;
+
+      const seq = generateHistoricalSequence(true, startIdx, rand, true, null, true, targetEquity, targetBond, targetCpi);
+
+      // Each year in the continuous block must correspond to the exact same calendar year's historical vector
+      for (let i = 0; i < 10; i++) {
+        const orig = HISTORICAL_RETURNS[startIdx + i];
+        const expectedStock = orig.stock + (targetEquity - HISTORICAL_STOCK_MEAN);
+        const expectedBond = orig.bond + (targetBond - HISTORICAL_BOND_MEAN);
+        const expectedCpi = orig.inflation + (targetCpi - HISTORICAL_CPI_MEAN);
+
+        expect(seq.equityReturns[i]).toBeCloseTo(expectedStock, 5);
+        expect(seq.fixedIncomeReturns[i]).toBeCloseTo(expectedBond, 5);
+        expect(seq.inflationRates![i]).toBeCloseTo(expectedCpi, 5);
+      }
+    });
+
+    it('compounds active sequence inflation rates accurately into cpiFactor without duplicate shifts', () => {
+      const rand = mulberry32(888);
+      const seqRaw = generateHistoricalSequence(true, 5, rand, true, null, true, 0.068, 0.046, 0.024);
+      const seq = { ...seqRaw, id: 'test-seq-phase3' };
+
+      const mockInputs: AppStateInputs = {
+        you: { name: 'Test You', birthDate: '1960-01-01', plannedRetirementAge: 65, targetSSClaimingAge: 67, estimatedPIA: 3000, activeSalary: 0, preMedicareMonthlyPremium: null },
+        wife: { name: 'Test Wife', birthDate: '1964-01-01', plannedRetirementAge: 65, targetSSClaimingAge: 67, estimatedPIA: 1500, activeSalary: 0, preMedicareMonthlyPremium: null },
+        portfolio: {
+          yourPreTaxIRA: 500000,
+          yourRothIRA: 100000,
+          yourTaxableBrokerage: 200000,
+          yourTaxableBasis: 150000,
+          yourCash: 50000,
+          wifePreTaxIRA: 200000,
+          wifeRothIRA: 50000,
+          wifeTaxableBrokerage: 100000,
+          wifeTaxableBasis: 80000,
+          wifeCash: 25000,
+          taxableDividendYield: 0.02,
+          taxableNonQualifiedPortion: 0.15,
+        },
+        jurisdiction: { currentState: 'MD', targetState: 'FL', relocationYear: null },
+        growthAssumptions: {
+          equityReturnRate: 0.068,
+          fixedIncomeReturnRate: 0.046,
+          cpiInflationRate: 0.024,
+          healthcareInflationRate: 0.05,
+          preTaxEquityPortion: 0.60,
+          taxableEquityPortion: 0.80,
+          rothEquityPortion: 1.00,
+          cashYieldRate: 0.035,
+          minCashReserveDollars: 100000,
+        },
+        annualLivingExpenses: 90000,
+        annualRothConversion: 0,
+        rothConversionStrategy: 'flat',
+        rothConversionTargetValue: null,
+        simulationStartYear: 2026,
+        isConfigured: true,
+        isSingleFiler: false,
+        monteCarloSettings: {
+          mode: 'historical',
+          equityVolatility: 0.15,
+          fixedIncomeVolatility: 0.05,
+          correlation: 0.15,
+          trials: 100,
+          seed: null,
+        },
+      };
+
+      const rows = runRetirementSimulation(mockInputs, false, seq);
+
+      // Verify year-by-year that row.cpiFactor exactly matches cumulative compound product of activeSeq.inflationRates
+      let cumulativeProduct = 1.0;
+      for (let yr = 1; yr < 10; yr++) {
+        cumulativeProduct *= (1 + seq.inflationRates![yr - 1]);
+        expect(rows[yr].cpiFactor).toBeCloseTo(cumulativeProduct, 5);
+      }
+    });
+  });
 });
+
 
 
 
