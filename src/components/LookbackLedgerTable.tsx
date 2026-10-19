@@ -3,8 +3,8 @@ import { createPortal } from 'react-dom';
 import { SimulationResultRow, AppStateInputs, getSimulationStartYear } from '../types';
 import { TableProperties, Info, AlertTriangle, X } from 'lucide-react';
 import { IRMAA_TIERS_MFJ, IRMAA_TIERS_SINGLE, MD_PENSION_EXCLUSION_BASE_CAP } from '../engine/taxRates2026';
-import { calculateFedTaxWithLTCG, calculateTaxableSS, calculateMDStateTax } from '../engine/simulationEngine';
-import { getEffectiveLocalTaxRate } from '../engine/stateTaxRegistry';
+import { calculateFedTaxWithLTCG, calculateTaxableSS } from '../engine/simulationEngine';
+import { getEffectiveLocalTaxRate, calculateStateAndLocalTax } from '../engine/stateTaxRegistry';
 import { RowInspectionDialog } from './RowInspectionDialog';
 
 interface LookbackLedgerTableProps {
@@ -342,7 +342,21 @@ export const LookbackLedgerTable: React.FC<LookbackLedgerTableProps> = ({
                 const effectiveLocalRate = getEffectiveLocalTaxRate(activeState, activeCounty, activeCustomRate);
 
                 const stateTaxWith = r.stateIncomeTax;
-                const stateTaxWithout = calculateMDStateTax(agiWithout, taxableSSWithout, isSingle, cpiFactor, mdPensionExclusion, effectiveLocalRate);
+                const stateTaxWithoutResult = calculateStateAndLocalTax(
+                  activeState,
+                  {
+                    fedAGI: agiWithout,
+                    taxableSS: taxableSSWithout,
+                    isSingle,
+                    cpiFactor,
+                    pensionExclusion: mdPensionExclusion,
+                    ordinaryIncome: Math.max(0, agiWithout - (r.capitalGainsTriggered || 0)),
+                    capitalGains: r.capitalGainsTriggered || 0,
+                    retirementDistributions: Math.max(0, ((r.yourRMD || 0) + (r.wifeRMD || 0) + (r.drawdownPreTax || 0)) - (r.intentionalRothConversion || 0)),
+                  },
+                  effectiveLocalRate
+                );
+                const stateTaxWithout = stateTaxWithoutResult.totalTax;
                 return Math.max(0, stateTaxWith - stateTaxWithout);
               })();
 
@@ -543,6 +557,10 @@ export const LookbackLedgerTable: React.FC<LookbackLedgerTableProps> = ({
                             <span className="font-mono">+{formatCurrency(r.qcdTaxSavings)}</span>
                           </div>
                         )}
+                        <div className="flex justify-between items-center border-t border-slate-800/80 pt-1.5 mt-1 text-[11px]">
+                          <span className="text-slate-400">Accumulated Tithe Reserve:</span>
+                          <span className="font-mono text-amber-300 font-semibold">{formatCurrency(r.titheReserveBank || 0)}</span>
+                        </div>
                       </HoverPopup>
                     </td>
                   )}

@@ -443,6 +443,12 @@ export const RowInspectionDialog: React.FC<RowInspectionDialogProps> = ({
                     <span className="font-mono text-slate-300">{formatCurrency(row.nonQcdTithe)}</span>
                   </div>
                 )}
+                {row.titheReserveBank !== undefined && (
+                  <div className="flex justify-between items-center py-1 border-b border-slate-800/30 text-xs pl-3">
+                    <span className="text-amber-400">↳ Accumulated Tithe Reserve:</span>
+                    <span className="font-mono text-amber-300 font-semibold">{formatCurrency(row.titheReserveBank)}</span>
+                  </div>
+                )}
               </div>
               <div className="flex justify-between items-center border-t border-slate-800 pt-4 mt-2 font-bold text-sm bg-slate-900/30 p-3 rounded-lg">
                 <span className="text-slate-200">Total Annual Outflow:</span>

@@ -1,6 +1,6 @@
 # Retirement Planner Dashboard
 
-An interactive, premium, 35-year financial planning web application. This tool empowers users to model market trajectories (using Flat, stochastic Monte Carlo, or historical backfill conditions), spousal claiming scenarios, and tax optimization strategies (such as Roth conversions and state residency relocations) while calculating federal taxes, Maryland/Florida state taxes, capital gains, Medicare base premiums, and Modified Adjusted Gross Income (MAGI) lookback IRMAA surcharges.
+An interactive, premium, 35-year financial planning web application. This tool empowers users to model market trajectories (using Flat, stochastic Monte Carlo with Capital Market Assumptions, or historical backfill conditions), spousal claiming scenarios, 3-bucket portfolio structures, and tax optimization strategies (such as Roth conversions and multi-state relocations) while calculating federal taxes, state and local taxes (supporting all 50 U.S. states and Washington D.C.), capital gains, Medicare base premiums, and Modified Adjusted Gross Income (MAGI) lookback IRMAA surcharges.
 
 ---
 
@@ -14,8 +14,9 @@ An interactive, premium, 35-year financial planning web application. This tool e
   - [4. Monte Carlo Analysis](#4-monte-carlo-analysis)
   - [5. Plan Comparison](#5-plan-comparison)
   - [6. Actuals & Guardrails](#6-actuals--guardrails)
-- [Interactive Controls & Scenario Planning Drawer](#interactive-controls--scenario-planning-drawer)
-  - [Scenario Planner Drawer](#scenario-planner-drawer)
+  - [7. Bucket Management](#7-bucket-management)
+- [Interactive Controls & Navigation System](#interactive-controls--navigation-system)
+  - [Sidebar Navigation & Parameter Workspaces](#sidebar-navigation--parameter-workspaces)
   - [Global Keyboard Shortcuts](#global-keyboard-shortcuts)
 - [Advanced Optimization & Analytics Engine](#advanced-optimization--analytics-engine)
 - [🛠️ Development & Environment Setup](#️-development--environment-setup)
@@ -25,9 +26,12 @@ An interactive, premium, 35-year financial planning web application. This tool e
   - [🪟 Windows Setup (Native PowerShell/CMD)](#-windows-setup-native-powershellcmd)
     - [Option A: With Administrator Access](#option-a-with-administrator-access)
     - [Option B: Without Administrator Access (Non-Admin)](#option-b-without-administrator-access-non-admin)
+  - [⚡ Running the Production Build Locally (High Performance)](#-running-the-production-build-locally-high-performance)
 - [🛠️ Verification, Testing & Build Commands](#️-verification-testing--build-commands)
   - [Unit Test Suite](#unit-test-suite)
+  - [Code Quality & Linting](#code-quality--linting)
   - [Type Check & Production Build](#type-check--production-build)
+  - [Preview Production Build](#preview-production-build)
   - [🐳 Docker Container Deployment](#-docker-container-deployment)
 - [💻 Recommended Developer Tools](#-recommended-developer-tools)
 - [📄 License & Disclaimer](#-license--disclaimer)
@@ -38,23 +42,24 @@ An interactive, premium, 35-year financial planning web application. This tool e
 
 - **Interactive Onboarding Wizard**: Guided 4-step setup flow for first-time users to configure personal profiles, retirement timing, initial portfolio balances, and return assumptions.
 - **35-Year Spousal Timeline Engine**: Tracks annual income, Social Security claiming ages (62-70), active employment salaries, 401(k) contributions, asset compounding, and priority-based drawdown waterfalls.
-- **Federal & State Tax Engine**: Models Federal ordinary income brackets (10% to 37%), standard deductions with age 65+ senior bumps, preferential long-term capital gains rates (0%, 15%, 20%), and state income tax systems (Maryland MD with county piggyback rates vs. Florida FL zero-income tax) with custom relocation year support.
+- **Federal & State Tax Engine**: Models Federal ordinary income brackets (10% to 37%), standard deductions with age 65+ senior bumps, preferential long-term capital gains rates (0%, 15%, 20%), and comprehensive state and local income tax profiles across all 50 U.S. states and Washington D.C. (graduated tax brackets, flat taxes, zero-income-tax states, statutory retirement/pension exemptions, and county/municipal piggyback surtaxes) with customizable relocation year modeling.
 - **Medicare IRMAA & Form SSA-44 Modeling**: Simulates 2-year MAGI lookback Medicare IRMAA surcharge tiers (Part B & Part D) with Form SSA-44 life-changing event income adjustments upon retirement.
 - **Multi-Strategy Roth Conversion Planner**: Models flat annual conversions or dynamic "Fill-to-Bracket / Fill-to-IRMAA" strategies with customizable conversion start and end year windows.
 - **Automated Scenario Optimizer**: Algorithms to identify optimal Social Security claiming ages and Roth conversion schedules to maximize ending estate, minimize lifetime tax, or minimize IRMAA surcharges.
+- **3-Bucket Wealth Preservation Strategy**: Models Cash, Income (Bond/CD Ladder), and Growth buckets with rule-based systematic refills from capital gains and market drawdowns protection.
 - **Charitable QCD & Tithe Engine**: Models Qualified Charitable Distributions (QCDs) directly from Pre-Tax IRAs starting at age 70½ to satisfy Required Minimum Distributions (RMDs) tax-free, alongside annual cash tithe contributions.
-- **Itemized vs. Simple Aggregate Expenses**: Supports both simple inflation-adjusted annual living budgets and granular itemized expense categories (housing, medical, lifestyle, discretionary, and future one-off expenses).
-- **Stochastic Monte Carlo Stress Testing**: Simulates 1,000+ parallel trials with seedable pseudo-random generation (Mulberry32 PRNG), sequence-of-returns risk analysis, regime switching, historical bootstrapping (1928-present data), and market crash override stress tests.
+- **Itemized vs. Simple Aggregate Expenses**: Supports both simple inflation-adjusted annual living budgets and granular itemized expense categories (housing, medical, lifestyle, discretionary, and future one-off expenses) with scheduled payment months and state-specific applicability.
+- **Stochastic Monte Carlo & Institutional CMA Stress Testing**: Simulates 1,000+ parallel trials with seedable pseudo-random generation (Mulberry32 PRNG), sequence-of-returns risk analysis, regime switching, Student-t fat-tail distributions, institutional Capital Market Assumptions (Vanguard, BlackRock, J.P. Morgan, Institutional Consensus 2026), and market crash override stress tests.
 - **Dual Valuation Mode**: Toggle instantly between Nominal Future Dollars and Real Today's Purchasing Power Dollars across all charts, ledgers, and summary metrics.
 - **Sankey Flow Diagram**: Interactive visual cashflow diagrams illustrating the flow of gross income, tax liabilities, living expenses, and portfolio reinvestment/drawdown balances.
-- **Plan Exporting & PDF Reports**: Save plans locally, export/import JSON configurations, and generate PDF executive summary reports.
+- **Plan Exporting & PDF Reports**: Save plans locally, export/import JSON configurations, generate Excel (.xlsx) workbooks, and create downloadable PDF executive summary reports.
 - **Accessibility & Typography Scaling**: Global root font scaling (12px to 24px) for responsive sizing across all displays and full keyboard navigation shortcuts.
 
 ---
 
 ## Workspace Structure
 
-The application is structured into five dedicated, synchronized workspaces:
+The application is structured into seven dedicated, synchronized workspaces:
 
 ### 1. Overview (Bracket Map Chart)
 Visual tax bracket planning and Roth conversion modeling.
@@ -70,15 +75,15 @@ Granular taxable income and deduction analysis.
 
 ### 3. Lookback Ledger
 Comprehensive 35-year financial ledger.
-- **Full Cashflow Accounting**: Year-by-year columns tracking asset balances (Pre-tax, Roth, Taxable, Cash), Social Security benefits, RMDs, employee 401(k) contributions, standard deductions, tax brackets, effective tax rates, state taxes, Form SSA-44 lookback MAGI, Medicare base & IRMAA surcharges, charitable QCDs & tithes, and estate values.
+- **Full Cashflow Accounting**: Year-by-year columns tracking asset balances (Pre-tax, Roth, Taxable, Cash), Social Security benefits, RMDs, employee 401(k) contributions, standard deductions, tax brackets, effective tax rates, state and local taxes, Form SSA-44 lookback MAGI, Medicare base & IRMAA surcharges, charitable QCDs & tithes, and estate values.
 - **Row Inspection Drilldown**: Click any year row to open a detailed inspection modal breaking down that specific year's tax calculations, MAGI adjustments, and account movements.
 - **KPI Summary Banner**: Quick-toggle summary bar displaying ending estate, total lifetime taxes paid, Medicare surcharges, base premiums, and charitable contributions.
 
 ### 4. Monte Carlo Analysis
 Long-term market stress testing and sequence-of-returns risk modeling.
 - **Parallel Stochastic Engine**: Runs 1,000+ randomized simulations displaying percentile paths (P10 worst-case, P25, P50 median, P75, P90 best-case).
-- **Customizable Simulation Parameters**: Adjust equity/bond return means, annual volatility, asset correlation, inflation randomness, and historical sampling strategies (hybrid, block, or random).
-- **Stress Test Control Panel**: Apply custom market shock overrides (e.g., severe initial market drop, elevated inflation) to evaluate sequence risk.
+- **Institutional CMA & Custom Profiles**: Select from institutional return assumptions (Vanguard VCMM, BlackRock, J.P. Morgan, Institutional Consensus 2026) or configure custom return means, annual volatilities, asset correlations, and Student-t fat-tail scaling.
+- **Stress Test Control Panel**: Apply custom multi-year market shock overrides (e.g., severe initial market drop, elevated inflation) to evaluate sequence risk.
 - **Global Scenario Synchronization**: Switch the active global scenario between Flat Expected, P10, P50, and P90 returns to synchronize the entire application.
 
 ### 5. Plan Comparison
@@ -96,20 +101,32 @@ Real-world plan execution tracking, historical replay, portfolio reconciliation,
 - **Permission to Spend Advisory**: Transparently analyzes net surplus into direct Expense Savings and Market Growth Share (10% surplus share), providing a 1-click button to apply earned bonuses to next year's budget.
 - **Visual Status Badges**: Lookback Ledger displays `ACTUAL` and `BRIDGED` pill badges with direct navigation shortcuts.
 
+### 7. Bucket Management
+Structured 3-bucket strategy governance and bond/CD laddering.
+- **Three-Bucket Framework**: Allocates portfolio assets across Cash Bucket (immediate 1-3 years of living liquidity), Income / Bond Ladder Bucket (3-7 year safe yields, CDs, and individual bond maturities), and Growth Bucket (long-term equity compounding).
+- **Systematic Refill Rules**: Triggers periodic bucket replenishments from equity gains during bull markets while automatically pausing replenishments during sustained market drawdowns to avoid selling equities at troughs.
+- **Bond & CD Ladder Management**: Interactive holdings table modeling instrument face values, coupon rates, maturity years, and yield-to-maturity cash inflows.
+- **Action Item Ledger**: Year-by-year operational execution steps tracking rebalancing transfers, maturing bonds, and required cash disbursements.
+
 ---
 
-## Interactive Controls & Scenario Planning Drawer
+## Interactive Controls & Navigation System
 
-### Scenario Planner Drawer
-Press **`P`** anywhere in the application or click **Edit Parameters** in the top navigation bar to open the slide-over parameter drawer, organized into four tabs:
+### Sidebar Navigation & Parameter Workspaces
+The application features a responsive, collapsible sidebar navigation providing instant access to all core workspaces and dedicated parameter management screens:
 
-- 👤 **Profiles**: Primary user and spouse birth dates, Social Security PIA estimates, target claiming ages (62-70), retirement ages, active salaries, longevity ages, Pre-Medicare & Medicare healthcare expense configurations, and Survivor view simulation mode toggle switch.
-- 💰 **Accounts**: Starting account balances (Traditional Pre-Tax IRA, Roth IRA, Taxable Brokerage, Cost Basis, Cash Reserves) for both individuals, plus taxable dividend yields and non-qualified interest ratios.
-- 📈 **Assumptions**: Valuation currency toggle (Nominal Future Dollars vs. Today's Real Purchasing Power Dollars), simulation start year, asset allocation (equity portions by account type), expected asset returns, inflation rates (CPI & healthcare), cash yields, minimum cash reserves, and Maryland (MD) to Florida (FL) relocation year.
-- 🧾 **Expenses**: Calculation method selection (Simple Aggregate Budget vs. Detailed Itemized Expenses), base annual living budget, itemized expense management dialog, and Charitable QCD & Tithe configuration.
+- 👤 **Profiles & Family** (`params-profiles`): User and spouse birth dates, Social Security PIA estimates, target claiming ages (62-70), retirement ages, active salaries, longevity ages, and survivor analysis.
+- ⚖️ **Tax Filing Status** (`params-filing-status`): Married Filing Jointly (MFJ) vs. Single Filer mode, with dynamic survivor transition modeling.
+- 📍 **Tax Residency & States** (`params-residency`): Primary state of residence, county/municipal piggyback surtax rates, target relocation state & local rates, and customizable relocation timing.
+- 🩺 **Healthcare & Medicare** (`params-healthcare`): Pre-65 ACA premiums, Medicare Part B & Part D baseline premiums, supplemental insurance, dental/vision/hearing out-of-pocket costs, and Form SSA-44 life-changing event income reductions.
+- 💼 **Accounts & Balances** (`params-accounts`): Starting balances (Traditional Pre-Tax IRA, Roth IRA, Taxable Brokerage, Cost Basis, Cash Reserves), asset allocations, expected returns, dividend yields, and cash yields.
+- 🏷️ **Living Expenses & Budget** (`params-expenses`): Toggle between a simple aggregate annual living budget or a granular 40+ itemized category catalog with scheduled payment months and state-specific tagging.
+- 🤝 **Charitable Giving & QCD** (`params-charity`): Qualified Charitable Distributions (QCDs) from Pre-Tax IRAs starting at age 70½ to satisfy RMDs tax-free, plus annual cash tithe contributions.
+- 💾 **Backup & Portability** (`params-data`): Plan scenario management, JSON import/export, Excel spreadsheet generation, and PDF executive reports.
+- 🔄 **Reset Plan** (`params-reset`): Restart onboarding wizard or restore default plan configuration.
 
 ### Global Keyboard Shortcuts
-- **`P`**: Toggle Scenario Planner side drawer open/closed.
+- **`P`**: Toggle between Parameter Workspaces and primary workspaces.
 - **`?`** (or **`Shift`** + **`/`**): Open interactive Documentation & User Guide modal.
 - **`Esc`**: Close active drawer, modal dialog, or inspection view.
 
@@ -122,8 +139,10 @@ The simulation engine incorporates specialized financial logic:
 1. **RMD Calculations**: Applies IRS Uniform Lifetime Tables (and Single Life Tables for survivors) to compute required minimum distributions starting at age 73/75.
 2. **Drawdown Hierarchy**: Preserves tax efficiency by prioritizing withdrawals: Required Minimum Distributions -> Cash Reserves -> Taxable Brokerage -> Traditional Pre-Tax IRA -> Roth IRA.
 3. **Medicare IRMAA Lookback**: Determines Part B and Part D surcharge tiers using MAGI from 2 years prior, with automatic Form SSA-44 income reduction adjustments for qualifying life-changing events (work reduction or retirement).
-4. **Survivor Transition**: Models transition to Single Filer status upon the primary or spouse passing, adjusting tax brackets, standard deductions, and Social Security survivor benefits (stepping up to the higher of the two benefits).
-5. **Charitable QCD Strategy**: Directs distributions from Pre-Tax IRAs to qualified charities starting at age 70½ to satisfy RMDs while avoiding inclusion in AGI.
+4. **50-State & Local Tax Architecture**: Computes statutory income taxes for all 50 U.S. states and D.C., incorporating local county/city surtaxes, pension and Social Security exclusions, and relocation transitions.
+5. **Survivor Transition**: Models transition to Single Filer status upon the primary or spouse passing, adjusting tax brackets, standard deductions, and Social Security survivor benefits (stepping up to the higher of the two benefits).
+6. **Charitable QCD Strategy**: Directs distributions from Pre-Tax IRAs to qualified charities starting at age 70½ to satisfy RMDs while avoiding inclusion in AGI.
+7. **3-Bucket Wealth Preservation**: Governs multi-year asset tiering, balancing immediate cashflow safety needs with long-term purchasing power defense.
 
 ---
 
@@ -132,7 +151,7 @@ The simulation engine incorporates specialized financial logic:
 Follow these instructions to set up the Node.js toolchain, configure your local environment, install dependencies, and run the development server.
 
 ### System Requirements
-* **Node.js**: `v18.x` or `v20.x` (LTS versions recommended)
+* **Node.js**: `v20.x` or `v22.x` (Active LTS versions recommended; `v18+` minimum supported)
 * **NPM**: `v9.x` or `v10.x` (comes bundled with Node.js)
 
 ---
@@ -163,8 +182,8 @@ npm --version  # Outputs v10.x.x
 mkdir -p ~/repos
 cd ~/repos
 
-# Clone the repository
-git clone git@github.com:mpetronic/retirement-planner.git
+# Clone the repository via HTTPS (or use git@github.com:mpetronic/retirement-planner.git with SSH)
+git clone https://github.com/mpetronic/retirement-planner.git
 cd retirement-planner
 
 # Clean install packages
@@ -205,7 +224,7 @@ Choose one of the following methods in Terminal:
 ```zsh
 mkdir -p ~/repos
 cd ~/repos
-git clone git@github.com:mpetronic/retirement-planner.git
+git clone https://github.com/mpetronic/retirement-planner.git
 cd retirement-planner
 npm install
 npm run dev
@@ -242,7 +261,7 @@ Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser -Force
 ##### 3. Verify Toolchain
 Restart PowerShell and verify:
 ```powershell
-node -v   # Outputs v20.x.x
+node -v   # Outputs v20.x.x or v22.x.x
 npm -v    # Outputs v10.x.x
 git --version
 ```
@@ -251,7 +270,7 @@ git --version
 ```powershell
 mkdir "$HOME\repos" -Force
 cd "$HOME\repos"
-git clone git@github.com:mpetronic/retirement-planner.git
+git clone https://github.com/mpetronic/retirement-planner.git
 cd retirement-planner
 npm install
 npm run dev
@@ -310,20 +329,64 @@ Open `http://localhost:5173` in your browser.
 
 ---
 
+### ⚡ Running the Production Build Locally (High Performance)
+
+While `npm run dev` provides hot-module reloading (HMR) and fast iteration during development, it executes unbundled code with React development mode validation and un-minified assets. For computationally heavy tasks—such as simulating **1,000+ Monte Carlo trials**, executing multi-variable **Roth conversion strategy optimizations**, or rendering extensive 35-year tabular ledgers—running the compiled production bundle locally delivers **significantly faster execution, silky-smooth 60+ FPS chart interactions, and optimal runtime performance**.
+
+#### Step 1: Compile the Production Bundle
+Compile TypeScript strictly (`tsc -b`), run dead-code elimination, and produce minified static assets in `/dist`:
+```bash
+npm run build
+```
+
+#### Step 2: Serve the Production Build
+Launch Vite's built-in static preview web server:
+```bash
+npm run preview
+```
+The optimized production application will be accessible at:
+```text
+http://localhost:4173
+```
+
+> [!TIP]
+> **One-Liner Shortcut**: You can build and immediately launch the production server with:
+> ```bash
+> npm run build && npm run preview
+> ```
+
+---
+
 ## 🛠️ Verification, Testing & Build Commands
 
-Before committing or deploying code, run these commands to verify test coverage, type safety, and production builds.
+Before committing or deploying code, run these commands to verify test coverage, code style, type safety, and production builds.
 
 ### Unit Test Suite
 Run the Vitest unit test suite to execute simulation engine, optimizer, and utility tests:
 ```bash
+# Run unit tests once
 npm run test:run
+
+# Run unit tests in interactive watch mode
+npm test
+```
+
+### Code Quality & Linting
+Run ESLint to check syntax, import consistency, and React hooks rules:
+```bash
+npm run lint
 ```
 
 ### Type Check & Production Build
 Compiles TypeScript strictly (`tsc -b`) and generates optimized static distribution files in `/dist`:
 ```bash
 npm run build
+```
+
+### Preview Production Build
+Serve the local `/dist` production bundle to test production behavior:
+```bash
+npm run preview
 ```
 
 ### 🐳 Docker Container Deployment

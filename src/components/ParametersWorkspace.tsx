@@ -869,95 +869,108 @@ export const ParametersWorkspace: React.FC<ParametersWorkspaceProps> = ({
                   </select>
                 </div>
 
-                {getStateTaxProfile(inputs.jurisdiction.currentState || 'MD')?.hasLocalTax && (
-                  <div className="space-y-3 p-3.5 bg-slate-950/60 rounded-xl border border-slate-800">
-                    <div>
-                      <div className="flex items-center justify-between mb-1">
-                        <label className="text-xs font-bold text-slate-200">
-                          {getStateTaxProfile(inputs.jurisdiction.currentState || 'MD')?.subJurisdictionLabel || 'County'}
-                        </label>
-                        <span className="text-[10px] text-slate-400 font-mono">
-                          Local Piggyback Tax
-                        </span>
-                      </div>
-                      <select
-                        value={inputs.jurisdiction.currentCounty || ''}
-                        onChange={(e) => {
-                          onChange({
-                            ...inputs,
-                            jurisdiction: {
-                              ...inputs.jurisdiction,
-                              currentCounty: e.target.value,
-                              currentLocalTaxRate: null,
-                            },
-                          });
-                        }}
-                        className="w-full bg-slate-900 border border-slate-800 rounded-xl px-3 py-2 text-xs font-medium text-slate-100 focus:outline-none focus:border-emerald-500"
-                      >
-                        <option value="" disabled>Select County...</option>
-                        {getSubJurisdictions(inputs.jurisdiction.currentState || 'MD').map((c) => (
-                          <option key={c.id} value={c.id}>
-                            {c.name} ({(c.defaultLocalRate * 100).toFixed(2)}%)
-                          </option>
-                        ))}
-                      </select>
-                    </div>
+                {(() => {
+                  const currentProfile = getStateTaxProfile(inputs.jurisdiction.currentState || 'MD');
+                  const hasCounties = (currentProfile?.subJurisdictions && currentProfile.subJurisdictions.length > 0);
+                  const effectiveRate = getEffectiveLocalTaxRate(
+                    inputs.jurisdiction.currentState || 'MD',
+                    inputs.jurisdiction.currentCounty,
+                    inputs.jurisdiction.currentLocalTaxRate
+                  );
 
-                    <div>
-                      <div className="flex items-center justify-between mb-1">
-                        <label className="text-[11px] font-semibold text-slate-300">
-                          Effective Local Piggyback Rate
-                        </label>
-                        {inputs.jurisdiction.currentLocalTaxRate !== undefined &&
-                          inputs.jurisdiction.currentLocalTaxRate !== null && (
-                            <button
-                              type="button"
-                              onClick={() => {
-                                onChange({
-                                  ...inputs,
-                                  jurisdiction: {
-                                    ...inputs.jurisdiction,
-                                    currentLocalTaxRate: null,
-                                  },
-                                });
-                              }}
-                              className="text-[10px] text-amber-400 hover:text-amber-300 flex items-center gap-1 cursor-pointer"
-                            >
-                              <RotateCcw className="w-3 h-3" />
-                              Reset to default
-                            </button>
-                          )}
-                      </div>
-                      <div className="relative">
-                        <input
-                          type="number"
-                          step="0.01"
-                          min="0"
-                          max="10"
-                          value={(
-                            getEffectiveLocalTaxRate(
-                              inputs.jurisdiction.currentState || 'MD',
-                              inputs.jurisdiction.currentCounty,
-                              inputs.jurisdiction.currentLocalTaxRate
-                            ) * 100
-                          ).toFixed(2)}
-                          onChange={(e) => {
-                            const val = parseFloat(e.target.value);
+                  return (
+                    <div className="space-y-3 p-3.5 bg-slate-950/60 rounded-xl border border-slate-800">
+                      {hasCounties && (
+                        <div>
+                          <div className="flex items-center justify-between mb-1">
+                            <label className="text-xs font-bold text-slate-200">
+                              {currentProfile?.subJurisdictionLabel || 'County'}
+                            </label>
+                            <span className="text-[10px] text-slate-400 font-mono">
+                              Local Piggyback Tax
+                            </span>
+                          </div>
+                          <select
+                            value={inputs.jurisdiction.currentCounty || ''}
+                            onChange={(e) => {
+                              onChange({
+                                ...inputs,
+                                jurisdiction: {
+                                  ...inputs.jurisdiction,
+                                  currentCounty: e.target.value,
+                                  currentLocalTaxRate: null,
+                                },
+                              });
+                            }}
+                            className="w-full bg-slate-900 border border-slate-800 rounded-xl px-3 py-2 text-xs font-medium text-slate-100 focus:outline-none focus:border-emerald-500"
+                          >
+                            <option value="" disabled>Select {currentProfile?.subJurisdictionLabel || 'County'}...</option>
+                            {getSubJurisdictions(inputs.jurisdiction.currentState || 'MD').map((c) => (
+                              <option key={c.id} value={c.id}>
+                                {c.name} ({(c.defaultLocalRate * 100).toFixed(2)}%)
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+                      )}
+
+                      <div>
+                        <div className="flex items-center justify-between mb-1">
+                          <label className="text-[11px] font-semibold text-slate-300">
+                            {hasCounties ? 'Effective Local / Municipal Rate' : 'Custom Local Tax Rate (%)'}
+                          </label>
+                          {inputs.jurisdiction.currentLocalTaxRate !== undefined &&
+                            inputs.jurisdiction.currentLocalTaxRate !== null && (
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  onChange({
+                                    ...inputs,
+                                    jurisdiction: {
+                                      ...inputs.jurisdiction,
+                                      currentLocalTaxRate: null,
+                                    },
+                                  });
+                                }}
+                                className="text-[10px] text-amber-400 hover:text-amber-300 flex items-center gap-1 cursor-pointer"
+                              >
+                                <RotateCcw className="w-3 h-3" />
+                                {hasCounties ? 'Reset to county default' : 'Reset to 0%'}
+                              </button>
+                            )}
+                        </div>
+                        <NumericInput
+                          value={
+                            inputs.jurisdiction.currentLocalTaxRate !== null &&
+                            inputs.jurisdiction.currentLocalTaxRate !== undefined
+                              ? Math.round(inputs.jurisdiction.currentLocalTaxRate * 10000) / 100
+                              : Math.round(effectiveRate * 10000) / 100
+                          }
+                          onChange={(val) => {
                             onChange({
                               ...inputs,
                               jurisdiction: {
                                 ...inputs.jurisdiction,
-                                currentLocalTaxRate: isNaN(val) ? 0 : val / 100,
+                                currentLocalTaxRate: val !== null ? val / 100 : null,
                               },
                             });
                           }}
-                          className="w-full bg-slate-900 border border-slate-800 rounded-xl px-3 py-1.5 pr-8 text-xs font-mono font-bold text-emerald-400 focus:outline-none focus:border-emerald-500"
+                          suffix="%"
+                          allowDecimals
+                          decimalPlaces={2}
+                          fixedDecimals
+                          min={0}
+                          max={15}
+                          step={0.01}
+                          className="font-bold text-emerald-400"
                         />
-                        <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-slate-400 font-mono">%</span>
+                        <p className="text-[10px] text-slate-400 leading-relaxed mt-1.5">
+                          Optional local or municipal income tax rate. For states like Maryland where county rates are in the dropdown above, selecting your county automatically sets the official piggyback rate so you do not need to enter anything here. However, if you reside inside an incorporated municipality that levies an additional city tax (for example, living inside Gaithersburg city limits where you pay Maryland state + Montgomery County + Gaithersburg City taxes), enter the combined sum of both the county and municipal rates (e.g., 3.20% county + 0.50% city = 3.70%) to override the default county rate. For states without county dropdowns (such as PA, OH, or NY), enter your local city, borough, or school district income tax rate directly.
+                        </p>
                       </div>
                     </div>
-                  </div>
-                )}
+                  );
+                })()}
 
                 {/* Total Effective State & Local Tax Display */}
                 {(() => {
@@ -967,7 +980,8 @@ export const ParametersWorkspace: React.FC<ParametersWorkspaceProps> = ({
                     inputs.jurisdiction.currentCounty,
                     inputs.jurisdiction.currentLocalTaxRate
                   );
-                  const primaryTopCombinedRate = (primaryProfile?.hasIncomeTax ? 0.0575 : 0) + primaryLocalRate;
+                  const stateTopRate = primaryProfile?.hasIncomeTax ? primaryProfile.topRate : 0;
+                  const primaryTopCombinedRate = stateTopRate + primaryLocalRate;
                   const year1Row = ledger && ledger.length > 0 ? ledger[0] : null;
                   const year1EffectiveRate = year1Row && year1Row.fedAGI > 0
                     ? (year1Row.stateIncomeTax / year1Row.fedAGI) * 100
@@ -986,16 +1000,16 @@ export const ParametersWorkspace: React.FC<ParametersWorkspaceProps> = ({
                             </span>
                             <span className="text-[10px] text-slate-400">
                               {primaryProfile?.hasIncomeTax
-                                ? `Combined top rate: ${(primaryTopCombinedRate * 100).toFixed(2)}% (State up to 5.75% + Local ${(primaryLocalRate * 100).toFixed(2)}%)`
+                                ? `Combined top rate: ${(primaryTopCombinedRate * 100).toFixed(2)}% (State up to ${(stateTopRate * 100).toFixed(2)}% + Local ${(primaryLocalRate * 100).toFixed(2)}%)`
+                                : primaryLocalRate > 0
+                                ? `Local only: ${(primaryLocalRate * 100).toFixed(2)}% (No state income tax)`
                                 : '0.00% (No state or local income tax)'}
                             </span>
                           </div>
                         </div>
                         <div className="text-right">
                           <span className="text-sm font-mono font-extrabold text-emerald-400 block">
-                            {primaryProfile?.hasIncomeTax
-                              ? `${(primaryTopCombinedRate * 100).toFixed(2)}%`
-                              : '0.00%'}
+                            {(primaryTopCombinedRate * 100).toFixed(2)}%
                           </span>
                           <span className="text-[10px] text-slate-500 font-mono">
                             Top Combined
@@ -1118,91 +1132,108 @@ export const ParametersWorkspace: React.FC<ParametersWorkspaceProps> = ({
                         </select>
                       </div>
 
-                      {getStateTaxProfile(inputs.jurisdiction.targetState || 'FL')?.hasLocalTax && (
-                        <div>
-                          <label className="text-xs font-bold text-slate-200 block mb-1">
-                            Destination {getStateTaxProfile(inputs.jurisdiction.targetState || 'FL')?.subJurisdictionLabel || 'County'}
-                          </label>
-                          <select
-                            value={inputs.jurisdiction.targetCounty || ''}
-                            onChange={(e) => {
-                              onChange({
-                                ...inputs,
-                                jurisdiction: {
-                                  ...inputs.jurisdiction,
-                                  targetCounty: e.target.value,
-                                  targetLocalTaxRate: null,
-                                },
-                              });
-                            }}
-                            className="w-full bg-slate-900 border border-slate-800 rounded-xl px-3 py-2 text-xs font-medium text-slate-100 focus:outline-none focus:border-amber-500"
-                          >
-                            <option value="" disabled>Select Destination County...</option>
-                            {getSubJurisdictions(inputs.jurisdiction.targetState || 'FL').map((c) => (
-                              <option key={c.id} value={c.id}>
-                                {c.name} ({(c.defaultLocalRate * 100).toFixed(2)}%)
-                              </option>
-                            ))}
-                          </select>
-                        </div>
-                      )}
+                      {(() => {
+                        const targetProfile = getStateTaxProfile(inputs.jurisdiction.targetState || 'FL');
+                        const hasTargetCounties = (targetProfile?.subJurisdictions && targetProfile.subJurisdictions.length > 0);
+                        if (!hasTargetCounties) return null;
+
+                        return (
+                          <div>
+                            <label className="text-xs font-bold text-slate-200 block mb-1">
+                              Destination {targetProfile?.subJurisdictionLabel || 'County'}
+                            </label>
+                            <select
+                              value={inputs.jurisdiction.targetCounty || ''}
+                              onChange={(e) => {
+                                onChange({
+                                  ...inputs,
+                                  jurisdiction: {
+                                    ...inputs.jurisdiction,
+                                    targetCounty: e.target.value,
+                                    targetLocalTaxRate: null,
+                                  },
+                                });
+                              }}
+                              className="w-full bg-slate-900 border border-slate-800 rounded-xl px-3 py-2 text-xs font-medium text-slate-100 focus:outline-none focus:border-amber-500"
+                            >
+                              <option value="" disabled>Select Destination {targetProfile?.subJurisdictionLabel || 'County'}...</option>
+                              {getSubJurisdictions(inputs.jurisdiction.targetState || 'FL').map((c) => (
+                                <option key={c.id} value={c.id}>
+                                  {c.name} ({(c.defaultLocalRate * 100).toFixed(2)}%)
+                                </option>
+                              ))}
+                            </select>
+                          </div>
+                        );
+                      })()}
                     </div>
 
-                    {getStateTaxProfile(inputs.jurisdiction.targetState || 'FL')?.hasLocalTax && (
-                      <div>
-                        <div className="flex items-center justify-between mb-1">
-                          <label className="text-[11px] font-semibold text-slate-300">
-                            Destination Local Piggyback Rate
-                          </label>
-                          {inputs.jurisdiction.targetLocalTaxRate !== undefined &&
-                            inputs.jurisdiction.targetLocalTaxRate !== null && (
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  onChange({
-                                    ...inputs,
-                                    jurisdiction: {
-                                      ...inputs.jurisdiction,
-                                      targetLocalTaxRate: null,
-                                    },
-                                  });
-                                }}
-                                className="text-[10px] text-amber-400 hover:text-amber-300 flex items-center gap-1 cursor-pointer"
-                              >
-                                <RotateCcw className="w-3 h-3" />
-                                Reset to default
-                              </button>
-                            )}
-                        </div>
-                        <div className="relative">
-                          <input
-                            type="number"
-                            step="0.01"
-                            min="0"
-                            max="10"
-                            value={(
-                              getEffectiveLocalTaxRate(
-                                inputs.jurisdiction.targetState || 'FL',
-                                inputs.jurisdiction.targetCounty,
-                                inputs.jurisdiction.targetLocalTaxRate
-                              ) * 100
-                            ).toFixed(2)}
-                            onChange={(e) => {
-                              const val = parseFloat(e.target.value);
+                    {(() => {
+                      const targetProfile = getStateTaxProfile(inputs.jurisdiction.targetState || 'FL');
+                      const hasTargetCounties = (targetProfile?.subJurisdictions && targetProfile.subJurisdictions.length > 0);
+                      const targetEffectiveRate = getEffectiveLocalTaxRate(
+                        inputs.jurisdiction.targetState || 'FL',
+                        inputs.jurisdiction.targetCounty,
+                        inputs.jurisdiction.targetLocalTaxRate
+                      );
+
+                      return (
+                        <div>
+                          <div className="flex items-center justify-between mb-1">
+                            <label className="text-[11px] font-semibold text-slate-300">
+                              {hasTargetCounties ? 'Destination Effective Local Rate' : 'Destination Local Tax Rate (%)'}
+                            </label>
+                            {inputs.jurisdiction.targetLocalTaxRate !== undefined &&
+                              inputs.jurisdiction.targetLocalTaxRate !== null && (
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    onChange({
+                                      ...inputs,
+                                      jurisdiction: {
+                                        ...inputs.jurisdiction,
+                                        targetLocalTaxRate: null,
+                                      },
+                                    });
+                                  }}
+                                  className="text-[10px] text-amber-400 hover:text-amber-300 flex items-center gap-1 cursor-pointer"
+                                >
+                                  <RotateCcw className="w-3 h-3" />
+                                  {hasTargetCounties ? 'Reset to county default' : 'Reset to 0%'}
+                                </button>
+                              )}
+                          </div>
+                          <NumericInput
+                            value={
+                              inputs.jurisdiction.targetLocalTaxRate !== null &&
+                              inputs.jurisdiction.targetLocalTaxRate !== undefined
+                                ? Math.round(inputs.jurisdiction.targetLocalTaxRate * 10000) / 100
+                                : Math.round(targetEffectiveRate * 10000) / 100
+                            }
+                            onChange={(val) => {
                               onChange({
                                 ...inputs,
                                 jurisdiction: {
                                   ...inputs.jurisdiction,
-                                  targetLocalTaxRate: isNaN(val) ? 0 : val / 100,
+                                  targetLocalTaxRate: val !== null ? val / 100 : null,
                                 },
                               });
                             }}
-                            className="w-full bg-slate-900 border border-slate-800 rounded-xl px-3 py-1.5 pr-8 text-xs font-mono font-bold text-amber-400 focus:outline-none focus:border-amber-500"
+                            suffix="%"
+                            allowDecimals
+                            decimalPlaces={2}
+                            fixedDecimals
+                            min={0}
+                            max={15}
+                            step={0.01}
+                            className="font-bold text-amber-400"
                           />
-                          <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-slate-400 font-mono">%</span>
+                          <p className="text-[10px] text-slate-400 leading-relaxed mt-1.5">
+                            Optional destination municipal or local income tax rate. For states like Maryland where county rates are in the dropdown above, selecting your destination county automatically sets the default rate. If relocating into an incorporated municipality that levies an additional city tax, enter the combined sum of the county and municipal rates to override the default county rate. For states without county dropdowns (such as PA, OH, or NY), enter your destination local tax rate directly.
+                          </p>
                         </div>
-                      </div>
-                    )}
+                      );
+                    })()}
 
                     <RangeSlider
                       min={simStartYear}
@@ -1272,20 +1303,22 @@ export const ParametersWorkspace: React.FC<ParametersWorkspaceProps> = ({
                 {getStateTaxProfile(inputs.jurisdiction.currentState || 'MD')?.hasIncomeTax ? (
                   <>
                     <p className="text-[10px] text-slate-400 leading-normal">
-                      State income tax rate: <strong>2.00% – 5.75%</strong>
+                      State income tax rate: <strong>Up to {((getStateTaxProfile(inputs.jurisdiction.currentState || 'MD')?.topRate ?? 0) * 100).toFixed(2)}%</strong>
                     </p>
                     <p className="text-[10px] text-slate-400 leading-normal">
-                      Local county piggyback tax: <strong>{(getEffectiveLocalTaxRate(inputs.jurisdiction.currentState || 'MD', inputs.jurisdiction.currentCounty, inputs.jurisdiction.currentLocalTaxRate) * 100).toFixed(2)}%</strong>
+                      Local tax rate: <strong>{(getEffectiveLocalTaxRate(inputs.jurisdiction.currentState || 'MD', inputs.jurisdiction.currentCounty, inputs.jurisdiction.currentLocalTaxRate) * 100).toFixed(2)}%</strong>
                       {inputs.jurisdiction.currentCounty ? ` (${inputs.jurisdiction.currentCounty})` : ''}
                     </p>
                     <p className="text-[10px] text-slate-500 pt-1">
-                      Graduated state brackets, standard deductions, and Maryland pension exclusion.
+                      Standard state deductions, filing brackets, and retirement exemption allowances.
                     </p>
                   </>
                 ) : (
                   <>
                     <p className="text-[10px] text-emerald-400 font-semibold leading-normal">0.00% State Income Tax</p>
-                    <p className="text-[10px] text-emerald-400 font-semibold leading-normal">0.00% Local County Tax</p>
+                    <p className="text-[10px] text-emerald-400 font-semibold leading-normal">
+                      {(getEffectiveLocalTaxRate(inputs.jurisdiction.currentState || 'MD', inputs.jurisdiction.currentCounty, inputs.jurisdiction.currentLocalTaxRate) * 100).toFixed(2)}% Local Tax
+                    </p>
                     <p className="text-[10px] text-slate-500 pt-1">
                       $0 state tax on IRA withdrawals, salaries, and capital gains.
                     </p>
@@ -1309,10 +1342,10 @@ export const ParametersWorkspace: React.FC<ParametersWorkspaceProps> = ({
                   getStateTaxProfile(inputs.jurisdiction.targetState || 'FL')?.hasIncomeTax ? (
                     <>
                       <p className="text-[10px] text-slate-400 leading-normal">
-                        State income tax rate: <strong>2.00% – 5.75%</strong>
+                        State income tax rate: <strong>Up to {((getStateTaxProfile(inputs.jurisdiction.targetState || 'FL')?.topRate ?? 0) * 100).toFixed(2)}%</strong>
                       </p>
                       <p className="text-[10px] text-slate-400 leading-normal">
-                        Destination county tax: <strong>{(getEffectiveLocalTaxRate(inputs.jurisdiction.targetState || 'FL', inputs.jurisdiction.targetCounty, inputs.jurisdiction.targetLocalTaxRate) * 100).toFixed(2)}%</strong>
+                        Destination local tax: <strong>{(getEffectiveLocalTaxRate(inputs.jurisdiction.targetState || 'FL', inputs.jurisdiction.targetCounty, inputs.jurisdiction.targetLocalTaxRate) * 100).toFixed(2)}%</strong>
                         {inputs.jurisdiction.targetCounty ? ` (${inputs.jurisdiction.targetCounty})` : ''}
                       </p>
                       <p className="text-[10px] text-slate-500 pt-1">

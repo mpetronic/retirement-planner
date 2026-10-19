@@ -519,6 +519,9 @@ export interface SimulationResultRow {
   taxableDividends: number;
   taxableInterest: number;
   cpiFactor: number;
+  activeState?: string;
+  activeCounty?: string | null;
+  effectiveLocalTaxRate?: number;
   
   // Medicare Surcharges (applied in Year t based on Year t-2 MAGI)
   magiTwoYearsAgo: number;
@@ -555,6 +558,7 @@ export interface SimulationResultRow {
   employee401kContribution?: number; // Total annual employee pre-tax 401(k) contributions
   ficaTaxesPaid?: number; // Social Security (6.2%) + Medicare (1.45% + 0.9%) payroll taxes paid
   incomeTaxWithheld?: number; // Estimated federal and state paycheck income tax withholdings
+  quarterlyEstimatedTaxesPaid?: number; // Estimated federal and state quarterly estimated taxes paid (months 3, 5, 8, 11)
   netTakeHomeSalary?: number; // Net take-home salary available for expenses
 
   // Charitable Giving & Tithing (with QCD)
@@ -563,6 +567,7 @@ export interface SimulationResultRow {
   qcdAmount: number; // Portion funded via tax-free QCDs from Traditional IRAs (offsets RMDs)
   nonQcdTithe: number; // Portion funded from Cash and Taxable Brokerage
   qcdTaxSavings: number; // Estimated direct tax savings via QCD vs taking taxable RMDs
+  titheReserveBank?: number; // Accumulated positive gains tithe reserve balance at year-end
   
   // Ending Balances (after growth and drawdowns)
   endYourPreTaxIRA: number;

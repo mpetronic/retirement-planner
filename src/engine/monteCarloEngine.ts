@@ -111,8 +111,6 @@ export function clamp(val: number, min: number, max: number): number {
   return Math.max(min, Math.min(max, val));
 }
 
-import { calculateArithmeticDrift } from '../constants/cmaProfiles';
-
 /**
  * Generates joint stock/bond returns for 35 years using bivariate normal distribution
  * with optional 2-state Markov regime-switching and Ornstein-Uhlenbeck mean reversion.
@@ -136,9 +134,9 @@ export function generateSyntheticSequence(
   const fixedIncomeReturns: number[] = [];
   const inflationRates: number[] = [];
   
-  // Stochastic arithmetic drift translation (adjusts for discrete annual volatility drag)
-  const equityDrift = calculateArithmeticDrift(equityMean, equityVol);
-  const bondDrift = calculateArithmeticDrift(bondMean, bondVol);
+  // Stochastic arithmetic drift translation (calibrated discrete annual volatility drag)
+  const equityDrift = equityMean + (equityVol * equityVol) / (2 * (1 + equityMean));
+  const bondDrift = bondMean + (bondVol * bondVol) / (2 * (1 + bondMean));
 
   // Markov 2-State regime parameters:
   // State 0: Expansion / Normal Growth (80% unconditional probability)

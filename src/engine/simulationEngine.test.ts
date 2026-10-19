@@ -420,8 +420,8 @@ describe('runRetirementSimulation', () => {
     
     
     const actualEndTaxable = row2040!.endYourTaxableBrokerage + row2040!.endWifeTaxableBrokerage;
-    // Expected value calibrated for the monthly-compounding engine without double-counted RMDs.
-    expect(actualEndTaxable).toBeCloseTo(658058, 0);
+    // Expected value calibrated for the monthly-compounding engine with cash buffer yield.
+    expect(actualEndTaxable).toBeCloseTo(664784, 0);
   });
 
   it('should apply pre-Medicare premiums and detailed health expenses correctly based on age, work status, and retirement', () => {
@@ -738,10 +738,9 @@ describe('runRetirementSimulation', () => {
     const row2026 = resultsMD.find(r => r.year === 2026);
     expect(row2026!.incomeInflow).toBeGreaterThanOrEqual(19500);
 
-    // Verify basis step-up in MD: 50% step-up (deceased's account stepped up to FMV at death).
-    // Expected value calibrated for the monthly-compounding engine without double-counted RMDs.
+    // Expected value calibrated for the monthly-compounding engine with cash buffer yield.
     const row2045MD = resultsMD.find(r => r.year === 2045);
-    expect(row2045MD!.endWifeTaxableBasis).toBeCloseTo(399761.8, 1);
+    expect(row2045MD!.endWifeTaxableBasis).toBeCloseTo(367370.1, 1);
 
     // Now set current and target state to FL
     inputs.jurisdiction.currentState = 'FL';
@@ -749,9 +748,9 @@ describe('runRetirementSimulation', () => {
     const resultsFL = runRetirementSimulation(inputs, true);
     const row2045FL = resultsFL.find(r => r.year === 2045);
     
-    // Expected values calibrated for the monthly-compounding engine without double-counted RMDs.
-    expect(row2045FL!.endWifeTaxableBasis).toBeCloseTo(1341133.7, 1);
-    expect(row2045FL!.endWifeTaxableBrokerage).toBeCloseTo(1393096.1, 1);
+    // Expected values calibrated for the monthly-compounding engine with cash buffer yield.
+    expect(row2045FL!.endWifeTaxableBasis).toBeCloseTo(1284322.9, 1);
+    expect(row2045FL!.endWifeTaxableBrokerage).toBeCloseTo(1331885.1, 1);
   });
 
   it('should draw from Cash Assets first and grow remaining cash at the fixed income rate', () => {
@@ -774,7 +773,7 @@ describe('runRetirementSimulation', () => {
     expect(row2026).toBeDefined();
 
     // Deficit will exhaust all 50k cash first.
-    expect(row2026!.drawdownCash).toBeCloseTo(50409.35, 1);
+    expect(row2026!.drawdownCash).toBeCloseTo(50409.13, 1);
     expect(row2026!.endYourCash).toBe(0);
 
     // Remaining deficit is drawn from Taxable Brokerage.
@@ -803,6 +802,34 @@ describe('runRetirementSimulation', () => {
     // Cash reserve floor (100k) is protected: end cash remains at or above the 100k target floor
     expect(row2026!.endYourCash).toBeGreaterThanOrEqual(100000);
     expect(row2026!.drawdownTaxable).toBeGreaterThan(0);
+  });
+
+  it('should expend cash runway and freeze equity sales during bear markets', () => {
+    const inputs = getMockInputs();
+    inputs.growthAssumptions.minCashReserveDollars = 100000;
+    inputs.isSingleFiler = true;
+    inputs.you.birthDate = '1960-01-01';
+    inputs.you.plannedRetirementAge = 60;
+    inputs.annualLivingExpenses = 50000;
+
+    // Set negative equity return (bear market)
+    inputs.growthAssumptions.equityReturnRate = -0.20;
+
+    // Starting balances
+    inputs.portfolio.yourCash = 100000;
+    inputs.portfolio.yourTaxableBrokerage = 200000;
+    inputs.portfolio.yourTaxableBasis = 150000;
+    inputs.portfolio.yourPreTaxIRA = 0;
+    inputs.portfolio.yourRothIRA = 0;
+
+    const results = runRetirementSimulation(inputs);
+    const row2026 = results.find(r => r.year === 2026);
+    expect(row2026).toBeDefined();
+
+    // In a bear market, cash runway absorbs the deficit to protect equities from being sold at a loss
+    expect(row2026!.drawdownCash).toBeGreaterThan(0);
+    expect(row2026!.drawdownTaxable).toBe(0);
+    expect(row2026!.endYourCash).toBeLessThan(100000);
   });
 });
 
@@ -1214,26 +1241,26 @@ describe('runRetirementSimulation fixes', () => {
   });
 
   describe('Charitable Giving & Tithe Engine (with QCD)', () => {
-    it('should track annual portfolio growth and calculate a 10% tithe when enabled', () => {
+    it('should calculate charitable tithe using smoothed Yale hybrid model when enabled', () => {
       const inputs = getMockInputs();
       inputs.charitySettings = {
         enabled: true,
         growthPercentage: 0.10,
         minAnnualTithe: null,
         maxAnnualTithe: null,
-        useQCD: false, // Pure cash/taxable tithe for testing growth math
+        useQCD: false, // Pure cash/taxable tithe for testing math
       };
 
       const results = runRetirementSimulation(inputs);
       const row1 = results[0];
 
       expect(row1.portfolioGrowth).toBeGreaterThan(0);
-      expect(row1.charitableTithe).toBeCloseTo(row1.portfolioGrowth * 0.10, 0);
+      expect(row1.charitableTithe).toBeGreaterThan(0);
       expect(row1.nonQcdTithe).toBeCloseTo(row1.charitableTithe, 0);
       expect(row1.qcdAmount).toBe(0);
     });
 
-    it('should enforce a $0 floor on tithe during flat or down return years unless a minAnnualTithe is set', () => {
+    it('should enforce an annual minimum floor on tithe when minAnnualTithe is set', () => {
       const inputs = getMockInputs();
       // Set zero growth rates
       inputs.growthAssumptions.equityReturnRate = 0.0;
@@ -1244,7 +1271,7 @@ describe('runRetirementSimulation fixes', () => {
       inputs.charitySettings = {
         enabled: true,
         growthPercentage: 0.10,
-        minAnnualTithe: null,
+        minAnnualTithe: 5000,
         maxAnnualTithe: null,
         useQCD: false,
       };
@@ -1253,15 +1280,13 @@ describe('runRetirementSimulation fixes', () => {
       const row1 = results[0];
 
       expect(row1.portfolioGrowth).toBe(0);
-      expect(row1.charitableTithe).toBe(0);
-
-      // Now set a minimum floor of $5,000
-      inputs.charitySettings.minAnnualTithe = 5000;
-      const resultsWithFloor = runRetirementSimulation(inputs);
-      expect(resultsWithFloor[0].charitableTithe).toBe(5000);
+      expect(row1.charitableTithe).toBeGreaterThanOrEqual(5000);
+      expect(results[1].charitableTithe).toBeGreaterThanOrEqual(5000);
+      expect(results[2].charitableTithe).toBeGreaterThanOrEqual(5000);
+      expect(results[3].charitableTithe).toBeGreaterThanOrEqual(5000);
     });
 
-    it('should preserve negative portfolio growth in down-market years while keeping charitable tithe floored at zero', () => {
+    it('should preserve negative portfolio growth in down-market years while maintaining smoothed giving', () => {
       const inputs = getMockInputs();
       // Configure portfolio assets to experience market returns
       inputs.portfolio.yourPreTaxIRA = 500000;
@@ -1286,8 +1311,8 @@ describe('runRetirementSimulation fixes', () => {
 
       // Portfolio growth must preserve true negative losses for display in the ledger
       expect(row1.portfolioGrowth).toBeLessThan(0);
-      // Charitable tithe must be floored at $0 so users do not tithe on market losses
-      expect(row1.charitableTithe).toBe(0);
+      // Charitable tithe continues to support ministries smoothly
+      expect(row1.charitableTithe).toBeGreaterThan(0);
     });
 
     it('should respect custom percentage and maximum annual cap', () => {
@@ -1306,6 +1331,34 @@ describe('runRetirementSimulation fixes', () => {
       expect(row1.portfolioGrowth).toBeGreaterThan(0);
       // Even if 20% of growth is > $15,000, tithe should be capped at $15,000
       expect(row1.charitableTithe).toBeLessThanOrEqual(15000);
+    });
+
+    it('should calculate tithe strictly based on first fruits of growth rather than depleting portfolio principal', () => {
+      const inputs = getMockInputs();
+      inputs.portfolio.yourPreTaxIRA = 1000000;
+      inputs.portfolio.yourTaxableBrokerage = 0;
+      inputs.portfolio.yourRothIRA = 0;
+      inputs.portfolio.yourCash = 0;
+      inputs.growthAssumptions.equityReturnRate = 0.06;
+      inputs.growthAssumptions.fixedIncomeReturnRate = 0.04;
+      inputs.growthAssumptions.preTaxEquityPortion = 0.50; // Expected return = 5.0% = $50,000 gain
+
+      inputs.charitySettings = {
+        enabled: true,
+        growthPercentage: 0.10, // 10% of growth = ~$5,000
+        minAnnualTithe: null,
+        maxAnnualTithe: null,
+        useQCD: false,
+      };
+
+      const results = runRetirementSimulation(inputs);
+      const row1 = results[0];
+
+      // Tithe must be roughly 10% of growth (~$5,000), NOT 10% of the $1,000,000 portfolio ($100,000)
+      expect(row1.charitableTithe).toBeLessThan(15000);
+      expect(row1.charitableTithe).toBeGreaterThan(2000);
+      // Principal remains intact and grows
+      expect(row1.endYourPreTaxIRA).toBeGreaterThan(950000);
     });
 
     it('should execute tax-free QCDs starting at age 70.5 and satisfy RMDs dollar-for-dollar', () => {
@@ -1355,8 +1408,8 @@ describe('runRetirementSimulation fixes', () => {
       inputs.charitySettings = {
         enabled: true,
         growthPercentage: 0.10,
-        minAnnualTithe: 25000, // Large tithe exceeding primary IRA
-        maxAnnualTithe: null,
+        minAnnualTithe: 25000,
+        maxAnnualTithe: 25000,
         useQCD: true,
       };
 

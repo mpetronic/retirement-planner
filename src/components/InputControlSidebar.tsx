@@ -33,6 +33,7 @@ import { DocumentationDialog } from './DocumentationDialog';
 import { getVersionInfo } from '../utils/version';
 import { NumericInput } from './NumericInput';
 import { RangeSlider } from './RangeSlider';
+import { getSupportedStates } from '../engine/stateTaxRegistry';
 
 const getBirthMonth = (dateStr: string | undefined): number => {
   if (!dateStr) return 1;
@@ -1060,8 +1061,11 @@ export const InputControlSidebar: React.FC<InputControlSidebarProps> = ({
                       onChange={(e) => updateNestedState('jurisdiction', 'currentState', e.target.value)}
                       className="w-full bg-slate-900 border border-slate-800 rounded-lg px-3 py-1.5 text-sm text-slate-100 focus:outline-none focus:border-emerald-500"
                     >
-                      <option value="MD">Maryland (MD)</option>
-                      <option value="FL">Florida (FL)</option>
+                      {getSupportedStates().map((st) => (
+                        <option key={st.code} value={st.code}>
+                          {st.name} ({st.code})
+                        </option>
+                      ))}
                     </select>
                   </div>
                   <div>
@@ -1071,8 +1075,11 @@ export const InputControlSidebar: React.FC<InputControlSidebarProps> = ({
                       onChange={(e) => updateNestedState('jurisdiction', 'targetState', e.target.value)}
                       className="w-full bg-slate-900 border border-slate-800 rounded-lg px-3 py-1.5 text-sm text-slate-100 focus:outline-none focus:border-emerald-500"
                     >
-                      <option value="FL">Florida (FL)</option>
-                      <option value="MD">Maryland (MD)</option>
+                      {getSupportedStates().map((st) => (
+                        <option key={st.code} value={st.code}>
+                          {st.name} ({st.code})
+                        </option>
+                      ))}
                     </select>
                   </div>
                 </div>
