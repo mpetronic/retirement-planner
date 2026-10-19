@@ -519,6 +519,9 @@ export interface SimulationResultRow {
   taxableDividends: number;
   taxableInterest: number;
   cpiFactor: number;
+  activeState?: string;
+  activeCounty?: string | null;
+  effectiveLocalTaxRate?: number;
   
   // Medicare Surcharges (applied in Year t based on Year t-2 MAGI)
   magiTwoYearsAgo: number;
