@@ -80,6 +80,22 @@ Single Filer Thresholds (For Survivor Simulations):
 - Tier 4: MAGI $205,001 to $499,999.
 - Tier 5: MAGI equal to or greater than $500,000.
 
+### Medicare & IRMAA Eligibility and Qualification Rules
+- **Pre-65 Early Retirees (Private / ACA / COBRA):** If an individual is retired before age 65 (and not covered under a working spouse's employer plan), they are on private healthcare (e.g., ACA, COBRA, private insurance). They are **not enrolled in Medicare Part B/D**, and therefore **no IRMAA surcharges can ever be assessed** regardless of their MAGI.
+- **Post-65 Active Workers (Employer Plan):** If an individual is age 65 or older but remains actively employed with qualifying employer group healthcare coverage (or covered under a working spouse's plan), Medicare Part B/D enrollment is deferred. Base Medicare premiums and IRMAA surcharges are **both $0**.
+- **Qualification Condition:** IRMAA surcharges apply **only** when an individual is age 65+ (or custom start date) AND is not covered by an active employer plan (self or spouse).
+
+## 6.1 The Tithing Engine & Charitable Giving Architecture
+- **Objective:** Provide smooth, predictable monthly financial support to ministries and missionaries across all market environments, preventing abrupt drops to $0 during market crashes.
+- **Monthly Yale Hybrid Smoothed Rule:** Giving is computed monthly:
+  `monthlyGiving[m] = (0.70 * priorMonthlyGiving * (1 + monthlyInflation)) + (0.30 * targetAnnualRate * totalPortfolio[m] / 12)`
+  - 70% weight anchors to prior giving (adjusted for inflation) for mission stability.
+  - 30% weight floats with portfolio size to scale generosity with wealth.
+  - Bounded by optional minimum monthly floor and maximum cap.
+- **Lifecycle & Tax Mechanics:**
+  - *Pre-Age 70.5:* Funded from standard monthly cash flow; eligible for Schedule A itemized deductions (subject to SALT limits).
+  - *Post-Age 70.5 (QCDs):* Distributed directly from the Traditional Pre-Tax IRA as Qualified Charitable Distributions (up to the statutory limit). QCDs satisfy statutory Required Minimum Distributions (RMDs) dollar-for-dollar under IRC Section 408(d)(8), completely bypassing Federal and State AGI and preserving lower IRMAA tiers.
+
 ## 7. UI/UX Workspace Layout Specifications
 
 ### Workspace 1: Interactive Tax and IRMAA Bracket Map
