@@ -14,6 +14,8 @@ export class AwsCloudStorageAdapter implements StorageAdapter {
   private localAdapter: IndexedDbStorageAdapter;
   private isSyncingExpenses: boolean = false;
   private isSyncingCategories: boolean = false;
+  private lastCategorySyncTime: number = 0;
+  private readonly CATEGORY_CACHE_TTL_MS: number = 15 * 60 * 1000; // 15-minute in-memory throttle
   private flushInFlight: Promise<{ syncedCount: number; errors: number }> | null = null;
   private flushRerunRequested: boolean = false;
   private lastSyncError: string | null = null;
@@ -45,12 +47,23 @@ export class AwsCloudStorageAdapter implements StorageAdapter {
 
   // --- Category Operations ---
 
-  async getCategories(): Promise<ExpenseCategory[]> {
+  /** Invalidate in-memory category cache timestamp so next call fetches fresh data */
+  public invalidateCategoryCache(): void {
+    this.lastCategorySyncTime = 0;
+  }
+
+  async getCategories(forceRefresh: boolean = false): Promise<ExpenseCategory[]> {
+    const now = Date.now();
+    const isExpired = now - this.lastCategorySyncTime > this.CATEGORY_CACHE_TTL_MS;
+
     if (typeof window !== 'undefined' && navigator.onLine && AuthService.isAuthenticated()) {
-      try {
-        await this.syncCategoriesFromCloud();
-      } catch (err) {
-        console.warn('Background category cloud sync failed, using local cache:', err);
+      if (forceRefresh || isExpired) {
+        this.lastCategorySyncTime = now;
+        try {
+          await this.syncCategoriesFromCloud();
+        } catch (err) {
+          console.warn('Background category cloud sync failed, using local cache:', err);
+        }
       }
     }
 
@@ -126,6 +139,7 @@ export class AwsCloudStorageAdapter implements StorageAdapter {
         });
     }
 
+    this.lastCategorySyncTime = Date.now();
     return saved;
   }
 
@@ -141,6 +155,7 @@ export class AwsCloudStorageAdapter implements StorageAdapter {
   }
 
   async deleteCategory(id: string): Promise<void> {
+    this.lastCategorySyncTime = Date.now();
     await this.localAdapter.deleteCategory(id);
 
     if (typeof window !== 'undefined' && navigator.onLine && AuthService.isAuthenticated()) {
