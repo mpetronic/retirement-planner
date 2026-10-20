@@ -24,6 +24,30 @@ export interface IRMAATier {
 // 2026 Federal Standard Deductions
 export const FED_STANDARD_DEDUCTION_MFJ = 32200;
 export const FED_STANDARD_DEDUCTION_SINGLE = 16100;
+export const STATUTORY_STD_DEDUCTION_SINGLE_MFJ_MIDPOINT = (FED_STANDARD_DEDUCTION_SINGLE + FED_STANDARD_DEDUCTION_MFJ) / 2;
+
+/**
+ * Net Investment Income Tax (NIIT) Statutory Constants (IRC Section 1411)
+ */
+export const STATUTORY_NIIT_RATE = 0.038;
+export const STATUTORY_NIIT_THRESHOLD_SINGLE = 200000;
+export const STATUTORY_NIIT_THRESHOLD_MFJ = 250000;
+
+/**
+ * Social Security Taxability Statutory Constants (IRC Section 86)
+ */
+export const STATUTORY_MAX_TAXABLE_SS_PORTION = 0.85;
+export const STATUTORY_SS_TORPEDO_MULTIPLIER = 1 + STATUTORY_MAX_TAXABLE_SS_PORTION; // 1.85
+
+/**
+ * Statutory lookback period for Medicare Part B and Part D IRMAA determinations (Social Security Act Section 1839(i))
+ */
+export const STATUTORY_IRMAA_LOOKBACK_YEARS = 2;
+
+/**
+ * Statutory Medicare eligibility age (Title XVIII of the Social Security Act)
+ */
+export const STATUTORY_MEDICARE_ELIGIBILITY_AGE = 65;
 
 // 2026 Federal Brackets (MFJ) - Single Source of Truth
 export const FED_BRACKETS_MFJ: TaxBracket[] = [
