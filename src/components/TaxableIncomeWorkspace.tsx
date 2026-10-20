@@ -54,7 +54,7 @@ interface TaxableIncomeWorkspaceProps {
     targetValue: number | null,
     yourAge: number,
     wifeAge: number,
-    strategy?: 'flat' | 'fill-to-target'
+    strategy?: 'flat' | 'fill-to-target' | 'custom'
   ) => void;
   onUpdateStrategy: (strategy: 'flat' | 'fill-to-target' | 'custom') => void;
   onUpdateTargetValue: (val: number | null) => void;
@@ -1246,6 +1246,8 @@ export const TaxableIncomeWorkspace: React.FC<TaxableIncomeWorkspaceProps> = ({
                     <div className="text-base font-black text-slate-100">
                       {optimizationResult.bestStrategy === 'fill-to-target' ? (
                         <>Fill-to-Target ({getTargetPresetInfo(optimizationResult.bestTargetValue)?.description || `Target Limit: ${formatCurrency(optimizationResult.bestTargetValue || 0)}`})</>
+                      ) : optimizationResult.bestStrategy === 'custom' ? (
+                        <>Maintain Active Custom Schedule</>
                       ) : (
                         <>Flat Conversion ({formatCurrency(optimizationResult.bestAnnualRothConversion)} / year)</>
                       )}

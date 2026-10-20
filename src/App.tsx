@@ -850,7 +850,7 @@ function App() {
     targetValue: number | null,
     yourAge: number,
     wifeAge: number,
-    strategy?: 'flat' | 'fill-to-target'
+    strategy?: 'flat' | 'fill-to-target' | 'custom'
   ) => {
     const finalStrategy = strategy || activeInputs.rothConversionStrategy;
     const finalTargetValue = targetValue !== null ? targetValue : activeInputs.rothConversionTargetValue;
