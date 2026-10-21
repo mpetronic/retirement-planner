@@ -6,6 +6,7 @@ import {
   categorizeLocally,
   saveLearnedMerchantRule,
   getLearnedMerchantRules,
+  isPaymentOrTransfer,
 } from './merchantMatcher';
 
 describe('merchantMatcher', () => {
@@ -116,4 +117,42 @@ describe('merchantMatcher', () => {
       expect(res.source).toBe('unknown');
     });
   });
+
+  describe('isPaymentOrTransfer', () => {
+    it('detects Capital One automatic payments', () => {
+      expect(isPaymentOrTransfer('AUTOMATIC PAYMENT - THANK', 'Payment', 'Payment')).toBe(true);
+      expect(isPaymentOrTransfer('AUTOMATIC PAYMENT - THANK')).toBe(true);
+    });
+
+    it('detects Chase, Amex, and Discover payment variations', () => {
+      expect(isPaymentOrTransfer('PAYMENT - THANK YOU')).toBe(true);
+      expect(isPaymentOrTransfer('ONLINE PAYMENT - THANK YOU 1234')).toBe(true);
+      expect(isPaymentOrTransfer('AUTOPAY PAYMENT')).toBe(true);
+      expect(isPaymentOrTransfer('MOBILE PAYMENT - THANK YOU')).toBe(true);
+      expect(isPaymentOrTransfer('ELECTRONIC PAYMENT RECEIVED')).toBe(true);
+      expect(isPaymentOrTransfer('ACH PAYMENT - CAPITAL ONE')).toBe(true);
+      expect(isPaymentOrTransfer('BILL PAYMENT CHK 123')).toBe(true);
+      expect(isPaymentOrTransfer('CREDIT CARD PAYMENT')).toBe(true);
+    });
+
+    it('detects account transfers', () => {
+      expect(isPaymentOrTransfer('ONLINE TRANSFER FROM CHECKING')).toBe(true);
+      expect(isPaymentOrTransfer('ACCOUNT TRANSFER TO SAVINGS')).toBe(true);
+    });
+
+    it('detects type/category indicator even with non-standard description', () => {
+      expect(isPaymentOrTransfer('XYZ TRANSACTION', 'Payment')).toBe(true);
+      expect(isPaymentOrTransfer('UNKNOWN TRANSACTION', undefined, 'Payments')).toBe(true);
+      expect(isPaymentOrTransfer('UNKNOWN TRANSACTION', 'transfer')).toBe(true);
+    });
+
+    it('does not falsely flag normal merchants as payments', () => {
+      expect(isPaymentOrTransfer('GIANT FOOD INC #192', 'Sale', 'Groceries')).toBe(false);
+      expect(isPaymentOrTransfer('THE HOME DEPOT 2560', 'Sale', 'Home')).toBe(false);
+      expect(isPaymentOrTransfer('SHELL OIL 57543580203', 'Sale', 'Gas')).toBe(false);
+      expect(isPaymentOrTransfer('Amazon.com*5I4ID5RP2', 'Sale', 'Shopping')).toBe(false);
+      expect(isPaymentOrTransfer("KOHL'S #0265", 'Return', 'Shopping')).toBe(false);
+    });
+  });
 });
+

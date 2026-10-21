@@ -2,6 +2,7 @@ import { StatementColumnMapping, StatementFormatProfile, LearnedMerchantRule } f
 import { PlannerExpenseLineItem, getPlannerExpenseCatalog } from './plannerCategories';
 import { getCloudConfig } from '../auth/config';
 import { AuthService } from '../auth/AuthService';
+import { isLocalhostEnvironment } from './appMode';
 
 const STORAGE_KEY_PROFILES = 'retirement_planner_statement_profiles';
 const STORAGE_KEY_RULES = 'retirement_planner_merchant_rules';
@@ -45,6 +46,54 @@ export function normalizeMerchant(raw: string): string {
 
   // Return uppercase for consistent dictionary matching
   return str.toUpperCase();
+}
+
+/**
+ * Robustly detects whether a transaction is an internal payment, credit card balance payoff,
+ * or bank account transfer across different institutions and naming conventions.
+ */
+export function isPaymentOrTransfer(
+  rawDesc: string,
+  rawType?: string,
+  rawCategory?: string
+): boolean {
+  if (rawType) {
+    const t = rawType.toLowerCase().trim();
+    if (t === 'payment' || t === 'pmt' || t === 'transfer' || t === 'xfer' || t === 'autopay') {
+      return true;
+    }
+  }
+
+  if (rawCategory) {
+    const c = rawCategory.toLowerCase().trim();
+    if (
+      c === 'payment' ||
+      c === 'payments' ||
+      c === 'credit card payment' ||
+      c === 'transfer' ||
+      c === 'transfers'
+    ) {
+      return true;
+    }
+  }
+
+  const desc = (rawDesc || '').toUpperCase().trim();
+
+  // Common payment and transfer descriptors across Capital One, Chase, Citi, Amex, Discover, Banks:
+  const paymentRegexes = [
+    /\bAUTOMATIC\s+PAYMENT\b/i,
+    /\bPAYMENT\b.*\b(THANK|RECEIVED|ONLINE|MOBILE|WEB|INTERNET|ACH|ELECTRONIC)\b/i,
+    /\b(ONLINE|MOBILE|WEB|INTERNET|ACH|ELECTRONIC|DIRECT\s+DEBIT)\b.*\bPAYMENT\b/i,
+    /\bAUTOPAY\b/i,
+    /\bCREDIT\s+CARD\s+PAYMENT\b/i,
+    /\bBILL\s+PAYMENT\b/i,
+    /\bTHANK\s+YOU\b.*\bPAYMENT\b/i,
+    /\bPAYMENT\s+-\s+THANK\b/i,
+    /\bTRANSFER\s+(TO|FROM)\b/i,
+    /\b(ONLINE|INTERNAL|ACCOUNT)\s+TRANSFER\b/i,
+  ];
+
+  return paymentRegexes.some(rx => rx.test(desc));
 }
 
 /**
@@ -390,66 +439,137 @@ export function saveGeminiApiKey(key: string): void {
   window.localStorage.setItem(STORAGE_KEY_GEMINI_KEY, key.trim());
 }
 
+export interface LlmCategorizationResponse {
+  matches: Map<string, { category: string; lineItem: string }>;
+  status: 'SUCCESS' | 'NO_API_KEY' | 'AUTH_ERROR' | 'RATE_LIMITED' | 'NETWORK_ERROR' | 'API_ERROR' | 'NO_CONFIDENT_MATCHES';
+  errorMessage?: string;
+  totalEvaluated: number;
+}
+
 /**
  * Batched LLM Categorization service.
  * - In Cloud mode: calls AWS Bedrock Nova Micro via backend API Gateway if available.
- * - In Local / Demo mode: calls Google Gemini API (gemini-2.5-flash / gemini-1.5-flash) using client key.
+ * - In Local / Demo mode: calls Google Gemini API (gemini-1.5-flash) using client key.
+ * Returns explicit status codes and precise diagnostic messages to eliminate ambiguity.
  */
 export async function batchCategorizeWithLLM(
   merchants: Array<{ rawDesc: string; rawCat?: string; normalized: string }>,
   catalog: PlannerExpenseLineItem[]
-): Promise<Map<string, { category: string; lineItem: string }>> {
-  const resultMap = new Map<string, { category: string; lineItem: string }>();
-  if (merchants.length === 0) return resultMap;
+): Promise<LlmCategorizationResponse> {
+  const uniqueMerchants = Array.from(new Set(merchants.map(m => m.normalized))).filter(Boolean);
+  const totalEvaluated = uniqueMerchants.length;
+
+  if (totalEvaluated === 0) {
+    return {
+      matches: new Map(),
+      status: 'SUCCESS',
+      totalEvaluated: 0,
+    };
+  }
 
   // Build compact list of allowable catalog targets
   const catalogTargets = catalog.map(c => `${c.groupCategory}:::${c.name}`);
-  const uniqueMerchants = Array.from(new Set(merchants.map(m => m.normalized))).filter(Boolean);
 
   const promptPayload = {
     merchants: uniqueMerchants.slice(0, 50), // Process up to 50 unique merchants per prompt
     catalog: catalogTargets,
   };
 
-  const isCloudAuth = typeof window !== 'undefined' && navigator.onLine && AuthService.isAuthenticated();
+  const isCloudMode = typeof window !== 'undefined' && !isLocalhostEnvironment() && navigator.onLine && AuthService.isAuthenticated();
 
-  // 1. Try Cloud Mode (AWS Bedrock Nova Micro via backend API)
-  if (isCloudAuth) {
+  // 1. Try Cloud Mode (AWS Bedrock Nova Micro via backend API) - only in production cloud deployment
+  if (isCloudMode) {
     try {
       const idToken = await AuthService.getIdToken();
-      if (idToken) {
-        const endpoint = `${getCloudConfig().apiEndpoint.replace(/\/$/, '')}/api/expenses/categorize-llm`;
-        const res = await fetch(endpoint, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            Authorization: idToken,
-          },
-          body: JSON.stringify(promptPayload),
-        });
-
-        if (res.ok) {
-          const data = await res.json();
-          if (data && typeof data === 'object') {
-            Object.entries(data).forEach(([merchantKey, mapping]) => {
-              const m = mapping as { category?: string; lineItem?: string };
-              if (m && m.category && m.lineItem) {
-                resultMap.set(merchantKey.toUpperCase(), { category: m.category, lineItem: m.lineItem });
-              }
-            });
-            return resultMap;
-          }
-        }
+      if (!idToken) {
+        return {
+          matches: new Map(),
+          status: 'AUTH_ERROR',
+          errorMessage: 'Cloud authentication session expired. Please sign in again.',
+          totalEvaluated,
+        };
       }
+
+      const endpoint = `${getCloudConfig().apiEndpoint.replace(/\/$/, '')}/api/expenses/categorize-llm`;
+      const res = await fetch(endpoint, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: idToken,
+        },
+        body: JSON.stringify(promptPayload),
+      });
+
+      if (res.ok) {
+        const data = await res.json();
+        const resultMap = new Map<string, { category: string; lineItem: string }>();
+        if (data && typeof data === 'object') {
+          Object.entries(data).forEach(([merchantKey, mapping]) => {
+            const m = mapping as { category?: string; lineItem?: string };
+            if (m && m.category && m.lineItem) {
+              resultMap.set(merchantKey.toUpperCase(), { category: m.category, lineItem: m.lineItem });
+            }
+          });
+        }
+
+        if (resultMap.size > 0) {
+          return { matches: resultMap, status: 'SUCCESS', totalEvaluated };
+        }
+        return {
+          matches: new Map(),
+          status: 'NO_CONFIDENT_MATCHES',
+          errorMessage: `AWS Bedrock evaluated ${totalEvaluated} merchants, but found no confident matches in your catalog.`,
+          totalEvaluated,
+        };
+      }
+
+      if (res.status === 404) {
+        return {
+          matches: new Map(),
+          status: 'API_ERROR',
+          errorMessage: 'Cloud Bedrock categorization service is not yet deployed in this AWS environment.',
+          totalEvaluated,
+        };
+      }
+
+      if (res.status === 401 || res.status === 403) {
+        return {
+          matches: new Map(),
+          status: 'AUTH_ERROR',
+          errorMessage: `AWS authorization error (HTTP ${res.status}). Please check your login credentials.`,
+          totalEvaluated,
+        };
+      }
+
+      if (res.status === 429) {
+        return {
+          matches: new Map(),
+          status: 'RATE_LIMITED',
+          errorMessage: 'AWS Bedrock service rate limit exceeded. Please try again shortly.',
+          totalEvaluated,
+        };
+      }
+
+      return {
+        matches: new Map(),
+        status: 'API_ERROR',
+        errorMessage: `Cloud categorization request failed (HTTP ${res.status}).`,
+        totalEvaluated,
+      };
     } catch (err) {
       console.warn('Cloud Bedrock Nova categorization failed, checking Gemini fallback:', err);
     }
   }
 
-  // 2. Local / Demo mode fallback: Gemini API via client key
+  // 2. Localhost / Demo mode fallback: Google Gemini API via client key
   const geminiKey = getGeminiApiKey();
   if (!geminiKey) {
-    return resultMap;
+    return {
+      matches: new Map(),
+      status: 'NO_API_KEY',
+      errorMessage: 'Google Gemini API key is not configured. Click the key icon in the header to set your API key.',
+      totalEvaluated,
+    };
   }
 
   try {
@@ -468,36 +588,100 @@ Return ONLY a valid JSON object mapping each merchant name to its chosen "Catego
   "SHELL OIL": "Transportation:::Gasoline"
 }`;
 
-    const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${geminiKey}`;
-    const response = await fetch(geminiUrl, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        contents: [{ parts: [{ text: prompt }] }],
-        generationConfig: {
-          responseMimeType: 'application/json',
-        },
-      }),
-    });
+    const candidateModels = ['gemini-flash-lite-latest', 'gemini-2.0-flash-lite', 'gemini-1.5-flash'];
+    let response: Response | null = null;
+
+    for (const model of candidateModels) {
+      const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${encodeURIComponent(geminiKey)}`;
+      response = await fetch(geminiUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          contents: [{ parts: [{ text: prompt }] }],
+          generationConfig: {
+            responseMimeType: 'application/json',
+          },
+        }),
+      });
+
+      // If not a 404 (model not found), use this response (e.g. 200, 400, 401, 429)
+      if (response.status !== 404) {
+        break;
+      }
+    }
+
+    if (!response) {
+      return {
+        matches: new Map(),
+        status: 'API_ERROR',
+        errorMessage: 'Failed to obtain a response from Gemini API.',
+        totalEvaluated,
+      };
+    }
 
     if (response.ok) {
       const json = await response.json();
       const rawText = json.candidates?.[0]?.content?.parts?.[0]?.text;
+      const resultMap = new Map<string, { category: string; lineItem: string }>();
+
       if (rawText) {
         const parsed = JSON.parse(rawText);
         Object.entries(parsed).forEach(([merchant, catStr]) => {
           if (typeof catStr === 'string' && catStr.includes(':::')) {
             const [cat, item] = catStr.split(':::');
-            if (cat && item) {
+            if (cat && item && item.toLowerCase() !== 'unknown') {
               resultMap.set(merchant.toUpperCase(), { category: cat.trim(), lineItem: item.trim() });
             }
           }
         });
       }
-    }
-  } catch (err) {
-    console.error('Gemini categorization call failed:', err);
-  }
 
-  return resultMap;
+      if (resultMap.size > 0) {
+        return { matches: resultMap, status: 'SUCCESS', totalEvaluated };
+      }
+      return {
+        matches: new Map(),
+        status: 'NO_CONFIDENT_MATCHES',
+        errorMessage: `AI evaluated ${totalEvaluated} merchants, but found no confident matches in your existing catalog.`,
+        totalEvaluated,
+      };
+    }
+
+    const errBody = await response.json().catch(() => null);
+    const detailMsg = errBody?.error?.message || response.statusText || 'Unknown error';
+
+    if (response.status === 400 || response.status === 401 || response.status === 403) {
+      return {
+        matches: new Map(),
+        status: 'AUTH_ERROR',
+        errorMessage: `Gemini API authorization failed (HTTP ${response.status}): ${detailMsg}. Please verify your API key.`,
+        totalEvaluated,
+      };
+    }
+
+    if (response.status === 429) {
+      return {
+        matches: new Map(),
+        status: 'RATE_LIMITED',
+        errorMessage: 'Gemini API quota or rate limit exceeded (HTTP 429). Please try again shortly.',
+        totalEvaluated,
+      };
+    }
+
+    return {
+      matches: new Map(),
+      status: 'API_ERROR',
+      errorMessage: `Gemini API request failed (HTTP ${response.status}): ${detailMsg}`,
+      totalEvaluated,
+    };
+  } catch (err: unknown) {
+    const errorMsg = err instanceof Error ? err.message : String(err);
+    console.error('Gemini categorization call failed:', err);
+    return {
+      matches: new Map(),
+      status: 'NETWORK_ERROR',
+      errorMessage: `Network error connecting to Gemini API: ${errorMsg}`,
+      totalEvaluated,
+    };
+  }
 }

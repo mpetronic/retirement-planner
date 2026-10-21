@@ -21,3 +21,6 @@ description: Commit Rules
 5. When you have created the proposed commit, present it to me like you do for implementation plans
    where you present me with a "proceed" and "open" button.
 
+# IMPORTANT
+
+Review all submitted code for personal information and secrets and abort the commit and list the exact findings for the file and line number and actual text of what you discovered.

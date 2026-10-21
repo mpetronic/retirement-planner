@@ -11,6 +11,8 @@ import {
   Sparkles,
   Key,
   CreditCard,
+  Eye,
+  EyeOff,
 } from 'lucide-react';
 import { getStorageAdapter } from '../shared/storage';
 import {
@@ -36,6 +38,7 @@ import {
   batchCategorizeWithLLM,
   getGeminiApiKey,
   saveGeminiApiKey,
+  isPaymentOrTransfer,
 } from '../shared/utils/merchantMatcher';
 import { FormatSetupModal } from './FormatSetupModal';
 
@@ -152,6 +155,7 @@ export const ImportExpensesModal: React.FC<ImportExpensesModalProps> = ({
   const [isAiMatching, setIsAiMatching] = useState<boolean>(false);
   const [isApiKeyModalOpen, setIsApiKeyModalOpen] = useState<boolean>(false);
   const [geminiApiKeyInput, setGeminiApiKeyInput] = useState<string>(() => getGeminiApiKey());
+  const [showApiKeyClearText, setShowApiKeyClearText] = useState<boolean>(false);
 
   // On-the-fly category/item creation popover
   const [inlineCreateRowId, setInlineCreateRowId] = useState<string | null>(null);
@@ -275,10 +279,7 @@ export const ImportExpensesModal: React.FC<ImportExpensesModalProps> = ({
           else if (creditVal > 0) netAmount = -creditVal;
         }
 
-        const isPaymentTransfer =
-          rawDesc.toUpperCase().includes('AUTOMATIC PAYMENT') ||
-          rawDesc.toUpperCase().includes('CREDIT CARD PAYMENT') ||
-          rawType === 'payment';
+        const isPaymentTransfer = isPaymentOrTransfer(rawDesc, rawType, rawCat);
 
         const cleanMerchant = normalizeMerchant(rawDesc);
 
@@ -397,11 +398,11 @@ export const ImportExpensesModal: React.FC<ImportExpensesModalProps> = ({
 
   // Toggle row selection
   const handleToggleRow = (id: string) => {
-    setParsedRows(prev => prev.map(r => r.id === id ? { ...r, selected: !r.selected } : r));
+    setParsedRows(prev => prev.map(r => (r.id === id && !r.isPaymentTransfer ? { ...r, selected: !r.selected } : r)));
   };
 
   const handleSelectAll = (select: boolean) => {
-    setParsedRows(prev => prev.map(r => (r.isPaymentTransfer ? r : { ...r, selected: select })));
+    setParsedRows(prev => prev.map(r => (r.isPaymentTransfer ? { ...r, selected: false } : { ...r, selected: select })));
   };
 
   // Inline row update handlers
@@ -512,12 +513,12 @@ export const ImportExpensesModal: React.FC<ImportExpensesModalProps> = ({
         normalized: u.normalizedMerchant || normalizeMerchant(u.rawDescription),
       }));
 
-      const suggestions = await batchCategorizeWithLLM(payload, catalogItems);
+      const result = await batchCategorizeWithLLM(payload, catalogItems);
 
-      if (suggestions.size > 0) {
+      if (result.status === 'SUCCESS' && result.matches.size > 0) {
         setParsedRows(prev => prev.map(r => {
           const key = (r.normalizedMerchant || normalizeMerchant(r.rawDescription)).toUpperCase();
-          const match = suggestions.get(key);
+          const match = result.matches.get(key);
           if (match && (r.isUnknown || r.lineItem === 'Unknown')) {
             return {
               ...r,
@@ -529,13 +530,14 @@ export const ImportExpensesModal: React.FC<ImportExpensesModalProps> = ({
           }
           return r;
         }));
-        setImportStatusMessage(`AI successfully categorized ${suggestions.size} merchants.`);
+        setImportStatusMessage(`AI successfully categorized ${result.matches.size} of ${result.totalEvaluated} merchants.`);
       } else {
-        setImportStatusMessage('AI categorization completed with no new matches or API key not configured.');
+        setImportStatusMessage(result.errorMessage || 'AI categorization completed with no new matches.');
       }
-    } catch (err) {
+    } catch (err: unknown) {
+      const errMsg = err instanceof Error ? err.message : String(err);
       console.error('AI categorization failed:', err);
-      setImportStatusMessage('AI categorization encountered an error.');
+      setImportStatusMessage(`AI categorization encountered an error: ${errMsg}`);
     } finally {
       setIsAiMatching(false);
     }
@@ -571,7 +573,7 @@ export const ImportExpensesModal: React.FC<ImportExpensesModalProps> = ({
   }, [parsedRows, hideDuplicates, activeFilterTab, searchTerm]);
 
   // Counts and totals
-  const selectedRows = useMemo(() => parsedRows.filter(r => r.selected), [parsedRows]);
+  const selectedRows = useMemo(() => parsedRows.filter(r => r.selected && !r.isPaymentTransfer), [parsedRows]);
   const totalSpendSelected = useMemo(() => selectedRows.reduce((sum, r) => sum + r.amount, 0), [selectedRows]);
   const unknownCount = useMemo(() => parsedRows.filter(r => r.isUnknown || r.lineItem === 'Unknown').length, [parsedRows]);
   const duplicateCount = useMemo(() => parsedRows.filter(r => r.isDuplicate).length, [parsedRows]);
@@ -586,20 +588,22 @@ export const ImportExpensesModal: React.FC<ImportExpensesModalProps> = ({
     const adapter = getStorageAdapter();
 
     try {
-      // 1. Prepare ActualExpense records
-      const expensePayloads = selectedRows.map(row => {
-        const catDisplayName = `${row.category} - ${row.lineItem}`;
-        const noteText = [row.rawDescription, row.notes].filter(Boolean).join(' | ');
+      // 1. Prepare ActualExpense records (strictly excluding any internal payments/transfers)
+      const expensePayloads = selectedRows
+        .filter(row => !row.isPaymentTransfer)
+        .map(row => {
+          const catDisplayName = `${row.category} - ${row.lineItem}`;
+          const noteText = [row.rawDescription, row.notes].filter(Boolean).join(' | ');
 
-        return {
-          date: row.date,
-          amount: Math.round(row.amount * 100) / 100,
-          categoryId: `cat_${row.category.toLowerCase()}_${row.lineItem.toLowerCase().replace(/[^a-z0-9]/g, '_')}`,
-          categoryName: catDisplayName,
-          enteredBy: row.payer || defaultPayer,
-          notes: noteText || undefined,
-        };
-      });
+          return {
+            date: row.date,
+            amount: Math.round(row.amount * 100) / 100,
+            categoryId: `cat_${row.category.toLowerCase()}_${row.lineItem.toLowerCase().replace(/[^a-z0-9]/g, '_')}`,
+            categoryName: catDisplayName,
+            enteredBy: row.payer || defaultPayer,
+            notes: noteText || undefined,
+          };
+        });
 
       // 2. Commit batch to storage adapter
       if (adapter.saveExpensesBatch) {
@@ -703,7 +707,11 @@ export const ImportExpensesModal: React.FC<ImportExpensesModalProps> = ({
             )}
             {/* Gemini API Key configuration button */}
             <button
-              onClick={() => setIsApiKeyModalOpen(true)}
+              onClick={() => {
+                setGeminiApiKeyInput(getGeminiApiKey());
+                setShowApiKeyClearText(false);
+                setIsApiKeyModalOpen(true);
+              }}
               title="Configure LLM API Key"
               className="p-2 rounded-xl text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 border border-slate-200 dark:border-slate-800 transition-colors"
             >
@@ -1012,10 +1020,11 @@ export const ImportExpensesModal: React.FC<ImportExpensesModalProps> = ({
                         <td className="py-2 px-3 text-center">
                           <input
                             type="checkbox"
-                            checked={row.selected}
+                            checked={row.selected && !row.isPaymentTransfer}
                             disabled={row.isPaymentTransfer}
+                            title={row.isPaymentTransfer ? "Payments and transfers are automatically excluded from storage" : undefined}
                             onChange={() => handleToggleRow(row.id)}
-                            className="rounded border-slate-300 text-indigo-600 focus:ring-indigo-500 cursor-pointer"
+                            className="rounded border-slate-300 text-indigo-600 focus:ring-indigo-500 cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed"
                           />
                         </td>
 
@@ -1038,8 +1047,11 @@ export const ImportExpensesModal: React.FC<ImportExpensesModalProps> = ({
                             )}
 
                             {row.isPaymentTransfer && (
-                              <span className="px-1.5 py-0.5 rounded text-[10px] font-semibold bg-blue-100 dark:bg-blue-950/60 text-blue-700 dark:text-blue-300">
-                                Payment
+                              <span
+                                title="Internal payment / transfer - excluded from stored expenses"
+                                className="px-1.5 py-0.5 rounded text-[10px] font-semibold bg-blue-100 dark:bg-blue-950/60 text-blue-700 dark:text-blue-300"
+                              >
+                                Payment (Excluded)
                               </span>
                             )}
 
@@ -1273,7 +1285,13 @@ export const ImportExpensesModal: React.FC<ImportExpensesModalProps> = ({
                 <Key className="w-5 h-5" />
                 <span>AI Categorization Settings</span>
               </div>
-              <button onClick={() => setIsApiKeyModalOpen(false)} className="text-slate-400 hover:text-slate-600">
+              <button
+                onClick={() => {
+                  setShowApiKeyClearText(false);
+                  setIsApiKeyModalOpen(false);
+                }}
+                className="text-slate-400 hover:text-slate-600"
+              >
                 <X className="w-4 h-4" />
               </button>
             </div>
@@ -1281,20 +1299,57 @@ export const ImportExpensesModal: React.FC<ImportExpensesModalProps> = ({
               In Local and Demo mode, smart categorization uses <strong>Google Gemini Flash</strong>. Your API key is stored locally in your browser and is never committed or sent to any third party. In Cloud mode, AWS Bedrock Nova Micro is automatically utilized via IAM.
             </p>
             <div>
-              <label className="block text-xs font-semibold text-slate-600 dark:text-slate-400 mb-1">
-                Google Gemini API Key
-              </label>
-              <input
-                type="password"
-                value={geminiApiKeyInput}
-                onChange={(e) => setGeminiApiKeyInput(e.target.value)}
-                placeholder="AIzaSy..."
-                className="w-full px-3.5 py-2 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-xs font-mono text-slate-900 dark:text-slate-100 focus:ring-2 focus:ring-indigo-500"
-              />
+              <div className="flex items-center justify-between mb-1">
+                <label className="block text-xs font-semibold text-slate-600 dark:text-slate-400">
+                  Google Gemini API Key
+                </label>
+                <span className="text-[11px] text-slate-400 dark:text-slate-500 select-none">
+                  Hold icon to view
+                </span>
+              </div>
+              <div className="relative flex items-center">
+                <input
+                  type={showApiKeyClearText ? 'text' : 'password'}
+                  value={geminiApiKeyInput}
+                  onChange={(e) => setGeminiApiKeyInput(e.target.value)}
+                  placeholder="AIzaSy..."
+                  className="w-full pl-3.5 pr-10 py-2 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-xs font-mono text-slate-900 dark:text-slate-100 focus:ring-2 focus:ring-indigo-500"
+                />
+                <button
+                  type="button"
+                  title="Press and hold to view API key in clear text"
+                  aria-label="Press and hold to view API key in clear text"
+                  onMouseDown={() => setShowApiKeyClearText(true)}
+                  onMouseUp={() => setShowApiKeyClearText(false)}
+                  onMouseLeave={() => setShowApiKeyClearText(false)}
+                  onTouchStart={() => setShowApiKeyClearText(true)}
+                  onTouchEnd={() => setShowApiKeyClearText(false)}
+                  onKeyDown={(e) => {
+                    if (e.key === ' ' || e.key === 'Enter') {
+                      setShowApiKeyClearText(true);
+                    }
+                  }}
+                  onKeyUp={(e) => {
+                    if (e.key === ' ' || e.key === 'Enter') {
+                      setShowApiKeyClearText(false);
+                    }
+                  }}
+                  className="absolute right-2 p-1.5 text-slate-400 hover:text-slate-600 dark:text-slate-500 dark:hover:text-slate-300 rounded-lg select-none cursor-pointer hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors"
+                >
+                  {showApiKeyClearText ? (
+                    <EyeOff className="w-4 h-4 text-indigo-600 dark:text-indigo-400" />
+                  ) : (
+                    <Eye className="w-4 h-4" />
+                  )}
+                </button>
+              </div>
             </div>
             <div className="flex items-center justify-end gap-2 pt-2">
               <button
-                onClick={() => setIsApiKeyModalOpen(false)}
+                onClick={() => {
+                  setShowApiKeyClearText(false);
+                  setIsApiKeyModalOpen(false);
+                }}
                 className="px-4 py-2 rounded-xl text-xs font-medium text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800"
               >
                 Cancel
@@ -1302,6 +1357,7 @@ export const ImportExpensesModal: React.FC<ImportExpensesModalProps> = ({
               <button
                 onClick={() => {
                   saveGeminiApiKey(geminiApiKeyInput);
+                  setShowApiKeyClearText(false);
                   setIsApiKeyModalOpen(false);
                 }}
                 className="px-4 py-2 rounded-xl text-xs font-semibold bg-indigo-600 hover:bg-indigo-700 text-white"
