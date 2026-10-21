@@ -46,6 +46,46 @@ import { CustomRothScenarioModal } from './CustomRothScenarioModal';
 
 ChartJS.register(...registerables);
 
+interface ColumnHelpHeaderProps {
+  label: string;
+  tooltipTitle: string;
+  tooltipText: string;
+  align?: 'left' | 'right';
+  className?: string;
+}
+
+const ColumnHelpHeader: React.FC<ColumnHelpHeaderProps> = ({
+  label,
+  tooltipTitle,
+  tooltipText,
+  align = 'left',
+  className = '',
+}) => {
+  return (
+    <th className={`py-2.5 px-3 select-none ${className}`}>
+      <div className="group relative inline-flex items-center gap-1.5 cursor-help">
+        <span className="font-bold">{label}</span>
+        <Info className="w-3 h-3 text-slate-500 group-hover:text-emerald-400 transition-colors shrink-0" />
+
+        {/* Hover Hint Popup */}
+        <div
+          className={`absolute top-full mt-1.5 ${
+            align === 'right' ? 'right-0' : 'left-0'
+          } hidden group-hover:block z-30 w-72 p-3 rounded-xl bg-slate-950 border border-slate-700 shadow-2xl text-xs text-slate-200 normal-case font-sans whitespace-normal break-words pointer-events-none space-y-1.5`}
+        >
+          <div className="font-bold text-slate-100 flex items-center gap-1.5 text-xs border-b border-slate-800/80 pb-1 text-emerald-400 whitespace-normal">
+            <Info className="w-3.5 h-3.5 shrink-0" />
+            <span>{tooltipTitle}</span>
+          </div>
+          <p className="text-slate-300 text-[11px] leading-relaxed font-normal whitespace-normal break-words">
+            {tooltipText}
+          </p>
+        </div>
+      </div>
+    </th>
+  );
+};
+
 interface TaxableIncomeWorkspaceProps {
   ledger: SimulationResultRow[];
   inputs: AppStateInputs;
@@ -510,10 +550,12 @@ export const TaxableIncomeWorkspace: React.FC<TaxableIncomeWorkspaceProps> = ({
 
               if (benchmarkLineData && benchmarkLineData.data[idx] !== undefined) {
                 const limit = benchmarkLineData.data[idx];
-                const headroom = limit - r.totalTaxableIncome;
+                const rawHeadroom = limit - r.totalTaxableIncome;
+                const isZero = Math.abs(rawHeadroom) < 1;
+                const headroomText = isZero ? '$0' : rawHeadroom > 0 ? `+${formatCurrency(rawHeadroom)}` : formatCurrency(rawHeadroom);
                 lines.push(
                   `Target Upper Limit: ${formatCurrency(limit)}`,
-                  `Headroom Remaining: ${headroom >= 0 ? '+' : ''}${formatCurrency(headroom)}`
+                  `Headroom Remaining: ${headroomText}`
                 );
               }
 
@@ -571,13 +613,14 @@ export const TaxableIncomeWorkspace: React.FC<TaxableIncomeWorkspaceProps> = ({
     let breachedYears = 0;
 
     if (benchmarkLineData) {
-      avgHeadroom = targetRows.reduce((sum, r) => {
+      const rawAvg = targetRows.reduce((sum, r) => {
         const rowIdx = ledger.findIndex((l) => l.year === r.year);
         const limit = benchmarkLineData.data[rowIdx >= 0 ? rowIdx : 0];
         return sum + (limit - r.totalTaxableIncome);
       }, 0) / (targetRows.length || 1);
 
-      breachedYears = processedRows.filter((r, idx) => r.totalTaxableIncome > benchmarkLineData.data[idx]).length;
+      avgHeadroom = Math.abs(rawAvg) < 1 ? 0 : rawAvg;
+      breachedYears = processedRows.filter((r, idx) => (r.totalTaxableIncome - benchmarkLineData.data[idx]) >= 1).length;
     }
 
     return { convStart, convEnd, maxTaxable, avgHeadroom, totalConversions, breachedYears };
@@ -1097,23 +1140,64 @@ export const TaxableIncomeWorkspace: React.FC<TaxableIncomeWorkspaceProps> = ({
         <div className="overflow-auto max-h-[600px] rounded-xl border border-slate-800 bg-slate-950/20 custom-scrollbar">
           <table className="w-full text-left text-xs font-mono border-collapse">
             <thead className="sticky top-0 z-10 bg-slate-900">
-              <tr className="bg-slate-900 border-b border-slate-800 text-slate-400 uppercase text-[10px] tracking-wider">
-                <th className="py-2.5 px-3">Year</th>
-                <th className="py-2.5 px-3">Ages</th>
-                <th className="py-2.5 px-3">Gross Non-Conv AGI</th>
-                <th className="py-2.5 px-3">Std Deduction</th>
-                <th className="py-2.5 px-3">Net Non-Conv Taxable</th>
-                <th className="py-2.5 px-3">Roth Conv</th>
-                <th className="py-2.5 px-3">Total Taxable Income</th>
-                <th className="py-2.5 px-3">Target Limit</th>
-                <th className="py-2.5 px-3">Headroom</th>
+              <tr className="bg-slate-900 border-b border-slate-800 text-slate-400 uppercase text-[10px] tracking-wider whitespace-nowrap">
+                <ColumnHelpHeader
+                  label="Year"
+                  tooltipTitle="Simulation Year"
+                  tooltipText="The calendar tax year modeled in the projection, spanning from retirement plan start through projected longevity."
+                />
+                <ColumnHelpHeader
+                  label="Ages"
+                  tooltipTitle="Attained Ages (You / Spouse)"
+                  tooltipText="Attained ages of the primary taxpayer and spouse during this tax year. Displays a dash ('-') once a spouse exceeds projected longevity."
+                />
+                <ColumnHelpHeader
+                  label="Gross Non-Conv AGI"
+                  tooltipTitle="Gross Non-Conversion Federal AGI"
+                  tooltipText="Total Federal Adjusted Gross Income excluding intentional Roth conversions. Includes taxable Social Security, wages, pre-tax IRA withdrawals, forced RMDs, interest, dividends, and realized capital gains."
+                />
+                <ColumnHelpHeader
+                  label="Std Deduction"
+                  tooltipTitle="Standard / Itemized Deductions"
+                  tooltipText="The deduction reducing gross income, taking the higher of the age-adjusted Federal Standard Deduction (including senior 65+ additions) or total itemized deductions (SALT up to $10,000 + non-QCD charitable donations)."
+                />
+                <ColumnHelpHeader
+                  label="Net Non-Conv Taxable"
+                  tooltipTitle="Net Non-Conversion Taxable Income"
+                  tooltipText="Baseline taxable ordinary income prior to Roth conversions: max(0, Gross Non-Conversion AGI - Deductions). Standard deductions absorb this non-conversion income first before conversions are added."
+                />
+                <ColumnHelpHeader
+                  label="Roth Conv"
+                  tooltipTitle="Intentional Roth Conversion"
+                  tooltipText="Amount converted from traditional pre-tax retirement accounts (Bucket 2) to tax-free Roth accounts (Bucket 3) during the calendar year to optimize long-term bracket utilization."
+                />
+                <ColumnHelpHeader
+                  label="Total Taxable Income"
+                  tooltipTitle="Total Taxable Income (Form 1040 Line 15)"
+                  tooltipText="Final taxable ordinary income after all deductions and Roth conversions: Net Non-Conversion Taxable Income + Roth Conversion. This is the benchmark value compared against tax brackets and IRMAA tiers."
+                />
+                <ColumnHelpHeader
+                  label="Target Limit"
+                  tooltipTitle="Target Benchmark Ceiling"
+                  tooltipText="The upper taxable income limit for the active benchmark (e.g., top of the 22% or 24% bracket, or IRMAA MAGI threshold converted to taxable income ceiling, adjusted for inflation via CPI)."
+                  align="right"
+                />
+                <ColumnHelpHeader
+                  label="Headroom"
+                  tooltipTitle="Remaining Bracket / Tier Headroom"
+                  tooltipText="Remaining capacity before crossing the target limit (Target Limit - Total Taxable Income). Positive (+) indicates room to convert more without crossing the target; negative (-) indicates income exceeding the target benchmark."
+                  align="right"
+                />
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-800/60 text-slate-300">
               {processedRows.map((r, idx) => {
                 const limit = benchmarkLineData?.data[idx];
-                const headroom = limit !== undefined ? limit - r.totalTaxableIncome : null;
-                const isBreached = headroom !== null && headroom < 0;
+                const rawHeadroom = limit !== undefined ? limit - r.totalTaxableIncome : null;
+                const isZero = rawHeadroom !== null && Math.abs(rawHeadroom) < 1;
+                const isBreached = rawHeadroom !== null && rawHeadroom <= -1;
+                const isPositive = rawHeadroom !== null && rawHeadroom >= 1;
+                const headroom = isZero ? 0 : rawHeadroom;
                 const isConvYear = r.rothConv > 0;
 
                 return (
@@ -1154,9 +1238,23 @@ export const TaxableIncomeWorkspace: React.FC<TaxableIncomeWorkspaceProps> = ({
                       {limit !== undefined ? formatCurrency(limit) : '—'}
                     </td>
                     <td className={`py-2 px-3 font-bold ${
-                      headroom === null ? 'text-slate-500' : isBreached ? 'text-rose-400' : 'text-emerald-400'
+                      headroom === null
+                        ? 'text-slate-500'
+                        : isZero
+                        ? 'text-slate-300'
+                        : isBreached
+                        ? 'text-rose-400'
+                        : 'text-emerald-400'
                     }`}>
-                      {headroom !== null ? (headroom >= 0 ? `+${formatCurrency(headroom)}` : formatCurrency(headroom)) : '—'}
+                      {headroom === null ? (
+                        '—'
+                      ) : isZero ? (
+                        '$0'
+                      ) : isPositive ? (
+                        `+${formatCurrency(headroom)}`
+                      ) : (
+                        formatCurrency(headroom)
+                      )}
                     </td>
                   </tr>
                 );

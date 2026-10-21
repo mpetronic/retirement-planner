@@ -9,9 +9,51 @@ import {
   DollarSign,
   AlertCircle,
   HelpCircle,
+  Info,
 } from 'lucide-react';
 import { AppStateInputs, LockedReturnSequence } from '../types';
-import { calculateTaxEquilibriumSchedule, TaxEquilibriumResult, TELimitingFactor } from '../engine/taxEquilibriumEngine';
+import { calculateTaxEquilibriumSchedule, TaxEquilibriumResult, YearlyTaxEquilibriumPoint } from '../engine/taxEquilibriumEngine';
+import { STATUTORY_IRMAA_LOOKBACK_YEARS } from '../engine/taxRates2026';
+
+interface ColumnHelpHeaderProps {
+  label: string;
+  tooltipTitle: string;
+  tooltipText: string;
+  align?: 'left' | 'right';
+  className?: string;
+}
+
+const ColumnHelpHeader: React.FC<ColumnHelpHeaderProps> = ({
+  label,
+  tooltipTitle,
+  tooltipText,
+  align = 'left',
+  className = '',
+}) => {
+  return (
+    <th className={`py-2.5 px-3 select-none ${className}`}>
+      <div className={`group relative inline-flex items-center gap-1.5 cursor-help ${align === 'right' ? 'w-full justify-end' : ''}`}>
+        <span className="font-bold">{label}</span>
+        <Info className="w-3 h-3 text-slate-500 group-hover:text-teal-400 transition-colors shrink-0" />
+
+        {/* Hover Hint Popup */}
+        <div
+          className={`absolute top-full mt-1.5 ${
+            align === 'right' ? 'right-0' : 'left-0'
+          } hidden group-hover:block z-30 w-72 p-3 rounded-xl bg-slate-950 border border-slate-700 shadow-2xl text-xs text-slate-200 normal-case font-sans whitespace-normal break-words pointer-events-none space-y-1.5`}
+        >
+          <div className="font-bold text-teal-400 flex items-center gap-1.5 text-xs border-b border-slate-800/80 pb-1 whitespace-normal">
+            <Info className="w-3.5 h-3.5 shrink-0" />
+            <span>{tooltipTitle}</span>
+          </div>
+          <p className="text-slate-300 text-[11px] leading-relaxed font-normal whitespace-normal break-words">
+            {tooltipText}
+          </p>
+        </div>
+      </div>
+    </th>
+  );
+};
 
 interface TaxEquilibriumModalProps {
   isOpen: boolean;
@@ -63,46 +105,116 @@ export const TaxEquilibriumModal: React.FC<TaxEquilibriumModalProps> = ({
 
   const formatPercent = (val: number) => `${(val * 100).toFixed(1)}%`;
 
-  const getLimitingFactorBadge = (factor: TELimitingFactor) => {
-    switch (factor) {
+  const getLimitingFactorBadge = (detail: YearlyTaxEquilibriumPoint, idx: number) => {
+    const popupPositionClass = idx < 2 ? 'top-full mt-2' : 'bottom-full mb-2';
+
+    switch (detail.limitingFactor) {
       case 'Matched Future TE Benchmark':
         return (
-          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-emerald-500/10 text-emerald-400 border border-emerald-500/25">
-            <Check className="w-3 h-3" />
-            Matched TE Hurdle
-          </span>
+          <div className="group relative inline-flex items-center">
+            <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-emerald-500/10 text-emerald-400 border border-emerald-500/25 cursor-help transition-colors group-hover:border-emerald-500/50">
+              <Check className="w-3 h-3 shrink-0" />
+              <span>Matched TE Hurdle</span>
+            </span>
+            <div className={`absolute right-0 ${popupPositionClass} hidden group-hover:block z-40 w-80 p-3 rounded-xl bg-slate-950 border border-emerald-500/40 shadow-2xl text-xs text-slate-200 normal-case font-sans whitespace-normal break-words pointer-events-none space-y-1.5`}>
+              <div className="font-bold text-emerald-400 flex items-center gap-1.5 text-xs border-b border-slate-800 pb-1">
+                <Check className="w-3.5 h-3.5 shrink-0" />
+                <span>Matched Future TE Hurdle</span>
+              </div>
+              <p className="text-slate-300 text-[11px] leading-relaxed font-normal">
+                {detail.limitingDetail || `Marginal conversion cost (${formatPercent(detail.marginalRate)}) reached your future projected RMD hurdle rate (${formatPercent(detail.futureBenchmarkRate)}). Converting more would pay higher taxes today than taking future RMDs.`}
+              </p>
+            </div>
+          </div>
         );
-      case 'IRMAA Cliff Boundary':
+
+      case 'IRMAA Cliff Boundary': {
+        const tierNum = detail.limitingTier || 1;
+        const tierLabel = `IRMAA Tier ${tierNum} Cliff`;
         return (
-          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-amber-500/10 text-amber-400 border border-amber-500/25">
-            <AlertCircle className="w-3 h-3" />
-            IRMAA Cliff Floor
-          </span>
+          <div className="group relative inline-flex items-center">
+            <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-amber-500/10 text-amber-400 border border-amber-500/30 cursor-help transition-all group-hover:border-amber-500/60 group-hover:bg-amber-500/20">
+              <AlertCircle className="w-3 h-3 shrink-0" />
+              <span>{tierLabel}</span>
+            </span>
+            <div className={`absolute right-0 ${popupPositionClass} hidden group-hover:block z-40 w-80 p-3.5 rounded-xl bg-slate-950 border border-amber-500/40 shadow-2xl text-xs text-slate-200 normal-case font-sans whitespace-normal break-words pointer-events-none space-y-2`}>
+              <div className="font-bold text-amber-400 flex items-center gap-1.5 text-xs border-b border-slate-800 pb-1">
+                <AlertCircle className="w-3.5 h-3.5 shrink-0" />
+                <span>Medicare {tierLabel}</span>
+              </div>
+              <p className="text-slate-300 text-[11px] leading-relaxed font-normal">
+                {detail.limitingDetail || `Capped right below the Medicare IRMAA Tier ${tierNum} threshold. Converting an additional dollar triggers steep annual surcharges on Medicare Part B & Part D premiums 2 years later.`}
+              </p>
+              {detail.limitingThreshold && (
+                <div className="pt-1.5 border-t border-slate-800/80 flex items-center justify-between text-[11px] font-mono">
+                  <span className="text-slate-400">MAGI Tier Boundary:</span>
+                  <span className="font-bold text-amber-300">{formatCurrency(detail.limitingThreshold)}</span>
+                </div>
+              )}
+            </div>
+          </div>
         );
+      }
+
       case 'Capital Gains 0% Threshold':
         return (
-          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-blue-500/10 text-blue-400 border border-blue-500/25">
-            <DollarSign className="w-3 h-3" />
-            0% LTCG Cap
-          </span>
+          <div className="group relative inline-flex items-center">
+            <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-blue-500/10 text-blue-400 border border-blue-500/25 cursor-help transition-colors group-hover:border-blue-500/50">
+              <DollarSign className="w-3 h-3 shrink-0" />
+              <span>0% LTCG Cap</span>
+            </span>
+            <div className={`absolute right-0 ${popupPositionClass} hidden group-hover:block z-40 w-80 p-3 rounded-xl bg-slate-950 border border-blue-500/40 shadow-2xl text-xs text-slate-200 normal-case font-sans whitespace-normal break-words pointer-events-none space-y-1.5`}>
+              <div className="font-bold text-blue-400 flex items-center gap-1.5 text-xs border-b border-slate-800 pb-1">
+                <DollarSign className="w-3.5 h-3.5 shrink-0" />
+                <span>0% Capital Gains Ceiling</span>
+              </div>
+              <p className="text-slate-300 text-[11px] leading-relaxed font-normal">
+                {detail.limitingDetail || 'Conversions are capped to avoid pushing long-term capital gains and qualified dividends out of the 0% federal bracket into the 15% bracket.'}
+              </p>
+            </div>
+          </div>
         );
+
       case 'Capped by Cash Reserves':
         return (
-          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-rose-500/10 text-rose-400 border border-rose-500/25">
-            <ShieldCheck className="w-3 h-3" />
-            Liquid Runway Cap
-          </span>
+          <div className="group relative inline-flex items-center">
+            <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-rose-500/10 text-rose-400 border border-rose-500/25 cursor-help transition-colors group-hover:border-rose-500/50">
+              <ShieldCheck className="w-3 h-3 shrink-0" />
+              <span>Liquid Runway Cap</span>
+            </span>
+            <div className={`absolute right-0 ${popupPositionClass} hidden group-hover:block z-40 w-80 p-3 rounded-xl bg-slate-950 border border-rose-500/40 shadow-2xl text-xs text-slate-200 normal-case font-sans whitespace-normal break-words pointer-events-none space-y-1.5`}>
+              <div className="font-bold text-rose-400 flex items-center gap-1.5 text-xs border-b border-slate-800 pb-1">
+                <ShieldCheck className="w-3.5 h-3.5 shrink-0" />
+                <span>Liquid Cash Runway Ceiling</span>
+              </div>
+              <p className="text-slate-300 text-[11px] leading-relaxed font-normal">
+                {detail.limitingDetail || 'Paying additional conversion taxes would deplete liquid cash and brokerage below your safety runway target.'}
+              </p>
+            </div>
+          </div>
         );
+
       case 'Pre-Tax IRA Depleted':
         return (
-          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-purple-500/10 text-purple-400 border border-purple-500/25">
-            Pre-Tax Exhausted
-          </span>
+          <div className="group relative inline-flex items-center">
+            <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-purple-500/10 text-purple-400 border border-purple-500/25 cursor-help transition-colors group-hover:border-purple-500/50">
+              <span>Pre-Tax Exhausted</span>
+            </span>
+            <div className={`absolute right-0 ${popupPositionClass} hidden group-hover:block z-40 w-80 p-3 rounded-xl bg-slate-950 border border-purple-500/40 shadow-2xl text-xs text-slate-200 normal-case font-sans whitespace-normal break-words pointer-events-none space-y-1.5`}>
+              <div className="font-bold text-purple-400 flex items-center gap-1.5 text-xs border-b border-slate-800 pb-1">
+                <span>Pre-Tax IRA Fully Converted</span>
+              </div>
+              <p className="text-slate-300 text-[11px] leading-relaxed font-normal">
+                {detail.limitingDetail || 'Traditional pre-tax IRA accounts have been fully converted to Roth. No remaining pre-tax assets available.'}
+              </p>
+            </div>
+          </div>
         );
+
       default:
         return (
           <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-slate-800 text-slate-300 border border-slate-700">
-            {factor}
+            {detail.limitingFactor}
           </span>
         );
     }
@@ -229,17 +341,47 @@ export const TaxEquilibriumModal: React.FC<TaxEquilibriumModalProps> = ({
               <table className="w-full text-left text-xs border-collapse">
                 <thead>
                   <tr className="border-b border-slate-800 bg-slate-900/60 text-slate-400 font-mono text-[11px] uppercase tracking-wider">
-                    <th className="py-2.5 px-3">Year / Age</th>
-                    <th className="py-2.5 px-3">Base Income</th>
-                    <th className="py-2.5 px-3">Optimal Conversion</th>
-                    <th className="py-2.5 px-3">Marginal Cost</th>
-                    <th className="py-2.5 px-3">Future Hurdle</th>
-                    <th className="py-2.5 px-3">Limiting Factor</th>
-                    <th className="py-2.5 px-3 text-right">Projected Tax</th>
+                    <ColumnHelpHeader
+                      label="Year / Age"
+                      tooltipTitle="Simulation Year & Client Ages"
+                      tooltipText="The calendar tax year and the corresponding client (and spouse) ages during that tax filing period within your designated Roth conversion window."
+                    />
+                    <ColumnHelpHeader
+                      label="Base Income"
+                      tooltipTitle="Base Ordinary Non-Conversion Income"
+                      tooltipText="Expected baseline ordinary income before any Roth conversions are added, including salaries, taxable dividends, interest, and taxable Social Security benefits."
+                    />
+                    <ColumnHelpHeader
+                      label="Optimal Conversion"
+                      tooltipTitle="Equilibrium Roth Conversion"
+                      tooltipText="The mathematically optimal conversion amount for this year that maximizes long-term wealth without exceeding the dynamic future RMD hurdle rate or liquidity constraints."
+                    />
+                    <ColumnHelpHeader
+                      label="Marginal Cost"
+                      tooltipTitle="Marginal Conversion Tax Drag"
+                      tooltipText="The all-in marginal tax rate paid on the last converted dollar, combining the federal tax bracket, state/local income taxes, NIIT (3.8%), and lookback Medicare IRMAA surcharges."
+                    />
+                    <ColumnHelpHeader
+                      label="Future Hurdle"
+                      tooltipTitle="Dynamic Future RMD Hurdle Rate"
+                      tooltipText="The weighted-average effective tax drag on future forced RMDs across retirement (accounting for single-filer survivor brackets and the Social Security tax torpedo). Conversions halt when current marginal cost reaches this rate."
+                    />
+                    <ColumnHelpHeader
+                      label="Limiting Factor"
+                      tooltipTitle="Conversion Limiting Factor"
+                      tooltipText="The specific tax, statutory, or liquidity threshold that capped conversions this year (e.g., reaching the future TE hurdle rate, stopping at an IRMAA cliff tier boundary, protecting 0% LTCG, or preserving cash reserves)."
+                      align="right"
+                    />
+                    <ColumnHelpHeader
+                      label="Projected Tax"
+                      tooltipTitle="Projected Annual Tax & Lookback IRMAA"
+                      tooltipText="Total upfront federal and state income tax liability generated in this conversion year. Any Medicare Part B & D IRMAA surcharges triggered 2 years later (via the 2-year lookback) are noted below."
+                      align="right"
+                    />
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-800/60 font-mono">
-                  {result.yearlyDetails.map((detail) => (
+                  {result.yearlyDetails.map((detail, idx) => (
                     <tr key={detail.year} className="hover:bg-slate-800/30 transition-colors">
                       <td className="py-2.5 px-3 font-bold text-slate-200">
                         {detail.year}{' '}
@@ -268,10 +410,17 @@ export const TaxEquilibriumModal: React.FC<TaxEquilibriumModalProps> = ({
                         {formatPercent(detail.futureBenchmarkRate)}
                       </td>
                       <td className="py-2.5 px-3">
-                        {getLimitingFactorBadge(detail.limitingFactor)}
+                        {getLimitingFactorBadge(detail, idx)}
                       </td>
-                      <td className="py-2.5 px-3 text-right font-medium text-slate-300">
-                        {formatCurrency(detail.projectedAnnualTax)}
+                      <td className="py-2.5 px-3 text-right">
+                        <div className="font-medium text-slate-300">
+                          {formatCurrency(detail.projectedAnnualTax)}
+                        </div>
+                        {detail.projectedAnnualIRMAA > 0 && (
+                          <div className="text-[10px] text-amber-400 font-normal">
+                            +{formatCurrency(detail.projectedAnnualIRMAA)} IRMAA (yr +{STATUTORY_IRMAA_LOOKBACK_YEARS})
+                          </div>
+                        )}
                       </td>
                     </tr>
                   ))}

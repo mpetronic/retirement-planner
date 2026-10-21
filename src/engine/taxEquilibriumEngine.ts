@@ -3,6 +3,8 @@ import { runRetirementSimulation } from './simulationEngine';
 import {
   FED_BRACKETS_MFJ,
   FED_BRACKETS_SINGLE,
+  IRMAA_TIERS_MFJ,
+  IRMAA_TIERS_SINGLE,
   STATUTORY_STD_DEDUCTION_SINGLE_MFJ_MIDPOINT,
   STATUTORY_NIIT_RATE,
   STATUTORY_NIIT_THRESHOLD_SINGLE,
@@ -61,6 +63,9 @@ export interface YearlyTaxEquilibriumPoint {
   marginalRate: number; // Marginal effective tax + IRMAA rate on the last conversion dollar
   futureBenchmarkRate: number; // Hurdle rate at this iteration
   limitingFactor: TELimitingFactor;
+  limitingTier?: number; // Specific Medicare IRMAA tier number (e.g. 1, 2, 3...) when limited by IRMAA
+  limitingThreshold?: number; // MAGI ceiling threshold for the limiting IRMAA tier
+  limitingDetail?: string; // Clear human-readable explanation of why conversions stopped
   projectedAnnualTax: number;
   projectedAnnualIRMAA: number;
 }
@@ -284,6 +289,9 @@ export function calculateTaxEquilibriumSchedule(
     let currentOptimalConversion = 0;
     let limitingFactor: TELimitingFactor = 'Matched Future TE Benchmark';
     let lastMarginalRate = 0;
+    let limitingTier: number | undefined;
+    let limitingThreshold: number | undefined;
+    let limitingDetail: string | undefined;
 
     for (let phaseIdx = 0; phaseIdx < CONVERGENCE_TEST_STEPS.length; phaseIdx++) {
       const step = CONVERGENCE_TEST_STEPS[phaseIdx];
@@ -294,6 +302,9 @@ export function calculateTaxEquilibriumSchedule(
         // Check pre-tax balance constraint
         if (nextConversion > availablePreTax) {
           limitingFactor = 'Pre-Tax IRA Depleted';
+          limitingTier = undefined;
+          limitingThreshold = undefined;
+          limitingDetail = 'Traditional pre-tax IRA balance fully converted to Roth. No remaining pre-tax assets to convert.';
           break;
         }
 
@@ -306,6 +317,9 @@ export function calculateTaxEquilibriumSchedule(
         const totalConversionTax = nextEval.conversionYearTax - currentRun.conversionYearTax;
         if (totalConversionTax > maxUsableTaxLiquidity && maxUsableTaxLiquidity > 0) {
           limitingFactor = 'Capped by Cash Reserves';
+          limitingTier = undefined;
+          limitingThreshold = undefined;
+          limitingDetail = `Conversion taxes would deplete non-retirement cash and brokerage below your target safety runway (${runwayMonths} months of living expenses).`;
           break;
         }
 
@@ -319,11 +333,28 @@ export function calculateTaxEquilibriumSchedule(
         const deltaIRMAA = nextEval.lookbackIRMAA - curEval.lookbackIRMAA;
         if (deltaIRMAA > 0 && deltaIRMAA / step > IRMAA_CLIFF_DRAG_DETECTION_THRESHOLD) {
           limitingFactor = 'IRMAA Cliff Boundary';
+          const isSingle = (simulateSurvivor || inputs.isSingleFiler);
+          const tiers = isSingle ? IRMAA_TIERS_SINGLE : IRMAA_TIERS_MFJ;
+          const nextTierNum = nextEval.irmaaRow?.surchargeTier && nextEval.irmaaRow.surchargeTier > 0 
+            ? nextEval.irmaaRow.surchargeTier 
+            : 1;
+          limitingTier = nextTierNum;
+          const prevTierIndex = Math.max(0, nextTierNum - 1);
+          const cpiFactor = curEval.ledgerRow?.cpiFactor || 1;
+          const baseThreshold = tiers[prevTierIndex]?.limit ?? tiers[0].limit;
+          limitingThreshold = baseThreshold * cpiFactor;
+          const lookbackYear = year + STATUTORY_IRMAA_LOOKBACK_YEARS;
+          const formattedThreshold = new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 }).format(limitingThreshold);
+          const formattedDelta = new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 }).format(deltaIRMAA);
+          limitingDetail = `Converting more would push MAGI across the IRMAA Tier ${nextTierNum} boundary (${formattedThreshold}), adding ${formattedDelta}/yr in Medicare Part B & D surcharges in ${lookbackYear} (2-year lookback).`;
           break;
         }
 
         if (marginalRate > dynamicHurdleRate) {
           limitingFactor = 'Matched Future TE Benchmark';
+          limitingTier = undefined;
+          limitingThreshold = undefined;
+          limitingDetail = `Marginal tax cost of conversion (${(marginalRate * 100).toFixed(1)}%) reached the dynamic future RMD hurdle rate (${(dynamicHurdleRate * 100).toFixed(1)}%). Converting more would pay higher taxes now than taking future RMDs.`;
           break;
         }
 
@@ -333,6 +364,14 @@ export function calculateTaxEquilibriumSchedule(
 
       // Back up one step if not the final phase, so the finer step can approach precisely
       solvedSchedule[year] = currentOptimalConversion;
+    }
+
+    if (!limitingDetail) {
+      if (limitingFactor === 'Matched Future TE Benchmark') {
+        limitingDetail = `Baseline ordinary income places you at or above the future TE hurdle rate (${(dynamicHurdleRate * 100).toFixed(1)}%). No conversion recommended.`;
+      } else {
+        limitingDetail = limitingFactor;
+      }
     }
 
     // Capture finalized optimal amount for this year
@@ -355,6 +394,9 @@ export function calculateTaxEquilibriumSchedule(
       marginalRate: lastMarginalRate > 0 ? lastMarginalRate : DEFAULT_TAX_EQUILIBRIUM_FLOOR_RATE,
       futureBenchmarkRate: dynamicHurdleRate,
       limitingFactor,
+      limitingTier,
+      limitingThreshold,
+      limitingDetail,
       projectedAnnualTax: finalYearEval.conversionYearTax,
       projectedAnnualIRMAA: finalYearEval.lookbackIRMAA,
     });

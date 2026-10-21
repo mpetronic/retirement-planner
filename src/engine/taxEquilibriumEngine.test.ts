@@ -91,6 +91,13 @@ describe('taxEquilibriumEngine', () => {
       expect(detail.marginalRate).toBeGreaterThan(0);
       expect(detail.futureBenchmarkRate).toBeGreaterThan(0);
       expect(detail.limitingFactor).toBeDefined();
+      expect(detail.limitingDetail).toBeDefined();
+      expect(detail.limitingDetail!.length).toBeGreaterThan(5);
+
+      if (detail.limitingFactor === 'IRMAA Cliff Boundary') {
+        expect(detail.limitingTier).toBeGreaterThanOrEqual(1);
+        expect(detail.limitingThreshold).toBeGreaterThan(100000);
+      }
     }
 
     // Lifetime metrics
