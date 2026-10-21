@@ -23,6 +23,36 @@ export interface ActualExpense {
   createdAt: string; // ISO timestamp
   updatedAt: string; // ISO timestamp
 }
+export interface StatementColumnMapping {
+  dateColumn: string;
+  descriptionColumn: string;
+  amountMode: 'single' | 'split_debit_credit';
+  amountColumn?: string;
+  debitColumn?: string;
+  creditColumn?: string;
+  chargesAreNegative: boolean; // true for Capital One (sales negative, payments/returns positive)
+  categoryColumn?: string;
+  typeColumn?: string;
+  notesColumn?: string;
+  payerColumn?: string;
+}
+
+export interface StatementFormatProfile {
+  id: string;
+  nickname: string; // e.g. "Capital One Venture", "Chase Sapphire", "Navy Federal Checking"
+  fingerprint: string; // Normalized sorted header token hash
+  mapping: StatementColumnMapping;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface LearnedMerchantRule {
+  normalizedKey: string; // Canonical cleaned merchant root, e.g. "GIANT FOOD"
+  category: string;
+  lineItem: string;
+  lastUsed: string;
+  matchCount: number;
+}
 
 export interface ExpenseSummaryByCategory {
   categoryId: string;
@@ -90,6 +120,13 @@ export interface StorageAdapter {
   // Pending queue sync
   getPendingSyncExpenses(): Promise<ActualExpense[]>;
   markExpensesSynced(expenseIds: string[]): Promise<void>;
+
+  // Sovereign statement format profiles & learned merchant memory
+  getStatementProfiles?(): Promise<StatementFormatProfile[]>;
+  saveStatementProfile?(profile: StatementFormatProfile): Promise<void>;
+  deleteStatementProfile?(id: string): Promise<void>;
+  getLearnedMerchantRules?(): Promise<LearnedMerchantRule[]>;
+  saveLearnedMerchantRulesBatch?(rules: LearnedMerchantRule[]): Promise<void>;
 
   // Full backup & sovereign export
   getAllExpensesFromCloud?(): Promise<Array<Record<string, unknown>>>;
