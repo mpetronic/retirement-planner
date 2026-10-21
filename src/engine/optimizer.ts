@@ -3,7 +3,7 @@ import { runRetirementSimulation, calculateSSBenefit, calculateSpousalBenefit } 
 import { CONVERSION_TARGET_PRESETS } from './taxRates2026';
 
 export interface OptimizationResult {
-  bestStrategy: 'flat' | 'fill-to-target';
+  bestStrategy: 'flat' | 'fill-to-target' | 'custom';
   bestAnnualRothConversion: number;
   bestTargetValue: number | null;
   bestYourSSAge: number;
@@ -14,22 +14,22 @@ export interface OptimizationResult {
     lifetimeTaxes: number;
     lifetimeIRMAA: number;
     endingRoth: number;
-    spousalAddOnAnnual: number;   // Annual $ boost from spousal floor (0 if wife's own benefit exceeds floor)
-    survivorBenefitAnnual: number; // Wife's annual SS in the first survivor year under the optimal plan
+    spousalAddOnAnnual: number;   // Annual $ boost from spousal floor (0 if wife's own benefit exceeds floor or no concurrent claiming)
+    survivorBenefitAnnual: number; // Wife's annualized SS in first survivor year under the optimal plan (0 if single or wife predeceases)
   };
 }
 
 export type OptimizationGoal = 'min_taxes' | 'max_portfolio' | 'min_surcharges' | 'max_roth';
 
 interface RothCandidate {
-  strategy: 'flat' | 'fill-to-target';
+  strategy: 'flat' | 'fill-to-target' | 'custom';
   annualConversion: number;
   targetValue: number | null;
 }
 
 /**
  * Sweeps the entire 3D input parameter grid:
- * - Roth conversion strategies (Flat annual amounts vs. Target MAGI/IRMAA ceilings)
+ * - Roth conversion strategies (Flat annual amounts vs. Target MAGI/IRMAA ceilings vs. Active Custom schedule)
  * - Your SS Claim Age (62-70)
  * - Spouse SS Claim Age (62-70)
  * to locate the optimal retirement scenario for a specific goal.
@@ -42,6 +42,27 @@ export function optimizeRetirementScenario(
 ): OptimizationResult {
   // Normalize goal string defensively (handling hyphens or underscores)
   const normalizedGoal = (goalInput || 'max_portfolio').replace(/-/g, '_') as OptimizationGoal;
+
+  if (!inputs.isConfigured) {
+    return {
+      bestStrategy: inputs.rothConversionStrategy === 'fill-to-target'
+        ? 'fill-to-target'
+        : (inputs.rothConversionStrategy === 'custom' ? 'custom' : 'flat'),
+      bestAnnualRothConversion: inputs.annualRothConversion,
+      bestTargetValue: inputs.rothConversionTargetValue,
+      bestYourSSAge: inputs.you.targetSSClaimingAge ?? 67,
+      bestWifeSSAge: inputs.wife.targetSSClaimingAge ?? 67,
+      metricValue: 0,
+      details: {
+        endingEstate: 0,
+        lifetimeTaxes: 0,
+        lifetimeIRMAA: 0,
+        endingRoth: 0,
+        spousalAddOnAnnual: 0,
+        survivorBenefitAnnual: 0,
+      },
+    };
+  }
 
   const parseBirthYear = (dateStr: string | undefined, fallback: number): number => {
     if (!dateStr) return fallback;
@@ -57,8 +78,13 @@ export function optimizeRetirementScenario(
   
   const yourBirthYear = parseBirthYear(inputs.you.birthDate, 1960);
   const deathYear = yourBirthYear + (inputs.you.longevityAge ?? 85);
+  const wifeBirthYear = parseBirthYear(inputs.wife.birthDate, 1962);
+  const wifeDeathYear = wifeBirthYear + (inputs.wife.longevityAge ?? 85);
 
-  let bestStrategy: 'flat' | 'fill-to-target' = inputs.rothConversionStrategy === 'fill-to-target' ? 'fill-to-target' : 'flat';
+  let bestStrategy: 'flat' | 'fill-to-target' | 'custom' =
+    inputs.rothConversionStrategy === 'fill-to-target'
+      ? 'fill-to-target'
+      : (inputs.rothConversionStrategy === 'custom' ? 'custom' : 'flat');
   let bestAnnualRothConversion = inputs.annualRothConversion;
   let bestTargetValue = inputs.rothConversionTargetValue;
   let bestYourSSAge = inputs.you.targetSSClaimingAge ?? 67;
@@ -78,20 +104,23 @@ export function optimizeRetirementScenario(
   }
 
   // Target ceiling candidates: Federal Brackets (Taxable Income) and IRMAA cliffs (MAGI) derived directly from statutory presets
-  const targetCeilings = CONVERSION_TARGET_PRESETS.map((p) =>
-    p.type === 'irmaa' ? (p.targetValue === 750000 ? 749999 : p.targetValue - 1) : p.targetValue
-  );
+  const targetCeilings = CONVERSION_TARGET_PRESETS.map((p) => p.targetValue);
 
   for (const targetVal of targetCeilings) {
     rothCandidates.push({ strategy: 'fill-to-target', annualConversion: inputs.annualRothConversion, targetValue: targetVal });
   }
 
-  // Also include the user's current settings if not already in candidate list
-  if (inputs.annualRothConversion > 0 && !rothCandidates.some(c => c.strategy === 'flat' && c.annualConversion === inputs.annualRothConversion)) {
-    rothCandidates.push({ strategy: 'flat', annualConversion: inputs.annualRothConversion, targetValue: null });
-  }
-  if (inputs.rothConversionTargetValue !== null && !rothCandidates.some(c => c.strategy === 'fill-to-target' && c.targetValue === inputs.rothConversionTargetValue)) {
-    rothCandidates.push({ strategy: 'fill-to-target', annualConversion: inputs.annualRothConversion, targetValue: inputs.rothConversionTargetValue });
+  // Also include the user's active settings if not already in candidate list
+  if (inputs.rothConversionStrategy === 'flat') {
+    if (inputs.annualRothConversion > 0 && !rothCandidates.some(c => c.strategy === 'flat' && c.annualConversion === inputs.annualRothConversion)) {
+      rothCandidates.push({ strategy: 'flat', annualConversion: inputs.annualRothConversion, targetValue: null });
+    }
+  } else if (inputs.rothConversionStrategy === 'fill-to-target') {
+    if (inputs.rothConversionTargetValue !== null && !rothCandidates.some(c => c.strategy === 'fill-to-target' && c.targetValue === inputs.rothConversionTargetValue)) {
+      rothCandidates.push({ strategy: 'fill-to-target', annualConversion: inputs.annualRothConversion, targetValue: inputs.rothConversionTargetValue });
+    }
+  } else if (inputs.rothConversionStrategy === 'custom') {
+    rothCandidates.push({ strategy: 'custom', annualConversion: inputs.annualRothConversion, targetValue: inputs.rothConversionTargetValue });
   }
 
   const yourAgeChoices = [62, 63, 64, 65, 66, 67, 68, 69, 70];
@@ -112,7 +141,7 @@ export function optimizeRetirementScenario(
           },
           wife: {
             ...inputs.wife,
-            targetSSClaimingAge: inputs.isSingleFiler ? inputs.wife.targetSSClaimingAge : wifeAge,
+            targetSSClaimingAge: inputs.isSingleFiler ? (inputs.wife.targetSSClaimingAge ?? 67) : wifeAge,
           },
         };
 
@@ -126,18 +155,34 @@ export function optimizeRetirementScenario(
         const lifetimeIRMAA = ledger.reduce((sum, r) => sum + r.combinedSurchargeAnnual, 0);
         const endingRoth = finalRow.endYourRothIRA + finalRow.endWifeRothIRA;
 
-        // Spousal add-on: find the first year where wife is collecting SS and measure
-        // how much the spousal floor boosted her above her own earned benefit.
+        // Spousal add-on: find the first year where both spouses are concurrently collecting SS
+        // and measure how much the spousal floor boosted her above her own earned benefit.
         let spousalAddOnAnnual = 0;
-        if (!testInputs.isSingleFiler && testInputs.wife.targetSSClaimingAge) {
-          const ownWifeSS = calculateSSBenefit(testInputs.wife.estimatedPIA || 0, testInputs.wife.targetSSClaimingAge) * 12;
-          const spousalFloor = calculateSpousalBenefit(testInputs.you.estimatedPIA || 0, testInputs.wife.targetSSClaimingAge) * 12;
-          spousalAddOnAnnual = Math.max(0, spousalFloor - ownWifeSS);
+        if (!testInputs.isSingleFiler && testInputs.wife.targetSSClaimingAge && testInputs.you.targetSSClaimingAge) {
+          const effectiveWifeSSAge = testInputs.wife.targetSSClaimingAge;
+          const ownWifeSSBase = calculateSSBenefit(testInputs.wife.estimatedPIA || 0, effectiveWifeSSAge) * 12;
+          const spousalFloorBase = calculateSpousalBenefit(testInputs.you.estimatedPIA || 0, effectiveWifeSSAge) * 12;
+          if (spousalFloorBase > ownWifeSSBase) {
+            const firstConcurrentYear = Math.max(yourBirthYear + yourAge, wifeBirthYear + effectiveWifeSSAge);
+            const concurrentRow = ledger.find(r => r.year >= firstConcurrentYear && r.year < Math.min(deathYear, wifeDeathYear));
+            if (concurrentRow) {
+              spousalAddOnAnnual = (spousalFloorBase - ownWifeSSBase) * concurrentRow.cpiFactor;
+            }
+          }
         }
 
-        // Survivor benefit: wife's SS in the first survivor year, already inflation-adjusted in the ledger.
-        const survivorRow = ledger.find((r) => r.year === deathYear);
-        const survivorBenefitAnnual = survivorRow ? survivorRow.wifeSS : 0;
+        // Survivor benefit: wife's annualized SS in first survivor year under the optimal plan.
+        let survivorBenefitAnnual = 0;
+        if (!testInputs.isSingleFiler && wifeDeathYear > deathYear) {
+          const effectiveWifeSSAge = testInputs.wife.targetSSClaimingAge ?? 67;
+          const survivorSSAnnualBase = calculateSSBenefit(testInputs.you.estimatedPIA || 0, yourAge) * 12;
+          const survivorWifeSSAnnualBase = calculateSSBenefit(testInputs.wife.estimatedPIA || 0, effectiveWifeSSAge) * 12;
+          const survivorFloorBase = (testInputs.you.estimatedPIA || 0) * 0.825 * 12;
+          const baseSurvivorAnnual = Math.max(survivorSSAnnualBase, survivorWifeSSAnnualBase, survivorFloorBase);
+
+          const survivorRow = ledger.find((r) => r.year >= deathYear) || finalRow;
+          survivorBenefitAnnual = baseSurvivorAnnual * survivorRow.cpiFactor;
+        }
 
         let score = 0;
         switch (normalizedGoal) {
@@ -173,7 +218,7 @@ export function optimizeRetirementScenario(
           if (score < bestScore) {
             isBetter = true;
           } else if (score === bestScore) {
-            if (endingEstate > bestEndingEstate) {
+            if (endingEstate > bestEndingEstate || (endingEstate === bestEndingEstate && lifetimeTaxes < bestLifetimeTaxes)) {
               isBetter = true;
             }
           }
@@ -187,7 +232,7 @@ export function optimizeRetirementScenario(
           bestAnnualRothConversion = candidate.annualConversion;
           bestTargetValue = candidate.targetValue;
           bestYourSSAge = yourAge;
-          bestWifeSSAge = wifeAge;
+          bestWifeSSAge = inputs.isSingleFiler ? (inputs.wife.targetSSClaimingAge ?? 67) : wifeAge;
           bestResultDetails = {
             endingEstate,
             lifetimeTaxes,
@@ -207,7 +252,7 @@ export function optimizeRetirementScenario(
     bestTargetValue,
     bestYourSSAge,
     bestWifeSSAge,
-    metricValue: bestScore,
+    metricValue: isFinite(bestScore) ? bestScore : 0,
     details: bestResultDetails || {
       endingEstate: 0,
       lifetimeTaxes: 0,

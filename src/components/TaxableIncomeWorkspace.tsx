@@ -32,7 +32,9 @@ import {
   HeartPulse,
   Edit3,
   TrendingUp,
+  Scale,
 } from 'lucide-react';
+import { TaxEquilibriumModal } from './TaxEquilibriumModal';
 import { optimizeRetirementScenario, OptimizationResult, OptimizationGoal } from '../engine/optimizer';
 import { 
   getTargetPresetInfo, 
@@ -44,6 +46,46 @@ import { CustomRothScenarioModal } from './CustomRothScenarioModal';
 
 ChartJS.register(...registerables);
 
+interface ColumnHelpHeaderProps {
+  label: string;
+  tooltipTitle: string;
+  tooltipText: string;
+  align?: 'left' | 'right';
+  className?: string;
+}
+
+const ColumnHelpHeader: React.FC<ColumnHelpHeaderProps> = ({
+  label,
+  tooltipTitle,
+  tooltipText,
+  align = 'left',
+  className = '',
+}) => {
+  return (
+    <th className={`py-2.5 px-3 select-none ${className}`}>
+      <div className="group relative inline-flex items-center gap-1.5 cursor-help">
+        <span className="font-bold">{label}</span>
+        <Info className="w-3 h-3 text-slate-500 group-hover:text-emerald-400 transition-colors shrink-0" />
+
+        {/* Hover Hint Popup */}
+        <div
+          className={`absolute top-full mt-1.5 ${
+            align === 'right' ? 'right-0' : 'left-0'
+          } hidden group-hover:block z-30 w-72 p-3 rounded-xl bg-slate-950 border border-slate-700 shadow-2xl text-xs text-slate-200 normal-case font-sans whitespace-normal break-words pointer-events-none space-y-1.5`}
+        >
+          <div className="font-bold text-slate-100 flex items-center gap-1.5 text-xs border-b border-slate-800/80 pb-1 text-emerald-400 whitespace-normal">
+            <Info className="w-3.5 h-3.5 shrink-0" />
+            <span>{tooltipTitle}</span>
+          </div>
+          <p className="text-slate-300 text-[11px] leading-relaxed font-normal whitespace-normal break-words">
+            {tooltipText}
+          </p>
+        </div>
+      </div>
+    </th>
+  );
+};
+
 interface TaxableIncomeWorkspaceProps {
   ledger: SimulationResultRow[];
   inputs: AppStateInputs;
@@ -54,7 +96,7 @@ interface TaxableIncomeWorkspaceProps {
     targetValue: number | null,
     yourAge: number,
     wifeAge: number,
-    strategy?: 'flat' | 'fill-to-target'
+    strategy?: 'flat' | 'fill-to-target' | 'custom'
   ) => void;
   onUpdateStrategy: (strategy: 'flat' | 'fill-to-target' | 'custom') => void;
   onUpdateTargetValue: (val: number | null) => void;
@@ -110,6 +152,7 @@ export const TaxableIncomeWorkspace: React.FC<TaxableIncomeWorkspaceProps> = ({
 
   // Optimizer modal visual state
   const [showOptimizerModal, setShowOptimizerModal] = useState(false);
+  const [showTEModal, setShowTEModal] = useState(false);
   const [isOptimizingScan, setIsOptimizingScan] = useState(false);
   const [selectedGoal, setSelectedGoal] = useState<OptimizationGoal>('max_portfolio');
   const [optimizationResult, setOptimizationResult] = useState<OptimizationResult | null>(null);
@@ -200,23 +243,10 @@ export const TaxableIncomeWorkspace: React.FC<TaxableIncomeWorkspaceProps> = ({
       const otherIncome = r.otherTaxableIncome || 0;
 
       const grossNonConvAGI = Math.max(0, r.fedAGI - rothConv);
+      const grossTotalAGI = r.fedAGI;
       const stdDeduction = r.standardDeduction || 0;
       const netNonConvTaxable = Math.max(0, grossNonConvAGI - stdDeduction);
       const totalTaxableIncome = r.taxableIncome;
-
-      // Scale all income components proportionally to their share of total gross income,
-      // ensuring the stacked bar components exactly sum up to Total Taxable Income,
-      // preserving visibility of dividends, interest, and capital gains in all years.
-      const totalGrossAGI = taxableSalary + taxableSS + forcedRMDs + preTaxDraws + investmentIncome + otherIncome + rothConv;
-      const globalScale = (totalGrossAGI > 0 && totalTaxableIncome > 0) ? (totalTaxableIncome / totalGrossAGI) : 0;
-
-      const netSS = taxableSS * globalScale;
-      const netSalary = taxableSalary * globalScale;
-      const netForcedRMDs = forcedRMDs * globalScale;
-      const netPreTaxDraws = preTaxDraws * globalScale;
-      const netInvestment = investmentIncome * globalScale;
-      const netOther = otherIncome * globalScale;
-      const taxableRothConv = rothConv * globalScale;
 
       return {
         year: r.year,
@@ -225,16 +255,16 @@ export const TaxableIncomeWorkspace: React.FC<TaxableIncomeWorkspaceProps> = ({
         isSingle,
         cpiFactor: r.cpiFactor,
         grossNonConvAGI,
+        grossTotalAGI,
         stdDeduction,
         netNonConvTaxable,
         rothConv,
-        taxableRothConv,
-        netSS,
-        netSalary,
-        netForcedRMDs,
-        netPreTaxDraws,
-        netInvestment,
-        netOther,
+        rawSS: taxableSS,
+        rawSalary: taxableSalary,
+        rawForcedRMDs: forcedRMDs,
+        rawPreTaxDraws: preTaxDraws,
+        rawInvestment: investmentIncome,
+        rawOther: otherIncome,
         rawDividends: (r.taxableDividends || 0) + (r.taxableInterest || 0),
         rawCapGains: r.capitalGainsTriggered || 0,
         totalTaxableIncome,
@@ -278,76 +308,106 @@ export const TaxableIncomeWorkspace: React.FC<TaxableIncomeWorkspaceProps> = ({
       borderDash: [6, 4],
       pointRadius: 0,
       pointHoverRadius: 5,
-      order: 1,
+      order: 0,
     };
   }, [isFillToTarget, activeTarget, processedRows]);
 
-  // Chart datasets configuration
+  // Chart datasets configuration: Two overlayed stacks per year
+  // - Wider background stack (stack: 'gross', barPercentage: 0.85): Gross Income Sources (exact unscaled dollars)
+  // - Narrower foreground solid bar (stack: 'taxable', barPercentage: 0.45, order: 1): Line 15 Taxable Income
   const chartData = useMemo(() => {
     const isDataPresent = (data: number[]) => data.some((v) => Math.abs(v) > 0.01);
 
-    const ssData = processedRows.map((r) => r.netSS);
-    const salaryData = processedRows.map((r) => r.netSalary);
-    const forcedRMDsData = processedRows.map((r) => r.netForcedRMDs);
-    const preTaxDrawsData = processedRows.map((r) => r.netPreTaxDraws);
-    const investmentData = processedRows.map((r) => r.netInvestment);
-    const rothConvData = processedRows.map((r) => r.taxableRothConv);
+    const taxableIncomeData = processedRows.map((r) => r.totalTaxableIncome);
+    const ssData = processedRows.map((r) => r.rawSS);
+    const salaryData = processedRows.map((r) => r.rawSalary);
+    const forcedRMDsData = processedRows.map((r) => r.rawForcedRMDs);
+    const preTaxDrawsData = processedRows.map((r) => r.rawPreTaxDraws);
+    const investmentData = processedRows.map((r) => r.rawInvestment);
+    const rothConvData = processedRows.map((r) => r.rothConv);
 
     const rawDatasets = [
+      // 1. Foreground Narrower Bar: Total Taxable Income (Post-Deduction)
+      {
+        label: 'Total Taxable Income',
+        data: taxableIncomeData,
+        backgroundColor: 'rgba(229, 231, 235, 0.95)', // very light gray (gray-200)
+        borderWidth: 0,
+        stack: 'taxable',
+        grouped: false,
+        barPercentage: 0.26,
+        order: 1, // Render in front of background stack
+      },
+
+      // 2. Background Wider Stack: Gross Income Components
       isDataPresent(ssData) && {
-        label: 'Taxable Social Security',
+        label: 'Social Security',
         data: ssData,
-        backgroundColor: 'rgba(59, 130, 246, 0.75)', // blue-500
+        backgroundColor: 'rgba(59, 130, 246, 0.65)', // blue-500
         borderColor: '#3b82f6',
         borderWidth: 1,
-        stack: 'taxable',
-        order: 2,
+        stack: 'gross',
+        grouped: false,
+        barPercentage: 0.85,
+        order: 3,
       },
       isDataPresent(salaryData) && {
-        label: 'Taxable Active Salaries',
+        label: 'Active Salaries',
         data: salaryData,
-        backgroundColor: 'rgba(139, 92, 246, 0.75)', // violet-500
+        backgroundColor: 'rgba(139, 92, 246, 0.65)', // violet-500
         borderColor: '#8b5cf6',
         borderWidth: 1,
-        stack: 'taxable',
-        order: 3,
+        stack: 'gross',
+        grouped: false,
+        barPercentage: 0.85,
+        order: 4,
       },
       isDataPresent(forcedRMDsData) && {
         label: 'Forced RMDs',
         data: forcedRMDsData,
-        backgroundColor: 'rgba(245, 158, 11, 0.75)', // amber-500
+        backgroundColor: 'rgba(245, 158, 11, 0.65)', // amber-500
         borderColor: '#f59e0b',
         borderWidth: 1,
-        stack: 'taxable',
-        order: 4,
+        stack: 'gross',
+        grouped: false,
+        barPercentage: 0.85,
+        order: 5,
       },
       isDataPresent(preTaxDrawsData) && {
         label: 'Pre-Tax IRA Draws',
         data: preTaxDrawsData,
-        backgroundColor: 'rgba(217, 70, 239, 0.75)', // fuchsia-500
+        backgroundColor: 'rgba(217, 70, 239, 0.65)', // fuchsia-500
         borderColor: '#d946ef',
         borderWidth: 1,
-        stack: 'taxable',
-        order: 5,
+        stack: 'gross',
+        grouped: false,
+        barPercentage: 0.85,
+        order: 6,
       },
       isDataPresent(investmentData) && {
-        label: 'Taxable Dividends & Capital Gains',
+        label: 'Dividends & Capital Gains',
         data: investmentData,
-        backgroundColor: 'rgba(236, 72, 153, 0.75)', // pink-500
+        backgroundColor: 'rgba(236, 72, 153, 0.65)', // pink-500
         borderColor: '#ec4899',
         borderWidth: 1,
-        stack: 'taxable',
-        order: 6,
+        stack: 'gross',
+        grouped: false,
+        barPercentage: 0.85,
+        order: 7,
       },
       isDataPresent(rothConvData) && {
         label: 'Roth Conversion',
         data: rothConvData,
-        backgroundColor: 'rgba(16, 185, 129, 0.9)', // emerald-500
+        backgroundColor: 'rgba(16, 185, 129, 0.85)', // emerald-500
         borderColor: '#10b981',
         borderWidth: 1,
-        stack: 'taxable',
-        order: 7,
+        stack: 'gross',
+        grouped: false,
+        barPercentage: 0.85,
+        order: 8,
       },
+
+      // 3. Target Benchmark Ceiling Line
       benchmarkLineData && {
         type: 'line' as const,
         label: benchmarkLineData.label,
@@ -358,7 +418,7 @@ export const TaxableIncomeWorkspace: React.FC<TaxableIncomeWorkspaceProps> = ({
         fill: false,
         pointRadius: 2,
         pointHoverRadius: 5,
-        order: 1,
+        order: 0, // In front of everything
       },
     ];
 
@@ -483,27 +543,28 @@ export const TaxableIncomeWorkspace: React.FC<TaxableIncomeWorkspaceProps> = ({
               const r = processedRows[idx];
               const lines = [
                 '-----------------------------------',
-                `Gross Federal AGI: ${formatCurrency(r.grossNonConvAGI + r.rothConv)}`,
+                `Gross Federal AGI: ${formatCurrency(r.grossTotalAGI)}`,
                 `Deductions (Std / Itemized): -${formatCurrency(r.stdDeduction)}`,
-                `Net Non-Conv Taxable: ${formatCurrency(r.netNonConvTaxable)}`,
-                `Roth Conversion: +${formatCurrency(r.rothConv)}`,
                 `TOTAL TAXABLE INCOME: ${formatCurrency(r.totalTaxableIncome)}`,
               ];
 
               if (benchmarkLineData && benchmarkLineData.data[idx] !== undefined) {
                 const limit = benchmarkLineData.data[idx];
-                const headroom = limit - r.totalTaxableIncome;
+                const rawHeadroom = limit - r.totalTaxableIncome;
+                const isZero = Math.abs(rawHeadroom) < 1;
+                const headroomText = isZero ? '$0' : rawHeadroom > 0 ? `+${formatCurrency(rawHeadroom)}` : formatCurrency(rawHeadroom);
                 lines.push(
                   `Target Upper Limit: ${formatCurrency(limit)}`,
-                  `Headroom Remaining: ${headroom >= 0 ? '+' : ''}${formatCurrency(headroom)}`
+                  `Headroom Remaining: ${headroomText}`
                 );
               }
 
-              lines.push(
-                '-----------------------------------',
-                `Dividends & Interest: ${formatCurrency(r.rawDividends)}`,
-                `Net Realized Cap Gains: ${formatCurrency(r.rawCapGains)} (excl. basis)`
-              );
+              if (r.rawCapGains > 0) {
+                lines.push(
+                  '-----------------------------------',
+                  `Net Realized Cap Gains: ${formatCurrency(r.rawCapGains)} (excl. basis)`
+                );
+              }
 
               return lines.join('\n');
             },
@@ -512,17 +573,18 @@ export const TaxableIncomeWorkspace: React.FC<TaxableIncomeWorkspaceProps> = ({
       },
       scales: {
         x: {
+          stacked: true,
           grid: { color: 'rgba(51, 65, 85, 0.3)' },
           ticks: { color: '#94a3b8', font: { size: 10 } },
         },
         y: {
+          stacked: true,
           grid: { color: 'rgba(51, 65, 85, 0.3)' },
           ticks: {
             color: '#94a3b8',
             font: { size: 10 },
             callback: (val: string | number) => `$${(Number(val) / 1000).toFixed(0)}k`,
           },
-          stacked: true,
         },
       },
     };
@@ -551,13 +613,14 @@ export const TaxableIncomeWorkspace: React.FC<TaxableIncomeWorkspaceProps> = ({
     let breachedYears = 0;
 
     if (benchmarkLineData) {
-      avgHeadroom = targetRows.reduce((sum, r) => {
+      const rawAvg = targetRows.reduce((sum, r) => {
         const rowIdx = ledger.findIndex((l) => l.year === r.year);
         const limit = benchmarkLineData.data[rowIdx >= 0 ? rowIdx : 0];
         return sum + (limit - r.totalTaxableIncome);
       }, 0) / (targetRows.length || 1);
 
-      breachedYears = processedRows.filter((r, idx) => r.totalTaxableIncome > benchmarkLineData.data[idx]).length;
+      avgHeadroom = Math.abs(rawAvg) < 1 ? 0 : rawAvg;
+      breachedYears = processedRows.filter((r, idx) => (r.totalTaxableIncome - benchmarkLineData.data[idx]) >= 1).length;
     }
 
     return { convStart, convEnd, maxTaxable, avgHeadroom, totalConversions, breachedYears };
@@ -737,6 +800,16 @@ export const TaxableIncomeWorkspace: React.FC<TaxableIncomeWorkspaceProps> = ({
             >
               <Sparkles className="w-3.5 h-3.5 fill-slate-950" />
               <span>Run Strategy Optimizer</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setShowTEModal(true)}
+              className="flex items-center gap-1.5 px-3 py-1.5 bg-gradient-to-r from-teal-500 to-emerald-500 hover:from-teal-400 hover:to-emerald-400 text-slate-950 rounded-xl text-xs font-bold transition-all shadow-md shadow-teal-950/50 cursor-pointer active:scale-95 shrink-0"
+              title="Calculate dynamic Tax Equilibrium schedule balancing current conversion cost against future forced RMD drag"
+            >
+              <Scale className="w-3.5 h-3.5" />
+              <span>Tax Equilibrium (TE)</span>
             </button>
           </div>
         </div>
@@ -1016,11 +1089,17 @@ export const TaxableIncomeWorkspace: React.FC<TaxableIncomeWorkspaceProps> = ({
 
       {/* Main Stacked Bar Chart */}
       <div className="glass-panel p-3.5 rounded-2xl border border-slate-800 bg-slate-900/40 shadow-xl space-y-2">
-        <div className="flex items-center justify-between">
-          <h3 className="text-sm font-bold text-slate-200 uppercase tracking-wider flex items-center gap-2">
-            <Calculator className="w-4 h-4 text-emerald-400" />
-            Taxable Income & Roth Conversion Stack
-          </h3>
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <div>
+            <h3 className="text-sm font-bold text-slate-200 uppercase tracking-wider flex items-center gap-2">
+              <Calculator className="w-4 h-4 text-emerald-400" />
+              Taxable Income & Gross Income Sources
+            </h3>
+            <p className="text-[11px] text-slate-400 mt-0.5">
+              <span className="font-semibold text-gray-200">Narrow Solid Bar:</span> Net Taxable Income (compared against the bracket limit).{' '}
+              <span className="font-semibold text-slate-300">Wider Background Bar:</span> Gross Income Streams (full conversions & dividends).
+            </p>
+          </div>
           {hasHiddenDatasets && (
             <button
               onClick={() => {
@@ -1061,23 +1140,64 @@ export const TaxableIncomeWorkspace: React.FC<TaxableIncomeWorkspaceProps> = ({
         <div className="overflow-auto max-h-[600px] rounded-xl border border-slate-800 bg-slate-950/20 custom-scrollbar">
           <table className="w-full text-left text-xs font-mono border-collapse">
             <thead className="sticky top-0 z-10 bg-slate-900">
-              <tr className="bg-slate-900 border-b border-slate-800 text-slate-400 uppercase text-[10px] tracking-wider">
-                <th className="py-2.5 px-3">Year</th>
-                <th className="py-2.5 px-3">Ages</th>
-                <th className="py-2.5 px-3">Gross Non-Conv AGI</th>
-                <th className="py-2.5 px-3">Std Deduction</th>
-                <th className="py-2.5 px-3">Net Non-Conv Taxable</th>
-                <th className="py-2.5 px-3">Roth Conv</th>
-                <th className="py-2.5 px-3">Total Taxable Income</th>
-                <th className="py-2.5 px-3">Target Limit</th>
-                <th className="py-2.5 px-3">Headroom</th>
+              <tr className="bg-slate-900 border-b border-slate-800 text-slate-400 uppercase text-[10px] tracking-wider whitespace-nowrap">
+                <ColumnHelpHeader
+                  label="Year"
+                  tooltipTitle="Simulation Year"
+                  tooltipText="The calendar tax year modeled in the projection, spanning from retirement plan start through projected longevity."
+                />
+                <ColumnHelpHeader
+                  label="Ages"
+                  tooltipTitle="Attained Ages (You / Spouse)"
+                  tooltipText="Attained ages of the primary taxpayer and spouse during this tax year. Displays a dash ('-') once a spouse exceeds projected longevity."
+                />
+                <ColumnHelpHeader
+                  label="Gross Non-Conv AGI"
+                  tooltipTitle="Gross Non-Conversion Federal AGI"
+                  tooltipText="Total Federal Adjusted Gross Income excluding intentional Roth conversions. Includes taxable Social Security, wages, pre-tax IRA withdrawals, forced RMDs, interest, dividends, and realized capital gains."
+                />
+                <ColumnHelpHeader
+                  label="Std Deduction"
+                  tooltipTitle="Standard / Itemized Deductions"
+                  tooltipText="The deduction reducing gross income, taking the higher of the age-adjusted Federal Standard Deduction (including senior 65+ additions) or total itemized deductions (SALT up to $10,000 + non-QCD charitable donations)."
+                />
+                <ColumnHelpHeader
+                  label="Net Non-Conv Taxable"
+                  tooltipTitle="Net Non-Conversion Taxable Income"
+                  tooltipText="Baseline taxable ordinary income prior to Roth conversions: max(0, Gross Non-Conversion AGI - Deductions). Standard deductions absorb this non-conversion income first before conversions are added."
+                />
+                <ColumnHelpHeader
+                  label="Roth Conv"
+                  tooltipTitle="Intentional Roth Conversion"
+                  tooltipText="Amount converted from traditional pre-tax retirement accounts (Bucket 2) to tax-free Roth accounts (Bucket 3) during the calendar year to optimize long-term bracket utilization."
+                />
+                <ColumnHelpHeader
+                  label="Total Taxable Income"
+                  tooltipTitle="Total Taxable Income (Form 1040 Line 15)"
+                  tooltipText="Final taxable ordinary income after all deductions and Roth conversions: Net Non-Conversion Taxable Income + Roth Conversion. This is the benchmark value compared against tax brackets and IRMAA tiers."
+                />
+                <ColumnHelpHeader
+                  label="Target Limit"
+                  tooltipTitle="Target Benchmark Ceiling"
+                  tooltipText="The upper taxable income limit for the active benchmark (e.g., top of the 22% or 24% bracket, or IRMAA MAGI threshold converted to taxable income ceiling, adjusted for inflation via CPI)."
+                  align="right"
+                />
+                <ColumnHelpHeader
+                  label="Headroom"
+                  tooltipTitle="Remaining Bracket / Tier Headroom"
+                  tooltipText="Remaining capacity before crossing the target limit (Target Limit - Total Taxable Income). Positive (+) indicates room to convert more without crossing the target; negative (-) indicates income exceeding the target benchmark."
+                  align="right"
+                />
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-800/60 text-slate-300">
               {processedRows.map((r, idx) => {
                 const limit = benchmarkLineData?.data[idx];
-                const headroom = limit !== undefined ? limit - r.totalTaxableIncome : null;
-                const isBreached = headroom !== null && headroom < 0;
+                const rawHeadroom = limit !== undefined ? limit - r.totalTaxableIncome : null;
+                const isZero = rawHeadroom !== null && Math.abs(rawHeadroom) < 1;
+                const isBreached = rawHeadroom !== null && rawHeadroom <= -1;
+                const isPositive = rawHeadroom !== null && rawHeadroom >= 1;
+                const headroom = isZero ? 0 : rawHeadroom;
                 const isConvYear = r.rothConv > 0;
 
                 return (
@@ -1118,9 +1238,23 @@ export const TaxableIncomeWorkspace: React.FC<TaxableIncomeWorkspaceProps> = ({
                       {limit !== undefined ? formatCurrency(limit) : '—'}
                     </td>
                     <td className={`py-2 px-3 font-bold ${
-                      headroom === null ? 'text-slate-500' : isBreached ? 'text-rose-400' : 'text-emerald-400'
+                      headroom === null
+                        ? 'text-slate-500'
+                        : isZero
+                        ? 'text-slate-300'
+                        : isBreached
+                        ? 'text-rose-400'
+                        : 'text-emerald-400'
                     }`}>
-                      {headroom !== null ? (headroom >= 0 ? `+${formatCurrency(headroom)}` : formatCurrency(headroom)) : '—'}
+                      {headroom === null ? (
+                        '—'
+                      ) : isZero ? (
+                        '$0'
+                      ) : isPositive ? (
+                        `+${formatCurrency(headroom)}`
+                      ) : (
+                        formatCurrency(headroom)
+                      )}
                     </td>
                   </tr>
                 );
@@ -1246,6 +1380,8 @@ export const TaxableIncomeWorkspace: React.FC<TaxableIncomeWorkspaceProps> = ({
                     <div className="text-base font-black text-slate-100">
                       {optimizationResult.bestStrategy === 'fill-to-target' ? (
                         <>Fill-to-Target ({getTargetPresetInfo(optimizationResult.bestTargetValue)?.description || `Target Limit: ${formatCurrency(optimizationResult.bestTargetValue || 0)}`})</>
+                      ) : optimizationResult.bestStrategy === 'custom' ? (
+                        <>Maintain Active Custom Schedule</>
                       ) : (
                         <>Flat Conversion ({formatCurrency(optimizationResult.bestAnnualRothConversion)} / year)</>
                       )}
@@ -1386,6 +1522,41 @@ export const TaxableIncomeWorkspace: React.FC<TaxableIncomeWorkspaceProps> = ({
             if (onDeleteCustomScenario) {
               onDeleteCustomScenario(scenarioId);
             }
+          }}
+        />
+      )}
+
+      {/* Tax Equilibrium (TE) Analysis Modal */}
+      {showTEModal && (
+        <TaxEquilibriumModal
+          isOpen={showTEModal}
+          onClose={() => setShowTEModal(false)}
+          inputs={inputs}
+          simulateSurvivor={simulateSurvivor}
+          activeScenarioSequence={activeScenarioSequence}
+          onApplySchedule={(schedule, scenarioName = 'Tax Equilibrium Schedule (TE)') => {
+            const newScenario: CustomRothScenario = {
+              id: `te-schedule-${Date.now()}`,
+              name: scenarioName,
+              description: 'Generated via Tax Equilibrium (TE) dynamic hurdle rate convergence.',
+              schedule,
+              createdAt: new Date().toISOString(),
+              updatedAt: new Date().toISOString(),
+            };
+
+            if (onSaveCustomScenario) {
+              onSaveCustomScenario(newScenario, true);
+            } else if (onInputsChange) {
+              const existing = inputs.customRothScenarios || [];
+              const updated = [newScenario, ...existing.filter((s) => s.name !== scenarioName)];
+              onInputsChange({
+                ...inputs,
+                rothConversionStrategy: 'custom',
+                customRothScenarios: updated,
+                activeCustomScenarioId: newScenario.id,
+              });
+            }
+            onUpdateStrategy('custom');
           }}
         />
       )}
