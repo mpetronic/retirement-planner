@@ -91,9 +91,13 @@ echo "============================================================"
 
 # Resolve Git commit / version info for build stamps if available
 GIT_COMMIT="$(git rev-parse --short HEAD 2>/dev/null || echo "dev")"
+VERSION="$(git describe --tags --exact-match 2>/dev/null || git describe --tags 2>/dev/null || echo "v0.0.0-${GIT_COMMIT}")"
+BUILD_DATE="$(date -u +"%Y-%m-%dT%H:%M:%SZ")"
+LDFLAGS="-s -w -X main.version=${VERSION} -X main.gitCommit=${GIT_COMMIT} -X main.buildDate=${BUILD_DATE}"
 
 if [ "$BUILD_ALL" = true ]; then
   RELEASE_DIR="$ROOT_DIR/dist-bin"
+  rm -rf "$RELEASE_DIR"
   mkdir -p "$RELEASE_DIR"
   echo "Building cross-platform release binaries into: $RELEASE_DIR"
 
@@ -111,11 +115,56 @@ if [ "$BUILD_ALL" = true ]; then
     (
       cd "$GO_DIR"
       CGO_ENABLED=0 GOOS="$GOOS" GOARCH="$GOARCH" go build \
-        -ldflags="-s -w -X main.gitCommit=${GIT_COMMIT}" \
+        -ldflags="${LDFLAGS}" \
         -o "${RELEASE_DIR}/${BIN_NAME}" .
     )
   done
-  echo "Cross-platform binaries successfully created in $RELEASE_DIR."
+
+  echo "Packaging release archives (.tar.gz / .zip) and calculating checksums..."
+  TEMP_STAGE="$(mktemp -d)"
+
+  # Linux amd64
+  mkdir -p "$TEMP_STAGE/linux-amd64"
+  cp "$RELEASE_DIR/retirement-planner-linux-amd64" "$TEMP_STAGE/linux-amd64/retirement-planner"
+  chmod +x "$TEMP_STAGE/linux-amd64/retirement-planner"
+  tar -czf "$RELEASE_DIR/retirement-planner-linux-amd64.tar.gz" -C "$TEMP_STAGE/linux-amd64" retirement-planner
+
+  # Linux arm64
+  mkdir -p "$TEMP_STAGE/linux-arm64"
+  cp "$RELEASE_DIR/retirement-planner-linux-arm64" "$TEMP_STAGE/linux-arm64/retirement-planner"
+  chmod +x "$TEMP_STAGE/linux-arm64/retirement-planner"
+  tar -czf "$RELEASE_DIR/retirement-planner-linux-arm64.tar.gz" -C "$TEMP_STAGE/linux-arm64" retirement-planner
+
+  # macOS amd64
+  mkdir -p "$TEMP_STAGE/darwin-amd64"
+  cp "$RELEASE_DIR/retirement-planner-darwin-amd64" "$TEMP_STAGE/darwin-amd64/retirement-planner"
+  chmod +x "$TEMP_STAGE/darwin-amd64/retirement-planner"
+  tar -czf "$RELEASE_DIR/retirement-planner-darwin-amd64.tar.gz" -C "$TEMP_STAGE/darwin-amd64" retirement-planner
+
+  # macOS arm64 (Apple Silicon)
+  mkdir -p "$TEMP_STAGE/darwin-arm64"
+  cp "$RELEASE_DIR/retirement-planner-darwin-arm64" "$TEMP_STAGE/darwin-arm64/retirement-planner"
+  chmod +x "$TEMP_STAGE/darwin-arm64/retirement-planner"
+  tar -czf "$RELEASE_DIR/retirement-planner-darwin-arm64.tar.gz" -C "$TEMP_STAGE/darwin-arm64" retirement-planner
+
+  # Windows amd64
+  mkdir -p "$TEMP_STAGE/windows-amd64"
+  cp "$RELEASE_DIR/retirement-planner-windows-amd64.exe" "$TEMP_STAGE/windows-amd64/retirement-planner.exe"
+  (
+    cd "$TEMP_STAGE/windows-amd64"
+    zip -q "$RELEASE_DIR/retirement-planner-windows-amd64.zip" retirement-planner.exe
+  )
+
+  rm -rf "$TEMP_STAGE"
+
+  # Checksums
+  (
+    cd "$RELEASE_DIR"
+    rm -f checksums.txt
+    sha256sum retirement-planner* > checksums.txt
+  )
+
+  echo "Cross-platform release archives and checksums created in $RELEASE_DIR."
 fi
 
 # Build primary native target
@@ -124,7 +173,7 @@ mkdir -p "$(dirname "$OUTPUT_BINARY")"
 (
   cd "$GO_DIR"
   CGO_ENABLED=0 go build \
-    -ldflags="-s -w -X main.gitCommit=${GIT_COMMIT}" \
+    -ldflags="${LDFLAGS}" \
     -o "$OUTPUT_BINARY" .
 )
 

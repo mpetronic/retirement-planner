@@ -1,0 +1,74 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    name: Build & Publish Release
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.22'
+          check-latest: false
+
+      - name: Install Frontend Dependencies
+        run: npm ci
+
+      - name: Build Web Assets and Cross-Platform Binaries
+        run: |
+          chmod +x ./build-go.sh
+          ./build-go.sh --all
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          name: Release ${{ github.ref_name }}
+          files: |
+            dist-bin/retirement-planner-*
+            dist-bin/checksums.txt
+          generate_release_notes: true
+          body: |
+            ## 🚀 Standalone Executables
+
+            Download the package for your operating system:
+
+            | Operating System | Recommended Archive | Standalone Binary |
+            | :--- | :--- | :--- |
+            | **Windows (64-bit)** | [`retirement-planner-windows-amd64.zip`](https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}/retirement-planner-windows-amd64.zip) | [`retirement-planner-windows-amd64.exe`](https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}/retirement-planner-windows-amd64.exe) |
+            | **macOS (Apple Silicon M1/M2/M3/M4)** | [`retirement-planner-darwin-arm64.tar.gz`](https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}/retirement-planner-darwin-arm64.tar.gz) | [`retirement-planner-darwin-arm64`](https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}/retirement-planner-darwin-arm64) |
+            | **macOS (Intel x86_64)** | [`retirement-planner-darwin-amd64.tar.gz`](https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}/retirement-planner-darwin-amd64.tar.gz) | [`retirement-planner-darwin-amd64`](https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}/retirement-planner-darwin-amd64) |
+            | **Linux (x86_64 / amd64)** | [`retirement-planner-linux-amd64.tar.gz`](https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}/retirement-planner-linux-amd64.tar.gz) | [`retirement-planner-linux-amd64`](https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}/retirement-planner-linux-amd64) |
+            | **Linux (ARM64)** | [`retirement-planner-linux-arm64.tar.gz`](https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}/retirement-planner-linux-arm64.tar.gz) | [`retirement-planner-linux-arm64`](https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}/retirement-planner-linux-arm64) |
+
+            ### 💡 How to Run
+            - **Windows**: Unzip `retirement-planner-windows-amd64.zip` and run `retirement-planner.exe`.
+            - **macOS / Linux**: Extract `tar -xzf retirement-planner-<os>-<arch>.tar.gz` and run `./retirement-planner`.
+            - The application starts a local server on port `8999` (`http://localhost:8999`).
+            - You can override the port by passing `--port <port>` (e.g. `./retirement-planner --port 9000`).
+
+            ### 🔒 Integrity Check
+            Verify asset checksums using:
+            ```bash
+            sha256sum -c checksums.txt
+            ```

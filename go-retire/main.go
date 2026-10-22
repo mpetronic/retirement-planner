@@ -21,6 +21,13 @@ import (
 	"time"
 )
 
+// Build information stamps injected via ldflags during compilation.
+var (
+	version   = "dev"
+	gitCommit = "unknown"
+	buildDate = "unknown"
+)
+
 // DefaultPort defines the standard localhost port for the standalone planner server.
 const DefaultPort = 8999
 
@@ -154,10 +161,12 @@ func main() {
 	var port int
 	var host string
 	var autoOpen bool
+	var showVersion bool
 
 	flag.IntVar(&port, "port", DefaultPort, "Port to listen on")
 	flag.StringVar(&host, "host", DefaultHost, "Host address to bind to")
 	flag.BoolVar(&autoOpen, "open", false, "Automatically open web browser on startup")
+	flag.BoolVar(&showVersion, "version", false, "Print version information and exit")
 
 	flag.Usage = func() {
 		fmt.Fprintf(os.Stderr, "Retirement Planner - Standalone Local Server\n\n")
@@ -168,6 +177,11 @@ func main() {
 	}
 
 	flag.Parse()
+
+	if showVersion {
+		fmt.Printf("Retirement Planner %s (commit: %s, built: %s)\n", version, gitCommit, buildDate)
+		return
+	}
 
 	// Extract the root of the embedded dist folder
 	staticFS, err := fs.Sub(distFS, "dist")
@@ -192,6 +206,7 @@ func main() {
 	fmt.Println("============================================================")
 	fmt.Println("  Retirement Planner Dashboard - Standalone Server")
 	fmt.Println("============================================================")
+	fmt.Printf("  Version:      %s (%s)\n", version, gitCommit)
 	fmt.Printf("  Serving Port: %d\n", port)
 	fmt.Printf("  Bound Addr:   %s\n", addr)
 	fmt.Printf("  Access URL:   %s\n", localURL)
