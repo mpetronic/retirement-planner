@@ -11,6 +11,7 @@
     "preview": "vite preview",
     "test": "vitest",
     "test:run": "vitest run",
+    "build:go": "./build-go.sh",
     "docker:build": "./build-docker.sh",
     "docker:run": "docker run -d -p 8080:80 --name retirement-planner retirement-planner:latest"
   },

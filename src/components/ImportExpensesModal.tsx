@@ -1,28 +1,46 @@
 import React, { useState, useMemo, useEffect, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import {
   X,
   Upload,
   FileSpreadsheet,
   AlertCircle,
-  RefreshCw,
-  Trash2,
   Check,
   Search,
   Pencil,
-  Plus,
-  Tag,
-  User,
-  Sliders,
   Sparkles,
+  Key,
+  CreditCard,
+  Eye,
+  EyeOff,
 } from 'lucide-react';
 import { getStorageAdapter } from '../shared/storage';
-import { ActualExpense } from '../shared/types/expenses';
+import {
+  ActualExpense,
+  StatementColumnMapping,
+  StatementFormatProfile,
+  LearnedMerchantRule,
+} from '../shared/types/expenses';
 import {
   getPlannerExpenseCatalog,
-  batchRegisterPlannerExpenseLineItems,
+  savePlannerExpenseLineItem,
   PlannerExpenseLineItem,
 } from '../shared/utils/plannerCategories';
 import { getPlannerProfileNames, resolveLoggedInPayerName } from '../shared/utils/profileNames';
+import {
+  normalizeMerchant,
+  calculateHeaderFingerprint,
+  guessColumnMapping,
+  findMatchingFormatProfile,
+  saveFormatProfile,
+  categorizeLocally,
+  batchSaveLearnedMerchantRules,
+  batchCategorizeWithLLM,
+  getGeminiApiKey,
+  saveGeminiApiKey,
+  isPaymentOrTransfer,
+} from '../shared/utils/merchantMatcher';
+import { FormatSetupModal } from './FormatSetupModal';
 
 export interface ImportExpensesModalProps {
   isOpen: boolean;
@@ -32,18 +50,21 @@ export interface ImportExpensesModalProps {
   onUpdateActualsLivingExpenses?: (year: number, amount: number) => void;
 }
 
-interface ParsedTransaction {
+export interface ParsedWorksheetRow {
   id: string;
   date: string; // YYYY-MM-DD
-  amount: number;
+  amount: number; // Positive = expense, Negative = return/credit
+  rawDescription: string;
+  normalizedMerchant: string;
   category: string;
   lineItem: string;
-  description: string;
-  payer: string;
   notes: string;
+  payer: string;
   isDuplicate: boolean;
   isPaymentTransfer: boolean;
   selected: boolean;
+  isUnknown: boolean;
+  mappingSource: 'learned' | 'heuristic' | 'llm' | 'user' | 'unknown';
 }
 
 // Robust CSV Line Splitter handling commas inside quotes
@@ -110,41 +131,45 @@ export const ImportExpensesModal: React.FC<ImportExpensesModalProps> = ({
   const [csvText, setCsvText] = useState<string>('');
   const [fileName, setFileName] = useState<string>('');
   const [isParsing, setIsParsing] = useState<boolean>(false);
-  const [parsedRows, setParsedRows] = useState<ParsedTransaction[]>([]);
+  const [parsedRows, setParsedRows] = useState<ParsedWorksheetRow[]>([]);
   const [existingExpenses, setExistingExpenses] = useState<ActualExpense[]>([]);
-  const [targetYear, setTargetYear] = useState<number>(selectedYear);
   const [defaultPayer, setDefaultPayer] = useState<string>(() => resolveLoggedInPayerName() || 'Primary');
-  const [importMode, setImportMode] = useState<'append' | 'replace'>('append');
-  const [updateActualsRecord, setUpdateActualsRecord] = useState<boolean>(true);
-  const [searchTerm, setSearchTerm] = useState<string>('');
-  const [categoryFilter, setCategoryFilter] = useState<string>('ALL');
-  const [hideDuplicates, setHideDuplicates] = useState<boolean>(false);
-  const [isImporting, setIsImporting] = useState<boolean>(false);
-  const [importProgress, setImportProgress] = useState<{ current: number; total: number }>({ current: 0, total: 0 });
   const [importStatusMessage, setImportStatusMessage] = useState<string | null>(null);
 
-  // Available Planner Catalog Items
+  // Statement Format Profile State
+  const [rawHeaders, setRawHeaders] = useState<string[]>([]);
+  const [rawSampleLines, setRawSampleLines] = useState<string[][]>([]);
+  const [currentProfile, setCurrentProfile] = useState<StatementFormatProfile | null>(null);
+  const [isFormatSetupOpen, setIsFormatSetupOpen] = useState<boolean>(false);
+  const [formatSetupInitialMapping, setFormatSetupInitialMapping] = useState<StatementColumnMapping | null>(null);
+
+  // Filters & Search
+  const [searchTerm, setSearchTerm] = useState<string>('');
+  const [activeFilterTab, setActiveFilterTab] = useState<'ALL' | 'UNKNOWN' | 'DUPLICATES' | 'PAYMENTS'>('ALL');
+  const [hideDuplicates, setHideDuplicates] = useState<boolean>(false);
+
+  // Catalog items
   const [catalogItems, setCatalogItems] = useState<PlannerExpenseLineItem[]>(() => getPlannerExpenseCatalog());
 
-  // Editing Single Row Modal State
-  const [editingTransaction, setEditingTransaction] = useState<ParsedTransaction | null>(null);
-  const [editCategory, setEditCategory] = useState<string>('Living');
-  const [editLineItem, setEditLineItem] = useState<string>('');
-  const [editDescription, setEditDescription] = useState<string>('');
-  const [editNotes, setEditNotes] = useState<string>('');
-  const [editPayer, setEditPayer] = useState<string>('');
-  const [editAmount, setEditAmount] = useState<string>('');
-  const [editDate, setEditDate] = useState<string>('');
-  const [applyToMatchingMerchants, setApplyToMatchingMerchants] = useState<boolean>(true);
-  const [isCreatingCustomItem, setIsCreatingCustomItem] = useState<boolean>(false);
-  const [customItemName, setCustomItemName] = useState<string>('');
-  const [customItemGroup, setCustomItemGroup] = useState<string>('Living');
+  // LLM State
+  const [isAiMatching, setIsAiMatching] = useState<boolean>(false);
+  const [isApiKeyModalOpen, setIsApiKeyModalOpen] = useState<boolean>(false);
+  const [geminiApiKeyInput, setGeminiApiKeyInput] = useState<string>(() => getGeminiApiKey());
+  const [showApiKeyClearText, setShowApiKeyClearText] = useState<boolean>(false);
 
-  // Bulk Edit Modal State
-  const [bulkEditOpen, setBulkEditOpen] = useState<boolean>(false);
+  // On-the-fly category/item creation popover
+  const [inlineCreateRowId, setInlineCreateRowId] = useState<string | null>(null);
+  const [newItemName, setNewItemName] = useState<string>('');
+  const [newItemCategory, setNewItemCategory] = useState<string>('Living');
+
+  // Bulk Edit
   const [bulkCategory, setBulkCategory] = useState<string>('');
   const [bulkLineItem, setBulkLineItem] = useState<string>('');
   const [bulkPayer, setBulkPayer] = useState<string>('');
+
+  // Submission progress
+  const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
+  const [submitProgress, setSubmitProgress] = useState<{ current: number; total: number }>({ current: 0, total: 0 });
 
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -152,13 +177,20 @@ export const ImportExpensesModal: React.FC<ImportExpensesModalProps> = ({
   useEffect(() => {
     if (isOpen) {
       const adapter = getStorageAdapter();
-      adapter.getExpenses(targetYear).then(exps => {
-        setExistingExpenses(exps);
-      }).catch(err => console.error('Failed to load existing expenses:', err));
+      // Load current and adjacent year expenses to cover statement boundaries
+      Promise.all([
+        adapter.getExpenses(selectedYear - 1),
+        adapter.getExpenses(selectedYear),
+        adapter.getExpenses(selectedYear + 1),
+      ])
+        .then(([prevYear, currYear, nextYear]) => {
+          setExistingExpenses([...prevYear, ...currYear, ...nextYear]);
+        })
+        .catch(err => console.error('Failed to load existing expenses:', err));
 
       setCatalogItems(getPlannerExpenseCatalog());
     }
-  }, [isOpen, targetYear]);
+  }, [isOpen, selectedYear]);
 
   // Profile names for payer selector
   const profileNames = useMemo(() => getPlannerProfileNames(), []);
@@ -171,99 +203,91 @@ export const ImportExpensesModal: React.FC<ImportExpensesModalProps> = ({
     return opts;
   }, [profileNames]);
 
-  // Standard category groups
-  const standardCategoryGroups = useMemo(() => {
-    const groups = new Set<string>(['Housing', 'Transportation', 'Living', 'Insurance', 'Healthcare', 'Leisure', 'Charities', 'Other']);
+  // Distinct category groups from catalog
+  const availableCategoryGroups = useMemo(() => {
+    const groups = new Set<string>(['Living', 'Housing', 'Transportation', 'Healthcare', 'Leisure', 'Charities', 'Other']);
     catalogItems.forEach(i => { if (i.groupCategory) groups.add(i.groupCategory); });
     return Array.from(groups);
   }, [catalogItems]);
 
-  // Parse CSV text into candidate transactions
-  const parseCsvData = (rawContent: string) => {
-    setIsParsing(true);
-    setImportStatusMessage(null);
-
+  // Parse CSV content using a resolved format mapping
+  const processCsvWithMapping = (
+    rawContent: string,
+    mapping: StatementColumnMapping,
+    profile: StatementFormatProfile | null
+  ) => {
     try {
       const lines = rawContent.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
-      if (lines.length < 2) {
-        setImportStatusMessage('CSV file is empty or does not contain data rows.');
-        setIsParsing(false);
-        return;
-      }
+      if (lines.length < 2) return;
 
-      const headers = parseCsvLine(lines[0]).map(h => h.toLowerCase().replace(/[^a-z0-9]/g, ''));
-      
-      // Column index detection
-      let dateIdx = headers.findIndex(h => h.includes('transactiondate') || h.includes('date'));
-      const postDateIdx = headers.findIndex(h => h.includes('postdate'));
-      if (dateIdx === -1 && postDateIdx !== -1) dateIdx = postDateIdx;
+      const headers = parseCsvLine(lines[0]);
+      const dateIdx = headers.indexOf(mapping.dateColumn);
+      const descIdx = headers.indexOf(mapping.descriptionColumn);
+      const amtIdx = mapping.amountColumn ? headers.indexOf(mapping.amountColumn) : -1;
+      const debitIdx = mapping.debitColumn ? headers.indexOf(mapping.debitColumn) : -1;
+      const creditIdx = mapping.creditColumn ? headers.indexOf(mapping.creditColumn) : -1;
+      const catIdx = mapping.categoryColumn ? headers.indexOf(mapping.categoryColumn) : -1;
+      const typeIdx = mapping.typeColumn ? headers.indexOf(mapping.typeColumn) : -1;
+      const notesIdx = mapping.notesColumn ? headers.indexOf(mapping.notesColumn) : -1;
 
-      let amountIdx = headers.findIndex(h => h === 'amount' || h.includes('amt') || h.includes('spend'));
-      let categoryIdx = headers.findIndex(h => h === 'category' || h.includes('group') || h.includes('categorygroup'));
-      let lineItemIdx = headers.findIndex(h => h.includes('lineitem') || h.includes('item') || h.includes('subcategory'));
-      let descIdx = headers.findIndex(h => h.includes('description') || h.includes('merchant') || h.includes('payee') || h.includes('memo') || h.includes('name'));
-      const payerIdx = headers.findIndex(h => h.includes('payer') || h.includes('enteredby') || h.includes('who'));
-      const notesIdx = headers.findIndex(h => h.includes('notes') || h.includes('memo') || h.includes('comment'));
-      const typeIdx = headers.findIndex(h => h.includes('type'));
+      // Track available existing expenses for 1-to-1 balanced duplicate matching
+      const unmatchedExisting = [...existingExpenses];
 
-      // If headers weren't found, fallback to standard target template positions
-      if (dateIdx === -1) dateIdx = 0;
-      if (amountIdx === -1) amountIdx = 1;
-      if (categoryIdx === -1 && lineItemIdx === -1) {
-        categoryIdx = 2;
-        lineItemIdx = 3;
-      }
-      if (descIdx === -1) descIdx = 4;
-
-      const candidates: ParsedTransaction[] = [];
+      const candidates: ParsedWorksheetRow[] = [];
 
       for (let i = 1; i < lines.length; i++) {
         const row = parseCsvLine(lines[i]);
         if (row.length < 2) continue;
 
-        const rawDate = row[dateIdx] || '';
+        const rawDate = dateIdx !== -1 ? row[dateIdx] : '';
         const isoDate = normalizeDate(rawDate);
         if (!isoDate || isoDate.length < 4) continue;
 
-        const rawAmountStr = (row[amountIdx] || '0').replace(/[$,]/g, '').trim();
-        const rawAmount = parseFloat(rawAmountStr);
-        if (isNaN(rawAmount)) continue;
-
-        const rawType = typeIdx !== -1 ? (row[typeIdx] || '').toLowerCase() : '';
         const rawDesc = descIdx !== -1 ? (row[descIdx] || '').trim() : '';
-        const rawCat = categoryIdx !== -1 ? (row[categoryIdx] || '').trim() : 'Living';
-        const rawLineItem = lineItemIdx !== -1 ? (row[lineItemIdx] || '').trim() : rawCat;
-        const rawPayer = payerIdx !== -1 ? (row[payerIdx] || '').trim() : '';
+        const rawType = typeIdx !== -1 ? (row[typeIdx] || '').toLowerCase() : '';
+        const rawCat = catIdx !== -1 ? (row[catIdx] || '').trim() : '';
         const rawNotes = notesIdx !== -1 ? (row[notesIdx] || '').trim() : '';
 
-        // Check if internal credit card payment / transfer
-        const isPaymentTransfer = 
-          rawDesc.toUpperCase().includes('AUTOMATIC PAYMENT') || 
-          rawDesc.toUpperCase().includes('CREDIT CARD PAYMENT') || 
-          rawType === 'payment';
+        // Calculate net amount based on mapping mode and sign convention
+        let netAmount = 0;
+        const isReturn = rawType.includes('return') || rawType.includes('reversal');
 
-        // Normalize amount
-        let netAmount: number;
-        if (rawType === 'return' || rawType === 'reversal') {
-          netAmount = -Math.abs(rawAmount);
-        } else if (rawAmount < 0) {
-          netAmount = Math.abs(rawAmount);
-        } else {
-          netAmount = rawAmount;
+        if (mapping.amountMode === 'single' && amtIdx !== -1) {
+          const rawAmt = parseFloat((row[amtIdx] || '0').replace(/[$,]/g, '').trim()) || 0;
+          if (mapping.chargesAreNegative) {
+            // Negative amounts are sales (charges) -> make positive
+            // Positive amounts are payments or returns -> make negative if return
+            if (isReturn) {
+              netAmount = -Math.abs(rawAmt);
+            } else if (rawAmt < 0) {
+              netAmount = Math.abs(rawAmt);
+            } else {
+              netAmount = -Math.abs(rawAmt);
+            }
+          } else {
+            // Charges are positive
+            if (isReturn) {
+              netAmount = -Math.abs(rawAmt);
+            } else {
+              netAmount = rawAmt;
+            }
+          }
+        } else if (mapping.amountMode === 'split_debit_credit') {
+          const debitVal = parseFloat((row[debitIdx] || '0').replace(/[$,]/g, '').trim()) || 0;
+          const creditVal = parseFloat((row[creditIdx] || '0').replace(/[$,]/g, '').trim()) || 0;
+          if (debitVal > 0) netAmount = debitVal;
+          else if (creditVal > 0) netAmount = -creditVal;
         }
 
-        // Determine Category & Line Item
-        let resolvedCategory = rawCat || 'Living';
-        let resolvedLineItem = rawLineItem || 'Miscellaneous';
+        const isPaymentTransfer = isPaymentOrTransfer(rawDesc, rawType, rawCat);
 
-        if (resolvedLineItem.includes(' - ') && !rawCat) {
-          const parts = resolvedLineItem.split(' - ');
-          resolvedCategory = parts[0].trim();
-          resolvedLineItem = parts.slice(1).join(' - ').trim();
-        }
+        const cleanMerchant = normalizeMerchant(rawDesc);
 
-        // Duplicate check against existing logged expenses
-        const isDuplicate = existingExpenses.some(e => {
+        // Run Multi-Tier Categorization
+        const localMatch = categorizeLocally(rawDesc, rawCat, catalogItems);
+
+        // 1-to-1 Balanced Duplicate Detection
+        const matchIdx = unmatchedExisting.findIndex(e => {
           const sameDate = e.date === isoDate;
           const sameAmount = Math.abs(e.amount - netAmount) < 0.01;
           const notesLower = (e.notes || '').toLowerCase();
@@ -272,35 +296,73 @@ export const ImportExpensesModal: React.FC<ImportExpensesModalProps> = ({
           return sameDate && sameAmount && sameDesc;
         });
 
+        const isDuplicate = matchIdx !== -1;
+        if (isDuplicate) {
+          // Remove from available existing so twin charges on same day aren't both matched to one DB record
+          unmatchedExisting.splice(matchIdx, 1);
+        }
+
         candidates.push({
-          id: `txn_${i}_${Date.now()}`,
+          id: `row_${i}_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
           date: isoDate,
           amount: Math.round(netAmount * 100) / 100,
-          category: resolvedCategory,
-          lineItem: resolvedLineItem,
-          description: rawDesc,
-          payer: rawPayer || defaultPayer,
+          rawDescription: rawDesc,
+          normalizedMerchant: cleanMerchant,
+          category: localMatch.category,
+          lineItem: localMatch.lineItem,
           notes: rawNotes,
+          payer: defaultPayer,
           isDuplicate,
           isPaymentTransfer,
-          selected: !isPaymentTransfer && (!isDuplicate || importMode === 'replace'),
+          selected: !isPaymentTransfer && !isDuplicate,
+          isUnknown: localMatch.isUnknown,
+          mappingSource: localMatch.source,
         });
       }
 
       setParsedRows(candidates);
-      if (candidates.length > 0) {
-        const years = candidates.map(c => parseInt(c.date.split('-')[0], 10)).filter(y => !isNaN(y));
-        if (years.length > 0) {
-          const mostCommonYear = years.sort((a,b) =>
-            years.filter(v => v === a).length - years.filter(v => v === b).length
-          ).pop();
-          if (mostCommonYear) setTargetYear(mostCommonYear);
-        }
+      setCurrentProfile(profile);
+    } catch (err) {
+      console.error('Failed to parse statement rows:', err);
+      setImportStatusMessage('An error occurred while parsing the CSV. Please verify column formatting.');
+    } finally {
+      setIsParsing(false);
+    }
+  };
+
+  // Entry parse trigger: inspects fingerprint and either uses existing profile or opens setup
+  const parseCsvData = (rawContent: string) => {
+    setIsParsing(true);
+    setImportStatusMessage(null);
+
+    try {
+      const lines = rawContent.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
+      if (lines.length < 2) {
+        setImportStatusMessage('The CSV file does not contain enough data rows.');
+        setIsParsing(false);
+        return;
+      }
+
+      const headers = parseCsvLine(lines[0]);
+      const sampleLines = lines.slice(1, 10).map(l => parseCsvLine(l));
+      setRawHeaders(headers);
+      setRawSampleLines(sampleLines);
+
+      // Check if format is recognized
+      const matchingProfile = findMatchingFormatProfile(headers);
+
+      if (matchingProfile) {
+        processCsvWithMapping(rawContent, matchingProfile.mapping, matchingProfile);
+      } else {
+        // New unrecognized format: guess initial mapping and open setup dialog
+        const guessed = guessColumnMapping(headers, sampleLines);
+        setFormatSetupInitialMapping(guessed);
+        setIsFormatSetupOpen(true);
+        setIsParsing(false);
       }
     } catch (err) {
-      console.error('Failed to parse CSV:', err);
-      setImportStatusMessage('An error occurred while parsing the CSV. Please check the file formatting.');
-    } finally {
+      console.error('Failed to inspect CSV header fingerprint:', err);
+      setImportStatusMessage('Failed to inspect CSV headers.');
       setIsParsing(false);
     }
   };
@@ -321,993 +383,993 @@ export const ImportExpensesModal: React.FC<ImportExpensesModalProps> = ({
 
   const handlePasteParse = () => {
     if (!csvText.trim()) return;
-    setFileName('Pasted CSV Data');
+    setFileName('Pasted Statement Data');
     parseCsvData(csvText);
   };
 
-  // Toggle selection
+  // Save new format profile from setup modal
+  const handleSaveFormatProfile = (newProfile: StatementFormatProfile) => {
+    saveFormatProfile(newProfile);
+    setCurrentProfile(newProfile);
+    if (csvText) {
+      processCsvWithMapping(csvText, newProfile.mapping, newProfile);
+    }
+  };
+
+  // Toggle row selection
   const handleToggleRow = (id: string) => {
-    setParsedRows(prev => prev.map(r => r.id === id ? { ...r, selected: !r.selected } : r));
+    setParsedRows(prev => prev.map(r => (r.id === id && !r.isPaymentTransfer ? { ...r, selected: !r.selected } : r)));
   };
 
   const handleSelectAll = (select: boolean) => {
-    setParsedRows(prev => prev.map(r => r.isPaymentTransfer ? r : { ...r, selected: select }));
+    setParsedRows(prev => prev.map(r => (r.isPaymentTransfer ? { ...r, selected: false } : { ...r, selected: select })));
   };
 
-  // Filtered rows for the preview table
-  const filteredRows = useMemo(() => {
-    return parsedRows.filter(r => {
-      if (hideDuplicates && r.isDuplicate) return false;
-      if (categoryFilter !== 'ALL' && r.category !== categoryFilter) return false;
-      if (searchTerm.trim()) {
-        const q = searchTerm.toLowerCase();
-        return (
-          r.date.includes(q) ||
-          r.category.toLowerCase().includes(q) ||
-          r.lineItem.toLowerCase().includes(q) ||
-          r.description.toLowerCase().includes(q) ||
-          r.payer.toLowerCase().includes(q) ||
-          r.amount.toString().includes(q)
-        );
-      }
-      return true;
-    });
-  }, [parsedRows, categoryFilter, searchTerm, hideDuplicates]);
-
-  // Available unique categories in parsed rows
-  const availableCategories = useMemo(() => {
-    const set = new Set<string>();
-    parsedRows.forEach(r => { if (r.category) set.add(r.category); });
-    return Array.from(set);
-  }, [parsedRows]);
-
-  // Selected totals
-  const selectedRows = useMemo(() => parsedRows.filter(r => r.selected), [parsedRows]);
-  const totalSpendSelected = useMemo(() => selectedRows.reduce((sum, r) => sum + r.amount, 0), [selectedRows]);
-  const duplicateCount = useMemo(() => parsedRows.filter(r => r.isDuplicate).length, [parsedRows]);
-
-  // Open Single Row Edit Modal
-  const handleOpenRowEditor = (row: ParsedTransaction) => {
-    setEditingTransaction(row);
-    setEditCategory(row.category || 'Living');
-    setEditLineItem(row.lineItem || '');
-    setEditDescription(row.description || '');
-    setEditNotes(row.notes || '');
-    setEditPayer(row.payer || defaultPayer);
-    setEditAmount(row.amount.toString());
-    setEditDate(row.date);
-    setIsCreatingCustomItem(false);
-    setCustomItemName('');
-    setCustomItemGroup(row.category || 'Living');
-    setApplyToMatchingMerchants(true);
-  };
-
-  // Handle Create New Line Item on the Fly
-  const handleCreateNewItem = () => {
-    const trimmedName = customItemName.trim();
-    if (!trimmedName) return;
-
-    const group = customItemGroup.trim() || 'Living';
-    batchRegisterPlannerExpenseLineItems([{ name: trimmedName, groupCategory: group }]);
-    const refreshed = getPlannerExpenseCatalog();
-    setCatalogItems(refreshed);
-
-    setEditCategory(group);
-    setEditLineItem(trimmedName);
-    setIsCreatingCustomItem(false);
-    setCustomItemName('');
-  };
-
-  // Save Single Row Changes
-  const handleSaveRowEdit = () => {
-    if (!editingTransaction) return;
-    const parsedAmt = parseFloat(editAmount);
-    const validAmount = isNaN(parsedAmt) ? editingTransaction.amount : parsedAmt;
-
-    const targetMerchant = editingTransaction.description.trim().toLowerCase();
-
+  // Inline row update handlers
+  const handleUpdateRowCategory = (rowId: string, newCategory: string) => {
     setParsedRows(prev => prev.map(r => {
-      const isTargetRow = r.id === editingTransaction.id;
-      const isMatchingMerchant = applyToMatchingMerchants && targetMerchant && r.description.trim().toLowerCase() === targetMerchant;
+      if (r.id !== rowId) return r;
+      // Filter line items for new category; pick first if current doesn't match
+      const validItems = catalogItems.filter(c => c.groupCategory === newCategory);
+      const nextLineItem = validItems.some(i => i.name === r.lineItem)
+        ? r.lineItem
+        : validItems[0]?.name || 'General';
 
-      if (isTargetRow) {
-        return {
-          ...r,
-          date: editDate || r.date,
-          amount: validAmount,
-          category: editCategory,
-          lineItem: editLineItem || r.lineItem,
-          description: editDescription,
-          notes: editNotes,
-          payer: editPayer || defaultPayer,
-        };
-      } else if (isMatchingMerchant) {
-        return {
-          ...r,
-          category: editCategory,
-          lineItem: editLineItem || r.lineItem,
-          payer: editPayer || r.payer,
-        };
-      }
-      return r;
+      return {
+        ...r,
+        category: newCategory,
+        lineItem: nextLineItem,
+        isUnknown: false,
+        mappingSource: 'user',
+      };
     }));
-
-    setEditingTransaction(null);
   };
 
-  // Save Bulk Changes
-  const handleSaveBulkEdit = () => {
-    if (selectedRows.length === 0) return;
+  const handleUpdateRowLineItem = (rowId: string, newLineItem: string) => {
+    setParsedRows(prev => prev.map(r => {
+      if (r.id !== rowId) return r;
+      return {
+        ...r,
+        lineItem: newLineItem,
+        isUnknown: false,
+        mappingSource: 'user',
+      };
+    }));
+  };
+
+  const handleUpdateRowNotes = (rowId: string, notes: string) => {
+    setParsedRows(prev => prev.map(r => r.id === rowId ? { ...r, notes } : r));
+  };
+
+  const handleUpdateRowPayer = (rowId: string, payer: string) => {
+    setParsedRows(prev => prev.map(r => r.id === rowId ? { ...r, payer } : r));
+  };
+
+  // On-the-fly Category / Line Item Creation
+  const handleCreateNewItemOnTheFly = () => {
+    const trimmed = newItemName.trim();
+    if (!trimmed) return;
+
+    savePlannerExpenseLineItem({
+      name: trimmed,
+      groupCategory: newItemCategory,
+      plannedMonthlyDefault: 0,
+      applicableStates: ['ALL'],
+    });
+
+    const refreshedCatalog = getPlannerExpenseCatalog();
+    setCatalogItems(refreshedCatalog);
+
+    if (inlineCreateRowId) {
+      setParsedRows(prev => prev.map(r => {
+        if (r.id !== inlineCreateRowId) return r;
+        return {
+          ...r,
+          category: newItemCategory,
+          lineItem: trimmed,
+          isUnknown: false,
+          mappingSource: 'user',
+        };
+      }));
+    }
+
+    setInlineCreateRowId(null);
+    setNewItemName('');
+  };
+
+  // Bulk Edit Execution
+  const handleApplyBulkEdit = () => {
+    const selected = parsedRows.filter(r => r.selected);
+    if (selected.length === 0) return;
 
     setParsedRows(prev => prev.map(r => {
       if (!r.selected) return r;
       return {
         ...r,
-        category: bulkCategory ? bulkCategory : r.category,
-        lineItem: bulkLineItem ? bulkLineItem : r.lineItem,
-        payer: bulkPayer ? bulkPayer : r.payer,
+        category: bulkCategory || r.category,
+        lineItem: bulkLineItem || r.lineItem,
+        payer: bulkPayer || r.payer,
+        isUnknown: bulkCategory && bulkLineItem ? false : r.isUnknown,
+        mappingSource: 'user',
       };
     }));
 
-    setBulkEditOpen(false);
     setBulkCategory('');
     setBulkLineItem('');
     setBulkPayer('');
   };
 
-  // Execute Import
-  const handleExecuteImport = async () => {
+  // Trigger LLM Smart Categorization for unmapped / unknown items
+  const handleRunAiCategorization = async () => {
+    const unmapped = parsedRows.filter(r => r.isUnknown || r.lineItem === 'Unknown');
+    if (unmapped.length === 0) return;
+
+    setIsAiMatching(true);
+    setImportStatusMessage('Running AI smart categorization...');
+
+    try {
+      const payload = unmapped.map(u => ({
+        rawDesc: u.rawDescription,
+        normalized: u.normalizedMerchant || normalizeMerchant(u.rawDescription),
+      }));
+
+      const result = await batchCategorizeWithLLM(payload, catalogItems);
+
+      if (result.status === 'SUCCESS' && result.matches.size > 0) {
+        setParsedRows(prev => prev.map(r => {
+          const key = (r.normalizedMerchant || normalizeMerchant(r.rawDescription)).toUpperCase();
+          const match = result.matches.get(key);
+          if (match && (r.isUnknown || r.lineItem === 'Unknown')) {
+            return {
+              ...r,
+              category: match.category,
+              lineItem: match.lineItem,
+              isUnknown: false,
+              mappingSource: 'llm',
+            };
+          }
+          return r;
+        }));
+        setImportStatusMessage(`AI successfully categorized ${result.matches.size} of ${result.totalEvaluated} merchants.`);
+      } else {
+        setImportStatusMessage(result.errorMessage || 'AI categorization completed with no new matches.');
+      }
+    } catch (err: unknown) {
+      const errMsg = err instanceof Error ? err.message : String(err);
+      console.error('AI categorization failed:', err);
+      setImportStatusMessage(`AI categorization encountered an error: ${errMsg}`);
+    } finally {
+      setIsAiMatching(false);
+    }
+  };
+
+  // Filtered rows for the worksheet
+  const filteredRows = useMemo(() => {
+    return parsedRows.filter(r => {
+      if (hideDuplicates && r.isDuplicate) return false;
+
+      // Filter tabs
+      if (activeFilterTab === 'UNKNOWN' && !r.isUnknown && r.lineItem !== 'Unknown') return false;
+      if (activeFilterTab === 'DUPLICATES' && !r.isDuplicate) return false;
+      if (activeFilterTab === 'PAYMENTS' && !r.isPaymentTransfer) return false;
+
+      // Search query
+      if (searchTerm.trim()) {
+        const q = searchTerm.toLowerCase();
+        return (
+          r.date.includes(q) ||
+          r.rawDescription.toLowerCase().includes(q) ||
+          r.normalizedMerchant.toLowerCase().includes(q) ||
+          r.category.toLowerCase().includes(q) ||
+          r.lineItem.toLowerCase().includes(q) ||
+          r.notes.toLowerCase().includes(q) ||
+          r.payer.toLowerCase().includes(q) ||
+          r.amount.toString().includes(q)
+        );
+      }
+
+      return true;
+    });
+  }, [parsedRows, hideDuplicates, activeFilterTab, searchTerm]);
+
+  // Counts and totals
+  const selectedRows = useMemo(() => parsedRows.filter(r => r.selected && !r.isPaymentTransfer), [parsedRows]);
+  const totalSpendSelected = useMemo(() => selectedRows.reduce((sum, r) => sum + r.amount, 0), [selectedRows]);
+  const unknownCount = useMemo(() => parsedRows.filter(r => r.isUnknown || r.lineItem === 'Unknown').length, [parsedRows]);
+  const duplicateCount = useMemo(() => parsedRows.filter(r => r.isDuplicate).length, [parsedRows]);
+  const paymentCount = useMemo(() => parsedRows.filter(r => r.isPaymentTransfer).length, [parsedRows]);
+
+  // Execute Submission
+  const handleExecuteSubmit = async () => {
     if (selectedRows.length === 0) return;
 
-    setIsImporting(true);
-    setImportProgress({ current: 0, total: selectedRows.length });
+    setIsSubmitting(true);
+    setSubmitProgress({ current: 0, total: selectedRows.length });
     const adapter = getStorageAdapter();
 
     try {
-      // 1. Batch register all missing catalog line items in a single memory/storage pass
-      const catalogItemsToRegister = selectedRows.map(r => ({
-        name: r.lineItem,
-        groupCategory: r.category,
-      }));
-      const resolvedCatalogMap = batchRegisterPlannerExpenseLineItems(catalogItemsToRegister);
+      // 1. Prepare ActualExpense records (strictly excluding any internal payments/transfers)
+      const expensePayloads = selectedRows
+        .filter(row => !row.isPaymentTransfer)
+        .map(row => {
+          const catDisplayName = `${row.category} - ${row.lineItem}`;
+          const noteText = [row.rawDescription, row.notes].filter(Boolean).join(' | ');
 
-      // 2. If replace mode is chosen, delete existing expenses for target year
-      if (importMode === 'replace') {
-        const existingYearExpenses = await adapter.getExpenses(targetYear);
-        for (const exp of existingYearExpenses) {
-          await adapter.deleteExpense(exp.expenseId);
-        }
-      }
+          return {
+            date: row.date,
+            amount: Math.round(row.amount * 100) / 100,
+            categoryId: `cat_${row.category.toLowerCase()}_${row.lineItem.toLowerCase().replace(/[^a-z0-9]/g, '_')}`,
+            categoryName: catDisplayName,
+            enteredBy: row.payer || defaultPayer,
+            notes: noteText || undefined,
+          };
+        });
 
-      // 3. Prepare full payload of ActualExpense records
-      const expensePayloads = selectedRows.map(row => {
-        const mapKey = `${row.category.toLowerCase()}:::${row.lineItem.toLowerCase()}`;
-        const registered = resolvedCatalogMap.get(mapKey);
-        const catId = registered?.id || `cat_${row.category.toLowerCase()}_${row.lineItem.toLowerCase().replace(/[^a-z0-9]/g, '_')}`;
-        const catDisplayName = registered?.displayName || `${row.category} - ${row.lineItem}`;
-        const noteText = [row.description, row.notes].filter(Boolean).join(' | ');
-
-        return {
-          date: row.date,
-          amount: Math.round(row.amount * 100) / 100,
-          categoryId: catId,
-          categoryName: catDisplayName,
-          enteredBy: row.payer || defaultPayer,
-          notes: noteText || undefined,
-        };
-      });
-
-      // 4. Atomic batch insert into storage adapter
+      // 2. Commit batch to storage adapter
       if (adapter.saveExpensesBatch) {
         await adapter.saveExpensesBatch(expensePayloads);
       } else {
         for (let i = 0; i < expensePayloads.length; i++) {
           await adapter.saveExpense(expensePayloads[i]);
-          if (i % 50 === 0) {
-            setImportProgress({ current: i, total: expensePayloads.length });
+          if (i % 25 === 0) {
+            setSubmitProgress({ current: i, total: expensePayloads.length });
           }
         }
       }
-      setImportProgress({ current: expensePayloads.length, total: expensePayloads.length });
+      setSubmitProgress({ current: expensePayloads.length, total: expensePayloads.length });
 
-      // 5. Update Year Actuals Record living expenses if checked
-      if (updateActualsRecord && onUpdateActualsLivingExpenses) {
-        onUpdateActualsLivingExpenses(targetYear, Math.round(totalSpendSelected));
+      // 3. Save confirmed merchant mappings to Learned Merchant Dictionary
+      const rulesToSave: LearnedMerchantRule[] = selectedRows
+        .filter(r => r.normalizedMerchant && r.lineItem !== 'Unknown')
+        .map(r => ({
+          normalizedKey: r.normalizedMerchant,
+          category: r.category,
+          lineItem: r.lineItem,
+          lastUsed: new Date().toISOString(),
+          matchCount: 1,
+        }));
+
+      if (rulesToSave.length > 0) {
+        batchSaveLearnedMerchantRules(rulesToSave);
       }
 
-      // 6. Dispatch global sync event ONCE at the end
-      if (typeof window !== 'undefined') {
-        window.dispatchEvent(new CustomEvent('cloud_expenses_synced'));
+      // 4. Update parent Actuals if hook provided
+      if (onUpdateActualsLivingExpenses) {
+        onUpdateActualsLivingExpenses(selectedYear, Math.round(totalSpendSelected));
       }
 
-      onImportComplete(expensePayloads.length, totalSpendSelected);
+      onImportComplete(selectedRows.length, totalSpendSelected);
       onClose();
     } catch (err) {
-      console.error('Import execution failed:', err);
-      setImportStatusMessage('An error occurred during bulk import. Please check your connection and storage settings.');
+      console.error('Failed to submit imported expenses:', err);
+      setImportStatusMessage('An error occurred while saving expenses to persistent storage.');
     } finally {
-      setIsImporting(false);
+      setIsSubmitting(false);
     }
   };
 
   if (!isOpen) return null;
 
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/80 backdrop-blur-sm p-4 overflow-y-auto">
-      <div className="bg-slate-900 border border-slate-800 rounded-2xl w-full max-w-5xl max-h-[90vh] flex flex-col shadow-2xl overflow-hidden animate-in fade-in zoom-in-95 duration-200">
-        
-        {/* Header */}
-        <div className="px-6 py-4 border-b border-slate-800 flex items-center justify-between bg-slate-900/90 sticky top-0 z-10">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-emerald-500/10 border border-emerald-500/30 flex items-center justify-center text-emerald-400 shadow-inner">
+  const modalContent = (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-5 bg-slate-950/80 backdrop-blur-md animate-fade-in font-sans">
+      <div className="relative w-full max-w-[96vw] xl:max-w-7xl h-[94vh] bg-white dark:bg-slate-900 rounded-3xl shadow-2xl border border-slate-200 dark:border-slate-800 flex flex-col overflow-hidden">
+        {/* Top Header */}
+        <div className="flex items-center justify-between px-6 py-4 border-b border-slate-200/80 dark:border-slate-800/80 bg-slate-50/80 dark:bg-slate-950/60">
+          <div className="flex items-center gap-3.5">
+            <div className="p-2.5 bg-gradient-to-br from-indigo-500 to-indigo-700 rounded-2xl text-white shadow-md shadow-indigo-500/20">
               <FileSpreadsheet className="w-5 h-5" />
             </div>
             <div>
-              <h2 className="text-lg font-bold text-white flex items-center gap-2">
-                Import / Backfill Actual Expenses
-                <span className="text-xs px-2 py-0.5 rounded-full font-semibold bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
-                  {targetYear}
-                </span>
-              </h2>
-              <p className="text-xs text-slate-400">
-                Review, edit, categorize, and assign payers before committing expenses into your household ledger.
+              <div className="flex items-center gap-2.5 flex-wrap">
+                <h2 className="text-xl font-bold tracking-tight text-slate-900 dark:text-slate-100">
+                  Expense Statement Ingestion Worksheet
+                </h2>
+                {fileName && (
+                  <span className="text-xs text-slate-400 font-mono">({fileName})</span>
+                )}
+                {currentProfile && (
+                  <div className="flex items-center gap-1.5 px-3 py-1 bg-indigo-50 dark:bg-indigo-950/60 border border-indigo-200 dark:border-indigo-800/60 rounded-full text-indigo-700 dark:text-indigo-300 text-xs font-semibold">
+                    <CreditCard className="w-3.5 h-3.5" />
+                    <span>{currentProfile.nickname}</span>
+                    <button
+                      onClick={() => {
+                        setFormatSetupInitialMapping(currentProfile.mapping);
+                        setIsFormatSetupOpen(true);
+                      }}
+                      title="Edit Statement Format Mapping"
+                      className="p-0.5 hover:text-indigo-900 dark:hover:text-white rounded"
+                    >
+                      <Pencil className="w-3 h-3" />
+                    </button>
+                  </div>
+                )}
+              </div>
+              <p className="text-xs text-slate-500 dark:text-slate-400">
+                Upload credit card or bank statements, review intelligent category matches, and commit directly to storage.
               </p>
             </div>
           </div>
 
-          <button
-            onClick={onClose}
-            className="p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition-colors cursor-pointer"
-          >
-            <X className="w-5 h-5" />
-          </button>
+          <div className="flex items-center gap-2.5">
+            {parsedRows.length > 0 && (
+              <div className="hidden sm:flex items-center gap-1.5 text-xs text-slate-500 mr-2">
+                <span>Default Payer:</span>
+                <select
+                  value={defaultPayer}
+                  onChange={(e) => setDefaultPayer(e.target.value)}
+                  className="px-2 py-1 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-xs text-slate-800 dark:text-slate-200"
+                >
+                  {payerOptions.map(p => (
+                    <option key={p} value={p}>{p}</option>
+                  ))}
+                </select>
+              </div>
+            )}
+            {/* Gemini API Key configuration button */}
+            <button
+              onClick={() => {
+                setGeminiApiKeyInput(getGeminiApiKey());
+                setShowApiKeyClearText(false);
+                setIsApiKeyModalOpen(true);
+              }}
+              title="Configure LLM API Key"
+              className="p-2 rounded-xl text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 border border-slate-200 dark:border-slate-800 transition-colors"
+            >
+              <Key className="w-4 h-4" />
+            </button>
+            <button
+              onClick={onClose}
+              className="p-2 rounded-xl text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+            >
+              <X className="w-5 h-5" />
+            </button>
+          </div>
         </div>
 
-        {/* Content Body */}
-        <div className="flex-1 overflow-y-auto p-6 space-y-6 custom-scrollbar text-slate-200">
-          
-          {/* Source Tabs */}
-          {parsedRows.length === 0 ? (
-            <div className="space-y-4">
-              <div className="flex items-center gap-2 border-b border-slate-800 pb-2">
+        {/* Status / Alert Banner */}
+        {importStatusMessage && (
+          <div className="flex items-center justify-between px-6 py-2.5 bg-amber-50 dark:bg-amber-950/40 border-b border-amber-200 dark:border-amber-800 text-amber-800 dark:text-amber-200 text-xs">
+            <div className="flex items-center gap-2">
+              <AlertCircle className="w-4 h-4 text-amber-600 dark:text-amber-400" />
+              <span>{importStatusMessage}</span>
+            </div>
+            <button onClick={() => setImportStatusMessage(null)} className="text-amber-600 hover:text-amber-900">
+              <X className="w-3.5 h-3.5" />
+            </button>
+          </div>
+        )}
+
+        {/* Content Area */}
+        {parsedRows.length === 0 ? (
+          /* Step 1: Upload or Paste */
+          <div className="flex-1 flex flex-col items-center justify-center p-8 text-center bg-slate-50/40 dark:bg-slate-900/40">
+            <div className="w-full max-w-xl p-8 bg-white dark:bg-slate-800/80 rounded-3xl border border-slate-200 dark:border-slate-700 shadow-xl space-y-6">
+              <div className="p-4 bg-indigo-50 dark:bg-indigo-950/50 rounded-2xl w-16 h-16 mx-auto flex items-center justify-center text-indigo-600 dark:text-indigo-400">
+                <Upload className="w-8 h-8" />
+              </div>
+              <div className="space-y-1">
+                <h3 className="text-lg font-bold text-slate-900 dark:text-slate-100">
+                  Import Statement Data
+                </h3>
+                <p className="text-xs text-slate-500 dark:text-slate-400">
+                  Upload a CSV statement from your credit card or bank (Capital One, Chase, Checking, etc.).
+                </p>
+              </div>
+
+              {/* Upload or Paste Tab Switcher */}
+              <div className="flex items-center justify-center gap-2 p-1 bg-slate-100 dark:bg-slate-900 rounded-xl max-w-xs mx-auto text-xs font-semibold">
                 <button
-                  type="button"
                   onClick={() => setActiveTab('upload')}
-                  className={`px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-2 cursor-pointer ${
+                  className={`flex-1 py-1.5 rounded-lg transition-all ${
                     activeTab === 'upload'
-                      ? 'bg-emerald-500 text-slate-950 shadow'
-                      : 'bg-slate-800 text-slate-300 hover:bg-slate-700'
+                      ? 'bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 shadow-sm'
+                      : 'text-slate-500 hover:text-slate-900 dark:hover:text-slate-200'
                   }`}
                 >
-                  <Upload className="w-4 h-4" />
-                  Upload CSV File
+                  Upload File
                 </button>
                 <button
-                  type="button"
                   onClick={() => setActiveTab('paste')}
-                  className={`px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-2 cursor-pointer ${
+                  className={`flex-1 py-1.5 rounded-lg transition-all ${
                     activeTab === 'paste'
-                      ? 'bg-emerald-500 text-slate-950 shadow'
-                      : 'bg-slate-800 text-slate-300 hover:bg-slate-700'
+                      ? 'bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 shadow-sm'
+                      : 'text-slate-500 hover:text-slate-900 dark:hover:text-slate-200'
                   }`}
                 >
-                  <FileSpreadsheet className="w-4 h-4" />
-                  Paste CSV Text
+                  Paste CSV
                 </button>
               </div>
 
               {activeTab === 'upload' ? (
                 <div
                   onClick={() => fileInputRef.current?.click()}
-                  className="border-2 border-dashed border-slate-700 hover:border-emerald-500/50 rounded-2xl p-10 flex flex-col items-center justify-center gap-3 bg-slate-950/40 hover:bg-slate-950/60 transition-all cursor-pointer group"
+                  className="cursor-pointer border-2 border-dashed border-slate-300 dark:border-slate-600 hover:border-indigo-500 dark:hover:border-indigo-400 rounded-2xl p-8 transition-colors bg-slate-50/50 dark:bg-slate-800/40 flex flex-col items-center justify-center gap-2 group"
                 >
                   <input
-                    ref={fileInputRef}
                     type="file"
-                    accept=".csv,text/csv"
-                    className="hidden"
+                    ref={fileInputRef}
                     onChange={handleFileUpload}
+                    accept=".csv,.txt"
+                    className="hidden"
                   />
-                  <div className="w-14 h-14 rounded-2xl bg-emerald-500/10 border border-emerald-500/30 flex items-center justify-center text-emerald-400 group-hover:scale-110 transition-transform">
-                    <Upload className="w-7 h-7" />
-                  </div>
-                  <div className="text-center">
-                    <p className="text-sm font-semibold text-white">Click or drag a CSV file here to upload</p>
-                    <p className="text-xs text-slate-400 mt-1">Accepts mapped template CSV or bank export CSV</p>
-                  </div>
+                  <FileSpreadsheet className="w-8 h-8 text-slate-400 group-hover:text-indigo-500 transition-colors" />
+                  <span className="text-xs font-semibold text-slate-700 dark:text-slate-300">
+                    Click to browse or drop CSV file here
+                  </span>
+                  <span className="text-[11px] text-slate-400">
+                    Supports Capital One, Chase, Bank checking, and all standard formats
+                  </span>
                 </div>
               ) : (
                 <div className="space-y-3">
                   <textarea
-                    rows={10}
+                    rows={6}
                     value={csvText}
                     onChange={(e) => setCsvText(e.target.value)}
-                    placeholder="Paste CSV rows here including the header row (e.g. Transaction Date, Amount, Category, Line Item, Description, Payer, Notes)..."
-                    className="w-full bg-slate-950 border border-slate-800 rounded-xl p-3 text-xs font-mono text-slate-200 focus:outline-none focus:border-emerald-500 custom-scrollbar"
+                    placeholder="Paste CSV text with header row here..."
+                    className="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-xs font-mono text-slate-900 dark:text-slate-100 focus:ring-2 focus:ring-indigo-500"
                   />
-                  <div className="flex justify-end">
-                    <button
-                      type="button"
-                      onClick={handlePasteParse}
-                      disabled={!csvText.trim() || isParsing}
-                      className="px-4 py-2 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold text-xs flex items-center gap-2 transition-all disabled:opacity-50 cursor-pointer shadow-md"
-                    >
-                      {isParsing ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4 stroke-[2.5]" />}
-                      Parse CSV
-                    </button>
-                  </div>
-                </div>
-              )}
-
-              {importStatusMessage && (
-                <div className="p-3.5 rounded-xl bg-rose-500/10 border border-rose-500/30 text-rose-300 text-xs flex items-center gap-2">
-                  <AlertCircle className="w-4 h-4 shrink-0" />
-                  <span>{importStatusMessage}</span>
+                  <button
+                    onClick={handlePasteParse}
+                    disabled={!csvText.trim() || isParsing}
+                    className="w-full py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-semibold text-xs transition-colors disabled:opacity-50"
+                  >
+                    {isParsing ? 'Parsing Statement...' : 'Parse Statement Data'}
+                  </button>
                 </div>
               )}
             </div>
-          ) : (
-            <div className="space-y-5">
-              {/* Configuration Bar */}
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 p-4 bg-slate-950/60 border border-slate-800 rounded-xl text-xs">
-                {/* Target Year */}
-                <div>
-                  <label className="text-[11px] font-bold text-slate-400 uppercase tracking-wider block mb-1">
-                    Target Year
-                  </label>
+          </div>
+        ) : (
+          /* Step 2: Interactive Review Worksheet Grid */
+          <div className="flex-1 flex flex-col min-h-0 bg-slate-50/50 dark:bg-slate-950/40">
+            {/* Filter & Action Toolbar */}
+            <div className="p-4 border-b border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 flex flex-wrap items-center justify-between gap-3">
+              <div className="flex items-center gap-3 flex-1 min-w-[280px] max-w-md">
+                <div className="relative w-full">
+                  <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
                   <input
-                    type="number"
-                    value={targetYear}
-                    onChange={(e) => setTargetYear(parseInt(e.target.value, 10) || selectedYear)}
-                    className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-1.5 font-bold text-white focus:outline-none focus:border-emerald-500"
+                    type="text"
+                    value={searchTerm}
+                    onChange={(e) => setSearchTerm(e.target.value)}
+                    placeholder="Search by merchant, line item, amount..."
+                    className="w-full pl-9 pr-3 py-1.5 text-xs rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-indigo-500"
                   />
-                </div>
-
-                {/* Default Payer */}
-                <div>
-                  <label className="text-[11px] font-bold text-slate-400 uppercase tracking-wider block mb-1">
-                    Default Payer
-                  </label>
-                  <select
-                    value={defaultPayer}
-                    onChange={(e) => {
-                      setDefaultPayer(e.target.value);
-                      setParsedRows(prev => prev.map(r => (!r.payer || r.payer === defaultPayer) ? { ...r, payer: e.target.value } : r));
-                    }}
-                    className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-1.5 font-medium text-white focus:outline-none focus:border-emerald-500 cursor-pointer"
-                  >
-                    {payerOptions.map(p => (
-                      <option key={p} value={p}>{p}</option>
-                    ))}
-                  </select>
-                </div>
-
-                {/* Import Mode */}
-                <div>
-                  <label className="text-[11px] font-bold text-slate-400 uppercase tracking-wider block mb-1">
-                    Import Mode
-                  </label>
-                  <select
-                    value={importMode}
-                    onChange={(e) => {
-                      const newMode = e.target.value as 'append' | 'replace';
-                      setImportMode(newMode);
-                      if (newMode === 'replace') {
-                        setParsedRows(prev => prev.map(r => ({ ...r, selected: !r.isPaymentTransfer })));
-                      }
-                    }}
-                    className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-1.5 font-medium text-white focus:outline-none focus:border-emerald-500 cursor-pointer"
-                  >
-                    <option value="append">Append & Skip Duplicates</option>
-                    <option value="replace">Replace Year {targetYear} (Fresh Backfill)</option>
-                  </select>
-                </div>
-              </div>
-
-              {/* Stats & KPI Row */}
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-                <div className="p-3 bg-slate-950/40 border border-slate-800 rounded-xl">
-                  <span className="text-[10px] font-bold text-slate-400 uppercase">Selected Transactions</span>
-                  <div className="text-lg font-bold text-white mt-0.5">
-                    {selectedRows.length} <span className="text-xs text-slate-400 font-normal">/ {parsedRows.length}</span>
-                  </div>
-                </div>
-
-                <div className="p-3 bg-slate-950/40 border border-slate-800 rounded-xl">
-                  <span className="text-[10px] font-bold text-slate-400 uppercase">Total Spend (Selected)</span>
-                  <div className="text-lg font-bold text-emerald-400 mt-0.5">
-                    ${totalSpendSelected.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                  </div>
-                </div>
-
-                <div className="p-3 bg-slate-950/40 border border-slate-800 rounded-xl">
-                  <span className="text-[10px] font-bold text-slate-400 uppercase">Duplicates Detected</span>
-                  <div className={`text-lg font-bold mt-0.5 ${duplicateCount > 0 ? 'text-amber-400' : 'text-slate-400'}`}>
-                    {duplicateCount}
-                  </div>
-                </div>
-
-                <div className="p-3 bg-slate-950/40 border border-slate-800 rounded-xl flex items-center justify-between">
-                  <div>
-                    <span className="text-[10px] font-bold text-slate-400 uppercase">Active File</span>
-                    <div className="text-xs font-medium text-slate-200 truncate max-w-[120px] mt-0.5" title={fileName}>
-                      {fileName || 'CSV'}
-                    </div>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setParsedRows([]);
-                      setCsvText('');
-                      setFileName('');
-                    }}
-                    className="p-1.5 rounded-lg text-slate-400 hover:text-rose-400 hover:bg-slate-800 transition-colors cursor-pointer"
-                    title="Clear and load new file"
-                  >
-                    <Trash2 className="w-3.5 h-3.5" />
-                  </button>
-                </div>
-              </div>
-
-              {/* Table Search & Bulk Action Strip */}
-              <div className="flex flex-col sm:flex-row items-center justify-between gap-3 text-xs">
-                <div className="flex items-center gap-2 w-full sm:w-auto">
-                  <div className="relative flex-1 sm:w-64">
-                    <Search className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
-                    <input
-                      type="text"
-                      placeholder="Search transactions, merchants, notes..."
-                      value={searchTerm}
-                      onChange={(e) => setSearchTerm(e.target.value)}
-                      className="w-full bg-slate-950 border border-slate-800 rounded-xl pl-8 pr-3 py-1.5 text-xs text-white focus:outline-none focus:border-emerald-500"
-                    />
-                  </div>
-
-                  <select
-                    value={categoryFilter}
-                    onChange={(e) => setCategoryFilter(e.target.value)}
-                    className="bg-slate-950 border border-slate-800 rounded-xl px-3 py-1.5 text-xs text-slate-300 focus:outline-none focus:border-emerald-500 cursor-pointer"
-                  >
-                    <option value="ALL">All Categories</option>
-                    {availableCategories.map(cat => (
-                      <option key={cat} value={cat}>{cat}</option>
-                    ))}
-                  </select>
-                </div>
-
-                <div className="flex items-center gap-2 self-end sm:self-auto flex-wrap">
-                  <label className="flex items-center gap-1.5 text-xs text-slate-300 font-medium cursor-pointer select-none bg-slate-900/80 hover:bg-slate-800/80 border border-slate-800 hover:border-slate-700 px-2.5 py-1 rounded-lg transition-colors">
-                    <input
-                      type="checkbox"
-                      checked={hideDuplicates}
-                      onChange={(e) => setHideDuplicates(e.target.checked)}
-                      className="rounded border-slate-700 text-emerald-500 focus:ring-0 cursor-pointer"
-                    />
-                    <span>Hide Duplicates</span>
-                    {duplicateCount > 0 && (
-                      <span className="text-[10px] px-1.5 py-0.2 rounded-full bg-amber-500/20 text-amber-400 font-bold border border-amber-500/30">
-                        {duplicateCount}
-                      </span>
-                    )}
-                  </label>
-                  {selectedRows.length > 0 && (
+                  {searchTerm && (
                     <button
-                      type="button"
-                      onClick={() => setBulkEditOpen(true)}
-                      className="px-3 py-1 rounded-lg bg-emerald-600/20 hover:bg-emerald-600/30 text-emerald-300 border border-emerald-500/40 transition-colors font-semibold flex items-center gap-1.5 cursor-pointer shadow-sm"
+                      onClick={() => setSearchTerm('')}
+                      className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
                     >
-                      <Sliders className="w-3.5 h-3.5" />
-                      <span>Bulk Edit Selected ({selectedRows.length})</span>
+                      <X className="w-3.5 h-3.5" />
                     </button>
                   )}
-                  <button
-                    type="button"
-                    onClick={() => handleSelectAll(true)}
-                    className="px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 transition-colors font-medium cursor-pointer"
-                  >
-                    Select All
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => handleSelectAll(false)}
-                    className="px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 transition-colors font-medium cursor-pointer"
-                  >
-                    Deselect All
-                  </button>
                 </div>
               </div>
 
-              {/* Preview Table */}
-              <div className="border border-slate-800 rounded-xl overflow-hidden bg-slate-950/40 shadow-inner">
-                <div className="max-h-80 overflow-y-auto custom-scrollbar">
-                  <table className="w-full text-left text-xs border-collapse">
-                    <thead className="bg-slate-900/90 text-slate-400 sticky top-0 z-10 border-b border-slate-800 font-semibold uppercase text-[10px] tracking-wider">
-                      <tr>
-                        <th className="p-2.5 text-center w-10">
-                          <input
-                            type="checkbox"
-                            checked={selectedRows.length === parsedRows.length && parsedRows.length > 0}
-                            onChange={(e) => handleSelectAll(e.target.checked)}
-                            className="rounded border-slate-700 text-emerald-500 focus:ring-0 cursor-pointer"
-                          />
-                        </th>
-                        <th className="p-2.5">Date</th>
-                        <th className="p-2.5">Category & Line Item</th>
-                        <th className="p-2.5">Merchant / Notes</th>
-                        <th className="p-2.5">Payer</th>
-                        <th className="p-2.5 text-right">Amount</th>
-                        <th className="p-2.5 text-center">Status</th>
-                        <th className="p-2.5 text-center w-16">Edit</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-slate-800/60 font-sans">
-                      {filteredRows.map((row) => (
-                        <tr
-                          key={row.id}
-                          className={`hover:bg-slate-900/40 transition-colors ${
-                            !row.selected ? 'opacity-40 bg-slate-950/60' : ''
-                          } ${row.isPaymentTransfer ? 'bg-rose-950/10' : ''}`}
-                        >
-                          <td className="p-2.5 text-center">
-                            <input
-                              type="checkbox"
-                              checked={row.selected}
-                              disabled={row.isPaymentTransfer}
-                              onChange={() => handleToggleRow(row.id)}
-                              className="rounded border-slate-700 text-emerald-500 focus:ring-0 cursor-pointer"
-                            />
-                          </td>
-                          <td className="p-2.5 font-mono text-slate-300 whitespace-nowrap">{row.date}</td>
-                          <td className="p-2.5 cursor-pointer" onClick={() => handleOpenRowEditor(row)}>
-                            <div className="font-semibold text-white flex items-center gap-1.5 group">
-                              <span className="px-1.5 py-0.5 rounded bg-slate-800 text-[10px] font-bold text-emerald-400 group-hover:bg-slate-700">
-                                {row.category}
-                              </span>
-                              <span className="underline decoration-slate-700 underline-offset-2 group-hover:text-emerald-300">
-                                {row.lineItem}
-                              </span>
-                            </div>
-                          </td>
-                          <td
-                            className="p-2.5 text-slate-300 max-w-[220px] truncate cursor-pointer hover:text-white"
-                            title={row.description}
-                            onClick={() => handleOpenRowEditor(row)}
-                          >
-                            <span>{row.description || <span className="text-slate-500 italic">None</span>}</span>
-                            {row.notes && <span className="text-slate-500 text-[10px] block truncate">{row.notes}</span>}
-                          </td>
-                          <td className="p-2.5 text-slate-300 whitespace-nowrap cursor-pointer hover:text-white" onClick={() => handleOpenRowEditor(row)}>
-                            <span className="px-2 py-0.5 rounded bg-slate-800/80 text-[11px] font-medium border border-slate-700/60">
-                              {row.payer}
-                            </span>
-                          </td>
-                          <td className="p-2.5 text-right font-mono font-bold whitespace-nowrap">
-                            <span className={row.amount < 0 ? 'text-teal-400' : 'text-slate-100'}>
-                              ${row.amount.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                            </span>
-                          </td>
-                          <td className="p-2.5 text-center whitespace-nowrap">
-                            {row.isPaymentTransfer ? (
-                              <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-rose-500/20 text-rose-400 border border-rose-500/30">
-                                Payment / Transfer (Skipped)
-                              </span>
-                            ) : row.isDuplicate ? (
-                              <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-500/20 text-amber-400 border border-amber-500/30">
-                                Duplicate
-                              </span>
-                            ) : (
-                              <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">
-                                New
-                              </span>
-                            )}
-                          </td>
-                          <td className="p-2.5 text-center">
-                            <button
-                              type="button"
-                              onClick={() => handleOpenRowEditor(row)}
-                              className="p-1 text-slate-400 hover:text-emerald-400 hover:bg-slate-800 rounded-lg transition-colors cursor-pointer"
-                              title="Edit Category, Notes, or Payer"
-                            >
-                              <Pencil className="w-3.5 h-3.5" />
-                            </button>
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
+              {/* Filter Pills */}
+              <div className="flex items-center gap-1.5 text-xs">
+                <button
+                  onClick={() => setActiveFilterTab('ALL')}
+                  className={`px-3 py-1 rounded-lg font-medium transition-colors ${
+                    activeFilterTab === 'ALL'
+                      ? 'bg-slate-900 text-white dark:bg-slate-100 dark:text-slate-900'
+                      : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800'
+                  }`}
+                >
+                  All ({parsedRows.length})
+                </button>
+                <button
+                  onClick={() => setActiveFilterTab('UNKNOWN')}
+                  className={`px-3 py-1 rounded-lg font-medium transition-colors flex items-center gap-1.5 ${
+                    activeFilterTab === 'UNKNOWN'
+                      ? 'bg-amber-600 text-white'
+                      : 'text-amber-700 dark:text-amber-400 hover:bg-amber-50 dark:hover:bg-amber-950/40'
+                  }`}
+                >
+                  <span>Needs Review</span>
+                  <span className="px-1.5 py-0.2 bg-amber-100 dark:bg-amber-900/60 rounded-full text-[10px]">
+                    {unknownCount}
+                  </span>
+                </button>
+                <button
+                  onClick={() => setActiveFilterTab('DUPLICATES')}
+                  className={`px-3 py-1 rounded-lg font-medium transition-colors flex items-center gap-1.5 ${
+                    activeFilterTab === 'DUPLICATES'
+                      ? 'bg-slate-700 text-white'
+                      : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800'
+                  }`}
+                >
+                  <span>Duplicates</span>
+                  <span className="px-1.5 py-0.2 bg-slate-200 dark:bg-slate-800 rounded-full text-[10px]">
+                    {duplicateCount}
+                  </span>
+                </button>
+                <button
+                  onClick={() => setActiveFilterTab('PAYMENTS')}
+                  className={`px-3 py-1 rounded-lg font-medium transition-colors ${
+                    activeFilterTab === 'PAYMENTS'
+                      ? 'bg-slate-700 text-white'
+                      : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800'
+                  }`}
+                >
+                  Payments ({paymentCount})
+                </button>
               </div>
 
-              {/* Checkbox: Also update Year Actuals record */}
-              <div className="flex items-center gap-2.5 p-3 rounded-xl bg-slate-950/60 border border-slate-800 text-xs">
-                <input
-                  type="checkbox"
-                  id="updateActualsCheck"
-                  checked={updateActualsRecord}
-                  onChange={(e) => setUpdateActualsRecord(e.target.checked)}
-                  className="rounded border-slate-700 text-emerald-500 focus:ring-0 cursor-pointer"
-                />
-                <label htmlFor="updateActualsCheck" className="text-slate-300 cursor-pointer">
-                  Update <strong>Year {targetYear} Living Expenses Actuals</strong> in planner ledger to match this backfilled sum (
-                  <strong className="text-emerald-400">${Math.round(totalSpendSelected).toLocaleString()}</strong>)
+              {/* Duplicates toggle & AI Match Button */}
+              <div className="flex items-center gap-3">
+                <label className="flex items-center gap-2 text-xs text-slate-600 dark:text-slate-400 cursor-pointer select-none">
+                  <input
+                    type="checkbox"
+                    checked={hideDuplicates}
+                    onChange={(e) => setHideDuplicates(e.target.checked)}
+                    className="rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
+                  />
+                  <span>Hide Duplicates</span>
                 </label>
-              </div>
 
-              {/* Progress Indicator if importing */}
-              {isImporting && (
-                <div className="space-y-2 p-3 bg-slate-950 border border-emerald-500/30 rounded-xl">
-                  <div className="flex items-center justify-between text-xs text-emerald-300 font-semibold">
-                    <span>Importing transactions into household ledger...</span>
-                    <span>{importProgress.current} / {importProgress.total} ({Math.round((importProgress.current / importProgress.total) * 100)}%)</span>
-                  </div>
-                  <div className="w-full bg-slate-800 rounded-full h-2 overflow-hidden">
-                    <div
-                      className="bg-emerald-500 h-2 transition-all duration-150 rounded-full"
-                      style={{ width: `${(importProgress.current / (importProgress.total || 1)) * 100}%` }}
-                    />
-                  </div>
-                </div>
-              )}
-            </div>
-          )}
-
-        </div>
-
-        {/* Footer Actions */}
-        <div className="px-6 py-4 border-t border-slate-800 bg-slate-900/90 flex items-center justify-between">
-          <button
-            type="button"
-            onClick={onClose}
-            className="px-4 py-2 rounded-xl text-xs font-semibold text-slate-400 hover:text-white hover:bg-slate-800 transition-colors cursor-pointer"
-          >
-            Cancel
-          </button>
-
-          {parsedRows.length > 0 && (
-            <div className="flex items-center gap-3">
-              <button
-                type="button"
-                onClick={handleExecuteImport}
-                disabled={selectedRows.length === 0 || isImporting}
-                className="px-5 py-2.5 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold text-xs flex items-center gap-2 transition-all shadow-lg shadow-emerald-950/50 disabled:opacity-50 cursor-pointer"
-              >
-                {isImporting ? (
-                  <RefreshCw className="w-4 h-4 animate-spin" />
-                ) : (
-                  <Check className="w-4 h-4 stroke-[2.5]" />
-                )}
-                <span>Import {selectedRows.length} Expenses (${Math.round(totalSpendSelected).toLocaleString()})</span>
-              </button>
-            </div>
-          )}
-        </div>
-
-      </div>
-
-      {/* --- Single Transaction Edit Dialog Modal --- */}
-      {editingTransaction && (
-        <div className="fixed inset-0 z-70 flex items-center justify-center bg-slate-950/80 backdrop-blur-sm p-4 overflow-y-auto animate-in fade-in duration-150">
-          <div className="bg-slate-900 border border-slate-700 rounded-2xl w-full max-w-xl shadow-2xl overflow-hidden text-slate-200">
-            {/* Modal Header */}
-            <div className="px-5 py-4 border-b border-slate-800 flex items-center justify-between bg-slate-900">
-              <div className="flex items-center gap-2.5">
-                <div className="p-2 rounded-xl bg-emerald-500/10 border border-emerald-500/30 text-emerald-400">
-                  <Pencil className="w-4 h-4" />
-                </div>
-                <div>
-                  <h3 className="text-sm font-bold text-white">Edit Transaction Details</h3>
-                  <p className="text-[11px] text-slate-400">
-                    {editingTransaction.date} • ${editingTransaction.amount.toFixed(2)}
-                  </p>
-                </div>
-              </div>
-              <button
-                type="button"
-                onClick={() => setEditingTransaction(null)}
-                className="p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 cursor-pointer"
-              >
-                <X className="w-4 h-4" />
-              </button>
-            </div>
-
-            {/* Modal Body */}
-            <div className="p-5 space-y-4 text-xs">
-              {/* Category & Line Item Selector */}
-              <div className="space-y-2 p-3.5 rounded-xl bg-slate-950/60 border border-slate-800">
-                <div className="flex items-center justify-between">
-                  <label className="text-[11px] font-bold text-slate-300 uppercase tracking-wider flex items-center gap-1.5">
-                    <Tag className="w-3.5 h-3.5 text-emerald-400" />
-                    Category & Line Item
-                  </label>
+                {unknownCount > 0 && (
                   <button
-                    type="button"
-                    onClick={() => setIsCreatingCustomItem(!isCreatingCustomItem)}
-                    className="text-[11px] font-semibold text-emerald-400 hover:text-emerald-300 flex items-center gap-1 cursor-pointer"
+                    onClick={handleRunAiCategorization}
+                    disabled={isAiMatching}
+                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700 text-white text-xs font-semibold shadow-md shadow-indigo-600/20 transition-all hover:scale-[1.02] active:scale-[0.98] disabled:opacity-50"
                   >
-                    <Plus className="w-3 h-3" />
-                    <span>{isCreatingCustomItem ? 'Choose Existing' : '+ Create New Line Item'}</span>
+                    <Sparkles className={`w-3.5 h-3.5 ${isAiMatching ? 'animate-spin' : ''}`} />
+                    <span>{isAiMatching ? 'Categorizing...' : `Smart Match AI (${unknownCount})`}</span>
                   </button>
-                </div>
-
-                {isCreatingCustomItem ? (
-                  <div className="space-y-2.5 pt-1">
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                      <div>
-                        <span className="text-[10px] text-slate-400 font-medium block mb-1">Group Category</span>
-                        <select
-                          value={customItemGroup}
-                          onChange={(e) => setCustomItemGroup(e.target.value)}
-                          className="w-full bg-slate-900 border border-slate-700 rounded-lg px-2.5 py-1.5 text-white focus:outline-none focus:border-emerald-500 cursor-pointer"
-                        >
-                          {standardCategoryGroups.map(grp => (
-                            <option key={grp} value={grp}>{grp}</option>
-                          ))}
-                        </select>
-                      </div>
-
-                      <div>
-                        <span className="text-[10px] text-slate-400 font-medium block mb-1">New Line Item Name</span>
-                        <input
-                          type="text"
-                          placeholder="e.g. Property Taxes, Landscaping"
-                          value={customItemName}
-                          onChange={(e) => setCustomItemName(e.target.value)}
-                          className="w-full bg-slate-900 border border-slate-700 rounded-lg px-2.5 py-1.5 text-white focus:outline-none focus:border-emerald-500"
-                        />
-                      </div>
-                    </div>
-
-                    <button
-                      type="button"
-                      onClick={handleCreateNewItem}
-                      disabled={!customItemName.trim()}
-                      className="w-full py-1.5 rounded-lg bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold text-xs flex items-center justify-center gap-1.5 transition-all disabled:opacity-50 cursor-pointer"
-                    >
-                      <Sparkles className="w-3.5 h-3.5" />
-                      <span>Add & Select Line Item</span>
-                    </button>
-                  </div>
-                ) : (
-                  <div>
-                    <select
-                      value={`${editCategory}:::${editLineItem}`}
-                      onChange={(e) => {
-                        const [grp, item] = e.target.value.split(':::');
-                        setEditCategory(grp);
-                        setEditLineItem(item);
-                      }}
-                      className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-white font-medium focus:outline-none focus:border-emerald-500 cursor-pointer"
-                    >
-                      {standardCategoryGroups.map(grp => {
-                        const itemsInGroup = catalogItems.filter(i => (i.groupCategory || 'Living') === grp);
-                        return (
-                          <optgroup key={grp} label={`Category: ${grp}`}>
-                            {itemsInGroup.map(item => (
-                              <option key={item.id} value={`${grp}:::${item.name}`}>
-                                {grp} → {item.name}
-                              </option>
-                            ))}
-                            {/* Fallback if current line item is not yet in catalog */}
-                            {editCategory === grp && !itemsInGroup.some(i => i.name === editLineItem) && editLineItem && (
-                              <option value={`${grp}:::${editLineItem}`}>
-                                {grp} → {editLineItem} (Custom)
-                              </option>
-                            )}
-                          </optgroup>
-                        );
-                      })}
-                    </select>
-                  </div>
                 )}
               </div>
+            </div>
 
-              {/* Merchant / Description & Notes */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <div>
-                  <label className="text-[11px] font-bold text-slate-400 uppercase tracking-wider block mb-1">
-                    Merchant / Description
-                  </label>
-                  <input
-                    type="text"
-                    value={editDescription}
-                    onChange={(e) => setEditDescription(e.target.value)}
-                    className="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-1.5 text-white focus:outline-none focus:border-emerald-500"
-                  />
+            {/* Bulk Action Bar (when rows are selected) */}
+            {selectedRows.length > 0 && (
+              <div className="px-6 py-2.5 bg-indigo-50/90 dark:bg-indigo-950/70 border-b border-indigo-200 dark:border-indigo-800/60 flex flex-wrap items-center justify-between gap-3 text-xs">
+                <div className="flex items-center gap-2 text-indigo-900 dark:text-indigo-200 font-semibold">
+                  <span>{selectedRows.length} rows selected</span>
+                  <span className="text-indigo-400 dark:text-indigo-500">•</span>
+                  <span>Total: ${totalSpendSelected.toFixed(2)}</span>
                 </div>
 
-                <div>
-                  <label className="text-[11px] font-bold text-slate-400 uppercase tracking-wider block mb-1">
-                    Notes / Memo
-                  </label>
-                  <input
-                    type="text"
-                    placeholder="Optional memo or tags..."
-                    value={editNotes}
-                    onChange={(e) => setEditNotes(e.target.value)}
-                    className="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-1.5 text-white focus:outline-none focus:border-emerald-500"
-                  />
-                </div>
-              </div>
-
-              {/* Payer, Amount & Date */}
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                <div>
-                  <label className="text-[11px] font-bold text-slate-400 uppercase tracking-wider block mb-1 flex items-center gap-1">
-                    <User className="w-3 h-3 text-emerald-400" />
-                    Payer
-                  </label>
+                <div className="flex items-center gap-2">
                   <select
-                    value={editPayer}
-                    onChange={(e) => setEditPayer(e.target.value)}
-                    className="w-full bg-slate-950 border border-slate-700 rounded-lg px-2.5 py-1.5 text-white focus:outline-none focus:border-emerald-500 cursor-pointer"
+                    value={bulkCategory}
+                    onChange={(e) => setBulkCategory(e.target.value)}
+                    className="px-2 py-1 rounded-lg border border-indigo-200 dark:border-indigo-800 bg-white dark:bg-slate-900 text-xs text-slate-900 dark:text-slate-100"
                   >
+                    <option value="">-- Set Category --</option>
+                    {availableCategoryGroups.map(g => (
+                      <option key={g} value={g}>{g}</option>
+                    ))}
+                  </select>
+
+                  <select
+                    value={bulkLineItem}
+                    onChange={(e) => setBulkLineItem(e.target.value)}
+                    className="px-2 py-1 rounded-lg border border-indigo-200 dark:border-indigo-800 bg-white dark:bg-slate-900 text-xs text-slate-900 dark:text-slate-100"
+                  >
+                    <option value="">-- Set Line Item --</option>
+                    {catalogItems
+                      .filter(c => !bulkCategory || c.groupCategory === bulkCategory)
+                      .map(i => (
+                        <option key={i.id} value={i.name}>{i.name}</option>
+                      ))}
+                  </select>
+
+                  <select
+                    value={bulkPayer}
+                    onChange={(e) => setBulkPayer(e.target.value)}
+                    className="px-2 py-1 rounded-lg border border-indigo-200 dark:border-indigo-800 bg-white dark:bg-slate-900 text-xs text-slate-900 dark:text-slate-100"
+                  >
+                    <option value="">-- Set Payer --</option>
                     {payerOptions.map(p => (
                       <option key={p} value={p}>{p}</option>
                     ))}
                   </select>
-                </div>
 
-                <div>
-                  <label className="text-[11px] font-bold text-slate-400 uppercase tracking-wider block mb-1">
-                    Amount ($)
-                  </label>
-                  <input
-                    type="number"
-                    step="0.01"
-                    value={editAmount}
-                    onChange={(e) => setEditAmount(e.target.value)}
-                    className="w-full bg-slate-950 border border-slate-700 rounded-lg px-2.5 py-1.5 text-white focus:outline-none focus:border-emerald-500"
-                  />
-                </div>
-
-                <div>
-                  <label className="text-[11px] font-bold text-slate-400 uppercase tracking-wider block mb-1">
-                    Transaction Date
-                  </label>
-                  <input
-                    type="date"
-                    value={editDate}
-                    onChange={(e) => setEditDate(e.target.value)}
-                    className="w-full bg-slate-950 border border-slate-700 rounded-lg px-2.5 py-1.5 text-white focus:outline-none focus:border-emerald-500"
-                  />
+                  <button
+                    onClick={handleApplyBulkEdit}
+                    className="px-3 py-1 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white font-semibold shadow-sm"
+                  >
+                    Apply Bulk Edit
+                  </button>
                 </div>
               </div>
+            )}
 
-              {/* Checkbox: Propagate to matching merchants */}
-              {editingTransaction.description && (
-                <div className="p-3 rounded-xl bg-slate-950/60 border border-slate-800 flex items-center gap-2.5">
-                  <input
-                    type="checkbox"
-                    id="applyMatchingCheck"
-                    checked={applyToMatchingMerchants}
-                    onChange={(e) => setApplyToMatchingMerchants(e.target.checked)}
-                    className="rounded border-slate-700 text-emerald-500 focus:ring-0 cursor-pointer"
-                  />
-                  <label htmlFor="applyMatchingCheck" className="text-slate-300 text-xs cursor-pointer">
-                    Also apply this Category, Line Item, and Payer to all other transactions matching <strong>"{editingTransaction.description}"</strong>
-                  </label>
-                </div>
-              )}
+            {/* Table Worksheet */}
+            <div className="flex-1 overflow-auto">
+              <table className="w-full text-left text-xs border-collapse">
+                <thead className="sticky top-0 z-10 bg-slate-100 dark:bg-slate-900 text-slate-600 dark:text-slate-300 border-b border-slate-200 dark:border-slate-800 font-semibold shadow-sm">
+                  <tr>
+                    <th className="py-2.5 px-3 w-10 text-center">
+                      <input
+                        type="checkbox"
+                        checked={selectedRows.length > 0 && selectedRows.length === filteredRows.filter(r => !r.isPaymentTransfer).length}
+                        onChange={(e) => handleSelectAll(e.target.checked)}
+                        className="rounded border-slate-300 text-indigo-600 focus:ring-indigo-500 cursor-pointer"
+                      />
+                    </th>
+                    <th className="py-2.5 px-3 w-24">Date</th>
+                    <th className="py-2.5 px-3 min-w-[200px]">Merchant / Payee</th>
+                    <th className="py-2.5 px-3 w-36">Category</th>
+                    <th className="py-2.5 px-3 w-48">Line Item</th>
+                    <th className="py-2.5 px-3 w-28 text-right">Amount</th>
+                    <th className="py-2.5 px-3 min-w-[150px]">Notes</th>
+                    <th className="py-2.5 px-3 w-28">Payer</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100 dark:divide-slate-800/60 font-sans">
+                  {filteredRows.map(row => {
+                    const isRowUnknown = row.isUnknown || row.lineItem === 'Unknown';
+                    const categoryLineItems = catalogItems.filter(c => c.groupCategory === row.category);
+
+                    return (
+                      <tr
+                        key={row.id}
+                        className={`transition-colors ${
+                          row.isPaymentTransfer
+                            ? 'opacity-40 bg-slate-100/30 dark:bg-slate-900/30'
+                            : row.isDuplicate
+                            ? 'bg-slate-100/50 dark:bg-slate-900/50 text-slate-500'
+                            : isRowUnknown
+                            ? 'bg-amber-50/40 dark:bg-amber-950/20 hover:bg-amber-50/70'
+                            : 'hover:bg-slate-50 dark:hover:bg-slate-800/40'
+                        }`}
+                      >
+                        {/* Select Checkbox */}
+                        <td className="py-2 px-3 text-center">
+                          <input
+                            type="checkbox"
+                            checked={row.selected && !row.isPaymentTransfer}
+                            disabled={row.isPaymentTransfer}
+                            title={row.isPaymentTransfer ? "Payments and transfers are automatically excluded from storage" : undefined}
+                            onChange={() => handleToggleRow(row.id)}
+                            className="rounded border-slate-300 text-indigo-600 focus:ring-indigo-500 cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed"
+                          />
+                        </td>
+
+                        {/* Date */}
+                        <td className="py-2 px-3 font-mono text-slate-700 dark:text-slate-300 whitespace-nowrap">
+                          {row.date}
+                        </td>
+
+                        {/* Merchant & Badges */}
+                        <td className="py-2 px-3">
+                          <div className="flex items-center gap-1.5 flex-wrap">
+                            <span className="font-semibold text-slate-900 dark:text-slate-100">
+                              {row.normalizedMerchant || row.rawDescription}
+                            </span>
+
+                            {row.isDuplicate && (
+                              <span className="px-1.5 py-0.5 rounded text-[10px] font-semibold bg-slate-200 dark:bg-slate-800 text-slate-600 dark:text-slate-400">
+                                Duplicate
+                              </span>
+                            )}
+
+                            {row.isPaymentTransfer && (
+                              <span
+                                title="Internal payment / transfer - excluded from stored expenses"
+                                className="px-1.5 py-0.5 rounded text-[10px] font-semibold bg-blue-100 dark:bg-blue-950/60 text-blue-700 dark:text-blue-300"
+                              >
+                                Payment (Excluded)
+                              </span>
+                            )}
+
+                            {isRowUnknown && !row.isPaymentTransfer && (
+                              <span className="px-1.5 py-0.5 rounded text-[10px] font-semibold bg-amber-100 dark:bg-amber-950 text-amber-800 dark:text-amber-300">
+                                Unknown
+                              </span>
+                            )}
+
+                            {row.mappingSource === 'learned' && (
+                              <span className="px-1.5 py-0.5 rounded text-[10px] font-semibold bg-emerald-100 dark:bg-emerald-950/60 text-emerald-800 dark:text-emerald-300">
+                                Learned
+                              </span>
+                            )}
+
+                            {row.mappingSource === 'llm' && (
+                              <span className="px-1.5 py-0.5 rounded text-[10px] font-semibold bg-purple-100 dark:bg-purple-950/60 text-purple-800 dark:text-purple-300">
+                                AI
+                              </span>
+                            )}
+                          </div>
+                          {row.rawDescription !== row.normalizedMerchant && (
+                            <div className="text-[11px] text-slate-400 dark:text-slate-500 truncate max-w-xs">
+                              {row.rawDescription}
+                            </div>
+                          )}
+                        </td>
+
+                        {/* Category Dropdown */}
+                        <td className="py-2 px-3">
+                          <select
+                            value={row.category}
+                            onChange={(e) => handleUpdateRowCategory(row.id, e.target.value)}
+                            className="w-full py-1 px-2 text-xs rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-200 focus:ring-1 focus:ring-indigo-500"
+                          >
+                            {availableCategoryGroups.map(g => (
+                              <option key={g} value={g}>{g}</option>
+                            ))}
+                          </select>
+                        </td>
+
+                        {/* Line Item Dropdown with Add-on-the-fly */}
+                        <td className="py-2 px-3">
+                          <div className="flex items-center gap-1">
+                            <select
+                              value={row.lineItem}
+                              onChange={(e) => {
+                                if (e.target.value === '__CREATE_NEW__') {
+                                  setInlineCreateRowId(row.id);
+                                  setNewItemCategory(row.category);
+                                } else {
+                                  handleUpdateRowLineItem(row.id, e.target.value);
+                                }
+                              }}
+                              className={`w-full py-1 px-2 text-xs rounded-lg border ${
+                                row.lineItem === 'Unknown'
+                                  ? 'border-amber-400 bg-amber-50/50 dark:bg-amber-950/30 text-amber-900 dark:text-amber-200 font-semibold'
+                                  : 'border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-200'
+                              } focus:ring-1 focus:ring-indigo-500`}
+                            >
+                              {categoryLineItems.map(item => (
+                                <option key={item.id} value={item.name}>{item.name}</option>
+                              ))}
+                              <option value="Unknown">Unknown / Uncategorized</option>
+                              <option value="__CREATE_NEW__">+ Create New Line Item...</option>
+                            </select>
+                          </div>
+                        </td>
+
+                        {/* Amount */}
+                        <td className={`py-2 px-3 text-right font-mono font-bold whitespace-nowrap ${
+                          row.amount < 0
+                            ? 'text-emerald-600 dark:text-emerald-400'
+                            : 'text-slate-900 dark:text-slate-100'
+                        }`}>
+                          {row.amount < 0 ? `-$${Math.abs(row.amount).toFixed(2)}` : `$${row.amount.toFixed(2)}`}
+                        </td>
+
+                        {/* Notes */}
+                        <td className="py-2 px-3">
+                          <input
+                            type="text"
+                            value={row.notes}
+                            onChange={(e) => handleUpdateRowNotes(row.id, e.target.value)}
+                            placeholder="Add memo..."
+                            className="w-full py-1 px-2 text-xs rounded-lg border border-transparent hover:border-slate-200 dark:hover:border-slate-700 focus:border-indigo-500 bg-transparent dark:focus:bg-slate-800 text-slate-700 dark:text-slate-300"
+                          />
+                        </td>
+
+                        {/* Payer */}
+                        <td className="py-2 px-3">
+                          <select
+                            value={row.payer}
+                            onChange={(e) => handleUpdateRowPayer(row.id, e.target.value)}
+                            className="w-full py-1 px-1.5 text-xs rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-200"
+                          >
+                            {payerOptions.map(p => (
+                              <option key={p} value={p}>{p}</option>
+                            ))}
+                          </select>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
             </div>
 
-            {/* Modal Footer */}
-            <div className="px-5 py-3 border-t border-slate-800 bg-slate-900 flex items-center justify-end gap-2.5">
+            {/* Bottom Worksheet Bar */}
+            <div className="flex items-center justify-between px-6 py-3.5 border-t border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900">
+              <div className="flex items-center gap-4 text-xs">
+                <span className="text-slate-500 dark:text-slate-400">
+                  Ready to Commit:{' '}
+                  <strong className="text-slate-900 dark:text-slate-100">{selectedRows.length}</strong> of{' '}
+                  {parsedRows.length} transactions
+                </span>
+                <span className="text-slate-300 dark:text-slate-700">|</span>
+                <span className="text-slate-500 dark:text-slate-400">
+                  Total Spend:{' '}
+                  <strong className="text-indigo-600 dark:text-indigo-400 text-sm">
+                    ${totalSpendSelected.toFixed(2)}
+                  </strong>
+                </span>
+              </div>
+
+              <div className="flex items-center gap-3">
+                <button
+                  onClick={() => {
+                    setParsedRows([]);
+                    setCsvText('');
+                  }}
+                  className="px-4 py-2 rounded-xl text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 font-medium text-xs transition-colors"
+                >
+                  Clear & Re-Upload
+                </button>
+                <button
+                  onClick={handleExecuteSubmit}
+                  disabled={selectedRows.length === 0 || isSubmitting}
+                  className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-semibold text-xs shadow-lg shadow-indigo-600/20 transition-all hover:scale-[1.02] active:scale-[0.98] disabled:opacity-50"
+                >
+                  <Check className="w-4 h-4" />
+                  <span>
+                    {isSubmitting
+                      ? `Saving ${submitProgress.current}/${submitProgress.total}...`
+                      : `Submit ${selectedRows.length} Expenses`}
+                  </span>
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* Format Setup Modal */}
+      {isFormatSetupOpen && formatSetupInitialMapping && (
+        <FormatSetupModal
+          isOpen={isFormatSetupOpen}
+          onClose={() => setIsFormatSetupOpen(false)}
+          headers={rawHeaders}
+          sampleRows={rawSampleLines}
+          initialMapping={formatSetupInitialMapping}
+          initialNickname={currentProfile?.nickname || 'New Statement Profile'}
+          fingerprint={calculateHeaderFingerprint(rawHeaders)}
+          onSaveProfile={handleSaveFormatProfile}
+        />
+      )}
+
+      {/* Inline Create Item Modal */}
+      {inlineCreateRowId && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/60 backdrop-blur-sm animate-fade-in">
+          <div className="bg-white dark:bg-slate-900 rounded-2xl shadow-xl border border-slate-200 dark:border-slate-800 p-6 w-full max-w-md space-y-4">
+            <h3 className="text-base font-bold text-slate-900 dark:text-slate-100">
+              Create New Line Item
+            </h3>
+            <p className="text-xs text-slate-500">
+              This new item will be safely added to your catalog with safe defaults ($0 budget) and will be available for all future statements.
+            </p>
+            <div className="space-y-3">
+              <div>
+                <label className="block text-xs font-semibold text-slate-600 dark:text-slate-400 mb-1">
+                  Category Group
+                </label>
+                <select
+                  value={newItemCategory}
+                  onChange={(e) => setNewItemCategory(e.target.value)}
+                  className="w-full px-3 py-2 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-xs text-slate-900 dark:text-slate-100"
+                >
+                  {availableCategoryGroups.map(g => (
+                    <option key={g} value={g}>{g}</option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="block text-xs font-semibold text-slate-600 dark:text-slate-400 mb-1">
+                  Line Item Name
+                </label>
+                <input
+                  type="text"
+                  value={newItemName}
+                  onChange={(e) => setNewItemName(e.target.value)}
+                  placeholder="e.g. Lawn Care, Veterinary, Golf Membership"
+                  className="w-full px-3.5 py-2 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-xs text-slate-900 dark:text-slate-100 focus:ring-2 focus:ring-indigo-500"
+                />
+              </div>
+            </div>
+            <div className="flex items-center justify-end gap-2 pt-2">
               <button
-                type="button"
-                onClick={() => setEditingTransaction(null)}
-                className="px-3.5 py-1.5 rounded-xl text-xs font-semibold text-slate-400 hover:text-white hover:bg-slate-800 transition-colors cursor-pointer"
+                onClick={() => setInlineCreateRowId(null)}
+                className="px-4 py-2 rounded-xl text-xs font-medium text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800"
               >
                 Cancel
               </button>
               <button
-                type="button"
-                onClick={handleSaveRowEdit}
-                className="px-4 py-1.5 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold text-xs flex items-center gap-1.5 transition-all cursor-pointer shadow-md"
+                onClick={handleCreateNewItemOnTheFly}
+                disabled={!newItemName.trim()}
+                className="px-4 py-2 rounded-xl text-xs font-semibold bg-indigo-600 hover:bg-indigo-700 text-white disabled:opacity-50"
               >
-                <Check className="w-3.5 h-3.5 stroke-[2.5]" />
-                <span>Save Changes</span>
+                Create Item
               </button>
             </div>
           </div>
         </div>
       )}
 
-      {/* --- Bulk Edit Modal --- */}
-      {bulkEditOpen && (
-        <div className="fixed inset-0 z-70 flex items-center justify-center bg-slate-950/80 backdrop-blur-sm p-4 overflow-y-auto animate-in fade-in duration-150">
-          <div className="bg-slate-900 border border-slate-700 rounded-2xl w-full max-w-lg shadow-2xl overflow-hidden text-slate-200">
-            <div className="px-5 py-4 border-b border-slate-800 flex items-center justify-between bg-slate-900">
-              <div className="flex items-center gap-2.5">
-                <div className="p-2 rounded-xl bg-emerald-500/10 border border-emerald-500/30 text-emerald-400">
-                  <Sliders className="w-4 h-4" />
-                </div>
-                <div>
-                  <h3 className="text-sm font-bold text-white">Bulk Edit Selected Transactions</h3>
-                  <p className="text-[11px] text-slate-400">
-                    Applying changes to {selectedRows.length} selected transaction{selectedRows.length === 1 ? '' : 's'}.
-                  </p>
-                </div>
+      {/* Gemini API Key Configuration Modal */}
+      {isApiKeyModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/60 backdrop-blur-sm animate-fade-in">
+          <div className="bg-white dark:bg-slate-900 rounded-2xl shadow-xl border border-slate-200 dark:border-slate-800 p-6 w-full max-w-md space-y-4">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2 text-indigo-600 dark:text-indigo-400 font-bold text-base">
+                <Key className="w-5 h-5" />
+                <span>AI Categorization Settings</span>
               </div>
               <button
-                type="button"
-                onClick={() => setBulkEditOpen(false)}
-                className="p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 cursor-pointer"
+                onClick={() => {
+                  setShowApiKeyClearText(false);
+                  setIsApiKeyModalOpen(false);
+                }}
+                className="text-slate-400 hover:text-slate-600"
               >
                 <X className="w-4 h-4" />
               </button>
             </div>
-
-            <div className="p-5 space-y-4 text-xs">
-              <div>
-                <label className="text-[11px] font-bold text-slate-400 uppercase tracking-wider block mb-1">
-                  Assign Category & Line Item (Optional)
+            <p className="text-xs text-slate-500 dark:text-slate-400 leading-relaxed">
+              In Local and Demo mode, smart categorization uses <strong>Google Gemini Flash</strong>. Your API key is stored locally in your browser and is never committed or sent to any third party. In Cloud mode, AWS Bedrock Nova Micro is automatically utilized via IAM.
+            </p>
+            <div>
+              <div className="flex items-center justify-between mb-1">
+                <label className="block text-xs font-semibold text-slate-600 dark:text-slate-400">
+                  Google Gemini API Key
                 </label>
-                <select
-                  value={bulkCategory && bulkLineItem ? `${bulkCategory}:::${bulkLineItem}` : ''}
-                  onChange={(e) => {
-                    if (!e.target.value) {
-                      setBulkCategory('');
-                      setBulkLineItem('');
-                    } else {
-                      const [grp, item] = e.target.value.split(':::');
-                      setBulkCategory(grp);
-                      setBulkLineItem(item);
+                <span className="text-[11px] text-slate-400 dark:text-slate-500 select-none">
+                  Hold icon to view
+                </span>
+              </div>
+              <div className="relative flex items-center">
+                <input
+                  type={showApiKeyClearText ? 'text' : 'password'}
+                  value={geminiApiKeyInput}
+                  onChange={(e) => setGeminiApiKeyInput(e.target.value)}
+                  placeholder="AIzaSy..."
+                  className="w-full pl-3.5 pr-10 py-2 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-xs font-mono text-slate-900 dark:text-slate-100 focus:ring-2 focus:ring-indigo-500"
+                />
+                <button
+                  type="button"
+                  title="Press and hold to view API key in clear text"
+                  aria-label="Press and hold to view API key in clear text"
+                  onMouseDown={() => setShowApiKeyClearText(true)}
+                  onMouseUp={() => setShowApiKeyClearText(false)}
+                  onMouseLeave={() => setShowApiKeyClearText(false)}
+                  onTouchStart={() => setShowApiKeyClearText(true)}
+                  onTouchEnd={() => setShowApiKeyClearText(false)}
+                  onKeyDown={(e) => {
+                    if (e.key === ' ' || e.key === 'Enter') {
+                      setShowApiKeyClearText(true);
                     }
                   }}
-                  className="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-white font-medium focus:outline-none focus:border-emerald-500 cursor-pointer"
+                  onKeyUp={(e) => {
+                    if (e.key === ' ' || e.key === 'Enter') {
+                      setShowApiKeyClearText(false);
+                    }
+                  }}
+                  className="absolute right-2 p-1.5 text-slate-400 hover:text-slate-600 dark:text-slate-500 dark:hover:text-slate-300 rounded-lg select-none cursor-pointer hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors"
                 >
-                  <option value="">-- Leave Unchanged --</option>
-                  {standardCategoryGroups.map(grp => (
-                    <optgroup key={grp} label={`Category: ${grp}`}>
-                      {catalogItems.filter(i => (i.groupCategory || 'Living') === grp).map(item => (
-                        <option key={item.id} value={`${grp}:::${item.name}`}>
-                          {grp} → {item.name}
-                        </option>
-                      ))}
-                    </optgroup>
-                  ))}
-                </select>
-              </div>
-
-              <div>
-                <label className="text-[11px] font-bold text-slate-400 uppercase tracking-wider block mb-1">
-                  Assign Payer (Optional)
-                </label>
-                <select
-                  value={bulkPayer}
-                  onChange={(e) => setBulkPayer(e.target.value)}
-                  className="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-white font-medium focus:outline-none focus:border-emerald-500 cursor-pointer"
-                >
-                  <option value="">-- Leave Unchanged --</option>
-                  {payerOptions.map(p => (
-                    <option key={p} value={p}>{p}</option>
-                  ))}
-                </select>
+                  {showApiKeyClearText ? (
+                    <EyeOff className="w-4 h-4 text-indigo-600 dark:text-indigo-400" />
+                  ) : (
+                    <Eye className="w-4 h-4" />
+                  )}
+                </button>
               </div>
             </div>
-
-            <div className="px-5 py-3 border-t border-slate-800 bg-slate-900 flex items-center justify-end gap-2.5">
+            <div className="flex items-center justify-end gap-2 pt-2">
               <button
-                type="button"
-                onClick={() => setBulkEditOpen(false)}
-                className="px-3.5 py-1.5 rounded-xl text-xs font-semibold text-slate-400 hover:text-white hover:bg-slate-800 transition-colors cursor-pointer"
+                onClick={() => {
+                  setShowApiKeyClearText(false);
+                  setIsApiKeyModalOpen(false);
+                }}
+                className="px-4 py-2 rounded-xl text-xs font-medium text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800"
               >
                 Cancel
               </button>
               <button
-                type="button"
-                onClick={handleSaveBulkEdit}
-                disabled={!bulkCategory && !bulkPayer}
-                className="px-4 py-1.5 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold text-xs flex items-center gap-1.5 transition-all cursor-pointer shadow-md disabled:opacity-50"
+                onClick={() => {
+                  saveGeminiApiKey(geminiApiKeyInput);
+                  setShowApiKeyClearText(false);
+                  setIsApiKeyModalOpen(false);
+                }}
+                className="px-4 py-2 rounded-xl text-xs font-semibold bg-indigo-600 hover:bg-indigo-700 text-white"
               >
-                <Check className="w-3.5 h-3.5 stroke-[2.5]" />
-                <span>Apply to Selected</span>
+                Save Key
               </button>
             </div>
           </div>
         </div>
       )}
-
     </div>
   );
+
+  return typeof document !== 'undefined' ? createPortal(modalContent, document.body) : null;
 };
