@@ -19,19 +19,22 @@ An interactive, premium, 35-year financial planning web application. This tool e
   - [Sidebar Navigation & Parameter Workspaces](#sidebar-navigation--parameter-workspaces)
   - [Global Keyboard Shortcuts](#global-keyboard-shortcuts)
 - [Advanced Optimization & Analytics Engine](#advanced-optimization--analytics-engine)
-- [🛠️ Development & Environment Setup](#️-development--environment-setup)
+- [🚀 Quick Start (Standalone Local App / Non-Developers)](#-quick-start-standalone-local-app--non-developers)
+  - [Download & Run the Standalone Binary](#download--run-the-standalone-binary)
+  - [Command-Line Options & Port Configuration](#command-line-options--port-configuration)
+  - [Building the Standalone Binary from Source](#building-the-standalone-binary-from-source)
+- [🛠️ Development Installation & Environment Setup](#️-development-installation--environment-setup)
   - [System Requirements](#system-requirements)
-  - [🐧 Linux & WSL Setup](#-linux--wsl-setup)
-  - [🍎 macOS Setup](#-macos-setup)
-  - [🪟 Windows Setup (Native PowerShell/CMD)](#-windows-setup-native-powershellcmd)
-    - [Option A: With Administrator Access](#option-a-with-administrator-access)
-    - [Option B: Without Administrator Access (Non-Admin)](#option-b-without-administrator-access-non-admin)
-  - [⚡ Running the Production Build Locally (High Performance)](#-running-the-production-build-locally-high-performance)
+  - [🐧 Linux & WSL Setup (Dev)](#-linux--wsl-setup-dev)
+  - [🍎 macOS Setup (Dev)](#-macos-setup-dev)
+  - [🪟 Windows Setup (PowerShell / Dev)](#-windows-setup-powershell--dev)
+  - [⚡ Running the Vite Production Build (High Performance)](#-running-the-vite-production-build-high-performance)
 - [🛠️ Verification, Testing & Build Commands](#️-verification-testing--build-commands)
   - [Unit Test Suite](#unit-test-suite)
   - [Code Quality & Linting](#code-quality--linting)
   - [Type Check & Production Build](#type-check--production-build)
   - [Preview Production Build](#preview-production-build)
+  - [Compile Standalone Go Server](#compile-standalone-go-server)
   - [🐳 Docker Container Deployment](#-docker-container-deployment)
 - [💻 Recommended Developer Tools](#-recommended-developer-tools)
 - [📄 License & Disclaimer](#-license--disclaimer)
@@ -146,17 +149,102 @@ The simulation engine incorporates specialized financial logic:
 
 ---
 
-## 🛠️ Development & Environment Setup
+## 🚀 Quick Start (Standalone Local App / Non-Developers)
 
-Follow these instructions to set up the Node.js toolchain, configure your local environment, install dependencies, and run the development server.
+If you simply want to run and use the Retirement Planner locally on your personal machine, you **do not need Node.js, npm, or any development toolchains installed**. The application is distributed as a single standalone executable that embeds the entire pre-compiled web client and launches an instant local web server.
+
+### Download & Run the Standalone Binary
+
+1. Obtain the binary for your operating system from GitHub Releases or from the built project:
+   - **Linux**: `retirement-planner` (or `dist-bin/retirement-planner-linux-amd64` / `arm64`)
+   - **macOS**: `retirement-planner` (or `dist-bin/retirement-planner-darwin-arm64` for Apple Silicon / `amd64` for Intel)
+   - **Windows**: `retirement-planner.exe` (or `dist-bin/retirement-planner-windows-amd64.exe`)
+
+2. Run the application from your terminal or command prompt:
+
+   **Linux / macOS**:
+   ```bash
+   chmod +x ./retirement-planner
+   ./retirement-planner
+   ```
+
+   **Windows (PowerShell / Command Prompt)**:
+   ```powershell
+   .\retirement-planner.exe
+   ```
+
+3. Open your web browser and navigate to:
+   ```text
+   http://localhost:8999
+   ```
+   To access the integrated standalone Expense Categorizer utility directly:
+   ```text
+   http://localhost:8999/expenser
+   ```
+
+To stop the application at any time, press `Ctrl+C` in your terminal.
+
+---
+
+### Command-Line Options & Port Configuration
+
+The server defaults to listening on port `8999` bound to `127.0.0.1` (localhost). You can override the port, host binding, or instruct it to automatically open your browser on start using command-line arguments:
+
+| Flag | Default | Description |
+|---|---|---|
+| `--port <number>` | `8999` | Port to serve the application on |
+| `--host <address>` | `127.0.0.1` | Local network interface address to bind |
+| `--open` | `false` | Automatically launch default web browser on start |
+| `-h`, `--help` | — | Display help menu and available options |
+
+#### Examples:
+```bash
+# Run on a different port (e.g., 9000)
+./retirement-planner --port 9000
+
+# Automatically open the application in your default web browser
+./retirement-planner --open
+
+# Bind to all network interfaces on port 8080 (for LAN access)
+./retirement-planner --host 0.0.0.0 --port 8080
+```
+
+---
+
+### Building the Standalone Binary from Source
+
+If you have cloned the source repository and have Node.js and Go installed, you can build the standalone single binary in one command:
+
+```bash
+# Compile updated /dist assets and build the Go binary
+./build-go.sh
+
+# Or build and immediately run on port 8999:
+./build-go.sh --run
+
+# Or compile cross-platform binaries for Linux, macOS, and Windows:
+./build-go.sh --all
+```
+
+The resulting executable will be placed in the project root as `./retirement-planner`.
+
+---
+
+## 🛠️ Development Installation & Environment Setup
+
+Follow these instructions if you want to inspect source code, modify components, or contribute to the planner. This setup runs the live Vite Node.js development server with Hot Module Replacement (HMR) and real-time state synchronization.
+
+> [!NOTE]
+> All Git instructions below assume you have GitHub SSH keys configured for read/write repository access (`git@github.com:...`).
 
 ### System Requirements
 * **Node.js**: `v20.x` or `v22.x` (Active LTS versions recommended; `v18+` minimum supported)
 * **NPM**: `v9.x` or `v10.x` (comes bundled with Node.js)
+* **Git**: configured with SSH key access
 
 ---
 
-### 🐧 Linux & WSL Setup
+### 🐧 Linux & WSL Setup (Dev)
 
 For Linux (Ubuntu/Debian, Fedora, etc.) or Windows Subsystem for Linux (WSL), using **Node Version Manager (NVM)** is recommended:
 
@@ -176,14 +264,14 @@ node --version # Outputs v20.x.x
 npm --version  # Outputs v10.x.x
 ```
 
-#### 2. Clone Repository & Install Dependencies
+#### 2. Clone Repository via SSH & Install Dependencies
 ```bash
 # Create and navigate to your repos directory
 mkdir -p ~/repos
 cd ~/repos
 
-# Clone the repository via HTTPS (or use git@github.com:mpetronic/retirement-planner.git with SSH)
-git clone https://github.com/mpetronic/retirement-planner.git
+# Clone repository via SSH
+git clone git@github.com:mpetronic/retirement-planner.git
 cd retirement-planner
 
 # Clean install packages
@@ -194,11 +282,11 @@ npm install
 ```bash
 npm run dev
 ```
-The application will launch locally at `http://localhost:5173`.
+The application will launch with hot reloads at `http://localhost:5173`.
 
 ---
 
-### 🍎 macOS Setup
+### 🍎 macOS Setup (Dev)
 
 #### 1. Install Node.js
 Choose one of the following methods in Terminal:
@@ -220,11 +308,11 @@ Choose one of the following methods in Terminal:
 * **Via Official Installer**:
   Download and run the **macOS Installer (.pkg)** from the [Node.js Downloads Page](https://nodejs.org/en/download/).
 
-#### 2. Clone Repository, Install & Run Dev Server
+#### 2. Clone Repository via SSH, Install & Run Dev Server
 ```zsh
 mkdir -p ~/repos
 cd ~/repos
-git clone https://github.com/mpetronic/retirement-planner.git
+git clone git@github.com:mpetronic/retirement-planner.git
 cd retirement-planner
 npm install
 npm run dev
@@ -233,32 +321,23 @@ Navigate your browser to `http://localhost:5173`.
 
 ---
 
-### 🪟 Windows Setup (Native PowerShell/CMD)
+### 🪟 Windows Setup (PowerShell / Dev)
 
-Choose the setup procedure that matches your Windows user permissions:
-* **[Option A: With Administrator Access](#option-a-with-administrator-access)**: For personal PCs or developer workstations with local admin rights.
-* **[Option B: Without Administrator Access (Non-Admin)](#option-b-without-administrator-access-non-admin)**: For restricted enterprise environments without admin privileges.
+For Windows developers using native PowerShell or Windows Terminal with OpenSSH:
 
----
-
-#### Option A: With Administrator Access
-
-##### 1. Install Node.js LTS & Git
-Open PowerShell:
+#### 1. Install Node.js LTS & Git (via winget or installer)
 ```powershell
-# Install Node.js LTS via winget
+# Install Node.js LTS and Git
 winget install OpenJS.NodeJS.LTS
-
-# Install Git
 winget install Git.Git
 ```
 
-##### 2. Configure PowerShell Execution Policy
+#### 2. Configure PowerShell Execution Policy
 ```powershell
 Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser -Force
 ```
 
-##### 3. Verify Toolchain
+#### 3. Verify Toolchain
 Restart PowerShell and verify:
 ```powershell
 node -v   # Outputs v20.x.x or v22.x.x
@@ -266,11 +345,11 @@ npm -v    # Outputs v10.x.x
 git --version
 ```
 
-##### 4. Clone Repository, Install & Run Dev Server
+#### 4. Clone Repository via SSH, Install & Run Dev Server
 ```powershell
 mkdir "$HOME\repos" -Force
 cd "$HOME\repos"
-git clone https://github.com/mpetronic/retirement-planner.git
+git clone git@github.com:mpetronic/retirement-planner.git
 cd retirement-planner
 npm install
 npm run dev
@@ -279,57 +358,7 @@ Open `http://localhost:5173` in your browser.
 
 ---
 
-#### Option B: Without Administrator Access (Non-Admin)
-
-##### Step 1: Open PowerShell
-Press the **Windows Key**, type `PowerShell`, and open Windows PowerShell.
-
-##### Step 2: Create a Tools Folder
-```powershell
-mkdir "$HOME\tools" -Force
-cd "$HOME\tools"
-```
-
-##### Step 3: Download & Extract Portable Node.js
-```powershell
-Invoke-WebRequest -Uri "https://nodejs.org/dist/v20.18.0/node-v20.18.0-win-x64.zip" -OutFile "node.zip"
-Expand-Archive -Path "node.zip" -DestinationPath "$HOME\tools" -Force
-Rename-Item -Path "$HOME\tools\node-v20.18.0-win-x64" -NewName "nodejs"
-```
-
-##### Step 4: Configure User PATH & Enable Script Execution
-```powershell
-[Environment]::SetEnvironmentVariable("Path", "$HOME\tools\nodejs;" + [Environment]::GetEnvironmentVariable("Path", "User"), "User")
-$env:Path = "$HOME\tools\nodejs;$env:Path"
-Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope Process
-```
-
-##### Step 5: Verify Toolchain
-```powershell
-node -v
-npm -v
-```
-
-##### Step 6: Download & Extract Project Code
-```powershell
-mkdir "$HOME\repos" -Force
-cd "$HOME\repos"
-Invoke-WebRequest -Uri "https://github.com/mpetronic/retirement-planner/archive/refs/heads/main.zip" -OutFile "repo.zip"
-Expand-Archive -Path "repo.zip" -DestinationPath "$HOME\repos" -Force
-Rename-Item -Path "$HOME\repos\retirement-planner-main" -NewName "retirement-planner"
-cd "$HOME\repos\retirement-planner"
-```
-
-##### Step 7: Install Dependencies & Launch
-```powershell
-npm install
-npm run dev
-```
-Open `http://localhost:5173` in your browser.
-
----
-
-### ⚡ Running the Production Build Locally (High Performance)
+### ⚡ Running the Vite Production Build (High Performance)
 
 While `npm run dev` provides hot-module reloading (HMR) and fast iteration during development, it executes unbundled code with React development mode validation and un-minified assets. For computationally heavy tasks—such as simulating **1,000+ Monte Carlo trials**, executing multi-variable **Roth conversion strategy optimizations**, or rendering extensive 35-year tabular ledgers—running the compiled production bundle locally delivers **significantly faster execution, silky-smooth 60+ FPS chart interactions, and optimal runtime performance**.
 
@@ -339,7 +368,7 @@ Compile TypeScript strictly (`tsc -b`), run dead-code elimination, and produce m
 npm run build
 ```
 
-#### Step 2: Serve the Production Build
+#### Step 2: Serve the Production Build via Vite Preview
 Launch Vite's built-in static preview web server:
 ```bash
 npm run preview
@@ -350,7 +379,7 @@ http://localhost:4173
 ```
 
 > [!TIP]
-> **One-Liner Shortcut**: You can build and immediately launch the production server with:
+> **One-Liner Shortcut**: You can build and immediately launch the preview server with:
 > ```bash
 > npm run build && npm run preview
 > ```
@@ -387,6 +416,18 @@ npm run build
 Serve the local `/dist` production bundle to test production behavior:
 ```bash
 npm run preview
+```
+
+### Compile Standalone Go Server
+Builds the production bundle and compiles the self-contained Go server executable embedding all web assets:
+```bash
+# Compile native binary (./retirement-planner)
+npm run build:go
+# or
+./build-go.sh
+
+# Or compile cross-platform binaries into dist-bin/:
+./build-go.sh --all
 ```
 
 ### 🐳 Docker Container Deployment

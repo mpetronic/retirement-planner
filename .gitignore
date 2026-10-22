@@ -8,9 +8,18 @@ pnpm-debug.log*
 lerna-debug.log*
 
 node_modules
-dist
+/dist
 dist-ssr
+/go-retire/dist/*
+!/go-retire/dist/.gitkeep
 *.local
+
+# Standalone Go server builds
+retirement-planner
+retirement-planner.exe
+go-retire/retirement-planner
+go-retire/retirement-planner.exe
+dist-bin/
 
 # Editor directories and files
 .vscode/*
