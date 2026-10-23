@@ -778,7 +778,7 @@ export const ExpenserApp: React.FC = () => {
   const selectedCategoryObj = allCatalogItems.find(c => c.id === selectedCategoryId);
 
   const appContent = (
-    <div className="h-full w-full max-h-full overflow-hidden bg-slate-950 text-slate-100 flex flex-col justify-between select-none font-sans antialiased relative pb-safe">
+    <div className="h-full w-full max-h-full overflow-hidden bg-slate-950 text-slate-100 flex flex-col select-none font-sans antialiased relative pb-safe">
       {/* Top App Header */}
       <header className="px-4 py-2.5 bg-slate-900/90 backdrop-blur border-b border-slate-800/80 shrink-0 z-30 flex items-center justify-between">
         <div className="flex items-center space-x-2.5">
@@ -1003,7 +1003,7 @@ export const ExpenserApp: React.FC = () => {
       )}
 
       {/* Main Content Area */}
-      <main className="flex-1 flex flex-col justify-between p-3 sm:p-4 gap-2 overflow-hidden min-h-0">
+      <main className="flex-1 flex flex-col p-3 sm:p-4 gap-2.5 overflow-hidden min-h-0">
         {/* Amount Display with Today's Stat & Interactive Date Link */}
         <div className="bg-gradient-to-b from-slate-900/90 to-slate-900/50 rounded-2xl p-2.5 sm:p-3 border border-slate-800/80 shadow-inner flex flex-col items-center justify-center relative overflow-hidden shrink-0">
           {/* Header Row: Clickable Date Selector (Left) & Today's Total (Right) */}
@@ -1250,7 +1250,7 @@ export const ExpenserApp: React.FC = () => {
         </div>
 
         {/* Touch Numeric Keypad */}
-        <div className="grid grid-cols-3 gap-1.5 sm:gap-2 flex-1 min-h-0 max-h-56 items-stretch">
+        <div className="grid grid-cols-3 gap-2 flex-1 min-h-[200px] items-stretch">
           {['1', '2', '3', '4', '5', '6', '7', '8', '9', '.', '0', 'BACKSPACE'].map(key => {
             const isBackspace = key === 'BACKSPACE';
             return (
@@ -1260,7 +1260,7 @@ export const ExpenserApp: React.FC = () => {
                 onClick={() => handleKeypadPress(key)}
                 aria-label={isBackspace ? 'Backspace' : key}
                 title={isBackspace ? 'Backspace' : undefined}
-                className={`h-full min-h-[38px] max-h-[52px] rounded-xl sm:rounded-2xl font-bold text-lg sm:text-xl flex items-center justify-center transition-all active:scale-95 shadow-sm cursor-pointer ${
+                className={`h-full min-h-[44px] rounded-xl sm:rounded-2xl font-bold text-xl sm:text-2xl flex items-center justify-center transition-all active:scale-95 shadow-sm cursor-pointer ${
                   isBackspace
                     ? 'bg-slate-900/90 hover:bg-slate-800 text-slate-300 border border-slate-800'
                     : 'bg-slate-900 hover:bg-slate-800/90 text-white border border-slate-800/80 hover:border-slate-700'
@@ -1277,7 +1277,7 @@ export const ExpenserApp: React.FC = () => {
           type="button"
           disabled={parsedAmount <= 0 || isSubmitting}
           onClick={handleSaveExpense}
-          className={`w-full py-2.5 sm:py-3.5 rounded-xl sm:rounded-2xl font-bold text-sm sm:text-base flex items-center justify-center space-x-2 transition-all shadow-xl shrink-0 cursor-pointer ${
+          className={`w-full py-3.5 sm:py-4 rounded-xl sm:rounded-2xl font-bold text-base sm:text-lg flex items-center justify-center space-x-2 transition-all shadow-xl shrink-0 cursor-pointer ${
             parsedAmount > 0
               ? 'bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-400 hover:to-teal-400 text-slate-950 shadow-emerald-950/40 active:scale-[0.98]'
               : 'bg-slate-900 text-slate-500 border border-slate-800 cursor-not-allowed'
@@ -2009,7 +2009,7 @@ export const ExpenserApp: React.FC = () => {
   }
 
   return (
-    <div className="h-screen h-[100dvh] max-h-screen max-h-[100dvh] overflow-hidden bg-slate-950 text-slate-100 flex flex-col justify-between select-none font-sans antialiased max-w-md mx-auto shadow-2xl relative border-x border-slate-800/60 pb-safe">
+    <div className="h-screen h-[100dvh] max-h-screen max-h-[100dvh] overflow-hidden bg-slate-950 text-slate-100 flex flex-col select-none font-sans antialiased w-full max-w-md mx-auto shadow-2xl relative sm:border-x sm:border-slate-800/60 pb-safe">
       {appContent}
     </div>
   );
