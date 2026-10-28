@@ -58,6 +58,7 @@ import { NumericInput } from './NumericInput';
 import { Chart } from 'react-chartjs-2';
 import { Chart as ChartJS, registerables, ChartEvent, LegendItem } from 'chart.js';
 import { ImportExpensesModal } from './ImportExpensesModal';
+import { BulkEditExpensesModal } from './BulkEditExpensesModal';
 import { CloudAuthModal } from './CloudAuthModal';
 
 ChartJS.register(...registerables);
@@ -120,6 +121,7 @@ export const ActualsWorkspace: React.FC<ActualsWorkspaceProps> = ({
   const [tableFilterText, setTableFilterText] = useState<string>('');
   const [showTransactionsDrawer, setShowTransactionsDrawer] = useState<boolean>(false);
   const [showImportModal, setShowImportModal] = useState<boolean>(false);
+  const [showBulkEditModal, setShowBulkEditModal] = useState<boolean>(false);
   const [isAuthenticated, setIsAuthenticated] = useState<boolean>(() => AuthService.isAuthenticated());
   const monthlyExpensesChartRef = useRef<ChartJS<'bar' | 'line'> | null>(null);
   const [hasHiddenExpensesDatasets, setHasHiddenExpensesDatasets] = useState(false);
@@ -1697,6 +1699,16 @@ export const ActualsWorkspace: React.FC<ActualsWorkspaceProps> = ({
               <span>Import / Backfill</span>
             </button>
 
+            <button
+              type="button"
+              onClick={() => setShowBulkEditModal(true)}
+              className="px-3 py-1.5 rounded-xl bg-slate-800/90 hover:bg-slate-700 text-slate-200 hover:text-white border border-slate-700/80 text-xs font-semibold flex items-center gap-1.5 transition-all shadow-sm shrink-0 whitespace-nowrap cursor-pointer"
+              title="Filter and bulk update logged actual expenses"
+            >
+              <Sliders className="w-3.5 h-3.5 text-emerald-400" />
+              <span>Bulk Update</span>
+            </button>
+
             <a
               href="/expenser"
               target="_blank"
@@ -3212,6 +3224,25 @@ export const ActualsWorkspace: React.FC<ActualsWorkspaceProps> = ({
             await loadLoggedExpenses();
           }}
           onUpdateActualsLivingExpenses={handleUpdateActualsLivingExpenses}
+        />
+      )}
+      {/* Bulk Update Expenses Modal */}
+      {showBulkEditModal && (
+        <BulkEditExpensesModal
+          isOpen={showBulkEditModal}
+          onClose={() => setShowBulkEditModal(false)}
+          selectedYear={selectedYear}
+          recordedYears={recordedYears}
+          plannerCatalogItems={comparisonItems.map((c) => ({
+            id: c.id,
+            groupCategory: c.group,
+            name: c.name,
+            displayName: `${c.group} - ${c.name}`,
+            plannedMonthlyDefault: Math.round(c.plannedAnnual / 12),
+          }))}
+          onExpensesUpdated={() => {
+            loadLoggedExpenses();
+          }}
         />
       )}
       {/* Cloud Auth Modal for DynamoDB Access */}

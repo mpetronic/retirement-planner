@@ -1,4 +1,4 @@
-import { ExpenseCategory, StorageAdapter } from '../types/expenses';
+import { ExpenseCategory, StorageAdapter, ActualExpense } from '../types/expenses';
 import { normalizeDetailedExpenses, ExpenseItemDefinition, DetailedExpensesState } from '../../types';
 
 export interface PlannerExpenseLineItem {
@@ -578,3 +578,55 @@ export async function syncPlannerCatalogToCloudStorage(
     console.warn('Failed to clean up deleted categories in storage:', err);
   }
 }
+
+/**
+ * Resolves the Category and Line Item of an ActualExpense by prioritizing the planner catalog.
+ * If the expense maps to an item in the planner catalog (by ID or line item name), the catalog's
+ * current category is returned, ensuring alignment with the budget variance worksheet.
+ */
+export function resolveExpenseCategoryAndLineItem(
+  exp: ActualExpense,
+  catalogItems: PlannerExpenseLineItem[] = []
+): { category: string; lineItem: string } {
+  // 1. Try matching by catalog item ID
+  if (exp.categoryId && catalogItems.length > 0) {
+    const byId = catalogItems.find(
+      (c) => c.id === exp.categoryId || c.id.toLowerCase() === exp.categoryId.toLowerCase()
+    );
+    if (byId) {
+      return {
+        category: byId.groupCategory,
+        lineItem: byId.name,
+      };
+    }
+  }
+
+  // Extract raw category and line item candidate from categoryName
+  let rawCategory = 'Living';
+  let rawLineItem = exp.categoryName ? exp.categoryName.trim() : 'General';
+  if (exp.categoryName && exp.categoryName.includes(' - ')) {
+    const parts = exp.categoryName.split(' - ');
+    rawCategory = parts[0].trim();
+    rawLineItem = parts.slice(1).join(' - ').trim();
+  }
+
+  // 2. Try matching catalog item by line item name
+  if (catalogItems.length > 0 && rawLineItem) {
+    const byName = catalogItems.find(
+      (c) => c.name.toLowerCase() === rawLineItem.toLowerCase()
+    );
+    if (byName) {
+      return {
+        category: byName.groupCategory,
+        lineItem: byName.name,
+      };
+    }
+  }
+
+  // 3. Fallback to raw parsed values
+  return {
+    category: rawCategory,
+    lineItem: rawLineItem,
+  };
+}
+
