@@ -1,4 +1,4 @@
-import { ActualExpense, ExpenseCategory, FullHouseholdArchive, StorageAdapter, SyncStatus } from '../types/expenses';
+import { ActualExpense, ExpenseCategory, FullHouseholdArchive, NewExpenseInput, StorageAdapter } from '../types/expenses';
 import { IndexedDbStorageAdapter } from './IndexedDbStorageAdapter';
 import { AuthService } from '../auth/AuthService';
 import { getCloudConfig } from '../auth/config';
@@ -277,12 +277,29 @@ export class AwsCloudStorageAdapter implements StorageAdapter {
       for (const item of rawList) {
         const expId = typeof item.expenseId === 'string' ? item.expenseId : undefined;
         if (expId && !pendingIds.has(expId)) {
+          let category = typeof item.category === 'string' ? item.category : undefined;
+          let name = typeof item.name === 'string' ? item.name : undefined;
+          if (!category && typeof item.categoryName === 'string') {
+            const parts = item.categoryName.split(' - ');
+            category = parts[0] || 'Uncategorized';
+            name = parts.slice(1).join(' - ') || item.categoryName;
+          }
+          const catalogId =
+            typeof item.catalogId === 'string'
+              ? item.catalogId
+              : typeof item.categoryId === 'string'
+              ? item.categoryId
+              : 'uncategorized';
+
           await this.localAdapter.saveExpense({
             expenseId: expId,
+            catalogId,
+            category: category || 'Uncategorized',
+            name: name || 'Expense',
             date: typeof item.date === 'string' ? item.date : '',
             amount: Number(item.amount) || 0,
-            categoryId: typeof item.categoryId === 'string' ? item.categoryId : 'uncategorized',
-            categoryName: typeof item.categoryName === 'string' ? item.categoryName : 'Uncategorized',
+            categoryId: catalogId,
+            categoryName: `${category || 'Uncategorized'} - ${name || 'Expense'}`,
             enteredBy: typeof item.enteredBy === 'string' ? item.enteredBy : 'Primary',
             notes: typeof item.notes === 'string' ? item.notes : undefined,
             tags: Array.isArray(item.tags) ? (item.tags as string[]) : undefined,
@@ -303,7 +320,7 @@ export class AwsCloudStorageAdapter implements StorageAdapter {
     return this.localAdapter.getRecentExpenses(limit, sortBy);
   }
 
-  async saveExpense(expense: Omit<ActualExpense, 'expenseId' | 'createdAt' | 'updatedAt' | 'syncStatus'>): Promise<ActualExpense> {
+  async saveExpense(expense: NewExpenseInput): Promise<ActualExpense> {
     // 1. Write to local IndexedDB first with PENDING_SYNC status (100% offline-ready)
     const saved = await this.localAdapter.saveExpense(expense);
 
@@ -317,16 +334,7 @@ export class AwsCloudStorageAdapter implements StorageAdapter {
     return saved;
   }
 
-  async saveExpensesBatch(
-    expenses: Array<
-      Omit<ActualExpense, 'expenseId' | 'createdAt' | 'updatedAt' | 'syncStatus'> & {
-        expenseId?: string;
-        createdAt?: string;
-        updatedAt?: string;
-        syncStatus?: SyncStatus;
-      }
-    >
-  ): Promise<ActualExpense[]> {
+  async saveExpensesBatch(expenses: NewExpenseInput[]): Promise<ActualExpense[]> {
     if (expenses.length === 0) return [];
 
     // 1. Write entire batch to local IndexedDB in a single transaction
@@ -403,6 +411,12 @@ export class AwsCloudStorageAdapter implements StorageAdapter {
       } catch (err) {
         console.warn('Failed to delete expense on cloud:', err);
       }
+    }
+  }
+
+  async clearAllExpenses(): Promise<void> {
+    if (this.localAdapter.clearAllExpenses) {
+      await this.localAdapter.clearAllExpenses();
     }
   }
 

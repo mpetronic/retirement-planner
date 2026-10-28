@@ -588,10 +588,11 @@ export function resolveExpenseCategoryAndLineItem(
   exp: ActualExpense,
   catalogItems: PlannerExpenseLineItem[] = []
 ): { category: string; lineItem: string } {
+  const targetId = exp.catalogId || exp.categoryId;
   // 1. Try matching by catalog item ID
-  if (exp.categoryId && catalogItems.length > 0) {
+  if (targetId && catalogItems.length > 0) {
     const byId = catalogItems.find(
-      (c) => c.id === exp.categoryId || c.id.toLowerCase() === exp.categoryId.toLowerCase()
+      (c) => c.id === targetId || c.id.toLowerCase() === targetId.toLowerCase()
     );
     if (byId) {
       return {
@@ -601,16 +602,35 @@ export function resolveExpenseCategoryAndLineItem(
     }
   }
 
+  // 2. Direct first-class attributes on exp
+  if (exp.category && exp.name) {
+    if (catalogItems.length > 0) {
+      const byName = catalogItems.find(
+        (c) => c.name.toLowerCase() === exp.name.toLowerCase()
+      );
+      if (byName) {
+        return {
+          category: byName.groupCategory,
+          lineItem: byName.name,
+        };
+      }
+    }
+    return {
+      category: exp.category,
+      lineItem: exp.name,
+    };
+  }
+
   // Extract raw category and line item candidate from categoryName
-  let rawCategory = 'Living';
-  let rawLineItem = exp.categoryName ? exp.categoryName.trim() : 'General';
+  let rawCategory = exp.category || 'Living';
+  let rawLineItem = exp.name || (exp.categoryName ? exp.categoryName.trim() : 'General');
   if (exp.categoryName && exp.categoryName.includes(' - ')) {
     const parts = exp.categoryName.split(' - ');
     rawCategory = parts[0].trim();
     rawLineItem = parts.slice(1).join(' - ').trim();
   }
 
-  // 2. Try matching catalog item by line item name
+  // 3. Try matching catalog item by line item name
   if (catalogItems.length > 0 && rawLineItem) {
     const byName = catalogItems.find(
       (c) => c.name.toLowerCase() === rawLineItem.toLowerCase()

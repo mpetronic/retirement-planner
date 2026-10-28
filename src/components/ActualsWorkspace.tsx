@@ -211,14 +211,12 @@ export const ActualsWorkspace: React.FC<ActualsWorkspaceProps> = ({
 
       // 2. Also register any line items from logged transactions if missing from catalog
       for (const exp of allExps) {
-        if (!exp.categoryName) continue;
-        const parts = exp.categoryName.includes(' - ') ? exp.categoryName.split(' - ') : ['Living', exp.categoryName];
-        const group = parts[0].trim();
-        const name = parts[1] ? parts[1].trim() : exp.categoryName.trim();
+        const group = exp.category || (exp.categoryName && exp.categoryName.includes(' - ') ? exp.categoryName.split(' - ')[0].trim() : 'Living');
+        const name = exp.name || (exp.categoryName && exp.categoryName.includes(' - ') ? exp.categoryName.split(' - ').slice(1).join(' - ').trim() : exp.categoryName || 'Expense');
         if (group === 'Healthcare') continue;
 
         savePlannerExpenseLineItem({
-          id: exp.categoryId,
+          id: exp.catalogId || exp.categoryId,
           name,
           groupCategory: group,
           plannedMonthlyDefault: 0,
@@ -267,21 +265,28 @@ export const ActualsWorkspace: React.FC<ActualsWorkspaceProps> = ({
 
     for (const exp of loggedExpenses) {
       totalSpend += exp.amount;
-      byCategory[exp.categoryName] = (byCategory[exp.categoryName] || 0) + exp.amount;
+      const group = exp.category || (exp.categoryName && exp.categoryName.includes(' - ') ? exp.categoryName.split(' - ')[0].trim() : exp.categoryName || 'Uncategorized');
+      const itemName = exp.name || (exp.categoryName && exp.categoryName.includes(' - ') ? exp.categoryName.split(' - ').slice(1).join(' - ').trim() : exp.categoryName || 'Expense');
+      const keyId = exp.catalogId || exp.categoryId || `cat_${group}_${itemName}`;
 
-      if (!byLineItem[exp.categoryId]) {
-        byLineItem[exp.categoryId] = {
+      byCategory[group] = (byCategory[group] || 0) + exp.amount;
+      if (exp.categoryName) {
+        byCategory[exp.categoryName] = (byCategory[exp.categoryName] || 0) + exp.amount;
+      }
+
+      if (!byLineItem[keyId]) {
+        byLineItem[keyId] = {
           total: 0,
           count: 0,
-          name: exp.categoryName,
-          categoryName: exp.categoryName,
+          name: itemName,
+          categoryName: `${group} - ${itemName}`,
           payers: {},
         };
       }
-      byLineItem[exp.categoryId].total += exp.amount;
-      byLineItem[exp.categoryId].count += 1;
+      byLineItem[keyId].total += exp.amount;
+      byLineItem[keyId].count += 1;
       const payer = exp.enteredBy || 'Primary';
-      byLineItem[exp.categoryId].payers[payer] = (byLineItem[exp.categoryId].payers[payer] || 0) + exp.amount;
+      byLineItem[keyId].payers[payer] = (byLineItem[keyId].payers[payer] || 0) + exp.amount;
       byPayer[payer] = (byPayer[payer] || 0) + exp.amount;
     }
 
@@ -308,8 +313,9 @@ export const ActualsWorkspace: React.FC<ActualsWorkspaceProps> = ({
     const targetNameLower = selectedLineItemForBreakdown.name.toLowerCase();
 
     return loggedExpenses.filter(e => {
-      if (e.categoryId === targetId) return true;
-      const catLower = e.categoryName.toLowerCase();
+      if ((e.catalogId && e.catalogId === targetId) || (e.categoryId && e.categoryId === targetId)) return true;
+      if (e.name && e.name.toLowerCase() === targetNameLower) return true;
+      const catLower = (e.categoryName || '').toLowerCase();
       if (catLower === targetNameLower) return true;
       if (catLower.endsWith(` - ${targetNameLower}`)) return true;
       if (catLower.endsWith(targetNameLower)) return true;
@@ -462,8 +468,8 @@ export const ActualsWorkspace: React.FC<ActualsWorkspaceProps> = ({
     let loggedIRMAA = 0;
 
     for (const exp of loggedExpenses) {
-      const catLower = exp.categoryName.toLowerCase();
-      const idLower = exp.categoryId.toLowerCase();
+      const catLower = (exp.categoryName || `${exp.category} ${exp.name}`).toLowerCase();
+      const idLower = (exp.catalogId || exp.categoryId || '').toLowerCase();
       if (
         idLower === 'healthcare-oop' ||
         catLower.includes('out-of-pocket') ||
@@ -486,7 +492,7 @@ export const ActualsWorkspace: React.FC<ActualsWorkspaceProps> = ({
       ) {
         loggedIRMAA += exp.amount;
       } else {
-        const group = exp.categoryName.includes(' - ') ? exp.categoryName.split(' - ')[0].trim() : exp.categoryName;
+        const group = exp.category || (exp.categoryName && exp.categoryName.includes(' - ') ? exp.categoryName.split(' - ')[0].trim() : exp.categoryName || 'Uncategorized');
         nextCategories[group] = (nextCategories[group] || 0) + exp.amount;
         nonHealthcareSpend += exp.amount;
       }
@@ -935,8 +941,8 @@ export const ActualsWorkspace: React.FC<ActualsWorkspaceProps> = ({
       if (!exp.date) return;
       const m = parseInt(exp.date.split('-')[1], 10);
       if (m >= 1 && m <= 12) {
-        let group = 'Living';
-        if (exp.categoryName) {
+        let group = exp.category || 'Living';
+        if (!exp.category && exp.categoryName) {
           group = exp.categoryName.includes(' - ') ? exp.categoryName.split(' - ')[0].trim() : exp.categoryName.trim();
         }
         groupsSet.add(group);
@@ -1703,10 +1709,10 @@ export const ActualsWorkspace: React.FC<ActualsWorkspaceProps> = ({
               type="button"
               onClick={() => setShowBulkEditModal(true)}
               className="px-3 py-1.5 rounded-xl bg-slate-800/90 hover:bg-slate-700 text-slate-200 hover:text-white border border-slate-700/80 text-xs font-semibold flex items-center gap-1.5 transition-all shadow-sm shrink-0 whitespace-nowrap cursor-pointer"
-              title="Filter and bulk update logged actual expenses"
+              title="Filter and bulk edit logged actual expenses"
             >
               <Sliders className="w-3.5 h-3.5 text-emerald-400" />
-              <span>Bulk Update</span>
+              <span>Bulk Edit</span>
             </button>
 
             <a
@@ -2085,7 +2091,7 @@ export const ActualsWorkspace: React.FC<ActualsWorkspaceProps> = ({
                     <table className="w-full text-left text-xs text-slate-300 divide-y divide-slate-800">
                       <thead className="bg-slate-950/80 text-slate-400 uppercase text-[10px] font-bold tracking-wider">
                         <tr>
-                          <th className="px-3.5 py-2.5">Line Item / Category</th>
+                          <th className="px-3.5 py-2.5">Expense Name / Category</th>
                           <th className="px-3.5 py-2.5 text-right">Planned Budget</th>
                           <th className="px-3.5 py-2.5 text-right">Actual Spend</th>
                           <th className="px-3.5 py-2.5 text-right">Variance</th>
@@ -2255,7 +2261,7 @@ export const ActualsWorkspace: React.FC<ActualsWorkspaceProps> = ({
                         <div className="flex items-center space-x-2">
                           <span className="font-bold text-white">${exp.amount.toFixed(2)}</span>
                           <span className="px-2 py-0.5 rounded-full bg-slate-800 text-slate-300 text-[11px]">
-                            {exp.categoryName}
+                            {exp.category && exp.name ? `${exp.category} • ${exp.name}` : exp.categoryName}
                           </span>
                         </div>
                         <div className="text-[11px] text-slate-500 mt-0.5 flex items-center space-x-2">
@@ -2872,7 +2878,7 @@ export const ActualsWorkspace: React.FC<ActualsWorkspaceProps> = ({
                     </span>
                   </div>
                   <p className="text-xs text-slate-400 mt-0.5">
-                    Individual actual expenses logged for this line item. Edit or delete entries to correct mistakes.
+                    Individual actual expenses logged for this expense name. Edit or delete entries to correct mistakes.
                   </p>
                 </div>
               </div>
@@ -3226,7 +3232,7 @@ export const ActualsWorkspace: React.FC<ActualsWorkspaceProps> = ({
           onUpdateActualsLivingExpenses={handleUpdateActualsLivingExpenses}
         />
       )}
-      {/* Bulk Update Expenses Modal */}
+      {/* Bulk Edit Expenses Modal */}
       {showBulkEditModal && (
         <BulkEditExpensesModal
           isOpen={showBulkEditModal}

@@ -14,6 +14,7 @@ import {
   Square,
   MinusSquare,
   AlertTriangle,
+  Trash2,
 } from 'lucide-react';
 import { getStorageAdapter } from '../shared/storage';
 import { ActualExpense, LearnedMerchantRule } from '../shared/types/expenses';
@@ -116,6 +117,11 @@ export const BulkEditExpensesModal: React.FC<BulkEditExpensesModalProps> = ({
   const [isApplying, setIsApplying] = useState<boolean>(false);
   const [applyProgress, setApplyProgress] = useState<{ current: number; total: number }>({ current: 0, total: 0 });
   const [feedbackMessage, setFeedbackMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+
+  // Delete confirmation & Execution state
+  const [showDeleteConfirmModal, setShowDeleteConfirmModal] = useState<boolean>(false);
+  const [isDeleting, setIsDeleting] = useState<boolean>(false);
+  const [deleteProgress, setDeleteProgress] = useState<{ current: number; total: number }>({ current: 0, total: 0 });
 
   // Load catalog definitions
   const refreshCatalog = useCallback(() => {
@@ -452,12 +458,17 @@ export const BulkEditExpensesModal: React.FC<BulkEditExpensesModalProps> = ({
           }
         }
 
-        const newCategoryDisplayName = `${itemCategory} - ${itemLineItem}`;
-        const newCategoryId = `cat_${itemCategory.toLowerCase().replace(/[^a-z0-9]/g, '_')}_${itemLineItem.toLowerCase().replace(/[^a-z0-9]/g, '_')}`;
+        const matchingCatalog = effectiveCatalogItems.find(
+          c => c.groupCategory.toLowerCase() === itemCategory.toLowerCase() && c.name.toLowerCase() === itemLineItem.toLowerCase()
+        );
+        const canonicalCatalogId = matchingCatalog ? matchingCatalog.id : `cat_${itemCategory.toLowerCase().replace(/[^a-z0-9]/g, '_')}_${itemLineItem.toLowerCase().replace(/[^a-z0-9]/g, '_')}`;
 
         const updates: Partial<ActualExpense> = {
-          categoryName: newCategoryDisplayName,
-          categoryId: newCategoryId,
+          catalogId: canonicalCatalogId,
+          category: itemCategory,
+          name: itemLineItem,
+          categoryName: `${itemCategory} - ${itemLineItem}`,
+          categoryId: canonicalCatalogId,
           notes: newNotes,
         };
 
@@ -501,13 +512,53 @@ export const BulkEditExpensesModal: React.FC<BulkEditExpensesModalProps> = ({
       // Notify parent ActualsWorkspace to refresh living expenses and comparison cards
       onExpensesUpdated();
     } catch (err: unknown) {
-      console.error('Failed to apply bulk update:', err);
+      console.error('Failed to apply bulk edit:', err);
       setFeedbackMessage({
         type: 'error',
-        text: err instanceof Error ? err.message : 'An error occurred during bulk update.',
+        text: err instanceof Error ? err.message : 'An error occurred during bulk edit.',
       });
     } finally {
       setIsApplying(false);
+    }
+  };
+
+  // Execute bulk deletion of selected expenses
+  const handleExecuteBulkDelete = async () => {
+    if (selectedExpenses.length === 0) return;
+
+    setIsDeleting(true);
+    setDeleteProgress({ current: 0, total: selectedExpenses.length });
+    setFeedbackMessage(null);
+
+    try {
+      const adapter = getStorageAdapter();
+      let processed = 0;
+
+      for (const exp of selectedExpenses) {
+        await adapter.deleteExpense(exp.expenseId);
+        processed++;
+        setDeleteProgress({ current: processed, total: selectedExpenses.length });
+      }
+
+      await loadExpenses();
+
+      setSelectedIds(new Set());
+      setShowDeleteConfirmModal(false);
+      setFeedbackMessage({
+        type: 'success',
+        text: `Successfully deleted ${selectedExpenses.length} expense record${selectedExpenses.length > 1 ? 's' : ''}!`,
+      });
+
+      // Notify parent ActualsWorkspace to refresh living expenses and comparison cards
+      onExpensesUpdated();
+    } catch (err: unknown) {
+      console.error('Failed to delete expenses:', err);
+      setFeedbackMessage({
+        type: 'error',
+        text: err instanceof Error ? err.message : 'An error occurred while deleting expenses.',
+      });
+    } finally {
+      setIsDeleting(false);
     }
   };
 
@@ -524,7 +575,7 @@ export const BulkEditExpensesModal: React.FC<BulkEditExpensesModalProps> = ({
             </div>
             <div className="min-w-0">
               <div className="flex items-center gap-2 flex-wrap">
-                <h2 className="text-base sm:text-lg font-bold text-white">Bulk Update Actual Expenses</h2>
+                <h2 className="text-base sm:text-lg font-bold text-white">Bulk Edit Actual Expenses</h2>
                 <div className="flex items-center gap-1.5">
                   <span className="text-[11px] text-slate-400 font-medium">Scope:</span>
                   <select
@@ -551,7 +602,7 @@ export const BulkEditExpensesModal: React.FC<BulkEditExpensesModalProps> = ({
                 </span>
               </div>
               <p className="text-xs text-slate-400 mt-0.5">
-                Filter by any criteria, select rows, and modify category, line item, or note/memo in bulk.
+                Filter by any criteria, select rows, and modify category, expense name, or note/memo in bulk.
               </p>
             </div>
           </div>
@@ -623,15 +674,15 @@ export const BulkEditExpensesModal: React.FC<BulkEditExpensesModalProps> = ({
               </select>
             </div>
 
-            {/* Line Item Filter */}
+            {/* Expense Name Filter */}
             <div className="flex items-center gap-1.5 min-w-[190px] flex-1 sm:flex-initial">
-              <span className="text-[11px] text-slate-400 font-medium">Line Item:</span>
+              <span className="text-[11px] text-slate-400 font-medium">Expense Name:</span>
               <select
                 value={filterLineItem}
                 onChange={(e) => setFilterLineItem(e.target.value)}
                 className="w-full bg-slate-900 border border-slate-700 rounded-lg px-2 py-1 text-xs text-white focus:outline-none focus:border-emerald-500"
               >
-                <option value="ALL">All Line Items</option>
+                <option value="ALL">All Expense Names</option>
                 {availableFilterLineItems.map((item) => (
                   <option key={item} value={item}>
                     {item}
@@ -698,7 +749,7 @@ export const BulkEditExpensesModal: React.FC<BulkEditExpensesModalProps> = ({
               type="text"
               value={filterText}
               onChange={(e) => setFilterText(e.target.value)}
-              placeholder="Search by note/memo, merchant, line item, amount, or date..."
+              placeholder="Search by note/memo, merchant, expense name, amount, or date..."
               className="w-full bg-slate-900 border border-slate-700/80 rounded-xl pl-8 pr-8 py-1.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-emerald-500"
             />
             {filterText && (
@@ -769,7 +820,7 @@ export const BulkEditExpensesModal: React.FC<BulkEditExpensesModalProps> = ({
               <Tag className="w-8 h-8 text-slate-600 mx-auto" />
               <p className="text-sm font-semibold text-slate-300">No actual expenses match your filters.</p>
               <p className="text-xs text-slate-500 max-w-sm mx-auto">
-                Try widening your category, line item, or text search criteria.
+                Try widening your category, expense name, or text search criteria.
               </p>
               {hasActiveFilters && (
                 <button
@@ -835,7 +886,7 @@ export const BulkEditExpensesModal: React.FC<BulkEditExpensesModalProps> = ({
                     className="px-3.5 py-2.5 cursor-pointer hover:text-white transition-colors"
                   >
                     <div className="flex items-center gap-1">
-                      <span>Line Item</span>
+                      <span>Expense Name</span>
                       {sortField === 'lineItem' ? (
                         sortDirection === 'asc' ? (
                           <ArrowUp className="w-3 h-3 text-emerald-400" />
@@ -882,6 +933,9 @@ export const BulkEditExpensesModal: React.FC<BulkEditExpensesModalProps> = ({
                       )}
                     </div>
                   </th>
+                  <th className="px-2 py-2.5 text-center w-10">
+                    <span className="sr-only">Actions</span>
+                  </th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-800/60">
@@ -897,16 +951,11 @@ export const BulkEditExpensesModal: React.FC<BulkEditExpensesModalProps> = ({
                         isSelected ? 'bg-emerald-950/25 hover:bg-emerald-950/35' : 'hover:bg-slate-800/40'
                       }`}
                     >
-                      <td
-                        className="px-3 py-2.5 text-center"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          handleToggleRow(exp.expenseId);
-                        }}
-                      >
+                      <td className="px-3 py-2.5 text-center">
                         <input
                           type="checkbox"
                           checked={isSelected}
+                          onClick={(e) => e.stopPropagation()}
                           onChange={() => handleToggleRow(exp.expenseId)}
                           className="rounded border-slate-700 text-emerald-500 focus:ring-emerald-500 cursor-pointer"
                         />
@@ -933,6 +982,19 @@ export const BulkEditExpensesModal: React.FC<BulkEditExpensesModalProps> = ({
                       <td className="px-3.5 py-2.5 text-right font-mono font-bold text-emerald-400 whitespace-nowrap">
                         {formatCurrency(exp.amount)}
                       </td>
+                      <td className="px-2 py-2.5 text-center whitespace-nowrap" onClick={(e) => e.stopPropagation()}>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setSelectedIds(new Set([exp.expenseId]));
+                            setShowDeleteConfirmModal(true);
+                          }}
+                          className="p-1 rounded-lg text-slate-500 hover:text-rose-400 hover:bg-rose-500/10 transition-colors cursor-pointer"
+                          title="Delete this expense"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      </td>
                     </tr>
                   );
                 })}
@@ -955,17 +1017,28 @@ export const BulkEditExpensesModal: React.FC<BulkEditExpensesModalProps> = ({
               </div>
 
               {/* Action Buttons */}
-              <div className="flex items-center gap-2 self-end lg:self-auto">
+              <div className="flex items-center gap-2 self-end lg:self-auto flex-wrap">
                 <button
                   type="button"
+                  disabled={isApplying || isDeleting}
+                  onClick={() => setShowDeleteConfirmModal(true)}
+                  className="px-3 py-1.5 rounded-xl bg-rose-600/20 hover:bg-rose-600 text-rose-300 hover:text-white border border-rose-500/30 text-xs font-semibold flex items-center gap-1.5 transition-all cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
+                  title="Delete selected expense records"
+                >
+                  <Trash2 className="w-3.5 h-3.5" />
+                  <span>Delete Selected ({selectedIds.size})</span>
+                </button>
+                <button
+                  type="button"
+                  disabled={isApplying || isDeleting}
                   onClick={() => setSelectedIds(new Set())}
-                  className="px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-semibold cursor-pointer transition-colors"
+                  className="px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-semibold cursor-pointer transition-colors disabled:opacity-40"
                 >
                   Deselect
                 </button>
                 <button
                   type="button"
-                  disabled={!canApplyBulkUpdate}
+                  disabled={!canApplyBulkUpdate || isApplying || isDeleting}
                   onClick={() => setShowConfirmModal(true)}
                   className="px-4 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold shadow-lg shadow-emerald-900/30 flex items-center gap-1.5 transition-all cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
                 >
@@ -1068,7 +1141,7 @@ export const BulkEditExpensesModal: React.FC<BulkEditExpensesModalProps> = ({
                     }}
                     className="rounded border-slate-700 text-emerald-500 focus:ring-emerald-500 cursor-pointer"
                   />
-                  <span>Change Line Item</span>
+                  <span>Change Expense Name</span>
                 </label>
 
                 {updateLineItemEnabled && (
@@ -1087,13 +1160,13 @@ export const BulkEditExpensesModal: React.FC<BulkEditExpensesModalProps> = ({
                           }}
                           className="w-full bg-slate-950 border border-slate-700 rounded-lg px-2.5 py-1.5 text-xs text-white focus:outline-none focus:border-emerald-500"
                         >
-                          <option value="">-- Choose Line Item --</option>
+                          <option value="">-- Choose Expense Name --</option>
                           {targetCategoryLineItems.map((item) => (
                             <option key={item} value={item}>
                               {item}
                             </option>
                           ))}
-                          <option value="__NEW__">+ Enter New Line Item Name...</option>
+                          <option value="__NEW__">+ Enter New Expense Name...</option>
                         </select>
                       </div>
                     ) : (
@@ -1209,7 +1282,7 @@ export const BulkEditExpensesModal: React.FC<BulkEditExpensesModalProps> = ({
         {/* Modal Footer (when no rows selected) */}
         {selectedIds.size === 0 && (
           <div className="p-3.5 bg-slate-950/70 border-t border-slate-800 flex items-center justify-between text-xs text-slate-400">
-            <span>Select one or more expense rows above to activate bulk update actions.</span>
+            <span>Select one or more expense rows above to activate bulk edit actions.</span>
             <button
               type="button"
               onClick={onClose}
@@ -1230,7 +1303,7 @@ export const BulkEditExpensesModal: React.FC<BulkEditExpensesModalProps> = ({
                 <Sliders className="w-5 h-5" />
               </div>
               <div>
-                <h3 className="text-base font-bold text-white">Confirm Bulk Update</h3>
+                <h3 className="text-base font-bold text-white">Confirm Bulk Edit</h3>
                 <p className="text-xs text-slate-400">
                   You are about to modify {selectedExpenses.length} expense record{selectedExpenses.length > 1 ? 's' : ''}.
                 </p>
@@ -1252,7 +1325,7 @@ export const BulkEditExpensesModal: React.FC<BulkEditExpensesModalProps> = ({
 
               {updateLineItemEnabled && (
                 <div className="flex items-center justify-between">
-                  <span className="text-slate-400">Line Item:</span>
+                  <span className="text-slate-400">Expense Name:</span>
                   <span className="font-bold text-emerald-400 font-mono">
                     {resolvedTargetLineItem}
                     {isCustomLineItem && ' (New)'}
@@ -1327,6 +1400,129 @@ export const BulkEditExpensesModal: React.FC<BulkEditExpensesModalProps> = ({
                   <>
                     <Check className="w-3.5 h-3.5" />
                     <span>Confirm & Apply</span>
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Confirmation Delete Modal */}
+      {showDeleteConfirmModal && (
+        <div className="fixed inset-0 z-60 bg-slate-950/90 backdrop-blur flex items-center justify-center p-4 animate-in fade-in">
+          <div className="bg-slate-900 border border-rose-900/50 rounded-2xl max-w-lg w-full p-6 shadow-2xl space-y-4 animate-in zoom-in-95">
+            <div className="flex items-center gap-3 text-rose-400">
+              <div className="p-2.5 rounded-xl bg-rose-500/10 border border-rose-500/20">
+                <Trash2 className="w-5 h-5 text-rose-400" />
+              </div>
+              <div>
+                <h3 className="text-base font-bold text-white">Confirm Delete Expenses</h3>
+                <p className="text-xs text-rose-300/80">
+                  You are about to permanently delete {selectedExpenses.length} expense record{selectedExpenses.length > 1 ? 's' : ''}.
+                </p>
+              </div>
+            </div>
+
+            {/* Warning banner */}
+            <div className="p-3 rounded-xl bg-rose-950/40 border border-rose-800/60 flex items-start gap-2.5 text-xs text-rose-200">
+              <AlertTriangle className="w-4 h-4 text-rose-400 shrink-0 mt-0.5" />
+              <div>
+                <span className="font-semibold text-rose-300">This action cannot be undone.</span>
+                <p className="text-rose-300/80 mt-0.5">
+                  The selected transaction{selectedExpenses.length > 1 ? 's' : ''} will be permanently removed from your storage records and actuals budget variance calculations.
+                </p>
+              </div>
+            </div>
+
+            {/* Summary preview */}
+            <div className="bg-slate-950 border border-slate-800 rounded-xl p-3.5 space-y-2 text-xs">
+              <div className="flex items-center justify-between text-slate-400 border-b border-slate-800 pb-2">
+                <span>Records to Delete:</span>
+                <span className="font-bold text-white font-mono">{selectedExpenses.length}</span>
+              </div>
+              <div className="flex items-center justify-between text-slate-400 border-b border-slate-800 pb-2">
+                <span>Total Amount:</span>
+                <span className="font-bold text-rose-400 font-mono">{formatCurrency(selectedTotalAmount)}</span>
+              </div>
+
+              {/* Preview list of items being deleted */}
+              <div className="pt-1 space-y-1.5 max-h-40 overflow-y-auto pr-1">
+                <div className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider">Preview:</div>
+                {selectedExpenses.slice(0, 5).map((exp) => {
+                  const { category, lineItem } = resolveExpenseCategoryAndLineItem(exp, effectiveCatalogItems);
+                  return (
+                    <div
+                      key={exp.expenseId}
+                      className="flex items-center justify-between p-2 rounded-lg bg-slate-900/80 border border-slate-800/80 text-[11px]"
+                    >
+                      <div className="min-w-0 pr-2">
+                        <div className="font-medium text-slate-200 truncate">
+                          {lineItem} <span className="text-slate-500 font-normal">({category})</span>
+                        </div>
+                        <div className="text-[10px] text-slate-400">
+                          {exp.date} {exp.notes ? `• ${exp.notes}` : ''}
+                        </div>
+                      </div>
+                      <div className="font-mono font-bold text-rose-400 whitespace-nowrap">
+                        {formatCurrency(exp.amount)}
+                      </div>
+                    </div>
+                  );
+                })}
+                {selectedExpenses.length > 5 && (
+                  <div className="text-center text-[10px] text-slate-500 italic pt-1">
+                    + {selectedExpenses.length - 5} more record{selectedExpenses.length - 5 > 1 ? 's' : ''}
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Progress indicator during delete */}
+            {isDeleting && (
+              <div className="space-y-1.5">
+                <div className="flex justify-between text-xs text-slate-400 font-mono">
+                  <span>Deleting records...</span>
+                  <span>
+                    {deleteProgress.current} / {deleteProgress.total}
+                  </span>
+                </div>
+                <div className="w-full bg-slate-800 rounded-full h-2 overflow-hidden">
+                  <div
+                    className="h-full bg-rose-500 rounded-full transition-all duration-150"
+                    style={{
+                      width: `${deleteProgress.total > 0 ? (deleteProgress.current / deleteProgress.total) * 100 : 0}%`,
+                    }}
+                  />
+                </div>
+              </div>
+            )}
+
+            {/* Modal Actions */}
+            <div className="flex items-center justify-end gap-2.5 pt-2">
+              <button
+                type="button"
+                disabled={isDeleting}
+                onClick={() => setShowDeleteConfirmModal(false)}
+                className="px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-semibold cursor-pointer disabled:opacity-50"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                disabled={isDeleting}
+                onClick={handleExecuteBulkDelete}
+                className="px-5 py-2 rounded-xl bg-rose-600 hover:bg-rose-500 text-white text-xs font-bold shadow-lg shadow-rose-950/50 flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+              >
+                {isDeleting ? (
+                  <>
+                    <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                    <span>Deleting...</span>
+                  </>
+                ) : (
+                  <>
+                    <Trash2 className="w-3.5 h-3.5" />
+                    <span>Permanently Delete</span>
                   </>
                 )}
               </button>

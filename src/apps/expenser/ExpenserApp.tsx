@@ -345,9 +345,11 @@ export const ExpenserApp: React.FC = () => {
     const firstSeenIndex: Record<string, number> = {};
 
     recentExpenses.forEach((exp, idx) => {
-      counts[exp.categoryId] = (counts[exp.categoryId] || 0) + 1;
-      if (firstSeenIndex[exp.categoryId] === undefined) {
-        firstSeenIndex[exp.categoryId] = idx;
+      const key = exp.catalogId || exp.categoryId || exp.name;
+      if (!key) return;
+      counts[key] = (counts[key] || 0) + 1;
+      if (firstSeenIndex[key] === undefined) {
+        firstSeenIndex[key] = idx;
       }
     });
 
@@ -432,6 +434,34 @@ export const ExpenserApp: React.FC = () => {
   useEffect(() => {
     loadData();
   }, [loadData]);
+
+  // One-time cache migration & flush for unified schema version 2
+  useEffect(() => {
+    const checkSchemaVersionAndFlush = async () => {
+      if (typeof window === 'undefined') return;
+      const currentVersion = window.localStorage.getItem('expenser_schema_version');
+      if (currentVersion !== '2') {
+        try {
+          if (adapter.clearAllExpenses) {
+            await adapter.clearAllExpenses();
+          }
+          window.localStorage.setItem('expenser_schema_version', '2');
+          if (navigator.onLine && AuthService.isAuthenticated() && adapter.getAllExpensesFromCloud) {
+            await adapter.getAllExpensesFromCloud();
+          }
+          setSyncFeedback({
+            message: 'Expense cache updated to unified schema.',
+            type: 'info',
+          });
+          setTimeout(() => setSyncFeedback(null), 3000);
+          await loadData();
+        } catch (err) {
+          console.warn('Failed to perform schema cache refresh:', err);
+        }
+      }
+    };
+    checkSchemaVersionAndFlush();
+  }, [adapter, loadData]);
 
   // Online / Offline & Cloud Sync Listeners
   useEffect(() => {
@@ -753,12 +783,17 @@ export const ExpenserApp: React.FC = () => {
     try {
       const selectedItem = allCatalogItems.find(c => c.id === selectedCategoryId);
       const activePayer = payerName || resolveLoggedInPayerName();
+      const category = selectedItem?.groupCategory || 'Uncategorized';
+      const name = selectedItem?.name || selectedItem?.displayName || 'Expense';
 
       await adapter.saveExpense({
         date: expenseDate,
         amount: parsedAmount,
+        catalogId: selectedCategoryId,
+        category,
+        name,
         categoryId: selectedCategoryId,
-        categoryName: selectedItem ? selectedItem.displayName : 'Uncategorized',
+        categoryName: `${category} - ${name}`,
         enteredBy: activePayer,
         notes: notes.trim() || undefined,
       });
@@ -869,7 +904,7 @@ export const ExpenserApp: React.FC = () => {
     setEditingExpense(exp);
     setEditAmountStr(exp.amount.toFixed(2));
     setEditDate(exp.date);
-    setEditCategoryId(exp.categoryId);
+    setEditCategoryId(exp.catalogId || exp.categoryId || '');
     setEditCategoryQuery('');
     setIsEditCategoryPickerOpen(false);
     setEditNotes(exp.notes || '');
@@ -898,7 +933,8 @@ export const ExpenserApp: React.FC = () => {
     }
 
     const targetCategory = allCatalogItems.find(c => c.id === editCategoryId);
-    const catName = targetCategory ? (targetCategory.displayName || targetCategory.name) : editingExpense.categoryName;
+    const category = targetCategory?.groupCategory || editingExpense.category || 'Uncategorized';
+    const name = targetCategory?.name || targetCategory?.displayName || editingExpense.name || 'Expense';
 
     setIsSavingEdit(true);
     setEditError(null);
@@ -907,8 +943,11 @@ export const ExpenserApp: React.FC = () => {
       await adapter.updateExpense(editingExpense.expenseId, {
         amount: Math.round(parsedAmount * 100) / 100,
         date: editDate,
+        catalogId: editCategoryId,
+        category,
+        name,
         categoryId: editCategoryId,
-        categoryName: catName,
+        categoryName: `${category} - ${name}`,
         notes: editNotes.trim() || undefined,
       });
 
@@ -1312,7 +1351,7 @@ export const ExpenserApp: React.FC = () => {
         {/* Category Search & Autocomplete Selector */}
         <div className="relative z-20 shrink-0">
           <div className="flex items-center justify-between text-[11px] sm:text-xs font-semibold text-slate-400 uppercase tracking-wider mb-1 px-1">
-            <span>Budgeted Line Item</span>
+            <span>Expense Name & Category</span>
             <button
               onClick={() => {
                 if (categorySearchQuery.trim()) {
@@ -1322,7 +1361,7 @@ export const ExpenserApp: React.FC = () => {
               }}
               className="text-emerald-400 hover:text-emerald-300 flex items-center gap-0.5 lowercase font-normal cursor-pointer"
             >
-              <Plus className="w-3.5 h-3.5" /> new line item
+              <Plus className="w-3.5 h-3.5" /> new expense name
             </button>
           </div>
 
@@ -1341,8 +1380,8 @@ export const ExpenserApp: React.FC = () => {
                 }}
                 placeholder={
                   selectedCategoryObj
-                    ? selectedCategoryObj.displayName
-                    : 'Search line items (e.g. Living, Groceries)...'
+                    ? `${selectedCategoryObj.groupCategory} - ${selectedCategoryObj.name}`
+                    : 'Search expense names or categories...'
                 }
                 className="w-full bg-transparent text-xs text-white placeholder-slate-400 focus:outline-none"
               />
@@ -1374,7 +1413,7 @@ export const ExpenserApp: React.FC = () => {
                 {filteredCatalogItems.length === 0 ? (
                   <div className="p-3 text-center space-y-2">
                     <p className="text-xs text-slate-400">
-                      No line items matching &ldquo;<span className="text-white font-medium">{categorySearchQuery}</span>&rdquo;
+                      No expense names matching &ldquo;<span className="text-white font-medium">{categorySearchQuery}</span>&rdquo;
                     </p>
                     <button
                       type="button"
@@ -1385,7 +1424,7 @@ export const ExpenserApp: React.FC = () => {
                       }}
                       className="px-3 py-1.5 bg-emerald-600/20 hover:bg-emerald-600/30 text-emerald-300 border border-emerald-500/40 rounded-xl text-xs font-semibold inline-flex items-center gap-1 cursor-pointer"
                     >
-                      <Plus className="w-3 h-3" /> Add as new line item
+                      <Plus className="w-3 h-3" /> Add as new expense name
                     </button>
                   </div>
                 ) : (
@@ -1667,8 +1706,9 @@ export const ExpenserApp: React.FC = () => {
                         >
                           <div className="flex items-center space-x-1.5">
                             <span className="font-semibold text-sm text-white">${exp.amount.toFixed(2)}</span>
-                            <span className="text-xs px-2 py-0.5 rounded-full bg-slate-800 text-slate-300 font-medium truncate max-w-[150px]">
-                              {exp.categoryName}
+                            <span className="text-xs px-2 py-0.5 rounded-full bg-slate-800 text-slate-300 font-medium truncate max-w-[170px]" title={exp.category && exp.name ? `${exp.category} • ${exp.name}` : exp.categoryName}>
+                              {exp.category && exp.name ? `${exp.name}` : exp.categoryName}
+                              {exp.category && <span className="text-slate-500 ml-1">({exp.category})</span>}
                             </span>
                           </div>
                           <div className="text-[11px] text-slate-400 mt-0.5 flex items-center space-x-1.5 flex-wrap">
@@ -1848,10 +1888,10 @@ export const ExpenserApp: React.FC = () => {
                       />
                       <div className="min-w-0">
                         <div className="text-xs font-semibold text-white truncate">
-                          {editSelectedCategoryObj?.displayName || editSelectedCategoryObj?.name || editingExpense.categoryName}
+                          {editSelectedCategoryObj ? `${editSelectedCategoryObj.groupCategory} - ${editSelectedCategoryObj.name}` : (editingExpense.category ? `${editingExpense.category} - ${editingExpense.name}` : editingExpense.categoryName || '')}
                         </div>
                         <div className="text-[10px] text-slate-500">
-                          {editSelectedCategoryObj?.groupCategory || 'Expense Line Item'}
+                          {editSelectedCategoryObj?.groupCategory || editingExpense.category || 'Expense Name'}
                         </div>
                       </div>
                     </div>
@@ -2030,7 +2070,7 @@ export const ExpenserApp: React.FC = () => {
 
               <div>
                 <label className="block text-xs font-medium text-slate-300 mb-1">
-                  Line Item Name *
+                  Expense Name *
                 </label>
                 <input
                   type="text"

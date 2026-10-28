@@ -23,6 +23,9 @@ describe('BulkEditExpensesModal logic', () => {
   const sampleExpenses: ActualExpense[] = [
     {
       expenseId: 'exp-1',
+      catalogId: 'cat_subscriptions_amazon_prime',
+      category: 'Subscriptions',
+      name: 'Amazon Prime',
       date: '2026-03-15',
       amount: 14.99,
       categoryId: 'cat_subscriptions_amazon_prime',
@@ -36,6 +39,9 @@ describe('BulkEditExpensesModal logic', () => {
     {
       // Expense with legacy/mismatched categoryName "Leisure - Amazon Prime" but matching the catalog item "Amazon Prime"
       expenseId: 'exp-2',
+      catalogId: 'cat_leisure_amazon_prime',
+      category: 'Leisure',
+      name: 'Amazon Prime',
       date: '2026-04-15',
       amount: 14.99,
       categoryId: 'cat_leisure_amazon_prime',
@@ -48,6 +54,9 @@ describe('BulkEditExpensesModal logic', () => {
     },
     {
       expenseId: 'exp-3',
+      catalogId: 'cat_living_groceries',
+      category: 'Living',
+      name: 'Groceries',
       date: '2026-05-10',
       amount: 120.50,
       categoryId: 'cat_living_groceries',
@@ -60,6 +69,9 @@ describe('BulkEditExpensesModal logic', () => {
     },
     {
       expenseId: 'exp-4',
+      catalogId: 'cat_legacy',
+      category: 'Living',
+      name: 'Fuel',
       date: '2026-06-01',
       amount: 80.00,
       categoryId: 'cat_legacy',
@@ -132,5 +144,26 @@ describe('BulkEditExpensesModal logic', () => {
     // Clear mode
     const cleared: string | undefined = undefined;
     expect(cleared).toBeUndefined();
+  });
+
+  it('correctly tracks and removes selected duplicate expense IDs', () => {
+    // Simulate list containing duplicates of an expense
+    const duplicatesList: ActualExpense[] = [
+      ...sampleExpenses,
+      {
+        ...sampleExpenses[0],
+        expenseId: 'exp-1-duplicate',
+      },
+    ];
+
+    expect(duplicatesList).toHaveLength(5);
+
+    // User selects the duplicate ID to delete
+    const selectedIds = new Set<string>(['exp-1-duplicate']);
+    const remaining = duplicatesList.filter((exp) => !selectedIds.has(exp.expenseId));
+
+    expect(remaining).toHaveLength(4);
+    expect(remaining.some((e) => e.expenseId === 'exp-1-duplicate')).toBe(false);
+    expect(remaining.some((e) => e.expenseId === 'exp-1')).toBe(true);
   });
 });
