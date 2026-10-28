@@ -228,14 +228,33 @@ export class AwsCloudStorageAdapter implements StorageAdapter {
         }
       }
 
-      // 3. Save / update all authoritative remote expenses
+      // 3. Save / update authoritative remote expenses, preserving newer local edits
       for (const exp of remoteExpenses) {
-        if (!pendingIds.has(exp.expenseId)) {
-          await this.localAdapter.saveExpense({
-            ...exp,
-            syncStatus: 'SYNCED',
-          });
+        if (pendingIds.has(exp.expenseId)) {
+          continue;
         }
+
+        if (this.localAdapter.getExpenseById) {
+          const localExisting = await this.localAdapter.getExpenseById(exp.expenseId);
+          if (localExisting) {
+            if (localExisting.syncStatus === 'PENDING_SYNC') {
+              continue;
+            }
+            if (
+              localExisting.updatedAt &&
+              exp.updatedAt &&
+              new Date(localExisting.updatedAt).getTime() > new Date(exp.updatedAt).getTime()
+            ) {
+              // Local expense is newer than remote snapshot; preserve local edit
+              continue;
+            }
+          }
+        }
+
+        await this.localAdapter.saveExpense({
+          ...exp,
+          syncStatus: 'SYNCED',
+        });
       }
     } finally {
       this.isSyncingExpenses = false;
@@ -390,6 +409,42 @@ export class AwsCloudStorageAdapter implements StorageAdapter {
         await this.flushPendingExpenses();
       } catch (err) {
         console.warn('Background update expense sync failed:', err);
+      }
+    }
+
+    return updated;
+  }
+
+  async updateExpensesBatch(
+    batch: Array<{ id: string; updates: Partial<ActualExpense> }>
+  ): Promise<ActualExpense[]> {
+    if (batch.length === 0) return [];
+
+    let updated: ActualExpense[];
+    if (this.localAdapter.updateExpensesBatch) {
+      updated = await this.localAdapter.updateExpensesBatch(
+        batch.map(item => ({
+          ...item,
+          updates: { ...item.updates, syncStatus: 'PENDING_SYNC' },
+        }))
+      );
+    } else {
+      updated = [];
+      for (const item of batch) {
+        updated.push(
+          await this.localAdapter.updateExpense(item.id, {
+            ...item.updates,
+            syncStatus: 'PENDING_SYNC',
+          })
+        );
+      }
+    }
+
+    if (typeof window !== 'undefined' && navigator.onLine && AuthService.isAuthenticated()) {
+      try {
+        await this.flushPendingExpenses();
+      } catch (err) {
+        console.warn('Background update expenses batch sync failed:', err);
       }
     }
 

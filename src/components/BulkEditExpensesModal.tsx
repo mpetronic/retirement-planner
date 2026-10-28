@@ -429,22 +429,22 @@ export const BulkEditExpensesModal: React.FC<BulkEditExpensesModalProps> = ({
       const finalCategory = resolvedTargetCategory;
       const finalLineItem = resolvedTargetLineItem;
 
-      // Iterate and apply updates to each selected expense
-      let processed = 0;
+      // Register new line item in catalog once if modified
+      if (updateCategoryEnabled || updateLineItemEnabled) {
+        savePlannerExpenseLineItem({
+          name: finalLineItem,
+          groupCategory: finalCategory,
+        });
+      }
+
+      // Prepare batch updates and merchant rules
+      const updatesBatch: Array<{ id: string; updates: Partial<ActualExpense> }> = [];
       const merchantRulesToSave: LearnedMerchantRule[] = [];
 
       for (const exp of selectedExpenses) {
         const currentParsed = resolveExpenseCategoryAndLineItem(exp, effectiveCatalogItems);
         const itemCategory = updateCategoryEnabled ? finalCategory : currentParsed.category;
         const itemLineItem = updateLineItemEnabled ? finalLineItem : currentParsed.lineItem;
-
-        // Register new line item in catalog if modified
-        if (updateCategoryEnabled || updateLineItemEnabled) {
-          savePlannerExpenseLineItem({
-            name: itemLineItem,
-            groupCategory: itemCategory,
-          });
-        }
 
         // Calculate new notes
         let newNotes: string | undefined = exp.notes;
@@ -463,16 +463,17 @@ export const BulkEditExpensesModal: React.FC<BulkEditExpensesModalProps> = ({
         );
         const canonicalCatalogId = matchingCatalog ? matchingCatalog.id : `cat_${itemCategory.toLowerCase().replace(/[^a-z0-9]/g, '_')}_${itemLineItem.toLowerCase().replace(/[^a-z0-9]/g, '_')}`;
 
-        const updates: Partial<ActualExpense> = {
-          catalogId: canonicalCatalogId,
-          category: itemCategory,
-          name: itemLineItem,
-          categoryName: `${itemCategory} - ${itemLineItem}`,
-          categoryId: canonicalCatalogId,
-          notes: newNotes,
-        };
-
-        await adapter.updateExpense(exp.expenseId, updates);
+        updatesBatch.push({
+          id: exp.expenseId,
+          updates: {
+            catalogId: canonicalCatalogId,
+            category: itemCategory,
+            name: itemLineItem,
+            categoryName: `${itemCategory} - ${itemLineItem}`,
+            categoryId: canonicalCatalogId,
+            notes: newNotes,
+          },
+        });
 
         // Collect merchant rules if checked
         if (updateMerchantRule && (updateCategoryEnabled || updateLineItemEnabled)) {
@@ -487,9 +488,20 @@ export const BulkEditExpensesModal: React.FC<BulkEditExpensesModalProps> = ({
             });
           }
         }
+      }
 
-        processed++;
-        setApplyProgress({ current: processed, total: selectedExpenses.length });
+      setApplyProgress({ current: 0, total: updatesBatch.length });
+
+      if (adapter.updateExpensesBatch) {
+        await adapter.updateExpensesBatch(updatesBatch);
+        setApplyProgress({ current: updatesBatch.length, total: updatesBatch.length });
+      } else {
+        let processed = 0;
+        for (const item of updatesBatch) {
+          await adapter.updateExpense(item.id, item.updates);
+          processed++;
+          setApplyProgress({ current: processed, total: updatesBatch.length });
+        }
       }
 
       // Save merchant rules in batch if applicable
@@ -497,13 +509,14 @@ export const BulkEditExpensesModal: React.FC<BulkEditExpensesModalProps> = ({
         batchSaveLearnedMerchantRules(merchantRulesToSave);
       }
 
+      // Clear selection and close confirmation modal immediately
+      setSelectedIds(new Set());
+      setShowConfirmModal(false);
+
       // Refresh catalog and reload updated expenses
       refreshCatalog();
       await loadExpenses();
 
-      // Clear selection and modal states
-      setSelectedIds(new Set());
-      setShowConfirmModal(false);
       setFeedbackMessage({
         type: 'success',
         text: `Successfully updated ${selectedExpenses.length} expense${selectedExpenses.length > 1 ? 's' : ''}!`,
@@ -540,10 +553,9 @@ export const BulkEditExpensesModal: React.FC<BulkEditExpensesModalProps> = ({
         setDeleteProgress({ current: processed, total: selectedExpenses.length });
       }
 
-      await loadExpenses();
-
       setSelectedIds(new Set());
       setShowDeleteConfirmModal(false);
+      await loadExpenses();
       setFeedbackMessage({
         type: 'success',
         text: `Successfully deleted ${selectedExpenses.length} expense record${selectedExpenses.length > 1 ? 's' : ''}!`,

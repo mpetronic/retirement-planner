@@ -143,6 +143,16 @@ export class InMemoryStorageAdapter implements StorageAdapter {
     return updated;
   }
 
+  async updateExpensesBatch(
+    batch: Array<{ id: string; updates: Partial<ActualExpense> }>
+  ): Promise<ActualExpense[]> {
+    const results: ActualExpense[] = [];
+    for (const item of batch) {
+      results.push(await this.updateExpense(item.id, item.updates));
+    }
+    return results;
+  }
+
   async deleteExpense(id: string): Promise<void> {
     this.expenses = this.expenses.filter(e => e.expenseId !== id);
   }

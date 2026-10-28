@@ -123,6 +123,7 @@ export interface StorageAdapter {
   saveExpense(expense: NewExpenseInput): Promise<ActualExpense>;
   saveExpensesBatch?(expenses: NewExpenseInput[]): Promise<ActualExpense[]>;
   updateExpense(id: string, updates: Partial<ActualExpense>): Promise<ActualExpense>;
+  updateExpensesBatch?(batch: Array<{ id: string; updates: Partial<ActualExpense> }>): Promise<ActualExpense[]>;
   deleteExpense(id: string): Promise<void>;
   clearAllExpenses?(): Promise<void>;
 

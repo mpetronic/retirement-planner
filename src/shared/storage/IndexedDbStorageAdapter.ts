@@ -304,6 +304,58 @@ export class IndexedDbStorageAdapter implements StorageAdapter {
     });
   }
 
+  async updateExpensesBatch(
+    batch: Array<{ id: string; updates: Partial<ActualExpense> }>
+  ): Promise<ActualExpense[]> {
+    if (batch.length === 0) return [];
+    const db = await this.getDB();
+    const now = new Date().toISOString();
+
+    return new Promise<ActualExpense[]>((resolve, reject) => {
+      const tx = db.transaction(STORE_EXPENSES, 'readwrite');
+      const store = tx.objectStore(STORE_EXPENSES);
+      const results: ActualExpense[] = [];
+      let rejected = false;
+
+      tx.oncomplete = () => resolve(results);
+      tx.onerror = () => {
+        if (!rejected) reject(tx.error);
+      };
+      tx.onabort = () => {
+        if (!rejected) reject(tx.error);
+      };
+
+      for (const item of batch) {
+        const getReq = store.get(item.id);
+        getReq.onsuccess = () => {
+          if (rejected) return;
+          const raw = getReq.result;
+          if (!raw) {
+            rejected = true;
+            tx.abort();
+            reject(new Error(`Expense ${item.id} not found`));
+            return;
+          }
+          const existing = normalizeStoredExpense(raw);
+          const updated: ActualExpense = normalizeStoredExpense({
+            ...existing,
+            ...item.updates,
+            updatedAt: item.updates.updatedAt || now,
+          });
+          results.push(updated);
+          store.put(updated);
+        };
+        getReq.onerror = () => {
+          if (!rejected) {
+            rejected = true;
+            tx.abort();
+            reject(getReq.error);
+          }
+        };
+      }
+    });
+  }
+
   async getExpenseById(id: string): Promise<ActualExpense | null> {
     const db = await this.getDB();
     return new Promise<ActualExpense | null>((resolve, reject) => {
