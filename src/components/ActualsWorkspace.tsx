@@ -63,6 +63,29 @@ import { CloudAuthModal } from './CloudAuthModal';
 
 ChartJS.register(...registerables);
 
+type CatalogItem = ReturnType<typeof normalizeDetailedExpenses>['catalog']['items'][number];
+
+const MONTHS_PER_YEAR = 12;
+const MONTH_LABELS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+
+// Spreads one catalog item's budget over 12 months, honoring explicit due months (e.g. property taxes)
+const getItemMonthlySchedule = (item: CatalogItem, cost: number, freq: number): number[] => {
+  const schedule: number[] = Array(MONTHS_PER_YEAR).fill(0);
+  if (freq === MONTHS_PER_YEAR && !item.isOneTime) {
+    schedule.fill(cost);
+  } else if (item.dueMonths && item.dueMonths.length > 0) {
+    item.dueMonths.forEach((mNum) => {
+      if (mNum >= 1 && mNum <= MONTHS_PER_YEAR) {
+        schedule[mNum - 1] += cost;
+      }
+    });
+  } else {
+    const annualTotal = item.isOneTime ? cost : cost * freq;
+    schedule.fill(annualTotal / MONTHS_PER_YEAR);
+  }
+  return schedule;
+};
+
 interface ActualsWorkspaceProps {
   ledger: SimulationResultRow[];
   inputs: AppStateInputs;
@@ -167,9 +190,10 @@ export const ActualsWorkspace: React.FC<ActualsWorkspaceProps> = ({
   } | null>(null);
 
   // Breakdown modal filter and sort state
+  const [breakdownViewMode, setBreakdownViewMode] = useState<'table' | 'chart'>('table');
   const [breakdownFilterText, setBreakdownFilterText] = useState<string>('');
   const [breakdownPayerFilter, setBreakdownPayerFilter] = useState<string>('ALL');
-  const [breakdownSortField, setBreakdownSortField] = useState<'date' | 'amount' | 'enteredBy'>('date');
+  const [breakdownSortField, setBreakdownSortField] = useState<'date' | 'amount' | 'enteredBy' | 'notes'>('date');
   const [breakdownSortDirection, setBreakdownSortDirection] = useState<'asc' | 'desc'>('desc');
 
   // Breakdown modal editing state
@@ -307,21 +331,23 @@ export const ActualsWorkspace: React.FC<ActualsWorkspaceProps> = ({
   };
 
   // Active line item expenses matching the selected category/line item
-  const activeLineItemExpenses = useMemo(() => {
-    if (!selectedLineItemForBreakdown) return [];
+  const matchesSelectedLineItem = useCallback((e: ActualExpense) => {
+    if (!selectedLineItemForBreakdown) return false;
     const targetId = selectedLineItemForBreakdown.id;
     const targetNameLower = selectedLineItemForBreakdown.name.toLowerCase();
+    if ((e.catalogId && e.catalogId === targetId) || (e.categoryId && e.categoryId === targetId)) return true;
+    if (e.name && e.name.toLowerCase() === targetNameLower) return true;
+    const catLower = (e.categoryName || '').toLowerCase();
+    if (catLower === targetNameLower) return true;
+    if (catLower.endsWith(` - ${targetNameLower}`)) return true;
+    if (catLower.endsWith(targetNameLower)) return true;
+    return false;
+  }, [selectedLineItemForBreakdown]);
 
-    return loggedExpenses.filter(e => {
-      if ((e.catalogId && e.catalogId === targetId) || (e.categoryId && e.categoryId === targetId)) return true;
-      if (e.name && e.name.toLowerCase() === targetNameLower) return true;
-      const catLower = (e.categoryName || '').toLowerCase();
-      if (catLower === targetNameLower) return true;
-      if (catLower.endsWith(` - ${targetNameLower}`)) return true;
-      if (catLower.endsWith(targetNameLower)) return true;
-      return false;
-    });
-  }, [selectedLineItemForBreakdown, loggedExpenses]);
+  const activeLineItemExpenses = useMemo(
+    () => loggedExpenses.filter(matchesSelectedLineItem),
+    [loggedExpenses, matchesSelectedLineItem]
+  );
 
   // Unique payers for the active line item breakdown
   const availableBreakdownPayers = useMemo(() => {
@@ -331,6 +357,101 @@ export const ActualsWorkspace: React.FC<ActualsWorkspaceProps> = ({
     }
     return Array.from(payersSet);
   }, [activeLineItemExpenses]);
+
+  // Reset to the transaction table whenever a different expense name is opened
+  useEffect(() => {
+    setBreakdownViewMode('table');
+  }, [selectedLineItemForBreakdown?.id]);
+
+  // Per-month actual vs budget series (plus cumulative) for the selected expense name, full year
+  const lineItemMonthlyChartData = useMemo(() => {
+    if (!selectedLineItemForBreakdown) return null;
+
+    const monthlyActual: number[] = Array(MONTHS_PER_YEAR).fill(0);
+    allYearLoggedExpenses.filter(matchesSelectedLineItem).forEach((exp) => {
+      if (!exp.date) return;
+      const m = parseInt(exp.date.split('-')[1], 10);
+      if (m >= 1 && m <= MONTHS_PER_YEAR) {
+        monthlyActual[m - 1] += exp.amount || 0;
+      }
+    });
+
+    let monthlyBudget: number[] | null = null;
+    if (inputs.useDetailedExpenses && inputs.detailedExpenses) {
+      const norm = normalizeDetailedExpenses(inputs.detailedExpenses);
+      const catItem = norm.catalog.items.find((i) => i.id === selectedLineItemForBreakdown.id);
+      if (catItem) {
+        const activeStateForYear = (inputs.jurisdiction.relocationYear !== null && selectedYear >= inputs.jurisdiction.relocationYear)
+          ? inputs.jurisdiction.targetState
+          : inputs.jurisdiction.currentState;
+        const stateCosts = norm.costs[activeStateForYear] || norm.costs.ALL || norm.costs[inputs.jurisdiction.currentState] || {};
+        const cost = stateCosts[catItem.id] ?? 0;
+        const freq = norm.frequencies[catItem.id] ?? catItem.defaultFrequency ?? (catItem.isOneTime ? 1 : MONTHS_PER_YEAR);
+        monthlyBudget = getItemMonthlySchedule(catItem, cost, freq);
+      }
+    }
+    if (!monthlyBudget) {
+      // Non-catalog line items (e.g. healthcare): spread the annual plan evenly
+      const annualPlan = selectedMonthFilter ? selectedLineItemForBreakdown.plannedAnnual * MONTHS_PER_YEAR : selectedLineItemForBreakdown.plannedAnnual;
+      monthlyBudget = Array(MONTHS_PER_YEAR).fill(annualPlan / MONTHS_PER_YEAR);
+    }
+
+    const cumulate = (arr: number[]) => {
+      let running = 0;
+      return arr.map((v) => (running += v));
+    };
+
+    return {
+      labels: MONTH_LABELS,
+      datasets: [
+        {
+          type: 'bar' as const,
+          label: 'Monthly Actual',
+          data: monthlyActual,
+          backgroundColor: 'rgba(52, 211, 153, 0.8)',
+          borderColor: '#34d399',
+          borderWidth: 1,
+          yAxisID: 'y',
+          order: 3,
+        },
+        {
+          type: 'bar' as const,
+          label: 'Monthly Budget',
+          data: monthlyBudget,
+          backgroundColor: 'rgba(148, 163, 184, 0.45)',
+          borderColor: '#94a3b8',
+          borderWidth: 1,
+          yAxisID: 'y',
+          order: 4,
+        },
+        {
+          type: 'line' as const,
+          label: 'Cumulative Actual',
+          data: cumulate(monthlyActual),
+          borderColor: '#34d399',
+          backgroundColor: '#34d399',
+          borderWidth: 2.5,
+          pointRadius: 3,
+          tension: 0.2,
+          yAxisID: 'yCumulative',
+          order: 1,
+        },
+        {
+          type: 'line' as const,
+          label: 'Cumulative Budget',
+          data: cumulate(monthlyBudget),
+          borderColor: '#f59e0b',
+          backgroundColor: '#f59e0b',
+          borderWidth: 2.5,
+          borderDash: [6, 4],
+          pointRadius: 3,
+          tension: 0.2,
+          yAxisID: 'yCumulative',
+          order: 2,
+        },
+      ],
+    };
+  }, [selectedLineItemForBreakdown, allYearLoggedExpenses, matchesSelectedLineItem, inputs.useDetailedExpenses, inputs.detailedExpenses, inputs.jurisdiction, selectedYear, selectedMonthFilter]);
 
   // Filtered and sorted expenses for the breakdown modal
   const filteredAndSortedLineItemExpenses = useMemo(() => {
@@ -364,6 +485,8 @@ export const ActualsWorkspace: React.FC<ActualsWorkspaceProps> = ({
         const pA = a.enteredBy || 'Primary';
         const pB = b.enteredBy || 'Primary';
         comparison = pA.localeCompare(pB);
+      } else if (breakdownSortField === 'notes') {
+        comparison = (a.notes || '').localeCompare(b.notes || '');
       }
       return breakdownSortDirection === 'asc' ? comparison : -comparison;
     });
@@ -371,7 +494,7 @@ export const ActualsWorkspace: React.FC<ActualsWorkspaceProps> = ({
     return list;
   }, [activeLineItemExpenses, breakdownFilterText, breakdownPayerFilter, breakdownSortField, breakdownSortDirection]);
 
-  const handleToggleSort = (field: 'date' | 'amount' | 'enteredBy') => {
+  const handleToggleSort = (field: 'date' | 'amount' | 'enteredBy' | 'notes') => {
     if (breakdownSortField === field) {
       setBreakdownSortDirection(prev => (prev === 'asc' ? 'desc' : 'asc'));
     } else {
@@ -842,26 +965,9 @@ export const ActualsWorkspace: React.FC<ActualsWorkspaceProps> = ({
         const cost = stateCosts[item.id] ?? 0;
         const freq = freqs[item.id] ?? item.defaultFrequency ?? (item.isOneTime ? 1 : 12);
 
-        if (freq === 12 && !item.isOneTime) {
-          // Monthly item: add to all 12 months
-          for (let m = 0; m < 12; m++) {
-            monthlyBudgets[m] += cost;
-          }
-        } else if (item.dueMonths && item.dueMonths.length > 0) {
-          // Item has explicitly scheduled due month(s)
-          item.dueMonths.forEach((mNum) => {
-            if (mNum >= 1 && mNum <= 12) {
-              monthlyBudgets[mNum - 1] += cost;
-            }
-          });
-        } else {
-          // Non-monthly without explicit due months: spread evenly (sinking fund accrual)
-          const annualTotal = item.isOneTime ? cost : cost * freq;
-          const monthlyPortion = annualTotal / 12;
-          for (let m = 0; m < 12; m++) {
-            monthlyBudgets[m] += monthlyPortion;
-          }
-        }
+        getItemMonthlySchedule(item, cost, freq).forEach((amt, m) => {
+          monthlyBudgets[m] += amt;
+        });
       }
     } else {
       const plannedLiving = activeLedgerRow?.plannedBaseLivingExpenses ?? (inputs.annualLivingExpenses ?? 100000);
@@ -2882,16 +2988,35 @@ export const ActualsWorkspace: React.FC<ActualsWorkspaceProps> = ({
                   </p>
                 </div>
               </div>
+              <div className="flex items-center gap-2 shrink-0 ml-3">
+                <div className="flex items-center bg-slate-950 border border-slate-800 rounded-xl p-0.5 text-[11px] font-semibold">
+                  <button
+                    type="button"
+                    onClick={() => setBreakdownViewMode('table')}
+                    className={`px-3 py-1.5 rounded-lg cursor-pointer transition-colors ${breakdownViewMode === 'table' ? 'bg-emerald-500/20 text-emerald-300' : 'text-slate-400 hover:text-white'}`}
+                  >
+                    Transactions
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setBreakdownViewMode('chart')}
+                    className={`px-3 py-1.5 rounded-lg cursor-pointer transition-colors flex items-center gap-1 ${breakdownViewMode === 'chart' ? 'bg-emerald-500/20 text-emerald-300' : 'text-slate-400 hover:text-white'}`}
+                  >
+                    <BarChart3 className="w-3 h-3" />
+                    Monthly Chart
+                  </button>
+                </div>
               <button
                 type="button"
                 onClick={() => {
                   setSelectedLineItemForBreakdown(null);
                   setEditingExpenseId(null);
                 }}
-                className="p-2 rounded-xl bg-slate-800 text-slate-400 hover:text-white hover:bg-slate-700 transition-colors cursor-pointer shrink-0 ml-3"
+                className="p-2 rounded-xl bg-slate-800 text-slate-400 hover:text-white hover:bg-slate-700 transition-colors cursor-pointer"
               >
                 <X className="w-4 h-4" />
               </button>
+              </div>
             </div>
 
             {/* Quick Stats Bar */}
@@ -2925,6 +3050,7 @@ export const ActualsWorkspace: React.FC<ActualsWorkspaceProps> = ({
             </div>
 
             {/* Filter & Search Bar */}
+            {breakdownViewMode === 'table' && (
             <div className="p-3.5 bg-slate-900/80 border-b border-slate-800 flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
               <div className="flex items-center gap-2 flex-1">
                 <div className="relative flex-1 max-w-sm flex items-center bg-slate-950 border border-slate-800 focus-within:border-emerald-500 rounded-xl px-2.5 py-1.5 transition-all">
@@ -2982,6 +3108,7 @@ export const ActualsWorkspace: React.FC<ActualsWorkspaceProps> = ({
                 )}
               </div>
             </div>
+            )}
 
             {/* Error Message banner if edit fails */}
             {expenseEditError && (
@@ -3000,7 +3127,46 @@ export const ActualsWorkspace: React.FC<ActualsWorkspaceProps> = ({
               </div>
             )}
 
-            {/* Scrollable Tabular Display */}
+            {breakdownViewMode === 'chart' && lineItemMonthlyChartData && (
+              <div className="flex-1 min-h-[360px] p-4">
+                <Chart
+                  type="bar"
+                  data={lineItemMonthlyChartData}
+                  options={{
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    interaction: { mode: 'index' as const, intersect: false },
+                    plugins: {
+                      legend: { position: 'top' as const, labels: { color: '#94a3b8', font: { size: 11 } } },
+                      tooltip: {
+                        callbacks: {
+                          label: (context) => `${context.dataset.label}: ${formatCurrency(context.parsed.y)}`,
+                        },
+                      },
+                    },
+                    scales: {
+                      x: { ticks: { color: '#94a3b8' }, grid: { color: 'rgba(51, 65, 85, 0.2)' } },
+                      y: {
+                        position: 'left' as const,
+                        beginAtZero: true,
+                        title: { display: true, text: 'Per month', color: '#94a3b8' },
+                        ticks: { color: '#94a3b8', callback: (value) => formatCurrency(Number(value)) },
+                        grid: { color: 'rgba(51, 65, 85, 0.2)' },
+                      },
+                      yCumulative: {
+                        position: 'right' as const,
+                        beginAtZero: true,
+                        title: { display: true, text: 'Cumulative (YTD)', color: '#94a3b8' },
+                        ticks: { color: '#94a3b8', callback: (value) => formatCurrency(Number(value)) },
+                        grid: { drawOnChartArea: false },
+                      },
+                    },
+                  }}
+                />
+              </div>
+            )}
+
+            {breakdownViewMode === 'table' && (
             <div className="flex-1 overflow-y-auto custom-scrollbar p-0">
               {activeLineItemExpenses.length === 0 ? (
                 <div className="py-16 text-center space-y-2 px-4">
@@ -3071,7 +3237,23 @@ export const ActualsWorkspace: React.FC<ActualsWorkspaceProps> = ({
                           )}
                         </div>
                       </th>
-                      <th className="px-4 py-3">Note / Memo</th>
+                      <th
+                        onClick={() => handleToggleSort('notes')}
+                        className="px-4 py-3 cursor-pointer hover:text-white transition-colors"
+                      >
+                        <div className="flex items-center gap-1.5">
+                          <span>Note / Memo</span>
+                          {breakdownSortField === 'notes' ? (
+                            breakdownSortDirection === 'asc' ? (
+                              <ArrowUp className="w-3 h-3 text-emerald-400" />
+                            ) : (
+                              <ArrowDown className="w-3 h-3 text-emerald-400" />
+                            )
+                          ) : (
+                            <ArrowUpDown className="w-3 h-3 text-slate-600" />
+                          )}
+                        </div>
+                      </th>
                       <th className="px-4 py-3 text-right">Actions</th>
                     </tr>
                   </thead>
@@ -3200,6 +3382,7 @@ export const ActualsWorkspace: React.FC<ActualsWorkspaceProps> = ({
                 </table>
               )}
             </div>
+            )}
 
             {/* Modal Footer */}
             <div className="p-4 bg-slate-950/70 border-t border-slate-800 flex items-center justify-between text-xs text-slate-400">
