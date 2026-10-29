@@ -1,4 +1,5 @@
 import { ActualExpense, ExpenseCategory, FullHouseholdArchive, NewExpenseInput, StorageAdapter } from '../types/expenses';
+import { IndexedDbRebalancingStorage } from './rebalancing/IndexedDbRebalancingStorage';
 
 const DB_NAME = 'RetirementExpenserDB';
 const DB_VERSION = 2;
@@ -36,6 +37,7 @@ export function normalizeStoredExpense(raw: Partial<ActualExpense> & Record<stri
 
 export class IndexedDbStorageAdapter implements StorageAdapter {
   private dbPromise: Promise<IDBDatabase> | null = null;
+  private rebalancing = new IndexedDbRebalancingStorage();
 
   private async getDB(): Promise<IDBDatabase> {
     if (typeof window === 'undefined' || !window.indexedDB) {
@@ -434,6 +436,7 @@ export class IndexedDbStorageAdapter implements StorageAdapter {
   async exportArchive(): Promise<FullHouseholdArchive> {
     const categories = await this.getCategories();
     const expenses = await this.getAllExpenses();
+    const rebalancing = await this.rebalancing.exportRebalancing().catch(() => ({ accounts: [], snapshots: [] }));
 
     return {
       schemaVersion: 1,
@@ -442,6 +445,8 @@ export class IndexedDbStorageAdapter implements StorageAdapter {
       categories,
       expenses,
       annualOperations: {},
+      rebalancingAccounts: rebalancing.accounts,
+      rebalancingSnapshots: rebalancing.snapshots,
     };
   }
 
@@ -461,6 +466,16 @@ export class IndexedDbStorageAdapter implements StorageAdapter {
       const storeExp = txExp.objectStore(STORE_EXPENSES);
       for (const exp of archive.expenses) {
         storeExp.put(exp);
+      }
+    }
+
+    if (archive.rebalancingAccounts && archive.rebalancingAccounts.length > 0) {
+      const report = await this.rebalancing.importRebalancing(
+        archive.rebalancingAccounts,
+        archive.rebalancingSnapshots || []
+      );
+      if (report.skippedAccounts.length > 0) {
+        console.warn('Rebalancing import skipped existing accounts:', report.skippedAccounts.join(', '));
       }
     }
   }

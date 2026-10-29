@@ -1,3 +1,5 @@
+import type { RebalanceAccountTemplate, RebalanceSnapshot } from './rebalancing';
+
 export type SyncStatus = 'SYNCED' | 'PENDING_SYNC' | 'FAILED_SYNC';
 
 export interface ExpenseCategory {
@@ -96,6 +98,8 @@ export interface FullHouseholdArchive {
   expenses: ActualExpense[];
   annualOperations: Record<number, AnnualOperationsState>;
   planDocument?: unknown;
+  rebalancingAccounts?: RebalanceAccountTemplate[];
+  rebalancingSnapshots?: RebalanceSnapshot[];
 }
 
 export type NewExpenseInput = Omit<

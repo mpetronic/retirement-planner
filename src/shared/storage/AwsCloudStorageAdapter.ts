@@ -2,6 +2,7 @@ import { ActualExpense, ExpenseCategory, FullHouseholdArchive, NewExpenseInput, 
 import { IndexedDbStorageAdapter } from './IndexedDbStorageAdapter';
 import { AuthService } from '../auth/AuthService';
 import { getCloudConfig } from '../auth/config';
+import { CloudRebalancingStorage } from './rebalancing/CloudRebalancingStorage';
 
 const FLUSH_BATCH_SIZE = 25;
 const FLUSH_MAX_ATTEMPTS = 3;
@@ -605,8 +606,18 @@ export class AwsCloudStorageAdapter implements StorageAdapter {
   }
 
   async importArchive(archive: FullHouseholdArchive): Promise<void> {
-    // 1. Ingest into local IndexedDB
-    await this.localAdapter.importArchive(archive);
+    // 1. Ingest into local IndexedDB (rebalancing data goes through its own cloud-aware storage)
+    const { rebalancingAccounts, rebalancingSnapshots, ...coreArchive } = archive;
+    await this.localAdapter.importArchive(coreArchive);
+    if (rebalancingAccounts && rebalancingAccounts.length > 0) {
+      const report = await new CloudRebalancingStorage().importRebalancing(
+        rebalancingAccounts,
+        rebalancingSnapshots || []
+      );
+      if (report.skippedAccounts.length > 0) {
+        console.warn('Rebalancing import skipped existing accounts:', report.skippedAccounts.join(', '));
+      }
+    }
 
     // 2. If authenticated, push categories and expenses to Cloud DynamoDB
     if (typeof window !== 'undefined' && navigator.onLine && AuthService.isAuthenticated()) {
