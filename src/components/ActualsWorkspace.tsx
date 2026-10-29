@@ -190,7 +190,7 @@ export const ActualsWorkspace: React.FC<ActualsWorkspaceProps> = ({
   } | null>(null);
 
   // Breakdown modal filter and sort state
-  const [breakdownViewMode, setBreakdownViewMode] = useState<'table' | 'chart'>('table');
+  const [breakdownViewMode, setBreakdownViewMode] = useState<'table' | 'tracker'>('table');
   const [breakdownFilterText, setBreakdownFilterText] = useState<string>('');
   const [breakdownPayerFilter, setBreakdownPayerFilter] = useState<string>('ALL');
   const [breakdownSortField, setBreakdownSortField] = useState<'date' | 'amount' | 'enteredBy' | 'notes'>('date');
@@ -363,8 +363,8 @@ export const ActualsWorkspace: React.FC<ActualsWorkspaceProps> = ({
     setBreakdownViewMode('table');
   }, [selectedLineItemForBreakdown?.id]);
 
-  // Per-month actual vs budget series (plus cumulative) for the selected expense name, full year
-  const lineItemMonthlyChartData = useMemo(() => {
+  // Per-month actual and budget series for the selected expense name, full year
+  const lineItemMonthlySeries = useMemo(() => {
     if (!selectedLineItemForBreakdown) return null;
 
     const monthlyActual: number[] = Array(MONTHS_PER_YEAR).fill(0);
@@ -396,62 +396,103 @@ export const ActualsWorkspace: React.FC<ActualsWorkspaceProps> = ({
       monthlyBudget = Array(MONTHS_PER_YEAR).fill(annualPlan / MONTHS_PER_YEAR);
     }
 
-    const cumulate = (arr: number[]) => {
-      let running = 0;
-      return arr.map((v) => (running += v));
-    };
+    return { monthlyActual, monthlyBudget };
+  }, [selectedLineItemForBreakdown, allYearLoggedExpenses, matchesSelectedLineItem, inputs.useDetailedExpenses, inputs.detailedExpenses, inputs.jurisdiction, selectedYear, selectedMonthFilter]);
+
+  const cumulate = (arr: number[]) => {
+    let running = 0;
+    return arr.map((v) => (running += v));
+  };
+
+  // Budget Tracker: cumulative lines with shaded variance, monthly variance bars, and projection
+  const lineItemTrackerData = useMemo(() => {
+    if (!lineItemMonthlySeries) return null;
+    const { monthlyActual, monthlyBudget } = lineItemMonthlySeries;
+
+    const now = new Date();
+    const lastIdx = selectedYear < now.getFullYear() ? MONTHS_PER_YEAR - 1 : selectedYear > now.getFullYear() ? -1 : now.getMonth();
+    const hasElapsed = lastIdx >= 0;
+
+    const cumActual = cumulate(monthlyActual);
+    const cumBudget = cumulate(monthlyBudget);
+    const annualBudget = cumBudget[MONTHS_PER_YEAR - 1];
+    const ytdActual = hasElapsed ? cumActual[lastIdx] : 0;
+    const ytdBudget = hasElapsed ? cumBudget[lastIdx] : 0;
+
+    // Pace-based projection: remaining budget scaled by actual-to-budget pace (respects lumpy due months)
+    const paceRatio = ytdBudget > 0 ? ytdActual / ytdBudget : 1;
+    const projection: Array<number | null> = Array(MONTHS_PER_YEAR).fill(null);
+    let projectedYearEnd = ytdActual;
+    if (hasElapsed) {
+      let running = ytdActual;
+      projection[lastIdx] = running;
+      for (let m = lastIdx + 1; m < MONTHS_PER_YEAR; m++) {
+        running += monthlyBudget[m] * paceRatio;
+        projection[m] = running;
+      }
+      projectedYearEnd = running;
+    }
+
+    const variance = monthlyBudget.map((b, m) => (m <= lastIdx ? b - monthlyActual[m] : null));
 
     return {
-      labels: MONTH_LABELS,
-      datasets: [
-        {
-          type: 'bar' as const,
-          label: 'Monthly Actual',
-          data: monthlyActual,
-          backgroundColor: 'rgba(52, 211, 153, 0.8)',
-          borderColor: '#34d399',
-          borderWidth: 1,
-          yAxisID: 'y',
-          order: 3,
-        },
-        {
-          type: 'bar' as const,
-          label: 'Monthly Budget',
-          data: monthlyBudget,
-          backgroundColor: 'rgba(148, 163, 184, 0.45)',
-          borderColor: '#94a3b8',
-          borderWidth: 1,
-          yAxisID: 'y',
-          order: 4,
-        },
-        {
-          type: 'line' as const,
-          label: 'Cumulative Actual',
-          data: cumulate(monthlyActual),
-          borderColor: '#34d399',
-          backgroundColor: '#34d399',
-          borderWidth: 2.5,
-          pointRadius: 3,
-          tension: 0.2,
-          yAxisID: 'yCumulative',
-          order: 1,
-        },
-        {
-          type: 'line' as const,
-          label: 'Cumulative Budget',
-          data: cumulate(monthlyBudget),
-          borderColor: '#f59e0b',
-          backgroundColor: '#f59e0b',
-          borderWidth: 2.5,
-          borderDash: [6, 4],
-          pointRadius: 3,
-          tension: 0.2,
-          yAxisID: 'yCumulative',
-          order: 2,
-        },
-      ],
+      hasElapsed,
+      lastIdx,
+      ytdActual,
+      ytdBudget,
+      annualBudget,
+      projectedYearEnd,
+      cumulativeData: {
+        labels: MONTH_LABELS,
+        datasets: [
+          {
+            label: 'Cumulative Budget',
+            data: cumBudget,
+            borderColor: '#f59e0b',
+            backgroundColor: '#f59e0b',
+            borderDash: [6, 4],
+            borderWidth: 2,
+            pointRadius: 2,
+            tension: 0.2,
+          },
+          {
+            label: 'Cumulative Actual',
+            data: cumActual.map((v, m) => (m <= lastIdx ? v : null)),
+            borderColor: '#34d399',
+            backgroundColor: '#34d399',
+            borderWidth: 3,
+            pointRadius: 3,
+            tension: 0.2,
+            fill: {
+              target: 0,
+              above: 'rgba(244, 63, 94, 0.25)',
+              below: 'rgba(52, 211, 153, 0.25)',
+            },
+          },
+          {
+            label: 'Projected Actual',
+            data: projection,
+            borderColor: 'rgba(52, 211, 153, 0.6)',
+            backgroundColor: 'rgba(52, 211, 153, 0.6)',
+            borderDash: [2, 4],
+            borderWidth: 2,
+            pointRadius: 0,
+            tension: 0.2,
+          },
+        ],
+      },
+      varianceData: {
+        labels: MONTH_LABELS,
+        datasets: [
+          {
+            label: 'Under (+) / Over (-) Budget',
+            data: variance,
+            backgroundColor: variance.map((v) => ((v ?? 0) >= 0 ? 'rgba(52, 211, 153, 0.8)' : 'rgba(244, 63, 94, 0.8)')),
+          },
+        ],
+      },
     };
-  }, [selectedLineItemForBreakdown, allYearLoggedExpenses, matchesSelectedLineItem, inputs.useDetailedExpenses, inputs.detailedExpenses, inputs.jurisdiction, selectedYear, selectedMonthFilter]);
+  }, [lineItemMonthlySeries, selectedYear]);
 
   // Filtered and sorted expenses for the breakdown modal
   const filteredAndSortedLineItemExpenses = useMemo(() => {
@@ -2999,11 +3040,11 @@ export const ActualsWorkspace: React.FC<ActualsWorkspaceProps> = ({
                   </button>
                   <button
                     type="button"
-                    onClick={() => setBreakdownViewMode('chart')}
-                    className={`px-3 py-1.5 rounded-lg cursor-pointer transition-colors flex items-center gap-1 ${breakdownViewMode === 'chart' ? 'bg-emerald-500/20 text-emerald-300' : 'text-slate-400 hover:text-white'}`}
+                    onClick={() => setBreakdownViewMode('tracker')}
+                    className={`px-3 py-1.5 rounded-lg cursor-pointer transition-colors flex items-center gap-1 ${breakdownViewMode === 'tracker' ? 'bg-emerald-500/20 text-emerald-300' : 'text-slate-400 hover:text-white'}`}
                   >
-                    <BarChart3 className="w-3 h-3" />
-                    Monthly Chart
+                    <TrendingUp className="w-3 h-3" />
+                    Budget Tracker
                   </button>
                 </div>
               <button
@@ -3127,42 +3168,103 @@ export const ActualsWorkspace: React.FC<ActualsWorkspaceProps> = ({
               </div>
             )}
 
-            {breakdownViewMode === 'chart' && lineItemMonthlyChartData && (
-              <div className="flex-1 min-h-[360px] p-4">
-                <Chart
-                  type="bar"
-                  data={lineItemMonthlyChartData}
-                  options={{
-                    responsive: true,
-                    maintainAspectRatio: false,
-                    interaction: { mode: 'index' as const, intersect: false },
-                    plugins: {
-                      legend: { position: 'top' as const, labels: { color: '#94a3b8', font: { size: 11 } } },
-                      tooltip: {
-                        callbacks: {
-                          label: (context) => `${context.dataset.label}: ${formatCurrency(context.parsed.y)}`,
+            {breakdownViewMode === 'tracker' && lineItemTrackerData && (
+              <div className="flex-1 overflow-y-auto custom-scrollbar p-4 space-y-4">
+                {(() => {
+                  const t = lineItemTrackerData;
+                  const ytdVariance = t.ytdBudget - t.ytdActual;
+                  const projectedVariance = t.annualBudget - t.projectedYearEnd;
+                  const tiles: Array<{ label: string; value: string; tone: string }> = [
+                    { label: 'YTD Actual', value: formatCurrency(t.ytdActual), tone: 'text-emerald-400' },
+                    { label: 'YTD Budget', value: formatCurrency(t.ytdBudget), tone: 'text-slate-200' },
+                    {
+                      label: 'YTD Under / (Over)',
+                      value: `${formatCurrency(ytdVariance)}${t.ytdBudget > 0 ? ` (${((ytdVariance / t.ytdBudget) * 100).toFixed(0)}%)` : ''}`,
+                      tone: ytdVariance >= 0 ? 'text-emerald-400' : 'text-rose-400',
+                    },
+                    { label: 'Annual Budget', value: formatCurrency(t.annualBudget), tone: 'text-slate-200' },
+                    { label: 'Projected Year-End', value: formatCurrency(t.projectedYearEnd), tone: 'text-slate-200' },
+                    {
+                      label: 'Projected Under / (Over)',
+                      value: formatCurrency(projectedVariance),
+                      tone: projectedVariance >= 0 ? 'text-emerald-400' : 'text-rose-400',
+                    },
+                  ];
+                  return (
+                    <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2">
+                      {tiles.map((tile) => (
+                        <div key={tile.label} className="bg-slate-900/60 border border-slate-800 rounded-xl p-2.5">
+                          <span className="text-[10px] text-slate-400 block font-medium uppercase tracking-wider">{tile.label}</span>
+                          <span className={`text-sm font-bold font-mono ${tile.tone}`}>{tile.value}</span>
+                        </div>
+                      ))}
+                    </div>
+                  );
+                })()}
+
+                <div>
+                  <p className="text-[11px] text-slate-400 mb-1">
+                    Cumulative spend vs budget. Green shading means under budget, red means over. Dotted line projects the year-end at your current pace against the budget schedule.
+                  </p>
+                  <div className="h-60">
+                    <Chart
+                      type="line"
+                      data={lineItemTrackerData.cumulativeData}
+                      options={{
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        interaction: { mode: 'index' as const, intersect: false },
+                        plugins: {
+                          legend: { position: 'top' as const, labels: { color: '#94a3b8', font: { size: 11 } } },
+                          tooltip: {
+                            callbacks: {
+                              label: (context) => `${context.dataset.label}: ${formatCurrency(context.parsed.y)}`,
+                            },
+                          },
                         },
-                      },
-                    },
-                    scales: {
-                      x: { ticks: { color: '#94a3b8' }, grid: { color: 'rgba(51, 65, 85, 0.2)' } },
-                      y: {
-                        position: 'left' as const,
-                        beginAtZero: true,
-                        title: { display: true, text: 'Per month', color: '#94a3b8' },
-                        ticks: { color: '#94a3b8', callback: (value) => formatCurrency(Number(value)) },
-                        grid: { color: 'rgba(51, 65, 85, 0.2)' },
-                      },
-                      yCumulative: {
-                        position: 'right' as const,
-                        beginAtZero: true,
-                        title: { display: true, text: 'Cumulative (YTD)', color: '#94a3b8' },
-                        ticks: { color: '#94a3b8', callback: (value) => formatCurrency(Number(value)) },
-                        grid: { drawOnChartArea: false },
-                      },
-                    },
-                  }}
-                />
+                        scales: {
+                          x: { ticks: { color: '#94a3b8' }, grid: { color: 'rgba(51, 65, 85, 0.2)' } },
+                          y: {
+                            beginAtZero: true,
+                            ticks: { color: '#94a3b8', callback: (value) => formatCurrency(Number(value)) },
+                            grid: { color: 'rgba(51, 65, 85, 0.2)' },
+                          },
+                        },
+                      }}
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <p className="text-[11px] text-slate-400 mb-1">
+                    Monthly variance (budget minus actual). Bars above zero are under budget, below zero are over.
+                  </p>
+                  <div className="h-40">
+                    <Chart
+                      type="bar"
+                      data={lineItemTrackerData.varianceData}
+                      options={{
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        plugins: {
+                          legend: { display: false },
+                          tooltip: {
+                            callbacks: {
+                              label: (context) => `${context.dataset.label}: ${formatCurrency(context.parsed.y)}`,
+                            },
+                          },
+                        },
+                        scales: {
+                          x: { ticks: { color: '#94a3b8' }, grid: { color: 'rgba(51, 65, 85, 0.2)' } },
+                          y: {
+                            ticks: { color: '#94a3b8', callback: (value) => formatCurrency(Number(value)) },
+                            grid: { color: 'rgba(51, 65, 85, 0.2)' },
+                          },
+                        },
+                      }}
+                    />
+                  </div>
+                </div>
               </div>
             )}
 
