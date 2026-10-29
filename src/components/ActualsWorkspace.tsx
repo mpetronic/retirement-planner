@@ -85,6 +85,18 @@ const getItemMonthlySchedule = (item: CatalogItem, cost: number, freq: number): 
   return schedule;
 };
 
+type ComparisonSortField = 'name' | 'planned' | 'actual' | 'variance' | 'usage' | 'payers' | 'logs';
+
+const COMPARISON_COLUMNS: Array<{ field: ComparisonSortField; label: string; align: string; defaultDirection: 'asc' | 'desc' }> = [
+  { field: 'name', label: 'Expense Name / Category', align: '', defaultDirection: 'asc' },
+  { field: 'planned', label: 'Planned Budget', align: 'text-right', defaultDirection: 'desc' },
+  { field: 'actual', label: 'Actual Spend', align: 'text-right', defaultDirection: 'desc' },
+  { field: 'variance', label: 'Variance', align: 'text-right', defaultDirection: 'asc' },
+  { field: 'usage', label: 'Budget Usage', align: '', defaultDirection: 'desc' },
+  { field: 'payers', label: 'Payer Breakdown', align: '', defaultDirection: 'asc' },
+  { field: 'logs', label: 'Actuals', align: 'text-center', defaultDirection: 'desc' },
+];
+
 interface ActualsWorkspaceProps {
   ledger: SimulationResultRow[];
   inputs: AppStateInputs;
@@ -141,6 +153,8 @@ export const ActualsWorkspace: React.FC<ActualsWorkspaceProps> = ({
   const [expensesDisplayMode, setExpensesDisplayMode] = useState<'table' | 'tracker' | 'none'>('table');
   const [trackerCategory, setTrackerCategory] = useState<string | null>(null);
   const [tableFilterText, setTableFilterText] = useState<string>('');
+  const [comparisonSortField, setComparisonSortField] = useState<ComparisonSortField | null>('actual');
+  const [comparisonSortDirection, setComparisonSortDirection] = useState<'asc' | 'desc'>('desc');
   const [showTransactionsDrawer, setShowTransactionsDrawer] = useState<boolean>(false);
   const [showImportModal, setShowImportModal] = useState<boolean>(false);
   const [showBulkEditModal, setShowBulkEditModal] = useState<boolean>(false);
@@ -883,6 +897,32 @@ export const ActualsWorkspace: React.FC<ActualsWorkspaceProps> = ({
       return concatenatedFields.toLowerCase().includes(lowerQuery);
     });
   }, [comparisonItems, tableFilterText]);
+
+  const sortedComparisonItems = useMemo(() => {
+    if (!comparisonSortField) return filteredComparisonItems;
+    const payerKey = (payers: Record<string, number>) => Object.keys(payers).sort().join(', ');
+    const sorted = [...filteredComparisonItems].sort((a, b) => {
+      switch (comparisonSortField) {
+        case 'name': return a.name.localeCompare(b.name) || a.group.localeCompare(b.group);
+        case 'planned': return a.plannedAnnual - b.plannedAnnual;
+        case 'actual': return a.actualAnnual - b.actualAnnual;
+        case 'variance': return a.variance - b.variance;
+        case 'usage': return a.percentUsed - b.percentUsed;
+        case 'payers': return payerKey(a.payers).localeCompare(payerKey(b.payers));
+        case 'logs': return a.transactionCount - b.transactionCount;
+      }
+    });
+    return comparisonSortDirection === 'asc' ? sorted : sorted.reverse();
+  }, [filteredComparisonItems, comparisonSortField, comparisonSortDirection]);
+
+  const handleToggleComparisonSort = (field: ComparisonSortField, defaultDirection: 'asc' | 'desc') => {
+    if (comparisonSortField === field) {
+      setComparisonSortDirection(prev => (prev === 'asc' ? 'desc' : 'asc'));
+    } else {
+      setComparisonSortField(field);
+      setComparisonSortDirection(defaultDirection);
+    }
+  };
 
 
   // Scheduled 12-month budget arrays by category, accounting for periodic due months (e.g. Sep/Dec property taxes)
@@ -1951,17 +1991,30 @@ export const ActualsWorkspace: React.FC<ActualsWorkspaceProps> = ({
                     <table className="w-full text-left text-xs text-slate-300 divide-y divide-slate-800">
                       <thead className="bg-slate-950/80 text-slate-400 uppercase text-[10px] font-bold tracking-wider">
                         <tr>
-                          <th className="px-3.5 py-2.5">Expense Name / Category</th>
-                          <th className="px-3.5 py-2.5 text-right">Planned Budget</th>
-                          <th className="px-3.5 py-2.5 text-right">Actual Spend</th>
-                          <th className="px-3.5 py-2.5 text-right">Variance</th>
-                          <th className="px-3.5 py-2.5">Budget Usage</th>
-                          <th className="px-3.5 py-2.5">Payer Breakdown</th>
-                          <th className="px-3.5 py-2.5 text-center">Actuals</th>
+                          {COMPARISON_COLUMNS.map((col) => (
+                            <th
+                              key={col.field}
+                              onClick={() => handleToggleComparisonSort(col.field, col.defaultDirection)}
+                              className={`px-3.5 py-2.5 cursor-pointer hover:text-white transition-colors ${col.align}`}
+                            >
+                              <div className={`flex items-center gap-1.5 ${col.align === 'text-right' ? 'justify-end' : col.align === 'text-center' ? 'justify-center' : ''}`}>
+                                <span>{col.label}</span>
+                                {comparisonSortField === col.field ? (
+                                  comparisonSortDirection === 'asc' ? (
+                                    <ArrowUp className="w-3 h-3 text-emerald-400" />
+                                  ) : (
+                                    <ArrowDown className="w-3 h-3 text-emerald-400" />
+                                  )
+                                ) : (
+                                  <ArrowUpDown className="w-3 h-3 text-slate-600" />
+                                )}
+                              </div>
+                            </th>
+                          ))}
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-slate-800/60 bg-slate-900/40">
-                        {filteredComparisonItems.map((item) => {
+                        {sortedComparisonItems.map((item) => {
                           const isOver = item.variance < 0;
                           const hasSpend = item.actualAnnual > 0;
                           return (
