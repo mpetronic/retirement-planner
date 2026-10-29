@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useEffect, useCallback, useRef } from 'react';
+import React, { useState, useMemo, useEffect, useCallback } from 'react';
 import {
   SimulationResultRow,
   AppStateInputs,
@@ -40,7 +40,6 @@ import {
   ArrowUp,
   ArrowDown,
   ArrowRight,
-  BarChart3,
   Table,
   EyeOff,
   Upload,
@@ -56,17 +55,17 @@ import { ActiveViewType } from './SidebarNavigation';
 import { RangeSlider } from './RangeSlider';
 import { NumericInput } from './NumericInput';
 import { Chart } from 'react-chartjs-2';
-import { Chart as ChartJS, registerables, ChartEvent, LegendItem } from 'chart.js';
+import { Chart as ChartJS, registerables } from 'chart.js';
 import { ImportExpensesModal } from './ImportExpensesModal';
 import { BulkEditExpensesModal } from './BulkEditExpensesModal';
+import { BudgetTrackerChart } from './BudgetTrackerChart';
+import { MONTHS_PER_YEAR, computeBudgetTracker } from '../utils/budgetTracker';
 import { CloudAuthModal } from './CloudAuthModal';
 
 ChartJS.register(...registerables);
 
 type CatalogItem = ReturnType<typeof normalizeDetailedExpenses>['catalog']['items'][number];
 
-const MONTHS_PER_YEAR = 12;
-const MONTH_LABELS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
 // Spreads one catalog item's budget over 12 months, honoring explicit due months (e.g. property taxes)
 const getItemMonthlySchedule = (item: CatalogItem, cost: number, freq: number): number[] => {
@@ -139,15 +138,13 @@ export const ActualsWorkspace: React.FC<ActualsWorkspaceProps> = ({
   const [allYearLoggedExpenses, setAllYearLoggedExpenses] = useState<ActualExpense[]>([]);
   const [isLoadingExpenses, setIsLoadingExpenses] = useState<boolean>(false);
   const [selectedMonthFilter, setSelectedMonthFilter] = useState<number | null>(null);
-  const [expensesDisplayMode, setExpensesDisplayMode] = useState<'table' | 'chart' | 'none'>('table');
-  const [chartAggregationMode, setChartAggregationMode] = useState<'monthly' | 'cumulative'>('monthly');
+  const [expensesDisplayMode, setExpensesDisplayMode] = useState<'table' | 'tracker' | 'none'>('table');
+  const [trackerCategory, setTrackerCategory] = useState<string | null>(null);
   const [tableFilterText, setTableFilterText] = useState<string>('');
   const [showTransactionsDrawer, setShowTransactionsDrawer] = useState<boolean>(false);
   const [showImportModal, setShowImportModal] = useState<boolean>(false);
   const [showBulkEditModal, setShowBulkEditModal] = useState<boolean>(false);
   const [isAuthenticated, setIsAuthenticated] = useState<boolean>(() => AuthService.isAuthenticated());
-  const monthlyExpensesChartRef = useRef<ChartJS<'bar' | 'line'> | null>(null);
-  const [hasHiddenExpensesDatasets, setHasHiddenExpensesDatasets] = useState(false);
 
   useEffect(() => {
     const unsub = AuthService.subscribe((s) => {
@@ -398,101 +395,6 @@ export const ActualsWorkspace: React.FC<ActualsWorkspaceProps> = ({
 
     return { monthlyActual, monthlyBudget };
   }, [selectedLineItemForBreakdown, allYearLoggedExpenses, matchesSelectedLineItem, inputs.useDetailedExpenses, inputs.detailedExpenses, inputs.jurisdiction, selectedYear, selectedMonthFilter]);
-
-  const cumulate = (arr: number[]) => {
-    let running = 0;
-    return arr.map((v) => (running += v));
-  };
-
-  // Budget Tracker: cumulative lines with shaded variance, monthly variance bars, and projection
-  const lineItemTrackerData = useMemo(() => {
-    if (!lineItemMonthlySeries) return null;
-    const { monthlyActual, monthlyBudget } = lineItemMonthlySeries;
-
-    const now = new Date();
-    const lastIdx = selectedYear < now.getFullYear() ? MONTHS_PER_YEAR - 1 : selectedYear > now.getFullYear() ? -1 : now.getMonth();
-    const hasElapsed = lastIdx >= 0;
-
-    const cumActual = cumulate(monthlyActual);
-    const cumBudget = cumulate(monthlyBudget);
-    const annualBudget = cumBudget[MONTHS_PER_YEAR - 1];
-    const ytdActual = hasElapsed ? cumActual[lastIdx] : 0;
-    const ytdBudget = hasElapsed ? cumBudget[lastIdx] : 0;
-
-    // Pace-based projection: remaining budget scaled by actual-to-budget pace (respects lumpy due months)
-    const paceRatio = ytdBudget > 0 ? ytdActual / ytdBudget : 1;
-    const projection: Array<number | null> = Array(MONTHS_PER_YEAR).fill(null);
-    let projectedYearEnd = ytdActual;
-    if (hasElapsed) {
-      let running = ytdActual;
-      projection[lastIdx] = running;
-      for (let m = lastIdx + 1; m < MONTHS_PER_YEAR; m++) {
-        running += monthlyBudget[m] * paceRatio;
-        projection[m] = running;
-      }
-      projectedYearEnd = running;
-    }
-
-    const variance = monthlyBudget.map((b, m) => (m <= lastIdx ? b - monthlyActual[m] : null));
-
-    return {
-      hasElapsed,
-      lastIdx,
-      ytdActual,
-      ytdBudget,
-      annualBudget,
-      projectedYearEnd,
-      cumulativeData: {
-        labels: MONTH_LABELS,
-        datasets: [
-          {
-            label: 'Cumulative Budget',
-            data: cumBudget,
-            borderColor: '#f59e0b',
-            backgroundColor: '#f59e0b',
-            borderDash: [6, 4],
-            borderWidth: 2,
-            pointRadius: 2,
-            tension: 0.2,
-          },
-          {
-            label: 'Cumulative Actual',
-            data: cumActual.map((v, m) => (m <= lastIdx ? v : null)),
-            borderColor: '#34d399',
-            backgroundColor: '#34d399',
-            borderWidth: 3,
-            pointRadius: 3,
-            tension: 0.2,
-            fill: {
-              target: 0,
-              above: 'rgba(244, 63, 94, 0.25)',
-              below: 'rgba(52, 211, 153, 0.25)',
-            },
-          },
-          {
-            label: 'Projected Actual',
-            data: projection,
-            borderColor: 'rgba(52, 211, 153, 0.6)',
-            backgroundColor: 'rgba(52, 211, 153, 0.6)',
-            borderDash: [2, 4],
-            borderWidth: 2,
-            pointRadius: 0,
-            tension: 0.2,
-          },
-        ],
-      },
-      varianceData: {
-        labels: MONTH_LABELS,
-        datasets: [
-          {
-            label: 'Under (+) / Over (-) Budget',
-            data: variance,
-            backgroundColor: variance.map((v) => ((v ?? 0) >= 0 ? 'rgba(52, 211, 153, 0.8)' : 'rgba(244, 63, 94, 0.8)')),
-          },
-        ],
-      },
-    };
-  }, [lineItemMonthlySeries, selectedYear]);
 
   // Filtered and sorted expenses for the breakdown modal
   const filteredAndSortedLineItemExpenses = useMemo(() => {
@@ -983,9 +885,15 @@ export const ActualsWorkspace: React.FC<ActualsWorkspaceProps> = ({
   }, [comparisonItems, tableFilterText]);
 
 
-  // Scheduled 12-month budget array accounting for periodic due months (e.g. Sep/Dec property taxes)
-  const scheduledMonthlyBudgets = useMemo(() => {
-    const monthlyBudgets = Array(12).fill(0);
+  // Scheduled 12-month budget arrays by category, accounting for periodic due months (e.g. Sep/Dec property taxes)
+  const scheduledBudgetsByCategory = useMemo(() => {
+    const byCategory: Record<string, number[]> = {};
+    const addBudget = (category: string, amounts: number[]) => {
+      if (!byCategory[category]) byCategory[category] = Array(MONTHS_PER_YEAR).fill(0);
+      amounts.forEach((amt, m) => {
+        byCategory[category][m] += amt;
+      });
+    };
 
     if (inputs.useDetailedExpenses && inputs.detailedExpenses) {
       const norm = normalizeDetailedExpenses(inputs.detailedExpenses);
@@ -1006,16 +914,11 @@ export const ActualsWorkspace: React.FC<ActualsWorkspaceProps> = ({
         const cost = stateCosts[item.id] ?? 0;
         const freq = freqs[item.id] ?? item.defaultFrequency ?? (item.isOneTime ? 1 : 12);
 
-        getItemMonthlySchedule(item, cost, freq).forEach((amt, m) => {
-          monthlyBudgets[m] += amt;
-        });
+        addBudget(item.category || 'Living', getItemMonthlySchedule(item, cost, freq));
       }
     } else {
       const plannedLiving = activeLedgerRow?.plannedBaseLivingExpenses ?? (inputs.annualLivingExpenses ?? 100000);
-      const monthlyPortion = plannedLiving / 12;
-      for (let m = 0; m < 12; m++) {
-        monthlyBudgets[m] += monthlyPortion;
-      }
+      addBudget('Living', Array(MONTHS_PER_YEAR).fill(plannedLiving / MONTHS_PER_YEAR));
     }
 
     // Healthcare Obligations spread evenly across all 12 months
@@ -1024,11 +927,9 @@ export const ActualsWorkspace: React.FC<ActualsWorkspaceProps> = ({
       (activeLedgerRow?.plannedHealthcareOOP ?? 0) +
       (activeLedgerRow?.combinedSurchargeAnnual ?? 0)) / 12;
 
-    for (let m = 0; m < 12; m++) {
-      monthlyBudgets[m] += healthcareMonthly;
-    }
+    addBudget('Healthcare', Array(MONTHS_PER_YEAR).fill(healthcareMonthly));
 
-    return monthlyBudgets;
+    return byCategory;
   }, [
     inputs.useDetailedExpenses,
     inputs.detailedExpenses,
@@ -1040,233 +941,63 @@ export const ActualsWorkspace: React.FC<ActualsWorkspaceProps> = ({
     activeLedgerRow,
   ]);
 
-  // Monthly / Cumulative Stacked Category Spend Chart Data
-  const monthlyExpensesChartData = useMemo(() => {
-    const MONTH_LABELS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+  const scheduledMonthlyBudgets = useMemo(() => {
+    const total: number[] = Array(MONTHS_PER_YEAR).fill(0);
+    Object.values(scheduledBudgetsByCategory).forEach((amounts) => {
+      amounts.forEach((amt, m) => {
+        total[m] += amt;
+      });
+    });
+    return total;
+  }, [scheduledBudgetsByCategory]);
 
-    const CATEGORY_COLORS: Record<string, { bg: string; border: string }> = {
-      'Living': { bg: 'rgba(56, 189, 248, 0.85)', border: '#38bdf8' },
-      'Home': { bg: 'rgba(99, 102, 241, 0.85)', border: '#6366f1' },
-      'Utilities': { bg: 'rgba(234, 179, 8, 0.85)', border: '#eab308' },
-      'Transportation': { bg: 'rgba(168, 85, 247, 0.85)', border: '#a855f7' },
-      'Auto': { bg: 'rgba(168, 85, 247, 0.85)', border: '#a855f7' },
-      'Leisure': { bg: 'rgba(236, 72, 153, 0.85)', border: '#ec4899' },
-      'Healthcare': { bg: 'rgba(20, 184, 166, 0.85)', border: '#14b8a6' },
-      'Insurance': { bg: 'rgba(14, 165, 233, 0.85)', border: '#0ea5e9' },
-      'Charity': { bg: 'rgba(249, 115, 22, 0.85)', border: '#f97316' },
-      'Taxes': { bg: 'rgba(244, 63, 94, 0.85)', border: '#f43f5e' },
-      'One-Time Expenses': { bg: 'rgba(245, 158, 11, 0.85)', border: '#f59e0b' },
-      'Custom': { bg: 'rgba(148, 163, 184, 0.85)', border: '#94a3b8' },
-    };
-
-    const FALLBACK_PALETTE = [
-      { bg: 'rgba(56, 189, 248, 0.85)', border: '#38bdf8' },
-      { bg: 'rgba(99, 102, 241, 0.85)', border: '#6366f1' },
-      { bg: 'rgba(236, 72, 153, 0.85)', border: '#ec4899' },
-      { bg: 'rgba(234, 179, 8, 0.85)', border: '#eab308' },
-      { bg: 'rgba(20, 184, 166, 0.85)', border: '#14b8a6' },
-      { bg: 'rgba(249, 115, 22, 0.85)', border: '#f97316' },
-      { bg: 'rgba(168, 85, 247, 0.85)', border: '#a855f7' },
-      { bg: 'rgba(244, 63, 94, 0.85)', border: '#f43f5e' },
-    ];
-
-    const groupsSet = new Set<string>();
-    if (inputs.detailedExpenses?.catalog?.categories) {
-      inputs.detailedExpenses.catalog.categories.forEach((c) => groupsSet.add(c));
-    }
-
-    const groupMonthlySpends: Record<string, number[]> = {};
-    const initGroup = (g: string) => {
-      if (!groupMonthlySpends[g]) {
-        groupMonthlySpends[g] = Array(12).fill(0);
-      }
-    };
-
-    groupsSet.forEach((g) => initGroup(g));
-
+  // Monthly logged actuals by category for the selected year
+  const actualsByCategory = useMemo(() => {
+    const byCategory: Record<string, number[]> = {};
     allYearLoggedExpenses.forEach((exp) => {
       if (!exp.date) return;
       const m = parseInt(exp.date.split('-')[1], 10);
-      if (m >= 1 && m <= 12) {
-        let group = exp.category || 'Living';
-        if (!exp.category && exp.categoryName) {
-          group = exp.categoryName.includes(' - ') ? exp.categoryName.split(' - ')[0].trim() : exp.categoryName.trim();
-        }
-        groupsSet.add(group);
-        initGroup(group);
-        groupMonthlySpends[group][m - 1] += (exp.amount || 0);
+      if (m < 1 || m > MONTHS_PER_YEAR) return;
+      let group = exp.category || 'Living';
+      if (!exp.category && exp.categoryName) {
+        group = exp.categoryName.includes(' - ') ? exp.categoryName.split(' - ')[0].trim() : exp.categoryName.trim();
       }
+      if (!byCategory[group]) byCategory[group] = Array(MONTHS_PER_YEAR).fill(0);
+      byCategory[group][m - 1] += exp.amount || 0;
     });
+    return byCategory;
+  }, [allYearLoggedExpenses]);
 
-    const activeGroups = Array.from(groupsSet).filter((g) => {
-      const total = (groupMonthlySpends[g] || []).reduce((a, b) => a + b, 0);
-      return total > 0;
-    });
+  // Top-level Budget Tracker: all categories combined, or a single category when one is selected
+  const trackerCategoryRows = useMemo(() => {
+    const names = new Set([...Object.keys(scheduledBudgetsByCategory), ...Object.keys(actualsByCategory)]);
+    const zeros = Array(MONTHS_PER_YEAR).fill(0);
+    return Array.from(names)
+      .map((name) => {
+        const monthlyActual = actualsByCategory[name] ?? zeros;
+        const monthlyBudget = scheduledBudgetsByCategory[name] ?? zeros;
+        return { name, ...computeBudgetTracker(monthlyActual, monthlyBudget, selectedYear) };
+      })
+      .filter((r) => r.annualBudget > 0 || r.ytdActual > 0)
+      .sort((a, b) => (a.ytdBudget - a.ytdActual) - (b.ytdBudget - b.ytdActual));
+  }, [scheduledBudgetsByCategory, actualsByCategory, selectedYear]);
 
-    const isCumulative = chartAggregationMode === 'cumulative';
-
-    // Build budget line data
-    let budgetLineData: number[];
-    if (isCumulative) {
-      let runningSum = 0;
-      budgetLineData = scheduledMonthlyBudgets.map((b) => {
-        runningSum += b;
-        return runningSum;
-      });
-    } else {
-      budgetLineData = scheduledMonthlyBudgets;
-    }
-
-    const barDatasets = activeGroups.map((group, idx) => {
-      const colors = CATEGORY_COLORS[group] || FALLBACK_PALETTE[idx % FALLBACK_PALETTE.length];
-      let data = groupMonthlySpends[group];
-      if (isCumulative) {
-        let runningSpend = 0;
-        data = data.map((s) => {
-          runningSpend += s;
-          return runningSpend;
-        });
-      }
-
+  const trackerSeries = useMemo(() => {
+    const zeros = Array(MONTHS_PER_YEAR).fill(0);
+    if (trackerCategory) {
       return {
-        type: 'bar' as const,
-        label: group,
-        data,
-        backgroundColor: colors.bg,
-        borderColor: colors.border,
-        borderWidth: 1,
-        stack: 'expensesStack',
-        borderRadius: 3,
-        order: 2,
+        monthlyActual: actualsByCategory[trackerCategory] ?? zeros,
+        monthlyBudget: scheduledBudgetsByCategory[trackerCategory] ?? zeros,
       };
+    }
+    const monthlyActual: number[] = Array(MONTHS_PER_YEAR).fill(0);
+    Object.values(actualsByCategory).forEach((amounts) => {
+      amounts.forEach((amt, m) => {
+        monthlyActual[m] += amt;
+      });
     });
-
-    const budgetLineDataset = {
-      type: 'line' as const,
-      label: isCumulative ? 'Cumulative Planned Budget (YTD)' : 'Scheduled Monthly Budget',
-      data: budgetLineData,
-      borderColor: '#10b981',
-      backgroundColor: 'transparent',
-      borderWidth: 2.5,
-      borderDash: [6, 4],
-      pointRadius: 3,
-      pointHoverRadius: 6,
-      pointBackgroundColor: '#10b981',
-      pointBorderColor: '#0f172a',
-      order: 1,
-    };
-
-    return {
-      labels: MONTH_LABELS,
-      datasets: [budgetLineDataset, ...barDatasets],
-    };
-  }, [allYearLoggedExpenses, inputs.detailedExpenses, scheduledMonthlyBudgets, chartAggregationMode]);
-
-  const monthlyExpensesChartOptions = useMemo(() => ({
-    responsive: true,
-    maintainAspectRatio: false,
-    interaction: {
-      mode: 'index' as const,
-      intersect: false,
-    },
-    plugins: {
-      legend: {
-        position: 'top' as const,
-        onClick: (e: ChartEvent, legendItem: LegendItem, legend: { chart: ChartJS }) => {
-          const index = legendItem.datasetIndex;
-          if (index === undefined) return;
-          const ci = legend.chart;
-          const nativeEvent = e.native as MouseEvent | undefined;
-          const hasModifier = nativeEvent ? (nativeEvent.ctrlKey || nativeEvent.altKey || nativeEvent.shiftKey || nativeEvent.metaKey) : false;
-
-          if (hasModifier) {
-            // Modifier + Click: Solo / Isolate (or reset if already soloed)
-            let visibleCount = 0;
-            let isClickedVisible = false;
-            ci.data.datasets.forEach((_, i: number) => {
-              if (ci.isDatasetVisible(i)) {
-                visibleCount++;
-                if (i === index) {
-                  isClickedVisible = true;
-                }
-              }
-            });
-
-            if (visibleCount === 1 && isClickedVisible) {
-              // Already soloed: Show all
-              ci.data.datasets.forEach((_, i: number) => {
-                ci.setDatasetVisibility(i, true);
-              });
-            } else {
-              // Solo this dataset
-              ci.data.datasets.forEach((_, i: number) => {
-                ci.setDatasetVisibility(i, i === index);
-              });
-            }
-          } else {
-            // Standard Click: Toggle individually
-            const isVisible = ci.isDatasetVisible(index);
-            ci.setDatasetVisibility(index, !isVisible);
-          }
-
-          ci.update();
-
-          // Update hasHiddenExpensesDatasets state to conditionally render Show All Categories UI
-          let anyHidden = false;
-          ci.data.datasets.forEach((_, i: number) => {
-            if (!ci.isDatasetVisible(i)) {
-              anyHidden = true;
-            }
-          });
-          setHasHiddenExpensesDatasets(anyHidden);
-        },
-        labels: {
-          color: '#cbd5e1',
-          boxWidth: 15,
-          padding: 12,
-          usePointStyle: true,
-          font: { size: 11, weight: 500 },
-        },
-      },
-      tooltip: {
-        backgroundColor: 'rgba(15, 23, 42, 0.95)',
-        titleColor: '#f8fafc',
-        bodyColor: '#cbd5e1',
-        borderColor: '#334155',
-        borderWidth: 1,
-        padding: 10,
-        callbacks: {
-          label: (context: { dataset: { label?: string; type?: string }; raw: unknown }) => {
-            const val = Number(context.raw) || 0;
-            if (val === 0 && context.dataset.type === 'bar') return '';
-            return ` ${context.dataset.label || 'Spend'}: ${formatCurrency(val)}`;
-          },
-          footer: (items: Array<{ dataset: { type?: string }; raw: unknown }>) => {
-            const totalActual = items
-              .filter((i) => i.dataset.type === 'bar')
-              .reduce((sum: number, i) => sum + (Number(i.raw) || 0), 0);
-            return totalActual > 0 ? `Total Actual: ${formatCurrency(totalActual)}` : '';
-          },
-        },
-      },
-    },
-    scales: {
-      x: {
-        stacked: true,
-        ticks: { color: '#94a3b8', font: { size: 11 } },
-        grid: { color: 'rgba(51, 65, 85, 0.25)' },
-      },
-      y: {
-        stacked: true,
-        ticks: {
-          color: '#94a3b8',
-          font: { size: 11 },
-          callback: (val: string | number) => formatCurrency(Number(val)),
-        },
-        grid: { color: 'rgba(51, 65, 85, 0.25)' },
-      },
-    },
-  }), []);
+    return { monthlyActual, monthlyBudget: scheduledMonthlyBudgets };
+  }, [trackerCategory, actualsByCategory, scheduledBudgetsByCategory, scheduledMonthlyBudgets]);
 
   // Update field in active record
   const handleFieldChange = <K extends keyof YearActualsRecord>(field: K, value: YearActualsRecord[K]) => {
@@ -2030,7 +1761,7 @@ export const ActualsWorkspace: React.FC<ActualsWorkspaceProps> = ({
           </div>
         </div>
 
-        {/* 3-Way View Selector: Table / Graph / Hide */}
+        {/* 3-Way View Selector: Table / Budget Tracker / Hide */}
         <div className="flex justify-center pt-2 pb-1">
           <div className="inline-flex p-1 bg-slate-950/80 rounded-xl border border-slate-800 shadow-inner">
             <button
@@ -2048,15 +1779,15 @@ export const ActualsWorkspace: React.FC<ActualsWorkspaceProps> = ({
 
             <button
               type="button"
-              onClick={() => setExpensesDisplayMode(prev => prev === 'chart' ? 'none' : 'chart')}
+              onClick={() => setExpensesDisplayMode(prev => prev === 'tracker' ? 'none' : 'tracker')}
               className={`px-3.5 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-all cursor-pointer ${
-                expensesDisplayMode === 'chart'
+                expensesDisplayMode === 'tracker'
                   ? 'bg-emerald-500 text-slate-950 shadow-md font-bold'
                   : 'text-slate-400 hover:text-slate-200 hover:bg-slate-900'
               }`}
             >
-              <BarChart3 className="w-3.5 h-3.5" />
-              <span>Graph View</span>
+              <TrendingUp className="w-3.5 h-3.5" />
+              <span>Budget Tracker</span>
             </button>
 
             <button
@@ -2075,85 +1806,67 @@ export const ActualsWorkspace: React.FC<ActualsWorkspaceProps> = ({
           </div>
         </div>
 
-        {/* Graph View: Monthly / Cumulative Stacked Bar Chart with Budget Benchmark */}
-        {expensesDisplayMode === 'chart' && (
+        {/* Budget Tracker View: cumulative budget vs actual, variance, and category breakdown */}
+        {expensesDisplayMode === 'tracker' && (
           <div className="space-y-3 pt-1 animate-in fade-in duration-200">
-            <div className="bg-slate-950/60 border border-slate-800 rounded-xl p-4 space-y-3">
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-800/80 pb-2.5">
-                <div className="flex items-center gap-2">
-                  <div className="p-1.5 rounded-lg bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
-                    <BarChart3 className="w-4 h-4" />
-                  </div>
-                  <div>
-                    <h4 className="text-xs font-bold text-slate-200 uppercase tracking-wider">
-                      {chartAggregationMode === 'monthly'
-                        ? `Monthly Spend by Category vs. Scheduled Budget (${selectedYear})`
-                        : `Cumulative Year-to-Date (YTD) Spend vs. Budget (${selectedYear})`}
-                    </h4>
-                    <p className="text-[11px] text-slate-400">
-                      {chartAggregationMode === 'monthly'
-                        ? 'Category spending compared against true scheduled monthly budgets (including scheduled due months for property taxes & insurance).'
-                        : 'Running cumulative total of actual spend compared against cumulative planned budget progression.'}
-                    </p>
-                  </div>
-                </div>
-
-                <div className="flex items-center gap-2 self-start sm:self-auto flex-wrap">
-                  {hasHiddenExpensesDatasets && (
-                    <button
-                      type="button"
-                      onClick={() => {
-                        if (monthlyExpensesChartRef.current) {
-                          const chart = monthlyExpensesChartRef.current;
-                          chart.data.datasets.forEach((_, i: number) => {
-                            chart.setDatasetVisibility(i, true);
-                          });
-                          chart.update();
-                          setHasHiddenExpensesDatasets(false);
-                        }
-                      }}
-                      className="text-xs font-semibold px-2.5 py-1 bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 hover:bg-emerald-500/20 rounded-lg transition-all cursor-pointer flex items-center gap-1.5"
-                    >
-                      <Check className="w-3.5 h-3.5" />
-                      <span>Show All Categories</span>
-                    </button>
-                  )}
-
-                  {/* Monthly vs Cumulative Toggle */}
-                  <div className="inline-flex p-0.5 bg-slate-900 rounded-lg border border-slate-800 text-[11px]">
-                    <button
-                      type="button"
-                      onClick={() => setChartAggregationMode('monthly')}
-                      className={`px-2.5 py-1 rounded-md font-semibold transition-all cursor-pointer ${
-                        chartAggregationMode === 'monthly'
-                          ? 'bg-emerald-500 text-slate-950 shadow font-bold'
-                          : 'text-slate-400 hover:text-slate-200'
-                      }`}
-                    >
-                      Monthly Cash Flow
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setChartAggregationMode('cumulative')}
-                      className={`px-2.5 py-1 rounded-md font-semibold transition-all cursor-pointer ${
-                        chartAggregationMode === 'cumulative'
-                          ? 'bg-emerald-500 text-slate-950 shadow font-bold'
-                          : 'text-slate-400 hover:text-slate-200'
-                      }`}
-                    >
-                      Cumulative YTD
-                    </button>
-                  </div>
-                </div>
+            <div className="bg-slate-950/60 border border-slate-800 rounded-xl p-4 space-y-4">
+              <div className="flex items-center justify-between gap-3 border-b border-slate-800/80 pb-2.5">
+                <h4 className="text-xs font-bold text-white">
+                  Budget Tracker: {trackerCategory ?? 'All Categories'} ({selectedYear})
+                </h4>
+                {trackerCategory && (
+                  <button
+                    type="button"
+                    onClick={() => setTrackerCategory(null)}
+                    className="text-[11px] text-emerald-400 hover:text-emerald-300 underline font-medium cursor-pointer"
+                  >
+                    Show all categories
+                  </button>
+                )}
               </div>
 
-              <div className="h-80 w-full pt-1">
-                <Chart
-                  ref={monthlyExpensesChartRef}
-                  type="bar"
-                  data={monthlyExpensesChartData}
-                  options={monthlyExpensesChartOptions}
-                />
+              <BudgetTrackerChart
+                monthlyActual={trackerSeries.monthlyActual}
+                monthlyBudget={trackerSeries.monthlyBudget}
+                selectedYear={selectedYear}
+                formatCurrency={formatCurrency}
+              />
+
+              <div className="overflow-x-auto">
+                <table className="w-full text-left text-xs text-slate-300 divide-y divide-slate-800">
+                  <thead className="text-slate-400 uppercase text-[10px] font-bold tracking-wider">
+                    <tr>
+                      <th className="px-3 py-2">Category</th>
+                      <th className="px-3 py-2 text-right">YTD Budget</th>
+                      <th className="px-3 py-2 text-right">YTD Actual</th>
+                      <th className="px-3 py-2 text-right">Under / (Over)</th>
+                      <th className="px-3 py-2 text-right">Projected Year-End</th>
+                      <th className="px-3 py-2 text-right">Annual Budget</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-800/60">
+                    {trackerCategoryRows.map((row) => {
+                      const rowVariance = row.ytdBudget - row.ytdActual;
+                      return (
+                        <tr
+                          key={row.name}
+                          onClick={() => setTrackerCategory(prev => (prev === row.name ? null : row.name))}
+                          className={`cursor-pointer transition-colors hover:bg-slate-900 ${trackerCategory === row.name ? 'bg-emerald-500/10' : ''}`}
+                        >
+                          <td className="px-3 py-2 font-semibold text-white">{row.name}</td>
+                          <td className="px-3 py-2 text-right font-mono">{formatCurrency(row.ytdBudget)}</td>
+                          <td className="px-3 py-2 text-right font-mono">{formatCurrency(row.ytdActual)}</td>
+                          <td className={`px-3 py-2 text-right font-mono font-semibold ${rowVariance >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
+                            {formatCurrency(rowVariance)}
+                          </td>
+                          <td className="px-3 py-2 text-right font-mono">{formatCurrency(row.projectedYearEnd)}</td>
+                          <td className="px-3 py-2 text-right font-mono">{formatCurrency(row.annualBudget)}</td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+                <p className="text-[11px] text-slate-500 mt-2">Click a category to focus the charts on it. Sorted with the most over-budget categories first.</p>
               </div>
             </div>
           </div>
@@ -3168,103 +2881,14 @@ export const ActualsWorkspace: React.FC<ActualsWorkspaceProps> = ({
               </div>
             )}
 
-            {breakdownViewMode === 'tracker' && lineItemTrackerData && (
-              <div className="flex-1 overflow-y-auto custom-scrollbar p-4 space-y-4">
-                {(() => {
-                  const t = lineItemTrackerData;
-                  const ytdVariance = t.ytdBudget - t.ytdActual;
-                  const projectedVariance = t.annualBudget - t.projectedYearEnd;
-                  const tiles: Array<{ label: string; value: string; tone: string }> = [
-                    { label: 'YTD Actual', value: formatCurrency(t.ytdActual), tone: 'text-emerald-400' },
-                    { label: 'YTD Budget', value: formatCurrency(t.ytdBudget), tone: 'text-slate-200' },
-                    {
-                      label: 'YTD Under / (Over)',
-                      value: `${formatCurrency(ytdVariance)}${t.ytdBudget > 0 ? ` (${((ytdVariance / t.ytdBudget) * 100).toFixed(0)}%)` : ''}`,
-                      tone: ytdVariance >= 0 ? 'text-emerald-400' : 'text-rose-400',
-                    },
-                    { label: 'Annual Budget', value: formatCurrency(t.annualBudget), tone: 'text-slate-200' },
-                    { label: 'Projected Year-End', value: formatCurrency(t.projectedYearEnd), tone: 'text-slate-200' },
-                    {
-                      label: 'Projected Under / (Over)',
-                      value: formatCurrency(projectedVariance),
-                      tone: projectedVariance >= 0 ? 'text-emerald-400' : 'text-rose-400',
-                    },
-                  ];
-                  return (
-                    <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2">
-                      {tiles.map((tile) => (
-                        <div key={tile.label} className="bg-slate-900/60 border border-slate-800 rounded-xl p-2.5">
-                          <span className="text-[10px] text-slate-400 block font-medium uppercase tracking-wider">{tile.label}</span>
-                          <span className={`text-sm font-bold font-mono ${tile.tone}`}>{tile.value}</span>
-                        </div>
-                      ))}
-                    </div>
-                  );
-                })()}
-
-                <div>
-                  <p className="text-[11px] text-slate-400 mb-1">
-                    Cumulative spend vs budget. Green shading means under budget, red means over. Dotted line projects the year-end at your current pace against the budget schedule.
-                  </p>
-                  <div className="h-60">
-                    <Chart
-                      type="line"
-                      data={lineItemTrackerData.cumulativeData}
-                      options={{
-                        responsive: true,
-                        maintainAspectRatio: false,
-                        interaction: { mode: 'index' as const, intersect: false },
-                        plugins: {
-                          legend: { position: 'top' as const, labels: { color: '#94a3b8', font: { size: 11 } } },
-                          tooltip: {
-                            callbacks: {
-                              label: (context) => `${context.dataset.label}: ${formatCurrency(context.parsed.y)}`,
-                            },
-                          },
-                        },
-                        scales: {
-                          x: { ticks: { color: '#94a3b8' }, grid: { color: 'rgba(51, 65, 85, 0.2)' } },
-                          y: {
-                            beginAtZero: true,
-                            ticks: { color: '#94a3b8', callback: (value) => formatCurrency(Number(value)) },
-                            grid: { color: 'rgba(51, 65, 85, 0.2)' },
-                          },
-                        },
-                      }}
-                    />
-                  </div>
-                </div>
-
-                <div>
-                  <p className="text-[11px] text-slate-400 mb-1">
-                    Monthly variance (budget minus actual). Bars above zero are under budget, below zero are over.
-                  </p>
-                  <div className="h-40">
-                    <Chart
-                      type="bar"
-                      data={lineItemTrackerData.varianceData}
-                      options={{
-                        responsive: true,
-                        maintainAspectRatio: false,
-                        plugins: {
-                          legend: { display: false },
-                          tooltip: {
-                            callbacks: {
-                              label: (context) => `${context.dataset.label}: ${formatCurrency(context.parsed.y)}`,
-                            },
-                          },
-                        },
-                        scales: {
-                          x: { ticks: { color: '#94a3b8' }, grid: { color: 'rgba(51, 65, 85, 0.2)' } },
-                          y: {
-                            ticks: { color: '#94a3b8', callback: (value) => formatCurrency(Number(value)) },
-                            grid: { color: 'rgba(51, 65, 85, 0.2)' },
-                          },
-                        },
-                      }}
-                    />
-                  </div>
-                </div>
+            {breakdownViewMode === 'tracker' && lineItemMonthlySeries && (
+              <div className="flex-1 overflow-y-auto custom-scrollbar p-4">
+                <BudgetTrackerChart
+                  monthlyActual={lineItemMonthlySeries.monthlyActual}
+                  monthlyBudget={lineItemMonthlySeries.monthlyBudget}
+                  selectedYear={selectedYear}
+                  formatCurrency={formatCurrency}
+                />
               </div>
             )}
 
