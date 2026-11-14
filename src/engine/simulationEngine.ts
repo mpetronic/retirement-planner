@@ -1,4 +1,4 @@
-import { AppStateInputs, SimulationResultRow, LockedReturnSequence, getSimulationStartYear, BASE_QCD_LIMIT, normalizeDetailedExpenses, StateHealthcareConfig } from '../types';
+import { AppStateInputs, SimulationResultRow, LockedReturnSequence, getSimulationStartYear, getSSPaymentLevel, BASE_QCD_LIMIT, normalizeDetailedExpenses, StateHealthcareConfig } from '../types';
 import {
   BASE_MEDICARE_PART_B,
   BASE_MEDICARE_PART_D,
@@ -587,14 +587,15 @@ export function runRetirementSimulation(
     const yourRmdStartAge = getRMDStartAge(yourBirthYear);
     const wifeRmdStartAge = getRMDStartAge(wifeBirthYear);
 
-    // Calculate baseline SS benefits
-    const yourSSAnnualBase = calculateSSBenefit(inputs.you.estimatedPIA || 0, inputs.you.targetSSClaimingAge || 67) * 12 * cpiFactor;
-    const wifeSSAnnualBase = calculateSSBenefit(inputs.wife.estimatedPIA || 0, inputs.wife.targetSSClaimingAge || 67) * 12 * cpiFactor;
-    const spousalSSAnnualFloor = calculateSpousalBenefit(inputs.you.estimatedPIA || 0, inputs.wife.targetSSClaimingAge || 67) * 12 * cpiFactor;
+    // Calculate baseline SS benefits (scaled by the configured trust-fund payment level for this year)
+    const ssPaymentLevel = getSSPaymentLevel(inputs.ssReductions, year);
+    const yourSSAnnualBase = calculateSSBenefit(inputs.you.estimatedPIA || 0, inputs.you.targetSSClaimingAge || 67) * 12 * cpiFactor * ssPaymentLevel;
+    const wifeSSAnnualBase = calculateSSBenefit(inputs.wife.estimatedPIA || 0, inputs.wife.targetSSClaimingAge || 67) * 12 * cpiFactor * ssPaymentLevel;
+    const spousalSSAnnualFloor = calculateSpousalBenefit(inputs.you.estimatedPIA || 0, inputs.wife.targetSSClaimingAge || 67) * 12 * cpiFactor * ssPaymentLevel;
 
-    const survivorSSAnnualBase = calculateSSBenefit(inputs.you.estimatedPIA || 0, inputs.you.targetSSClaimingAge || 67) * 12 * cpiFactor;
-    const survivorWifeSSAnnualBase = calculateSSBenefit(inputs.wife.estimatedPIA || 0, inputs.wife.targetSSClaimingAge || 67) * 12 * cpiFactor;
-    const survivorFloor = (inputs.you.estimatedPIA || 0) * 0.825 * 12 * cpiFactor;
+    const survivorSSAnnualBase = calculateSSBenefit(inputs.you.estimatedPIA || 0, inputs.you.targetSSClaimingAge || 67) * 12 * cpiFactor * ssPaymentLevel;
+    const survivorWifeSSAnnualBase = calculateSSBenefit(inputs.wife.estimatedPIA || 0, inputs.wife.targetSSClaimingAge || 67) * 12 * cpiFactor * ssPaymentLevel;
+    const survivorFloor = (inputs.you.estimatedPIA || 0) * 0.825 * 12 * cpiFactor * ssPaymentLevel;
     const wifeSurvivorSSBenefit = Math.max(survivorSSAnnualBase, survivorWifeSSAnnualBase, survivorFloor);
 
     // 2. RMDs calculations (based on start-of-year balances)
@@ -2143,6 +2144,7 @@ export function runRetirementSimulation(
       taxableDividends: totalDividends,
       taxableInterest: totalCashInterest,
       cpiFactor,
+      ssPaymentLevel,
       activeState,
       activeCounty,
       effectiveLocalTaxRate: effectiveLocalRate,

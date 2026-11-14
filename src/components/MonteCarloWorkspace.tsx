@@ -1,7 +1,7 @@
 import React, { useMemo } from 'react';
 import { Chart } from 'react-chartjs-2';
 import { Chart as ChartJS, registerables, ChartOptions, TooltipItem } from 'chart.js';
-import { AppStateInputs, MonteCarloSettings } from '../types';
+import { AppStateInputs, MonteCarloSettings, describeSSReductions } from '../types';
 import { MonteCarloSummary } from '../engine/monteCarloEngine';
 import { StressTestControlPanel } from './StressTestControlPanel';
 import { RangeSlider } from './RangeSlider';
@@ -403,6 +403,11 @@ export const MonteCarloWorkspace: React.FC<MonteCarloWorkspaceProps> = ({
           <p className="text-xs text-slate-400">
             Model stock/bond return variances, run batch trial stress tests, and explore statistical probabilities of success.
           </p>
+          {describeSSReductions(inputs.ssReductions) && (
+            <p className="text-xs text-amber-400 mt-1">
+              SS reductions active: {describeSSReductions(inputs.ssReductions)}
+            </p>
+          )}
         </div>
       </div>
 

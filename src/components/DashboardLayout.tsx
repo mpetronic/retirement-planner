@@ -1,5 +1,5 @@
 import React, { useMemo } from 'react';
-import { SimulationResultRow, AppStateInputs } from '../types';
+import { SimulationResultRow, AppStateInputs, describeSSReductions } from '../types';
 import {
   DollarSign,
   TrendingUp,
@@ -143,6 +143,7 @@ export const DashboardLayout: React.FC<DashboardLayoutProps> = ({
     inputs.monteCarloSettings?.stressTest?.enabled &&
       (inputs.monteCarloSettings?.stressTest?.overrides?.length ?? 0) > 0
   );
+  const ssReductionsSummary = describeSSReductions(inputs.ssReductions);
   const stressTestOverridesCount = inputs.monteCarloSettings?.stressTest?.overrides?.length ?? 0;
 
   // Compute key summary statistics for active ledger and percentiles
@@ -343,6 +344,19 @@ export const DashboardLayout: React.FC<DashboardLayoutProps> = ({
               >
                 <AlertTriangle className="w-3.5 h-3.5 text-amber-400 shrink-0" />
                 <span className="text-[10px] font-bold uppercase hidden lg:inline">Stress Test</span>
+              </button>
+            )}
+
+            {/* SS Reductions Indicator if Active */}
+            {ssReductionsSummary && (
+              <button
+                type="button"
+                onClick={() => onNavigate('params-profiles')}
+                className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/60 transition-all cursor-pointer"
+                title={`Social Security benefits reduced: ${ssReductionsSummary}. Click to edit in Profiles & Family.`}
+              >
+                <AlertTriangle className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+                <span className="text-[10px] font-bold uppercase hidden lg:inline">SS Reduced</span>
               </button>
             )}
 

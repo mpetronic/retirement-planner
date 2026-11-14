@@ -1,6 +1,6 @@
 import React from 'react';
 import { Document, Page, Text, View, StyleSheet } from '@react-pdf/renderer';
-import { AppStateInputs, StateHealthcareConfig, normalizeDetailedExpenses, getSimulationStartYear } from '../types';
+import { AppStateInputs, StateHealthcareConfig, normalizeDetailedExpenses, getSimulationStartYear, describeSSReductions } from '../types';
 import { getStateTaxProfile } from '../engine/stateTaxRegistry';
 
 // Create stylesheet for PDF formatting
@@ -488,6 +488,12 @@ export const ConfigurationPDF: React.FC<PDFProps> = ({ inputs }) => {
               </View>
             </View>
           </View>
+          {describeSSReductions(inputs.ssReductions) && (
+            <View style={styles.row}>
+              <Text style={styles.rowLabel}>SS Benefit Reductions (all benefits):</Text>
+              <Text style={styles.rowValue}>{describeSSReductions(inputs.ssReductions)}</Text>
+            </View>
+          )}
         </View>
 
         {/* Section 2: Asset Balances */}
