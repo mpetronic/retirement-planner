@@ -5,6 +5,11 @@ import {
   SimulationResultRow,
   getSimulationStartYear,
   normalizeDetailedExpenses,
+  SSReductionConfig,
+  SSReductionEntry,
+  SS_PAYMENT_PERCENT_MIN,
+  SS_PAYMENT_PERCENT_MAX,
+  SS_REDUCTION_MIN_YEAR,
 } from '../types';
 import {
   Wallet,
@@ -29,6 +34,7 @@ import {
   Sparkles,
   RotateCcw,
   Receipt,
+  Info,
 } from 'lucide-react';
 import {
   getSupportedStates,
@@ -45,6 +51,85 @@ import { CharityControlPanel } from './CharityControlPanel';
 import { ExportPlanDialog } from './ExportPlanDialog';
 import { ExportFormatType } from '../utils/exportHelpers';
 import { ActiveViewType } from './SidebarNavigation';
+
+interface SSReductionRowProps {
+  entry: SSReductionEntry;
+  otherYears: number[];
+  onCommit: (next: SSReductionEntry) => void;
+  onRemove: () => void;
+}
+
+/**
+ * Editable SS reduction row. Keeps text drafts locally so the field can be fully cleared while typing,
+ * and only commits (triggering a re-simulation) when a field loses focus. Invalid input reverts.
+ */
+const SSReductionRow: React.FC<SSReductionRowProps> = ({ entry, otherYears, onCommit, onRemove }) => {
+  const [yearDraft, setYearDraft] = useState(String(entry.year));
+  const [percentDraft, setPercentDraft] = useState(String(entry.paymentPercent));
+  const [error, setError] = useState<string | null>(null);
+
+  const commit = () => {
+    const year = parseInt(yearDraft, 10);
+    const pct = parseFloat(percentDraft);
+    let nextYear = entry.year;
+    let message: string | null = null;
+    if (isNaN(year) || year < SS_REDUCTION_MIN_YEAR) {
+      message = `Enter a year of ${SS_REDUCTION_MIN_YEAR} or later.`;
+    } else if (otherYears.includes(year)) {
+      message = `${year} is already configured.`;
+    } else {
+      nextYear = year;
+    }
+    setError(message);
+    const nextPct = isNaN(pct)
+      ? entry.paymentPercent
+      : Math.min(SS_PAYMENT_PERCENT_MAX, Math.max(SS_PAYMENT_PERCENT_MIN, pct));
+    setYearDraft(String(nextYear));
+    setPercentDraft(String(nextPct));
+    if (nextYear !== entry.year || nextPct !== entry.paymentPercent) {
+      onCommit({ year: nextYear, paymentPercent: nextPct });
+    }
+  };
+
+  const onEnter = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === 'Enter') e.currentTarget.blur();
+  };
+
+  return (
+    <div className="flex items-center gap-3 text-xs text-slate-300">
+      <span className="w-14 text-slate-400">From year</span>
+      <input
+        type="text"
+        inputMode="numeric"
+        className="w-24 bg-slate-950 border border-slate-700 rounded px-2 py-1 font-mono"
+        value={yearDraft}
+        onChange={(e) => setYearDraft(e.target.value)}
+        onBlur={commit}
+        onKeyDown={onEnter}
+      />
+      <span className="text-slate-400">pay</span>
+      <input
+        type="text"
+        inputMode="decimal"
+        className="w-20 bg-slate-950 border border-slate-700 rounded px-2 py-1 font-mono"
+        value={percentDraft}
+        onChange={(e) => setPercentDraft(e.target.value)}
+        onBlur={commit}
+        onKeyDown={onEnter}
+      />
+      <span className="text-slate-400">% of scheduled</span>
+      {error && <span className="text-rose-400">{error}</span>}
+      <button
+        type="button"
+        className="ml-auto text-rose-400 hover:text-rose-300"
+        aria-label="Remove reduction"
+        onClick={onRemove}
+      >
+        Remove
+      </button>
+    </div>
+  );
+};
 
 interface ParametersWorkspaceProps {
   activeSection: ActiveViewType;
@@ -122,6 +207,12 @@ export const ParametersWorkspace: React.FC<ParametersWorkspaceProps> = ({
       (updated as Record<string, unknown>)[category] = value;
     }
     onChange(updated);
+  };
+
+  const ssReductions: SSReductionConfig = inputs.ssReductions ?? { enabled: false, entries: [] };
+  const updateSSReductions = (next: SSReductionConfig) => {
+    const sorted = { ...next, entries: [...next.entries].sort((a, b) => a.year - b.year) };
+    onChange({ ...inputs, ssReductions: sorted });
   };
 
   const MONTH_NAMES = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
@@ -641,6 +732,73 @@ export const ParametersWorkspace: React.FC<ParametersWorkspaceProps> = ({
                 </div>
               </div>
             )}
+
+            {/* Social Security Benefit Reductions Card (global schedule) */}
+            <div className="lg:col-span-2 glass-panel bg-slate-900/80 border border-slate-800 rounded-2xl p-5 space-y-4 shadow-lg">
+              <div className="flex items-center justify-between border-b border-slate-800 pb-3">
+                <div>
+                  <div className="flex items-center gap-1.5">
+                    <h3 className="text-sm font-bold text-slate-100">Social Security Benefit Reductions</h3>
+                    <div className="relative group inline-flex">
+                      <Info className="w-3.5 h-3.5 text-slate-500 group-hover:text-emerald-400 cursor-help transition-colors" aria-label="About Social Security benefit reductions" />
+                      <div className="absolute left-0 top-full mt-2 hidden group-hover:block z-40 w-80 p-3 rounded-xl bg-slate-950 border border-slate-700 shadow-2xl text-xs font-normal text-slate-200 whitespace-normal break-words pointer-events-none space-y-1.5">
+                        <p>
+                          Some projections show the Social Security trust fund running short in the coming years. If Congress does not act, payable benefits could fall below the scheduled amounts. The timing and size of any reduction are uncertain.
+                        </p>
+                        <p>
+                          Use this schedule to stress your plan against that possibility. Add a row for each year a new payment level begins. Each level stays in effect until a later row replaces it, so you can model further cuts over time.
+                        </p>
+                        <p className="text-slate-400">
+                          Leave it disabled or empty to assume benefits are paid in full.
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                  <p className="text-[11px] text-slate-400">
+                    From each year (Jan 1) onward, pay the given percent of scheduled benefits until a later row replaces it. Applies to both spouses' own benefits as well as spousal and survivor benefits.
+                  </p>
+                </div>
+                <label className="flex items-center gap-2 text-xs text-slate-300 cursor-pointer shrink-0 ml-8">
+                  <input
+                    type="checkbox"
+                    checked={ssReductions.enabled}
+                    onChange={(e) => updateSSReductions({ ...ssReductions, enabled: e.target.checked })}
+                  />
+                  Enabled
+                </label>
+              </div>
+              <div className={`space-y-2 ${ssReductions.enabled ? '' : 'opacity-50'}`}>
+                {ssReductions.entries.length === 0 && (
+                  <p className="text-xs text-slate-500">No reductions configured. Benefits are paid at 100% of schedule.</p>
+                )}
+                {ssReductions.entries.map((entry, idx) => (
+                  <SSReductionRow
+                    key={`${entry.year}-${entry.paymentPercent}`}
+                    entry={entry}
+                    otherYears={ssReductions.entries.filter((_, j) => j !== idx).map((o) => o.year)}
+                    onCommit={(next) => updateSSReductions({
+                      ...ssReductions,
+                      entries: ssReductions.entries.map((o, j) => (j === idx ? next : o)),
+                    })}
+                    onRemove={() => updateSSReductions({ ...ssReductions, entries: ssReductions.entries.filter((_, j) => j !== idx) })}
+                  />
+                ))}
+                <div className="flex gap-2 pt-1">
+                  <button
+                    type="button"
+                    className="px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-xs text-slate-200"
+                    onClick={() => {
+                      const taken = new Set(ssReductions.entries.map((e) => e.year));
+                      let year = ssReductions.entries.length ? Math.max(...ssReductions.entries.map((e) => e.year)) + 1 : simStartYear;
+                      while (taken.has(year)) year++;
+                      updateSSReductions({ ...ssReductions, entries: [...ssReductions.entries, { year, paymentPercent: SS_PAYMENT_PERCENT_MAX }] });
+                    }}
+                  >
+                    Add reduction
+                  </button>
+                </div>
+              </div>
+            </div>
           </div>
         </div>
       )}

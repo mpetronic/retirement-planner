@@ -10,7 +10,8 @@ import {
   calculateFedTaxWithLTCG,
   getRMDStartAge,
 } from './simulationEngine';
-import { DEFAULT_DETAILED_EXPENSES, DEFAULT_EXPENSE_FREQUENCIES, normalizeDetailedExpenses, DetailedExpensesState, AppStateInputs } from '../types';
+import { SAMPLE_DEMO_PLAN } from '../shared/utils/sampleDemoPlan';
+import { DEFAULT_DETAILED_EXPENSES, DEFAULT_EXPENSE_FREQUENCIES, normalizeDetailedExpenses, DetailedExpensesState, AppStateInputs, getSSPaymentLevel, describeSSReductions, SSReductionConfig } from '../types';
 
 describe('calculateSSBenefit', () => {
   const PIA = 1000;
@@ -2707,3 +2708,62 @@ describe('runRetirementSimulation fixes', () => {
 
 
 
+
+describe('getSSPaymentLevel', () => {
+  const config: SSReductionConfig = {
+    enabled: true,
+    entries: [
+      { year: 2040, paymentPercent: 70 },
+      { year: 2032, paymentPercent: 78 },
+    ],
+  };
+
+  it('returns full payment when missing, disabled, or empty', () => {
+    expect(getSSPaymentLevel(undefined, 2035)).toBe(1);
+    expect(getSSPaymentLevel({ enabled: false, entries: config.entries }, 2035)).toBe(1);
+    expect(getSSPaymentLevel({ enabled: true, entries: [] }, 2035)).toBe(1);
+  });
+
+  it('steps through the schedule regardless of entry order', () => {
+    expect(getSSPaymentLevel(config, 2031)).toBe(1);
+    expect(getSSPaymentLevel(config, 2032)).toBeCloseTo(0.78);
+    expect(getSSPaymentLevel(config, 2039)).toBeCloseTo(0.78);
+    expect(getSSPaymentLevel(config, 2040)).toBeCloseTo(0.70);
+    expect(getSSPaymentLevel(config, 2060)).toBeCloseTo(0.70);
+  });
+
+  it('describes an active schedule and returns null otherwise', () => {
+    expect(describeSSReductions(config)).toBe('2032 at 78%, 2040 at 70%');
+    expect(describeSSReductions({ enabled: false, entries: config.entries })).toBeNull();
+  });
+});
+
+describe('runRetirementSimulation with SS reductions', () => {
+  const baseInputs = (): AppStateInputs => ({
+    ...JSON.parse(JSON.stringify(SAMPLE_DEMO_PLAN)),
+  });
+
+  it('scales SS income by the configured payment level and leaves default plans unchanged', () => {
+    const base = baseInputs();
+    const baseline = runRetirementSimulation(base);
+    const reduced = runRetirementSimulation({
+      ...base,
+      ssReductions: { enabled: true, entries: [{ year: 2032, paymentPercent: 78 }, { year: 2040, paymentPercent: 70 }] },
+    });
+
+    const pick = (rows: typeof baseline, y: number) => rows.find(r => r.year === y)!;
+    // Years before the first entry are untouched
+    expect(pick(reduced, 2031).yourSS).toBeCloseTo(pick(baseline, 2031).yourSS);
+    expect(pick(baseline, 2035).ssPaymentLevel).toBe(1);
+
+    const y2035 = pick(baseline, 2035);
+    if (y2035.yourSS > 0) {
+      expect(pick(reduced, 2035).ssPaymentLevel).toBeCloseTo(0.78);
+      expect(pick(reduced, 2035).yourSS / y2035.yourSS).toBeCloseTo(0.78, 1);
+    }
+    const y2045 = pick(baseline, 2045);
+    if (y2045.yourSS > 0) {
+      expect(pick(reduced, 2045).yourSS / y2045.yourSS).toBeCloseTo(0.70, 1);
+    }
+  });
+});

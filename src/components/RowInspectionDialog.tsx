@@ -325,6 +325,14 @@ export const RowInspectionDialog: React.FC<RowInspectionDialogProps> = ({
                       <span className="text-slate-400">Cash Interest Income:</span>
                       <span className="font-mono text-slate-200">{formatCurrency(row.taxableInterest)}</span>
                     </div>
+                    {row.ssPaymentLevel !== undefined && row.ssPaymentLevel < 1 && (
+                      <div className="flex justify-between items-center">
+                        <span className="text-slate-400">SS Benefit Reduction:</span>
+                        <span className="font-mono text-amber-400">
+                          {formatCurrency(totalSS)} paid ({Math.round(row.ssPaymentLevel * 100)}% of scheduled{row.ssPaymentLevel > 0 ? ` ${formatCurrency(totalSS / row.ssPaymentLevel)}` : ''})
+                        </span>
+                      </div>
+                    )}
                     <div className="flex justify-between items-center">
                       <span className="text-slate-400">Taxable Social Security:</span>
                       <span className="font-mono text-slate-200">

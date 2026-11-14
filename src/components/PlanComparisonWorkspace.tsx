@@ -1,5 +1,5 @@
 import React, { useState, useMemo } from 'react';
-import { AppStateInputs, SavedPlan, SimulationResultRow, LockedReturnSequence, getSimulationStartYear } from '../types';
+import { AppStateInputs, SavedPlan, SimulationResultRow, LockedReturnSequence, getSimulationStartYear, describeSSReductions } from '../types';
 import { runRetirementSimulation } from '../engine/simulationEngine';
 import { 
   Plus, 
@@ -204,6 +204,11 @@ export const PlanComparisonWorkspace: React.FC<PlanComparisonWorkspaceProps> = (
                   </div>
                 )}
               </div>
+              {describeSSReductions(pInputs.ssReductions) && (
+                <div className="text-slate-400">
+                  SS Reductions: <strong className="text-amber-400">{describeSSReductions(pInputs.ssReductions)}</strong>
+                </div>
+              )}
             </div>
 
             {/* Section 2: Portfolio Assets */}

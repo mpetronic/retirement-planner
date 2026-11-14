@@ -434,8 +434,53 @@ export interface CustomRothScenario {
   updatedAt: string;
 }
 
+/** One step in the Social Security payment schedule: from `year` (Jan 1) onward, pay `paymentPercent` of scheduled benefits. */
+export interface SSReductionEntry {
+  year: number;
+  paymentPercent: number; // 0-100, percent of scheduled benefit still paid
+}
+
+export interface SSReductionConfig {
+  enabled: boolean;
+  entries: SSReductionEntry[];
+}
+
+/** Lowest and highest allowed payment percent for an SS reduction entry. */
+export const SS_PAYMENT_PERCENT_MIN = 0;
+export const SS_PAYMENT_PERCENT_MAX = 100;
+/** Earliest year accepted for an SS reduction entry. Years before the simulation start apply from the first simulated year. */
+export const SS_REDUCTION_MIN_YEAR = 1900;
+
+/**
+ * Returns the fraction (0-1) of scheduled Social Security benefits paid in `year`.
+ * 1.0 when the schedule is missing, disabled, empty, or `year` precedes the first entry.
+ */
+export function getSSPaymentLevel(config: SSReductionConfig | null | undefined, year: number): number {
+  if (!config?.enabled || !config.entries?.length) return 1;
+  let level = SS_PAYMENT_PERCENT_MAX;
+  let bestYear = -Infinity;
+  for (const e of config.entries) {
+    if (e.year <= year && e.year > bestYear) {
+      bestYear = e.year;
+      level = e.paymentPercent;
+    }
+  }
+  const clamped = Math.min(SS_PAYMENT_PERCENT_MAX, Math.max(SS_PAYMENT_PERCENT_MIN, level));
+  return clamped / SS_PAYMENT_PERCENT_MAX;
+}
+
+/** Short human-readable summary such as "2032 at 78%, 2040 at 70%", or null when no active schedule. */
+export function describeSSReductions(config: SSReductionConfig | null | undefined): string | null {
+  if (!config?.enabled || !config.entries?.length) return null;
+  return [...config.entries]
+    .sort((a, b) => a.year - b.year)
+    .map((e) => `${e.year} at ${e.paymentPercent}%`)
+    .join(', ');
+}
+
 export interface AppStateInputs {
   isConfigured: boolean;
+  ssReductions?: SSReductionConfig;
   isSingleFiler: boolean;
   simulationStartYear?: number | null; // Configured base simulation start year (defaults to current year when initialized)
   useDetailedExpenses?: boolean;
@@ -492,6 +537,8 @@ export interface SimulationResultRow {
   yourAge: number;
   wifeAge: number;
   
+  ssPaymentLevel?: number; // Fraction (0-1) of scheduled SS benefits paid this year (1 = no reduction)
+
   // Incomes (Today's inflated values)
   yourSS: number;
   wifeSS: number;

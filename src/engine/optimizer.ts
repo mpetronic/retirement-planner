@@ -166,7 +166,7 @@ export function optimizeRetirementScenario(
             const firstConcurrentYear = Math.max(yourBirthYear + yourAge, wifeBirthYear + effectiveWifeSSAge);
             const concurrentRow = ledger.find(r => r.year >= firstConcurrentYear && r.year < Math.min(deathYear, wifeDeathYear));
             if (concurrentRow) {
-              spousalAddOnAnnual = (spousalFloorBase - ownWifeSSBase) * concurrentRow.cpiFactor;
+              spousalAddOnAnnual = (spousalFloorBase - ownWifeSSBase) * concurrentRow.cpiFactor * (concurrentRow.ssPaymentLevel ?? 1);
             }
           }
         }
@@ -181,7 +181,7 @@ export function optimizeRetirementScenario(
           const baseSurvivorAnnual = Math.max(survivorSSAnnualBase, survivorWifeSSAnnualBase, survivorFloorBase);
 
           const survivorRow = ledger.find((r) => r.year >= deathYear) || finalRow;
-          survivorBenefitAnnual = baseSurvivorAnnual * survivorRow.cpiFactor;
+          survivorBenefitAnnual = baseSurvivorAnnual * survivorRow.cpiFactor * (survivorRow.ssPaymentLevel ?? 1);
         }
 
         let score = 0;
