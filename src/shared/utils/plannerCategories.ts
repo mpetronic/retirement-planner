@@ -14,7 +14,6 @@ export interface PlannerExpenseLineItem {
 
 const GROUP_COLORS: Record<string, string> = {
   Living: '#10b981', // emerald
-  Housing: '#f59e0b', // amber
   Home: '#f59e0b', // amber
   Transportation: '#3b82f6', // blue
   Insurance: '#06b6d4', // cyan
@@ -388,6 +387,33 @@ export function syncCustomCategoriesToPlanner(customCategories: ExpenseCategory[
       plannedMonthlyDefault: cat.plannedMonthlyDefault || 0,
     });
   }
+}
+
+/**
+ * Orders catalog items by the planner's category order, then by name (case-insensitive).
+ * Categories missing from categoryOrder follow the ordered ones, alphabetically.
+ * Returns a new array; the input is not mutated.
+ */
+export function sortPlannerExpenseItems(
+  items: PlannerExpenseLineItem[],
+  categoryOrder: string[] = []
+): PlannerExpenseLineItem[] {
+  const rank = new Map<string, number>();
+  categoryOrder.forEach((cat, index) => {
+    const key = cat.trim().toLowerCase();
+    if (!rank.has(key)) rank.set(key, index);
+  });
+
+  const rankOf = (group: string): number =>
+    rank.get(group.trim().toLowerCase()) ?? Number.POSITIVE_INFINITY;
+
+  return [...items].sort((a, b) => {
+    const rankDiff = rankOf(a.groupCategory) - rankOf(b.groupCategory);
+    if (rankDiff !== 0 && !Number.isNaN(rankDiff)) return rankDiff;
+    const groupDiff = a.groupCategory.localeCompare(b.groupCategory, undefined, { sensitivity: 'base' });
+    if (groupDiff !== 0) return groupDiff;
+    return a.name.localeCompare(b.name, undefined, { sensitivity: 'base' });
+  });
 }
 
 export function mergeWithCustomCategories(

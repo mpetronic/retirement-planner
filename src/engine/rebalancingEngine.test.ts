@@ -1,6 +1,8 @@
 import { describe, it, expect } from 'vitest';
 import {
   calculateRebalance,
+  gaugeGeometry,
+  GAUGE_OVERRUN_FRACTION,
   getAccountName,
   getOwnerDisplayName,
   parseDollarInput,
@@ -242,5 +244,44 @@ describe('transactions (exchanges)', () => {
     const bought = t.filter((x) => x.toSymbol === 'C').reduce((s, x) => s + Math.round(x.amount * 100), 0);
     const sold = t.filter((x) => x.fromSymbol !== null).reduce((s, x) => s + Math.round(x.amount * 100), 0);
     expect(bought).toBe(sold);
+  });
+});
+
+describe('gaugeGeometry', () => {
+  const TARGET = 20;
+  const THRESHOLD = 5;
+  const halfScale = THRESHOLD * (1 + GAUGE_OVERRUN_FRACTION);
+  const atScale = (value: number) => (value - (TARGET - halfScale)) / (2 * halfScale);
+
+  it('centers the marker on target and places the bounds symmetrically', () => {
+    const g = gaugeGeometry(TARGET, TARGET, THRESHOLD);
+    expect(g.marker).toBeCloseTo(0.5);
+    expect(g.target).toBeCloseTo(0.5);
+    expect(g.lower).toBeCloseTo(atScale(TARGET - THRESHOLD));
+    expect(g.upper).toBeCloseTo(atScale(TARGET + THRESHOLD));
+    expect(g.clamped).toBeNull();
+  });
+
+  it('puts a marker on a bound exactly at that bound', () => {
+    const g = gaugeGeometry(TARGET + THRESHOLD, TARGET, THRESHOLD);
+    expect(g.marker).toBeCloseTo(g.upper);
+    expect(g.clamped).toBeNull();
+  });
+
+  it('draws a slightly out of band fund past the bound without clamping', () => {
+    const g = gaugeGeometry(TARGET + THRESHOLD + 1, TARGET, THRESHOLD);
+    expect(g.marker).toBeGreaterThan(g.upper);
+    expect(g.clamped).toBeNull();
+  });
+
+  it('clamps a fund beyond the overrun to the scale edge', () => {
+    expect(gaugeGeometry(TARGET + 30, TARGET, THRESHOLD)).toMatchObject({ marker: 1, clamped: 'high' });
+    expect(gaugeGeometry(TARGET - 30, TARGET, THRESHOLD)).toMatchObject({ marker: 0, clamped: 'low' });
+  });
+
+  it('does not produce invalid numbers for a zero threshold', () => {
+    const g = gaugeGeometry(TARGET, TARGET, 0);
+    expect(Number.isFinite(g.marker)).toBe(true);
+    expect(Number.isFinite(g.lower)).toBe(true);
   });
 });

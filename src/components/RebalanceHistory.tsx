@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { Trash2 } from 'lucide-react';
 import { RebalanceSnapshot } from '../shared/types/rebalancing';
+import { DeviationGauge } from './DeviationGauge';
 
 interface RebalanceHistoryProps {
   accountName: string;
@@ -84,6 +85,7 @@ export const RebalanceHistory: React.FC<RebalanceHistoryProps> = ({
                 <th className="text-right p-2">Value</th>
                 <th className="text-right p-2">Current</th>
                 <th className="text-right p-2">Target</th>
+                <th className="text-right p-2">Deviation (pts)</th>
                 <th className="text-left p-2">Status</th>
                 <th className="text-right p-2">Trade</th>
               </tr>
@@ -95,6 +97,18 @@ export const RebalanceHistory: React.FC<RebalanceHistoryProps> = ({
                   <td className="p-2 text-right">{usd(f.value)}</td>
                   <td className="p-2 text-right">{f.currentPercent.toFixed(PERCENT_DECIMALS)}%</td>
                   <td className="p-2 text-right">{f.targetPercent.toFixed(PERCENT_DECIMALS)}%</td>
+                  <td className="p-2 text-right">
+                    <div className="flex items-center justify-end gap-3">
+                      <span>{`${f.deviationPoints > 0 ? '+' : ''}${f.deviationPoints.toFixed(PERCENT_DECIMALS)}`}</span>
+                      <DeviationGauge
+                        symbol={f.symbol}
+                        currentPercent={f.currentPercent}
+                        targetPercent={f.targetPercent}
+                        thresholdPoints={selected.thresholdPoints}
+                        status={f.status}
+                      />
+                    </div>
+                  </td>
                   <td className="p-2">{f.status === 'IN_BAND' ? 'In band' : f.status === 'HIGH' ? 'High' : 'Low'}</td>
                   <td className="p-2 text-right">
                     {f.action === 'NONE'

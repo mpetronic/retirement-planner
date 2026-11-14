@@ -39,15 +39,22 @@ import {
   getGeminiApiKey,
   saveGeminiApiKey,
   isPaymentOrTransfer,
+  UNCATEGORIZED,
 } from '../shared/utils/merchantMatcher';
 import { FormatSetupModal } from './FormatSetupModal';
+import { toDuplicateCandidates } from '../utils/expenseSplit';
+
+// Amounts within one cent are treated as equal when matching against existing expenses.
+const AMOUNT_MATCH_TOLERANCE = 0.01;
+
+const isUncategorized = (row: Pick<ParsedWorksheetRow, 'category' | 'lineItem'>): boolean =>
+  row.category === UNCATEGORIZED || row.lineItem === UNCATEGORIZED;
 
 export interface ImportExpensesModalProps {
   isOpen: boolean;
   onClose: () => void;
   selectedYear: number;
   onImportComplete: (importedCount: number, totalAmount: number) => void;
-  onUpdateActualsLivingExpenses?: (year: number, amount: number) => void;
 }
 
 export interface ParsedWorksheetRow {
@@ -61,6 +68,8 @@ export interface ParsedWorksheetRow {
   notes: string;
   payer: string;
   isDuplicate: boolean;
+  /** Number of split-receipt categories this duplicate matched; 0 when not a split match. */
+  duplicateSplitCount: number;
   isPaymentTransfer: boolean;
   selected: boolean;
   isUnknown: boolean;
@@ -125,7 +134,6 @@ export const ImportExpensesModal: React.FC<ImportExpensesModalProps> = ({
   onClose,
   selectedYear,
   onImportComplete,
-  onUpdateActualsLivingExpenses,
 }) => {
   const [activeTab, setActiveTab] = useState<'upload' | 'paste'>('upload');
   const [csvText, setCsvText] = useState<string>('');
@@ -160,7 +168,7 @@ export const ImportExpensesModal: React.FC<ImportExpensesModalProps> = ({
   // On-the-fly category/item creation popover
   const [inlineCreateRowId, setInlineCreateRowId] = useState<string | null>(null);
   const [newItemName, setNewItemName] = useState<string>('');
-  const [newItemCategory, setNewItemCategory] = useState<string>('Living');
+  const [newItemCategory, setNewItemCategory] = useState<string>('');
 
   // Bulk Edit
   const [bulkCategory, setBulkCategory] = useState<string>('');
@@ -205,7 +213,7 @@ export const ImportExpensesModal: React.FC<ImportExpensesModalProps> = ({
 
   // Distinct category groups from catalog
   const availableCategoryGroups = useMemo(() => {
-    const groups = new Set<string>(['Living', 'Housing', 'Transportation', 'Healthcare', 'Leisure', 'Charities', 'Other']);
+    const groups = new Set<string>();
     catalogItems.forEach(i => { if (i.groupCategory) groups.add(i.groupCategory); });
     return Array.from(groups);
   }, [catalogItems]);
@@ -231,7 +239,8 @@ export const ImportExpensesModal: React.FC<ImportExpensesModalProps> = ({
       const notesIdx = mapping.notesColumn ? headers.indexOf(mapping.notesColumn) : -1;
 
       // Track available existing expenses for 1-to-1 balanced duplicate matching
-      const unmatchedExisting = [...existingExpenses];
+      // Split receipts collapse into one candidate at the receipt total, so one statement charge matches the group
+      const unmatchedExisting = toDuplicateCandidates(existingExpenses);
 
       const candidates: ParsedWorksheetRow[] = [];
 
@@ -286,17 +295,14 @@ export const ImportExpensesModal: React.FC<ImportExpensesModalProps> = ({
         // Run Multi-Tier Categorization
         const localMatch = categorizeLocally(rawDesc, rawCat, catalogItems);
 
-        // 1-to-1 Balanced Duplicate Detection
-        const matchIdx = unmatchedExisting.findIndex(e => {
-          const sameDate = e.date === isoDate;
-          const sameAmount = Math.abs(e.amount - netAmount) < 0.01;
-          const notesLower = (e.notes || '').toLowerCase();
-          const descLower = rawDesc.toLowerCase();
-          const sameDesc = descLower ? notesLower.includes(descLower) || descLower.includes(notesLower) : true;
-          return sameDate && sameAmount && sameDesc;
-        });
+        // 1-to-1 Balanced Duplicate Detection: date and amount only. Description text is too
+        // inconsistent between statements and hand-entered notes to be a reliable signal.
+        const matchIdx = unmatchedExisting.findIndex(
+          e => e.date === isoDate && Math.abs(e.amount - netAmount) < AMOUNT_MATCH_TOLERANCE
+        );
 
         const isDuplicate = matchIdx !== -1;
+        const duplicateSplitCount = isDuplicate && unmatchedExisting[matchIdx].splitCount > 1 ? unmatchedExisting[matchIdx].splitCount : 0;
         if (isDuplicate) {
           // Remove from available existing so twin charges on same day aren't both matched to one DB record
           unmatchedExisting.splice(matchIdx, 1);
@@ -313,6 +319,7 @@ export const ImportExpensesModal: React.FC<ImportExpensesModalProps> = ({
           notes: rawNotes,
           payer: defaultPayer,
           isDuplicate,
+          duplicateSplitCount,
           isPaymentTransfer,
           selected: !isPaymentTransfer && !isDuplicate,
           isUnknown: localMatch.isUnknown,
@@ -409,11 +416,10 @@ export const ImportExpensesModal: React.FC<ImportExpensesModalProps> = ({
   const handleUpdateRowCategory = (rowId: string, newCategory: string) => {
     setParsedRows(prev => prev.map(r => {
       if (r.id !== rowId) return r;
-      // Filter line items for new category; pick first if current doesn't match
+      // Keep the current expense name only if it belongs to the new category. Otherwise reset it
+      // so the row stays uncategorized until the user picks a name, instead of guessing one.
       const validItems = catalogItems.filter(c => c.groupCategory === newCategory);
-      const nextLineItem = validItems.some(i => i.name === r.lineItem)
-        ? r.lineItem
-        : validItems[0]?.name || 'General';
+      const nextLineItem = validItems.some(i => i.name === r.lineItem) ? r.lineItem : UNCATEGORIZED;
 
       return {
         ...r,
@@ -499,9 +505,9 @@ export const ImportExpensesModal: React.FC<ImportExpensesModalProps> = ({
     setBulkPayer('');
   };
 
-  // Trigger LLM Smart Categorization for unmapped / unknown items
+  // Trigger LLM Smart Categorization for uncategorized items
   const handleRunAiCategorization = async () => {
-    const unmapped = parsedRows.filter(r => r.isUnknown || r.lineItem === 'Unknown');
+    const unmapped = parsedRows.filter(isUncategorized);
     if (unmapped.length === 0) return;
 
     setIsAiMatching(true);
@@ -519,7 +525,10 @@ export const ImportExpensesModal: React.FC<ImportExpensesModalProps> = ({
         setParsedRows(prev => prev.map(r => {
           const key = (r.normalizedMerchant || normalizeMerchant(r.rawDescription)).toUpperCase();
           const match = result.matches.get(key);
-          if (match && (r.isUnknown || r.lineItem === 'Unknown')) {
+          const existsInCatalog = match && catalogItems.some(
+            c => c.groupCategory === match.category && c.name === match.lineItem
+          );
+          if (match && existsInCatalog && isUncategorized(r)) {
             return {
               ...r,
               category: match.category,
@@ -549,7 +558,7 @@ export const ImportExpensesModal: React.FC<ImportExpensesModalProps> = ({
       if (hideDuplicates && r.isDuplicate) return false;
 
       // Filter tabs
-      if (activeFilterTab === 'UNKNOWN' && !r.isUnknown && r.lineItem !== 'Unknown') return false;
+      if (activeFilterTab === 'UNKNOWN' && !isUncategorized(r)) return false;
       if (activeFilterTab === 'DUPLICATES' && !r.isDuplicate) return false;
       if (activeFilterTab === 'PAYMENTS' && !r.isPaymentTransfer) return false;
 
@@ -575,13 +584,23 @@ export const ImportExpensesModal: React.FC<ImportExpensesModalProps> = ({
   // Counts and totals
   const selectedRows = useMemo(() => parsedRows.filter(r => r.selected && !r.isPaymentTransfer), [parsedRows]);
   const totalSpendSelected = useMemo(() => selectedRows.reduce((sum, r) => sum + r.amount, 0), [selectedRows]);
-  const unknownCount = useMemo(() => parsedRows.filter(r => r.isUnknown || r.lineItem === 'Unknown').length, [parsedRows]);
+  const unknownCount = useMemo(() => parsedRows.filter(isUncategorized).length, [parsedRows]);
+  const selectedUncategorizedCount = useMemo(() => selectedRows.filter(isUncategorized).length, [selectedRows]);
   const duplicateCount = useMemo(() => parsedRows.filter(r => r.isDuplicate).length, [parsedRows]);
   const paymentCount = useMemo(() => parsedRows.filter(r => r.isPaymentTransfer).length, [parsedRows]);
 
   // Execute Submission
   const handleExecuteSubmit = async () => {
     if (selectedRows.length === 0) return;
+
+    if (selectedUncategorizedCount > 0) {
+      setImportStatusMessage(
+        `${selectedUncategorizedCount} selected ${selectedUncategorizedCount === 1 ? 'expense is' : 'expenses are'} ` +
+        'uncategorized. Categorize them or uncheck them before importing.'
+      );
+      setActiveFilterTab('UNKNOWN');
+      return;
+    }
 
     setIsSubmitting(true);
     setSubmitProgress({ current: 0, total: selectedRows.length });
@@ -624,7 +643,7 @@ export const ImportExpensesModal: React.FC<ImportExpensesModalProps> = ({
 
       // 3. Save confirmed merchant mappings to Learned Merchant Dictionary
       const rulesToSave: LearnedMerchantRule[] = selectedRows
-        .filter(r => r.normalizedMerchant && r.lineItem !== 'Unknown')
+        .filter(r => r.normalizedMerchant && !isUncategorized(r))
         .map(r => ({
           normalizedKey: r.normalizedMerchant,
           category: r.category,
@@ -637,11 +656,7 @@ export const ImportExpensesModal: React.FC<ImportExpensesModalProps> = ({
         batchSaveLearnedMerchantRules(rulesToSave);
       }
 
-      // 4. Update parent Actuals if hook provided
-      if (onUpdateActualsLivingExpenses) {
-        onUpdateActualsLivingExpenses(selectedYear, Math.round(totalSpendSelected));
-      }
-
+      // Yearly actuals are refreshed from the full set of logged expenses by the Actuals workspace
       onImportComplete(selectedRows.length, totalSpendSelected);
       onClose();
     } catch (err) {
@@ -870,7 +885,7 @@ export const ImportExpensesModal: React.FC<ImportExpensesModalProps> = ({
                       : 'text-amber-700 dark:text-amber-400 hover:bg-amber-50 dark:hover:bg-amber-950/40'
                   }`}
                 >
-                  <span>Needs Review</span>
+                  <span>Uncategorized</span>
                   <span className="px-1.5 py-0.2 bg-amber-100 dark:bg-amber-900/60 rounded-full text-[10px]">
                     {unknownCount}
                   </span>
@@ -1004,7 +1019,7 @@ export const ImportExpensesModal: React.FC<ImportExpensesModalProps> = ({
                 </thead>
                 <tbody className="divide-y divide-slate-100 dark:divide-slate-800/60 font-sans">
                   {filteredRows.map(row => {
-                    const isRowUnknown = row.isUnknown || row.lineItem === 'Unknown';
+                    const isRowUnknown = isUncategorized(row);
                     const categoryLineItems = catalogItems.filter(c => c.groupCategory === row.category);
 
                     return (
@@ -1046,7 +1061,7 @@ export const ImportExpensesModal: React.FC<ImportExpensesModalProps> = ({
 
                             {row.isDuplicate && (
                               <span className="px-1.5 py-0.5 rounded text-[10px] font-semibold bg-slate-200 dark:bg-slate-800 text-slate-600 dark:text-slate-400">
-                                Duplicate
+                                {row.duplicateSplitCount > 0 ? `Duplicate (split: ${row.duplicateSplitCount} categories)` : 'Duplicate'}
                               </span>
                             )}
 
@@ -1061,7 +1076,7 @@ export const ImportExpensesModal: React.FC<ImportExpensesModalProps> = ({
 
                             {isRowUnknown && !row.isPaymentTransfer && (
                               <span className="px-1.5 py-0.5 rounded text-[10px] font-semibold bg-amber-100 dark:bg-amber-950 text-amber-800 dark:text-amber-300">
-                                Unknown
+                                Uncategorized
                               </span>
                             )}
 
@@ -1091,6 +1106,7 @@ export const ImportExpensesModal: React.FC<ImportExpensesModalProps> = ({
                             onChange={(e) => handleUpdateRowCategory(row.id, e.target.value)}
                             className="w-full py-1 px-2 text-xs rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-200 focus:ring-1 focus:ring-indigo-500"
                           >
+                            <option value={UNCATEGORIZED}>{UNCATEGORIZED}</option>
                             {availableCategoryGroups.map(g => (
                               <option key={g} value={g}>{g}</option>
                             ))}
@@ -1105,13 +1121,13 @@ export const ImportExpensesModal: React.FC<ImportExpensesModalProps> = ({
                               onChange={(e) => {
                                 if (e.target.value === '__CREATE_NEW__') {
                                   setInlineCreateRowId(row.id);
-                                  setNewItemCategory(row.category);
+                                  setNewItemCategory(row.category === UNCATEGORIZED ? (availableCategoryGroups[0] ?? '') : row.category);
                                 } else {
                                   handleUpdateRowLineItem(row.id, e.target.value);
                                 }
                               }}
                               className={`w-full py-1 px-2 text-xs rounded-lg border ${
-                                row.lineItem === 'Unknown'
+                                row.lineItem === UNCATEGORIZED
                                   ? 'border-amber-400 bg-amber-50/50 dark:bg-amber-950/30 text-amber-900 dark:text-amber-200 font-semibold'
                                   : 'border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-200'
                               } focus:ring-1 focus:ring-indigo-500`}
@@ -1119,7 +1135,7 @@ export const ImportExpensesModal: React.FC<ImportExpensesModalProps> = ({
                               {categoryLineItems.map(item => (
                                 <option key={item.id} value={item.name}>{item.name}</option>
                               ))}
-                              <option value="Unknown">Unknown / Uncategorized</option>
+                              <option value={UNCATEGORIZED}>{UNCATEGORIZED}</option>
                               <option value="__CREATE_NEW__">+ Create New Expense Name...</option>
                             </select>
                           </div>
@@ -1270,7 +1286,7 @@ export const ImportExpensesModal: React.FC<ImportExpensesModalProps> = ({
               </button>
               <button
                 onClick={handleCreateNewItemOnTheFly}
-                disabled={!newItemName.trim()}
+                disabled={!newItemName.trim() || !newItemCategory}
                 className="px-4 py-2 rounded-xl text-xs font-semibold bg-indigo-600 hover:bg-indigo-700 text-white disabled:opacity-50"
               >
                 Create Item

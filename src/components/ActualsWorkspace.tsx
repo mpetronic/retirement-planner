@@ -45,7 +45,7 @@ import {
   Upload,
   FileSpreadsheet,
 } from 'lucide-react';
-import { getStorageAdapter, fetchAllExpensesFromDynamoDb } from '../shared/storage';
+import { getStorageAdapter, fetchAllExpensesForExport } from '../shared/storage';
 import { ActualExpense } from '../shared/types/expenses';
 import { AuthService } from '../shared/auth/AuthService';
 import { isLocalhostEnvironment } from '../shared/utils/appMode';
@@ -58,8 +58,9 @@ import { Chart } from 'react-chartjs-2';
 import { Chart as ChartJS, registerables } from 'chart.js';
 import { ImportExpensesModal } from './ImportExpensesModal';
 import { BulkEditExpensesModal } from './BulkEditExpensesModal';
+import { BudgetProgressBar } from './BudgetProgressBar';
 import { BudgetTrackerChart } from './BudgetTrackerChart';
-import { MONTHS_PER_YEAR, computeBudgetTracker } from '../utils/budgetTracker';
+import { MONTHS_PER_YEAR, computeBudgetTracker, summarizeLoggedSpending } from '../utils/budgetTracker';
 import { CloudAuthModal } from './CloudAuthModal';
 
 ChartJS.register(...registerables);
@@ -177,19 +178,6 @@ export const ActualsWorkspace: React.FC<ActualsWorkspaceProps> = ({
     return 'Edits and deletions update your household expense ledger.';
   }, [isAuthenticated]);
 
-  const handleUpdateActualsLivingExpenses = useCallback((year: number, amount: number) => {
-    const currentRecord = actualTracking[year] || {
-      year,
-      totalLivingExpenses: amount,
-    };
-    onUpdateActuals({
-      ...actualTracking,
-      [year]: {
-        ...currentRecord,
-        totalLivingExpenses: amount,
-      },
-    });
-  }, [actualTracking, onUpdateActuals]);
 
   // Line item breakdown modal state
   const [selectedLineItemForBreakdown, setSelectedLineItemForBreakdown] = useState<{
@@ -539,63 +527,48 @@ export const ActualsWorkspace: React.FC<ActualsWorkspaceProps> = ({
     return ledger.find((r) => r.year === selectedYear);
   }, [ledger, selectedYear]);
 
-  // Sync actual logged expenses into activeRecord living expenses and healthcare
-  const handleSyncActualsToRecord = () => {
-    const nextCategories: Record<string, number> = {};
-    let nonHealthcareSpend = 0;
-    let loggedOOP = 0;
-    let loggedPremiums = 0;
-    let loggedIRMAA = 0;
-
-    for (const exp of loggedExpenses) {
-      const catLower = (exp.categoryName || `${exp.category} ${exp.name}`).toLowerCase();
-      const idLower = (exp.catalogId || exp.categoryId || '').toLowerCase();
-      if (
-        idLower === 'healthcare-oop' ||
-        catLower.includes('out-of-pocket') ||
-        catLower.includes('deductible') ||
-        catLower.includes('copay') ||
-        catLower.includes('co-pay')
-      ) {
-        loggedOOP += exp.amount;
-      } else if (
-        idLower === 'healthcare-premiums' ||
-        catLower.includes('insurance premium') ||
-        catLower.includes('medicare part b') ||
-        catLower.includes('supplement')
-      ) {
-        loggedPremiums += exp.amount;
-      } else if (
-        idLower === 'healthcare-irmaa' ||
-        catLower.includes('irmaa') ||
-        catLower.includes('surcharge')
-      ) {
-        loggedIRMAA += exp.amount;
-      } else {
-        const group = exp.category || (exp.categoryName && exp.categoryName.includes(' - ') ? exp.categoryName.split(' - ')[0].trim() : exp.categoryName || 'Uncategorized');
-        nextCategories[group] = (nextCategories[group] || 0) + exp.amount;
-        nonHealthcareSpend += exp.amount;
-      }
-    }
-
-    const updatedRecord: YearActualsRecord = {
-      ...activeRecord,
-      totalLivingExpenses: Math.round(nonHealthcareSpend),
-      categoryExpenses: nextCategories,
-      healthcareOOP: loggedOOP > 0 ? Math.round(loggedOOP) : activeRecord.healthcareOOP,
-      preMedicareHealthcareCost: loggedPremiums > 0 ? Math.round(loggedPremiums) : activeRecord.preMedicareHealthcareCost,
-      irmaaSurcharges: loggedIRMAA > 0 ? Math.round(loggedIRMAA) : activeRecord.irmaaSurcharges,
+  // Fold the full year of logged expenses (never the month-filtered list) into the year's actuals record
+  const buildRecordFromLogged = useCallback((record: YearActualsRecord, expenses: ActualExpense[]): YearActualsRecord => {
+    const s = summarizeLoggedSpending(expenses);
+    return {
+      ...record,
+      loggedTotalSpending: Math.round(s.total),
+      totalLivingExpenses: Math.round(s.living),
+      categoryExpenses: s.livingByCategory,
+      healthcareOOP: s.healthcareOOP > 0 ? Math.round(s.healthcareOOP) : record.healthcareOOP,
+      preMedicareHealthcareCost: s.premiums > 0 ? Math.round(s.premiums) : record.preMedicareHealthcareCost,
+      irmaaSurcharges: s.irmaa > 0 ? Math.round(s.irmaa) : record.irmaaSurcharges,
     };
+  }, []);
 
+  const handleSyncActualsToRecord = () => {
     onUpdateActuals({
       ...actualTracking,
-      [selectedYear]: updatedRecord,
+      [selectedYear]: buildRecordFromLogged(activeRecord, allYearLoggedExpenses),
     });
   };
 
+  // Keep the stored record equal to the logged expenses whenever they change (import, edit, delete, bulk edit)
+  useEffect(() => {
+    if (allYearLoggedExpenses.length === 0) return;
+    // Ignore a stale list from a previously selected year while the new year is still loading
+    const yearPrefix = `${selectedYear}-`;
+    if (allYearLoggedExpenses.some((e) => !e.date?.startsWith(yearPrefix))) return;
+    const next = buildRecordFromLogged(activeRecord, allYearLoggedExpenses);
+    const changed =
+      next.loggedTotalSpending !== activeRecord.loggedTotalSpending ||
+      next.totalLivingExpenses !== activeRecord.totalLivingExpenses ||
+      next.healthcareOOP !== activeRecord.healthcareOOP ||
+      next.preMedicareHealthcareCost !== activeRecord.preMedicareHealthcareCost ||
+      next.irmaaSurcharges !== activeRecord.irmaaSurcharges;
+    if (changed) {
+      onUpdateActuals({ ...actualTracking, [selectedYear]: next });
+    }
+  }, [allYearLoggedExpenses, activeRecord, actualTracking, selectedYear, buildRecordFromLogged, onUpdateActuals]);
+
   const handleDownloadDbExpensesSpreadsheet = async () => {
-    // If not authenticated, prompt for auth
-    if (!AuthService.isAuthenticated()) {
+    // Localhost reads the local browser database, so no cloud sign-in is needed
+    if (!isLocalhostEnvironment() && !AuthService.isAuthenticated()) {
       setShowCloudAuthModal(true);
       return;
     }
@@ -604,25 +577,26 @@ export const ActualsWorkspace: React.FC<ActualsWorkspaceProps> = ({
     setDbExportMessage(null);
 
     try {
-      const records = await fetchAllExpensesFromDynamoDb();
+      const { records, source } = await fetchAllExpensesForExport();
+      const sourceLabel = source === 'local' ? 'the local browser database' : 'DynamoDB';
       if (!records || records.length === 0) {
         setDbExportMessage({
           type: 'error',
-          text: 'No expense records found in DynamoDB to export.',
+          text: `No expense records found in ${sourceLabel} to export.`,
         });
         return;
       }
 
-      await downloadExpensesSpreadsheet(records);
+      await downloadExpensesSpreadsheet(records, undefined, source);
       setDbExportMessage({
         type: 'success',
-        text: `Successfully exported ${records.length} expense records from DynamoDB!`,
+        text: `Successfully exported ${records.length} expense records from ${sourceLabel}!`,
       });
       setTimeout(() => {
         setDbExportMessage(null);
       }, 6000);
     } catch (err: unknown) {
-      console.error('Failed to export DynamoDB expenses:', err);
+      console.error('Failed to export expenses:', err);
       const errMsg = err instanceof Error ? err.message : 'Unknown error occurred while exporting expenses';
       setDbExportMessage({
         type: 'error',
@@ -801,7 +775,7 @@ export const ActualsWorkspace: React.FC<ActualsWorkspaceProps> = ({
     // 5. Also include any logged categories created on the fly not present in items
     for (const [catId, entry] of Object.entries(actualsSummary.byLineItem)) {
       if (!items.some((i) => i.id === catId)) {
-        const parts = entry.name.includes(' - ') ? entry.name.split(' - ') : ['Custom', entry.name];
+        const parts = entry.categoryName.includes(' - ') ? entry.categoryName.split(' - ') : ['Custom', entry.name];
         const groupName = parts[0].trim();
         const isOneTimeGroup = groupName === 'One-Time Expenses' || groupName === 'One-Time Expense' || groupName === 'One-Time Setup Costs';
         items.push({
@@ -1150,7 +1124,7 @@ export const ActualsWorkspace: React.FC<ActualsWorkspaceProps> = ({
 
   // Guardrail metrics
   const plannedBudgetBase = getPlannedRecurringBudgetForYear(latestActualRow?.year ?? selectedYear);
-  const plannedBudget = latestActualRow?.plannedLivingExpenses ?? (plannedBudgetBase * (ledger[0]?.cpiFactor ?? 1.0) + (ledger[0]?.plannedHealthcareOOP ?? 0));
+  const plannedBudget = latestActualRow?.plannedTotalSpending ?? latestActualRow?.plannedLivingExpenses ?? (plannedBudgetBase * (ledger[0]?.cpiFactor ?? 1.0) + (ledger[0]?.plannedHealthcareOOP ?? 0));
   const guardrailUpperLimit = latestActualRow?.guardrailUpperLimit ?? (plannedBudget * (1 + (guardrailSettings.upperGuardrailPct ?? 0.15)));
   const guardrailLowerLimit = latestActualRow?.guardrailLowerLimit ?? (plannedBudget * (1 - (guardrailSettings.lowerGuardrailPct ?? 0.15)));
   const currentSurplusGap = latestActualRow?.actualSurplusGap ?? 0;
@@ -1161,7 +1135,7 @@ export const ActualsWorkspace: React.FC<ActualsWorkspaceProps> = ({
   const trackedSpend = (activeRecord?.totalLivingExpenses !== undefined && activeRecord?.totalLivingExpenses !== null)
     ? (activeRecord.totalLivingExpenses + (activeRecord.healthcareOOP ?? 0))
     : actualsSummary.totalSpend;
-  const actualSpend = latestActualRow ? latestActualRow.livingExpenses : trackedSpend;
+  const actualSpend = latestActualRow ? (latestActualRow.totalSpending ?? latestActualRow.livingExpenses) : trackedSpend;
   const spendingSavings = plannedBudget - actualSpend;
   const marketSurplusShare = latestActualRow ? (currentSurplusGap - spendingSavings) : 0;
 
@@ -1176,7 +1150,7 @@ export const ActualsWorkspace: React.FC<ActualsWorkspaceProps> = ({
       datasets: [
         {
           label: 'Planned Budget ($)',
-          data: rowsToChart.map((r) => r.plannedLivingExpenses ?? (getPlannedRecurringBudgetForYear(r.year) * r.cpiFactor)),
+          data: rowsToChart.map((r) => r.plannedTotalSpending ?? r.plannedLivingExpenses ?? (getPlannedRecurringBudgetForYear(r.year) * r.cpiFactor)),
           borderColor: '#60a5fa',
           backgroundColor: 'rgba(96, 165, 250, 0.1)',
           borderWidth: 1.75,
@@ -1186,7 +1160,7 @@ export const ActualsWorkspace: React.FC<ActualsWorkspaceProps> = ({
         },
         {
           label: isProjectedFallback ? 'Projected Spending ($)' : 'Actual Spending ($)',
-          data: rowsToChart.map((r) => r.livingExpenses),
+          data: rowsToChart.map((r) => r.totalSpending ?? r.livingExpenses),
           borderColor: '#34d399',
           backgroundColor: 'rgba(52, 211, 153, 0.2)',
           borderWidth: 2.5,
@@ -1603,7 +1577,9 @@ export const ActualsWorkspace: React.FC<ActualsWorkspaceProps> = ({
               onClick={handleDownloadDbExpensesSpreadsheet}
               disabled={isDownloadingDbExpenses}
               className="px-3 py-1.5 rounded-xl bg-slate-800/90 hover:bg-slate-700 text-slate-200 hover:text-white border border-slate-700/80 text-xs font-semibold flex items-center gap-1.5 transition-all shadow-sm shrink-0 whitespace-nowrap cursor-pointer disabled:opacity-50"
-              title="Download an Excel spreadsheet (.xlsx) of all expenses recorded in AWS DynamoDB"
+              title={isLocalhostEnvironment()
+                ? 'Download an Excel spreadsheet (.xlsx) of all expenses in the local browser database'
+                : 'Download an Excel spreadsheet (.xlsx) of all expenses recorded in AWS DynamoDB'}
             >
               {isDownloadingDbExpenses ? (
                 <RefreshCw className="w-3.5 h-3.5 text-emerald-400 animate-spin" />
@@ -1880,6 +1856,7 @@ export const ActualsWorkspace: React.FC<ActualsWorkspaceProps> = ({
                       <th className="px-3 py-2 text-right">YTD Budget</th>
                       <th className="px-3 py-2 text-right">YTD Actual</th>
                       <th className="px-3 py-2 text-right">Under / (Over)</th>
+                      <th className="px-3 py-2 text-right">YTD vs Budget</th>
                       <th className="px-3 py-2 text-right">Projected Year-End</th>
                       <th className="px-3 py-2 text-right">Annual Budget</th>
                     </tr>
@@ -1899,6 +1876,9 @@ export const ActualsWorkspace: React.FC<ActualsWorkspaceProps> = ({
                           <td className={`px-3 py-2 text-right font-mono font-semibold ${rowVariance >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
                             {formatCurrency(rowVariance)}
                           </td>
+                          <td className="px-3 py-2">
+                            <BudgetProgressBar name={row.name} ytdActual={row.ytdActual} ytdBudget={row.ytdBudget} />
+                          </td>
                           <td className="px-3 py-2 text-right font-mono">{formatCurrency(row.projectedYearEnd)}</td>
                           <td className="px-3 py-2 text-right font-mono">{formatCurrency(row.annualBudget)}</td>
                         </tr>
@@ -1906,7 +1886,7 @@ export const ActualsWorkspace: React.FC<ActualsWorkspaceProps> = ({
                     })}
                   </tbody>
                 </table>
-                <p className="text-[11px] text-slate-500 mt-2">Click a category to focus the charts on it. Sorted with the most over-budget categories first.</p>
+                <p className="text-[11px] text-slate-500 mt-2">Click a category to focus the charts on it. The bar fills with YTD actual and the white tick marks YTD budget. Sorted with the most over-budget categories first.</p>
               </div>
             </div>
           </div>
@@ -3191,7 +3171,6 @@ export const ActualsWorkspace: React.FC<ActualsWorkspaceProps> = ({
           onImportComplete={async () => {
             await loadLoggedExpenses();
           }}
-          onUpdateActualsLivingExpenses={handleUpdateActualsLivingExpenses}
         />
       )}
       {/* Bulk Edit Expenses Modal */}

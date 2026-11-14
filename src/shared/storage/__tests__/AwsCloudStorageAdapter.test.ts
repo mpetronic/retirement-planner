@@ -257,4 +257,62 @@ describe('AwsCloudStorageAdapter', () => {
     expect(expenses[0].category).toBe('Miscellaneous');
     expect(expenses[0].name).toBe('Gifts');
   });
+
+  describe('syncLatestExpensesFromCloud', () => {
+    const remoteRow = (id: string, amount: number, updatedAt: string) => ({
+      expenseId: id,
+      date: '2026-09-05',
+      amount,
+      categoryId: 'cat_misc_gifts',
+      categoryName: 'Miscellaneous - Gifts',
+      enteredBy: 'Spouse',
+      createdAt: '2026-09-05T10:00:00.000Z',
+      updatedAt,
+    });
+
+    beforeEach(() => {
+      vi.spyOn(AuthService, 'isAuthenticated').mockReturnValue(true);
+      vi.spyOn(AuthService, 'getIdToken').mockResolvedValue('mock_token');
+    });
+
+    it('requests only the latest N and merges the spouse entries into the local cache', async () => {
+      const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue({
+        ok: true,
+        json: async () => ({ expenses: [remoteRow('exp_spouse_1', 12, '2026-09-05T10:00:00.000Z')] }),
+      } as unknown as Response);
+
+      const merged = await adapter.syncLatestExpensesFromCloud(25);
+
+      expect(merged).toBe(1);
+      expect(fetchSpy).toHaveBeenCalledWith(expect.stringContaining('/api/expenses?latest=25'), expect.anything());
+      const local = await mockLocal.getExpenses(2026, 9);
+      expect(local.map(e => e.expenseId)).toContain('exp_spouse_1');
+    });
+
+    it('never deletes local rows that are absent from the partial remote window', async () => {
+      await mockLocal.saveExpense({
+        date: '2026-01-10',
+        amount: 5,
+        categoryId: 'cat_misc_gifts',
+        categoryName: 'Miscellaneous - Gifts',
+        enteredBy: 'Mike',
+        expenseId: 'exp_old_synced',
+        syncStatus: 'SYNCED',
+      } as never);
+      vi.spyOn(globalThis, 'fetch').mockResolvedValue({
+        ok: true,
+        json: async () => ({ expenses: [] }),
+      } as unknown as Response);
+
+      await adapter.syncLatestExpensesFromCloud();
+
+      const local = await mockLocal.getExpenses(2026, 1);
+      expect(local.some(e => e.expenseId === 'exp_old_synced')).toBe(true);
+    });
+
+    it('throws on a failed response so the caller can report it', async () => {
+      vi.spyOn(globalThis, 'fetch').mockResolvedValue({ ok: false, status: 500 } as unknown as Response);
+      await expect(adapter.syncLatestExpensesFromCloud()).rejects.toThrow('status 500');
+    });
+  });
 });

@@ -117,8 +117,11 @@ a separate sell and buy. The per-fund trades from section 5 are turned into inst
 
 ### 6.1 Overview (landing view)
 - A "New account" button.
-- A row per non-archived account: account name, last snapshot date, status from that snapshot labeled
-  "as of <date>" (never presented as live), executed marker, **Open worksheet**, **Edit template**.
+- A row per non-archived account: account name, fund count and threshold, and the buttons
+  **Open worksheet**, **History**, **Edit template**.
+- The overview is only a launcher. It shows no rebalance status, snapshot date, or executed marker;
+  those live in the snapshot history. **History** opens the account's full snapshot list, and Back
+  returns to wherever History was opened from.
 - No reminder or staleness logic.
 
 ### 6.2 Template editor
@@ -129,8 +132,16 @@ a separate sell and buy. The per-fund trades from section 5 are turned into inst
   account's snapshots.
 
 ### 6.3 Worksheet
-- One dollar input per fund (no bulk paste).
+- One dollar input per fund (no bulk paste). Empty inputs show the placeholder "Enter current value",
+  and a hint reads "Enter the current value of each fund to see what to trade (N of M entered)"
+  until every fund has an amount. A blank fund is never treated as zero.
 - Results table: symbol, current value, current percent, target percent, deviation, status badge.
+- The deviation cell also shows a gauge: a short bar spanning target minus threshold to target plus
+  threshold, a center line at the target, a tick at the current percent, and the bound percentages at
+  the ends. The scale extends past each bound by a quarter of the band so slightly-out funds are drawn
+  past the bound; beyond that the tick is pinned to the edge. The tick is neutral/green in band, rose
+  when high, amber when low, and the gauge has a text label for screen readers. Shown on every
+  worksheet, not only when a rebalance is needed.
 - Account banner with a clear indicator:
   - **Rebalance needed** (prominent, warning color) when status is NEEDED
   - **Optional** (neutral/informational) when status is OPTIONAL, with the message "Within
@@ -144,8 +155,9 @@ a separate sell and buy. The per-fund trades from section 5 are turned into inst
 - Link to snapshot history, and a read-only reference to the most recent snapshot.
 
 ### 6.4 Snapshot history
-- List per account: date, status, executed flag, note.
-- Read-only view of the frozen template, values, and trades.
+- List per account: date, status, executed flag (a checkbox toggle), note.
+- Read-only view of the frozen template, values, and trades. The per-fund table includes the same
+  deviation gauge, drawn with the threshold frozen in the snapshot.
 - Toggle the executed flag. Delete with a confirmation. No editing of any other field.
 
 ## 7. Storage

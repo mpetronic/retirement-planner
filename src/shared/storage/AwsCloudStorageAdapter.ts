@@ -6,6 +6,7 @@ import { CloudRebalancingStorage } from './rebalancing/CloudRebalancingStorage';
 
 const FLUSH_BATCH_SIZE = 25;
 const FLUSH_MAX_ATTEMPTS = 3;
+export const DEFAULT_LATEST_EXPENSES_PULL = 50;
 const PENDING_CATEGORY_PUSHES_KEY = 'expenser_pending_category_pushes';
 
 function sleep(ms: number): Promise<void> {
@@ -288,33 +289,83 @@ export class AwsCloudStorageAdapter implements StorageAdapter {
       }
 
       // 3. Save / update authoritative remote expenses, preserving newer local edits
-      for (const exp of remoteExpenses) {
-        if (pendingIds.has(exp.expenseId)) {
-          continue;
-        }
+      await this.mergeRemoteExpenses(remoteExpenses, pendingIds);
+    } finally {
+      this.isSyncingExpenses = false;
+    }
+  }
 
-        if (this.localAdapter.getExpenseById) {
-          const localExisting = await this.localAdapter.getExpenseById(exp.expenseId);
-          if (localExisting) {
-            if (localExisting.syncStatus === 'PENDING_SYNC') {
-              continue;
-            }
-            if (
-              localExisting.updatedAt &&
-              exp.updatedAt &&
-              new Date(localExisting.updatedAt).getTime() > new Date(exp.updatedAt).getTime()
-            ) {
-              // Local expense is newer than remote snapshot; preserve local edit
-              continue;
-            }
+  /**
+   * Save / update remote expenses into the local cache, preserving pending rows
+   * and any local edit that is newer than the remote snapshot.
+   */
+  private async mergeRemoteExpenses(remoteExpenses: ActualExpense[], pendingIds: Set<string>): Promise<void> {
+    for (const exp of remoteExpenses) {
+      if (pendingIds.has(exp.expenseId)) {
+        continue;
+      }
+
+      let preservedSplitGroupId: string | undefined;
+      if (this.localAdapter.getExpenseById) {
+        const localExisting = await this.localAdapter.getExpenseById(exp.expenseId);
+        // Keep a locally known split group when the cloud record predates split support
+        preservedSplitGroupId = localExisting?.splitGroupId;
+        if (localExisting) {
+          if (localExisting.syncStatus === 'PENDING_SYNC') {
+            continue;
+          }
+          if (
+            localExisting.updatedAt &&
+            exp.updatedAt &&
+            new Date(localExisting.updatedAt).getTime() > new Date(exp.updatedAt).getTime()
+          ) {
+            // Local expense is newer than remote snapshot; preserve local edit
+            continue;
           }
         }
-
-        await this.localAdapter.saveExpense({
-          ...exp,
-          syncStatus: 'SYNCED',
-        });
       }
+
+      await this.localAdapter.saveExpense({
+        ...exp,
+        splitGroupId: exp.splitGroupId ?? preservedSplitGroupId,
+        syncStatus: 'SYNCED',
+      });
+    }
+  }
+
+  /**
+   * Pulls only the newest N household expenses (by occurred date) into the local cache.
+   * Cheap alternative to a full year sync. Because the window is partial, it never deletes
+   * local rows, so cloud-side deletions and edits to older rows still arrive via getExpenses().
+   * Returns the number of remote rows merged.
+   */
+  public async syncLatestExpensesFromCloud(limit: number = DEFAULT_LATEST_EXPENSES_PULL): Promise<number> {
+    if (this.isSyncingExpenses) return 0;
+    this.isSyncingExpenses = true;
+
+    try {
+      const headers = await this.getAuthHeaders();
+      if (!headers) return 0;
+
+      const response = await fetch(`${this.getApiEndpoint()}/api/expenses?latest=${limit}`, {
+        method: 'GET',
+        headers,
+      });
+      if (!response.ok) {
+        throw new Error(`Failed to fetch latest expenses (status ${response.status})`);
+      }
+
+      const data = await response.json();
+      const remoteExpenses: ActualExpense[] = Array.isArray(data)
+        ? data
+        : Array.isArray(data.expenses)
+        ? data.expenses
+        : [];
+
+      const pending = await this.localAdapter.getPendingSyncExpenses();
+      const pendingIds = new Set(pending.map(p => p.expenseId));
+      await this.mergeRemoteExpenses(remoteExpenses, pendingIds);
+      return remoteExpenses.length;
     } finally {
       this.isSyncingExpenses = false;
     }
@@ -381,6 +432,7 @@ export class AwsCloudStorageAdapter implements StorageAdapter {
             enteredBy: typeof item.enteredBy === 'string' ? item.enteredBy : 'Primary',
             notes: typeof item.notes === 'string' ? item.notes : undefined,
             tags: Array.isArray(item.tags) ? (item.tags as string[]) : undefined,
+            splitGroupId: typeof item.splitGroupId === 'string' ? item.splitGroupId : undefined,
             createdAt: typeof item.createdAt === 'string' ? item.createdAt : undefined,
             updatedAt: typeof item.updatedAt === 'string' ? item.updatedAt : undefined,
             syncStatus: 'SYNCED',

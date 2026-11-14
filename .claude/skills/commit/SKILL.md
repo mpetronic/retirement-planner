@@ -24,6 +24,8 @@ description: Commit Rules
 
 6. Do not use prefixes like "feat", "fix, etc., in commit titles. Just use a normal terse sentence.
 
+7. Do not add AI as a co-author.
+
 # IMPORTANT
 
 Review all submitted code for personal information and secrets and abort the commit and list the exact findings for the file and line number and actual text of what you discovered.

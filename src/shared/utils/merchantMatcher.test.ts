@@ -4,6 +4,7 @@ import {
   calculateHeaderFingerprint,
   guessColumnMapping,
   categorizeLocally,
+  UNCATEGORIZED,
   saveLearnedMerchantRule,
   getLearnedMerchantRules,
   isPaymentOrTransfer,
@@ -78,22 +79,44 @@ describe('merchantMatcher', () => {
   });
 
   describe('categorizeLocally', () => {
-    it('categorizes via keyword heuristics', () => {
-      const resGrocery = categorizeLocally('GIANT FOOD INC #192', 'Groceries');
+    const catalogItem = (groupCategory: string, name: string) => ({
+      id: `${groupCategory}_${name}`,
+      groupCategory,
+      name,
+      displayName: `${groupCategory} - ${name}`,
+      plannedMonthlyDefault: 0,
+      isCustom: false,
+    });
+    const catalog = [
+      catalogItem('Living', 'Groceries'),
+      catalogItem('Transportation', 'Gasoline'),
+      catalogItem('Healthcare', 'Prescriptions & Medical'),
+    ];
+
+    it('categorizes via keyword heuristics using the catalog category', () => {
+      const resGrocery = categorizeLocally('GIANT FOOD INC #192', 'Groceries', catalog);
       expect(resGrocery.category).toBe('Living');
       expect(resGrocery.lineItem).toBe('Groceries');
       expect(resGrocery.isUnknown).toBe(false);
 
-      const resGas = categorizeLocally('SHELL OIL 57543580203', 'Gas');
+      const resGas = categorizeLocally('SHELL OIL 57543580203', 'Gas', catalog);
       expect(resGas.category).toBe('Transportation');
       expect(resGas.lineItem).toBe('Gasoline');
 
-      const resDental = categorizeLocally('THREE CREEK DENTISTRY', 'Health & Wellness');
+      const resDental = categorizeLocally('THREE CREEK DENTISTRY', 'Health & Wellness', catalog);
       expect(resDental.category).toBe('Healthcare');
       expect(resDental.lineItem).toBe('Prescriptions & Medical');
     });
 
+    it('does not use a keyword rule whose line item is not in the catalog', () => {
+      const res = categorizeLocally('HOME DEPOT #1234', 'Home', catalog);
+      expect(res.category).toBe(UNCATEGORIZED);
+      expect(res.lineItem).toBe(UNCATEGORIZED);
+      expect(res.isUnknown).toBe(true);
+    });
+
     it('prioritizes learned merchant rules over heuristics', () => {
+      const withCustom = [...catalog, catalogItem('CustomCategory', 'CustomGroceries')];
       saveLearnedMerchantRule({
         normalizedKey: 'GIANT FOOD',
         category: 'CustomCategory',
@@ -104,15 +127,30 @@ describe('merchantMatcher', () => {
 
       expect(getLearnedMerchantRules().length).toBe(1);
 
-      const res = categorizeLocally('GIANT FOOD INC #192', 'Groceries');
+      const res = categorizeLocally('GIANT FOOD INC #192', 'Groceries', withCustom);
       expect(res.category).toBe('CustomCategory');
       expect(res.lineItem).toBe('CustomGroceries');
       expect(res.source).toBe('learned');
     });
 
-    it('marks novel unrecognized merchants as Unknown', () => {
-      const res = categorizeLocally('XYZZY UNKNOWN MERCHANT 999', 'Other');
-      expect(res.lineItem).toBe('Unknown');
+    it('ignores learned rules that point at a category missing from the catalog', () => {
+      saveLearnedMerchantRule({
+        normalizedKey: 'GIANT FOOD',
+        category: 'CustomCategory',
+        lineItem: 'CustomGroceries',
+        lastUsed: new Date().toISOString(),
+        matchCount: 1,
+      });
+
+      const res = categorizeLocally('GIANT FOOD INC #192', 'Groceries', catalog);
+      expect(res.source).toBe('heuristic');
+      expect(res.lineItem).toBe('Groceries');
+    });
+
+    it('marks novel unrecognized merchants as Uncategorized', () => {
+      const res = categorizeLocally('XYZZY UNKNOWN MERCHANT 999', 'Other', catalog);
+      expect(res.category).toBe(UNCATEGORIZED);
+      expect(res.lineItem).toBe(UNCATEGORIZED);
       expect(res.isUnknown).toBe(true);
       expect(res.source).toBe('unknown');
     });

@@ -312,28 +312,32 @@ export function batchSaveLearnedMerchantRules(rules: LearnedMerchantRule[]): voi
 
 // --- Local Keyword Heuristics Dictionary ---
 
+// Keyword rules only name a line item. The category always comes from the user's catalog, so a
+// rule whose line item is not in the catalog never produces a match.
 interface KeywordPattern {
   keywords: string[];
-  category: string;
   lineItem: string;
 }
 
 const COMMON_KEYWORD_PATTERNS: KeywordPattern[] = [
-  { keywords: ['GIANT', 'SAFEWAY', 'H MART', 'PATEL BROTHERS', 'TRADER JOE', 'WHOLE FOODS', 'WEGMANS', 'ALDI', 'GROCERY', 'GROCERIES', 'MARKET', 'LATINAS STORE'], category: 'Living', lineItem: 'Groceries' },
-  { keywords: ['SHELL OIL', 'EXXON', 'MOBIL', 'BP', 'CHEVRON', 'LIBERTY', 'FLOWER HILL LIBERTY', 'SUNOCO', 'GAS', 'WAWA'], category: 'Transportation', lineItem: 'Gasoline' },
-  { keywords: ['HOME DEPOT', 'LOWES', 'ACE HARDWARE', 'REGAL PAINT', 'TW PERRY', 'CARPET', 'SEASONS NURSERY', 'HARDWARE', 'NURSERY'], category: 'Housing', lineItem: 'Home Maintenance' },
-  { keywords: ['DENTIST', 'DENTISTRY', 'DIGESTIVE', 'MEDICINE', 'CLINIC', 'HOSPITAL', 'DOCTOR', 'PHYSICIAN', 'FAMILY MED', 'CVS', 'WALGREENS', 'CAREMARK', 'PHARMACY'], category: 'Healthcare', lineItem: 'Prescriptions & Medical' },
-  { keywords: ['RESTAURANT', 'TRATTORIA', 'CAFE', 'PANERA', 'MCDONALD', 'STARBUCKS', 'CHIPOTLE', 'MAGNOLIAS', 'SABAI SABAI', 'FOOD & DRINK', 'DINER', 'PIZZA', 'TAQUERIA', 'BAKERY'], category: 'Living', lineItem: 'Dining Out' },
-  { keywords: ['GOLF', 'MUSKET RIDGE', 'LAYTONSVILLE GOLF', 'CINEMA', 'THEATER', 'MOVIE', 'CONCERT', 'BOWLING', 'ENTERTAINMENT', 'LEISURE'], category: 'Leisure', lineItem: 'Entertainment' },
-  { keywords: ['VINEYARDS', 'BREAUX VINEYARDS', 'WINERY', 'BREWING', 'BREWERY', 'LIQUOR', 'BEER', 'WINE'], category: 'Living', lineItem: 'Dining Out' },
-  { keywords: ['ST JUDE', 'STJUDE', 'TUNNEL TO TOWERS', 'TUNNELTOTOWERS', 'WOUNDED WARRIOR', 'CHARITY', 'DONATION', 'CHURCH', 'MINISTRY', 'TITHING'], category: 'Charities', lineItem: 'Charitable Donations' },
-  { keywords: ['VERIZON', 'AT&T', 'ATT', 'T-MOBILE', 'COMCAST', 'XFINITY', 'ELECTRIC', 'WATER', 'UTILITIES', 'POWER'], category: 'Housing', lineItem: 'Utilities' },
-  { keywords: ['GARAGE', 'PARKING', 'DOT GARAGE', 'TOLL', 'EZPASS', 'UBER', 'LYFT', 'METRO', 'TRANSIT', 'TRAVEL'], category: 'Transportation', lineItem: 'Public Transit & Parking' },
-  { keywords: ['COSTCO', 'SAM\'S CLUB', 'BJS WHOLESALE'], category: 'Living', lineItem: 'Groceries' },
-  { keywords: ['KOHL\'S', 'KOHLS', 'TARGET', 'WALMART', 'HOBBY LOBBY', 'MICHAELS', 'BATH & BODY', 'BATH AND BODY', 'FAMILY ROOM', 'CLOTHING', 'SHOPPING'], category: 'Living', lineItem: 'Clothing & General Goods' },
+  { keywords: ['GIANT', 'SAFEWAY', 'H MART', 'PATEL BROTHERS', 'TRADER JOE', 'WHOLE FOODS', 'WEGMANS', 'ALDI', 'GROCERY', 'GROCERIES', 'MARKET', 'LATINAS STORE'], lineItem: 'Groceries' },
+  { keywords: ['SHELL OIL', 'EXXON', 'MOBIL', 'BP', 'CHEVRON', 'LIBERTY', 'FLOWER HILL LIBERTY', 'SUNOCO', 'GAS', 'WAWA'], lineItem: 'Gasoline' },
+  { keywords: ['HOME DEPOT', 'LOWES', 'ACE HARDWARE', 'REGAL PAINT', 'TW PERRY', 'CARPET', 'SEASONS NURSERY', 'HARDWARE', 'NURSERY'], lineItem: 'Home Maintenance' },
+  { keywords: ['DENTIST', 'DENTISTRY', 'DIGESTIVE', 'MEDICINE', 'CLINIC', 'HOSPITAL', 'DOCTOR', 'PHYSICIAN', 'FAMILY MED', 'CVS', 'WALGREENS', 'CAREMARK', 'PHARMACY'], lineItem: 'Prescriptions & Medical' },
+  { keywords: ['RESTAURANT', 'TRATTORIA', 'CAFE', 'PANERA', 'MCDONALD', 'STARBUCKS', 'CHIPOTLE', 'MAGNOLIAS', 'SABAI SABAI', 'FOOD & DRINK', 'DINER', 'PIZZA', 'TAQUERIA', 'BAKERY'], lineItem: 'Dining Out' },
+  { keywords: ['GOLF', 'MUSKET RIDGE', 'LAYTONSVILLE GOLF', 'CINEMA', 'THEATER', 'MOVIE', 'CONCERT', 'BOWLING', 'ENTERTAINMENT', 'LEISURE'], lineItem: 'Entertainment' },
+  { keywords: ['VINEYARDS', 'BREAUX VINEYARDS', 'WINERY', 'BREWING', 'BREWERY', 'LIQUOR', 'BEER', 'WINE'], lineItem: 'Dining Out' },
+  { keywords: ['ST JUDE', 'STJUDE', 'TUNNEL TO TOWERS', 'TUNNELTOTOWERS', 'WOUNDED WARRIOR', 'CHARITY', 'DONATION', 'CHURCH', 'MINISTRY', 'TITHING'], lineItem: 'Charitable Donations' },
+  { keywords: ['VERIZON', 'AT&T', 'ATT', 'T-MOBILE', 'COMCAST', 'XFINITY', 'ELECTRIC', 'WATER', 'UTILITIES', 'POWER'], lineItem: 'Utilities' },
+  { keywords: ['GARAGE', 'PARKING', 'DOT GARAGE', 'TOLL', 'EZPASS', 'UBER', 'LYFT', 'METRO', 'TRANSIT', 'TRAVEL'], lineItem: 'Public Transit & Parking' },
+  { keywords: ['COSTCO', 'SAM\'S CLUB', 'BJS WHOLESALE'], lineItem: 'Groceries' },
+  { keywords: ['KOHL\'S', 'KOHLS', 'TARGET', 'WALMART', 'HOBBY LOBBY', 'MICHAELS', 'BATH & BODY', 'BATH AND BODY', 'FAMILY ROOM', 'CLOTHING', 'SHOPPING'], lineItem: 'Clothing & General Goods' },
 ];
 
 // --- Matching Engine ---
+
+// Category and expense name assigned to anything that cannot be mapped to the catalog.
+export const UNCATEGORIZED = 'Uncategorized';
 
 export interface MatchResult {
   category: string;
@@ -346,7 +350,8 @@ export interface MatchResult {
  * Categorizes a single transaction using the multi-tier hierarchy:
  * 1. Persistent Learned Memory (Exact or prefix match)
  * 2. Local Keyword Heuristics
- * 3. Fallback to Unknown
+ * 3. Fallback to Uncategorized
+ * Only mappings that exist in the catalog are returned.
  */
 export function categorizeLocally(
   rawDesc: string,
@@ -358,7 +363,9 @@ export function categorizeLocally(
 
   // Tier 1: Check Learned Merchant Dictionary
   if (normKey) {
-    const directMatch = learnedRules.find(r => r.normalizedKey === normKey);
+    const existsInCatalog = (r: LearnedMerchantRule) =>
+      catalog.some(c => c.groupCategory === r.category && c.name === r.lineItem);
+    const directMatch = learnedRules.find(r => r.normalizedKey === normKey && existsInCatalog(r));
     if (directMatch) {
       return {
         category: directMatch.category,
@@ -369,7 +376,9 @@ export function categorizeLocally(
     }
 
     // Prefix / Substring match in learned dictionary
-    const prefixMatch = learnedRules.find(r => normKey.startsWith(r.normalizedKey) || r.normalizedKey.startsWith(normKey));
+    const prefixMatch = learnedRules.find(
+      r => (normKey.startsWith(r.normalizedKey) || r.normalizedKey.startsWith(normKey)) && existsInCatalog(r)
+    );
     if (prefixMatch) {
       return {
         category: prefixMatch.category,
@@ -386,15 +395,15 @@ export function categorizeLocally(
   for (const pattern of COMMON_KEYWORD_PATTERNS) {
     for (const kw of pattern.keywords) {
       if (searchText.includes(kw.toUpperCase())) {
-        // Verify or reconcile with existing catalog items
         const matchingCatalogItem = catalog.find(
           c => c.name.toLowerCase() === pattern.lineItem.toLowerCase() ||
                c.displayName.toLowerCase().includes(pattern.lineItem.toLowerCase())
         );
+        if (!matchingCatalogItem) break;
 
         return {
-          category: matchingCatalogItem?.groupCategory || pattern.category,
-          lineItem: matchingCatalogItem?.name || pattern.lineItem,
+          category: matchingCatalogItem.groupCategory,
+          lineItem: matchingCatalogItem.name,
           source: 'heuristic',
           isUnknown: false,
         };
@@ -418,10 +427,10 @@ export function categorizeLocally(
     }
   }
 
-  // Fallback: Mark as Unknown
+  // Fallback: nothing in the catalog matched
   return {
-    category: 'Living',
-    lineItem: 'Unknown',
+    category: UNCATEGORIZED,
+    lineItem: UNCATEGORIZED,
     source: 'unknown',
     isUnknown: true,
   };
@@ -574,7 +583,7 @@ export async function batchCategorizeWithLLM(
 
   try {
     const prompt = `You are a financial categorization assistant. Given a list of merchant names and statement categories, map each merchant to the SINGLE BEST MATCHING category and line item from the provided catalog.
-If no good match exists in the catalog, return "Living:::Unknown".
+If no good match exists in the catalog, return "Uncategorized:::Uncategorized".
 
 Catalog choices (Category:::LineItem):
 ${catalogTargets.join('\n')}
@@ -629,7 +638,7 @@ Return ONLY a valid JSON object mapping each merchant name to its chosen "Catego
         Object.entries(parsed).forEach(([merchant, catStr]) => {
           if (typeof catStr === 'string' && catStr.includes(':::')) {
             const [cat, item] = catStr.split(':::');
-            if (cat && item && item.toLowerCase() !== 'unknown') {
+            if (cat && item && item.toLowerCase() !== UNCATEGORIZED.toLowerCase()) {
               resultMap.set(merchant.toUpperCase(), { category: cat.trim(), lineItem: item.trim() });
             }
           }

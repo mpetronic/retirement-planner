@@ -1,5 +1,5 @@
 // Expenser Companion PWA - Service Worker
-const CACHE_NAME = 'expenser-v8';
+const CACHE_NAME = 'expenser-v9';
 const ASSETS_TO_CACHE = [
   '/expenser.html',
   '/expenser-manifest.json',

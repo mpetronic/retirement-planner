@@ -609,7 +609,7 @@ export const DocumentationDialog: React.FC<DocumentationDialogProps> = ({
               <span className="text-xs font-bold text-emerald-400 block">Hybrid Historical Replay & Reconciliation</span>
               <ul className="text-[11px] text-slate-300 space-y-1.5 list-disc list-inside leading-relaxed">
                 <li><strong>Realized Macro Returns:</strong> Substitute equity, bond, CPI inflation, and healthcare rates for each logged calendar year.</li>
-                <li><strong>Dual-Mode Living Expenses:</strong> Record aggregate annual spend or itemize by category (Housing, Food, Healthcare, Travel, Discretionary).</li>
+                <li><strong>Dual-Mode Living Expenses:</strong> Record aggregate annual spend or itemize by category (Home, Food, Healthcare, Travel, Discretionary).</li>
                 <li><strong>Ending Balance Reconciliation:</strong> Lock in verified brokerage, Traditional IRA, Roth IRA, cost basis, and cash balances at year-end.</li>
                 <li><strong>2-Year Medicare MAGI Stitching:</strong> Historical actual MAGI automatically chains into the 2-year lookback Medicare IRMAA calculations.</li>
                 <li><strong>Graceful Bridge:</strong> Any unrecorded intermediate years are seamlessly simulated by the baseline model.</li>

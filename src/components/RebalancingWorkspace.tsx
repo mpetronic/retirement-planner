@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { Plus, Pencil, FileSpreadsheet, ArrowLeftRight } from 'lucide-react';
+import { Plus, Pencil, History, FileSpreadsheet, ArrowLeftRight } from 'lucide-react';
 import {
   RebalanceAccountTemplate,
   RebalanceOwner,
@@ -20,7 +20,7 @@ type ViewState =
   | { kind: 'overview' }
   | { kind: 'edit'; accountId: string | null }
   | { kind: 'worksheet'; accountId: string }
-  | { kind: 'history'; accountId: string };
+  | { kind: 'history'; accountId: string; from: 'overview' | 'worksheet' };
 
 export const RebalancingWorkspace: React.FC<RebalancingWorkspaceProps> = ({ primaryName, spouseName }) => {
   const storage = useMemo(() => getRebalancingStorage(), []);
@@ -110,7 +110,7 @@ export const RebalancingWorkspace: React.FC<RebalancingWorkspaceProps> = ({ prim
           ownerDisplayName={ownerLabel(account.owner)}
           lastSnapshot={latestFor(account.accountId)}
           onSave={async (s) => { await run(() => storage.saveSnapshot(s)); }}
-          onShowHistory={() => setView({ kind: 'history', accountId: account.accountId })}
+          onShowHistory={() => setView({ kind: 'history', accountId: account.accountId, from: 'worksheet' })}
           onBack={() => setView({ kind: 'overview' })}
         />
       );
@@ -131,17 +131,16 @@ export const RebalancingWorkspace: React.FC<RebalancingWorkspaceProps> = ({ prim
           onDelete={(s) => {
             if (window.confirm('Delete this snapshot?')) run(() => storage.deleteSnapshot(s.accountId, s.snapshotId));
           }}
-          onBack={() => setView({ kind: 'worksheet', accountId: account.accountId })}
+          onBack={() =>
+            setView(view.from === 'worksheet' ? { kind: 'worksheet', accountId: account.accountId } : { kind: 'overview' })
+          }
         />
       );
     }
 
     return (
       <div className="space-y-4">
-        <div className="flex items-center justify-between">
-          <p className="text-sm text-slate-400">
-            Statuses shown are as of each account's last saved check, not live.
-          </p>
+        <div className="flex items-center justify-end">
           <button
             type="button"
             className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-sm font-semibold flex items-center gap-1.5"
@@ -153,44 +152,25 @@ export const RebalancingWorkspace: React.FC<RebalancingWorkspaceProps> = ({ prim
         {!loading && activeAccounts.length === 0 && (
           <p className="text-sm text-slate-400">No accounts yet. Create one to define its funds and targets.</p>
         )}
-        {activeAccounts.map((a) => {
-          const last = latestFor(a.accountId);
-          return (
-            <div key={a.accountId} className="bg-slate-900 border border-slate-800 rounded-xl p-4 flex flex-wrap items-center gap-4">
-              <div className="flex-1 min-w-[12rem]">
-                <div className="font-semibold text-white">{nameOf(a)}</div>
-                <div className="text-xs text-slate-400">
-                  {a.funds.length} funds · threshold ±{a.thresholdPoints} pts
-                </div>
+        {activeAccounts.map((a) => (
+          <div key={a.accountId} className="bg-slate-900 border border-slate-800 rounded-xl p-4 flex flex-wrap items-center gap-4">
+            <div className="flex-1 min-w-[12rem]">
+              <div className="font-semibold text-white">{nameOf(a)}</div>
+              <div className="text-xs text-slate-400">
+                {a.funds.length} funds · threshold ±{a.thresholdPoints} pts
               </div>
-              <div className="text-sm text-slate-300 min-w-[12rem]">
-                {last ? (
-                  <>
-                    <span
-                      className={`px-2 py-0.5 rounded-md text-xs font-semibold ${
-                        last.result.accountStatus === 'NEEDED' ? 'bg-rose-500/15 text-rose-400' : 'bg-slate-800 text-slate-300'
-                      }`}
-                    >
-                      {last.result.accountStatus === 'NEEDED' ? 'Rebalance needed' : 'Optional'}
-                    </span>
-                    <span className="ml-2 text-xs text-slate-500">
-                      as of {new Date(last.savedAt).toLocaleDateString()}
-                      {last.executed ? ' · executed' : ''}
-                    </span>
-                  </>
-                ) : (
-                  <span className="text-xs text-slate-500">No checks saved</span>
-                )}
-              </div>
-              <button type="button" className="px-3 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 text-sm flex items-center gap-1.5" onClick={() => setView({ kind: 'worksheet', accountId: a.accountId })}>
-                <FileSpreadsheet className="w-4 h-4" /> Open worksheet
-              </button>
-              <button type="button" className="px-3 py-2 rounded-xl text-slate-300 hover:text-white text-sm flex items-center gap-1.5" onClick={() => setView({ kind: 'edit', accountId: a.accountId })}>
-                <Pencil className="w-4 h-4" /> Edit template
-              </button>
             </div>
-          );
-        })}
+            <button type="button" className="px-3 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 text-sm flex items-center gap-1.5" onClick={() => setView({ kind: 'worksheet', accountId: a.accountId })}>
+              <FileSpreadsheet className="w-4 h-4" /> Open worksheet
+            </button>
+            <button type="button" className="px-3 py-2 rounded-xl text-slate-300 hover:text-white text-sm flex items-center gap-1.5" onClick={() => setView({ kind: 'history', accountId: a.accountId, from: 'overview' })}>
+              <History className="w-4 h-4" /> History
+            </button>
+            <button type="button" className="px-3 py-2 rounded-xl text-slate-300 hover:text-white text-sm flex items-center gap-1.5" onClick={() => setView({ kind: 'edit', accountId: a.accountId })}>
+              <Pencil className="w-4 h-4" /> Edit template
+            </button>
+          </div>
+        ))}
       </div>
     );
   };

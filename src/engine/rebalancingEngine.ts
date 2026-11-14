@@ -264,3 +264,36 @@ export function calculateRebalance(
     transactions,
   };
 }
+
+// Fraction of the allowed band width the gauge scale extends past each bound, so a fund that is
+// slightly out of band is drawn beyond the bound instead of pinned to the edge.
+export const GAUGE_OVERRUN_FRACTION = 0.25;
+
+export interface GaugeGeometry {
+  /** 0 to 1 along the scale, clamped, where the current percent sits. */
+  marker: number;
+  /** 0 to 1 along the scale for the target, lower bound, and upper bound. */
+  target: number;
+  lower: number;
+  upper: number;
+  /** Set when the current percent is beyond the drawn scale. */
+  clamped: 'low' | 'high' | null;
+}
+
+export function gaugeGeometry(
+  currentPercent: number,
+  targetPercent: number,
+  thresholdPoints: number
+): GaugeGeometry {
+  const halfBand = thresholdPoints > 0 ? thresholdPoints : 0;
+  const halfScale = halfBand * (1 + GAUGE_OVERRUN_FRACTION) || 1;
+  const toFraction = (value: number) => (value - (targetPercent - halfScale)) / (2 * halfScale);
+  const raw = toFraction(currentPercent);
+  return {
+    marker: Math.min(1, Math.max(0, raw)),
+    target: toFraction(targetPercent),
+    lower: toFraction(targetPercent - halfBand),
+    upper: toFraction(targetPercent + halfBand),
+    clamped: raw < 0 ? 'low' : raw > 1 ? 'high' : null,
+  };
+}

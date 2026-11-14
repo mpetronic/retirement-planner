@@ -8,6 +8,7 @@ import {
   RebalanceSnapshot,
 } from '../shared/types/rebalancing';
 import { calculateRebalance, parseDollarInput } from '../engine/rebalancingEngine';
+import { DeviationGauge } from './DeviationGauge';
 
 interface RebalanceWorksheetProps {
   account: RebalanceAccountTemplate;
@@ -168,7 +169,7 @@ export const RebalanceWorksheet: React.FC<RebalanceWorksheetProps> = ({
                 <input
                   className={`w-full bg-slate-950 border rounded-lg px-3 py-2 text-sm text-slate-100 outline-none focus:border-emerald-500 ${bad ? 'border-rose-500' : 'border-slate-700'}`}
                   inputMode="decimal"
-                  placeholder="$0.00"
+                  placeholder="Enter current value"
                   value={raw[f.symbol] ?? ''}
                   onChange={(e) => {
                     setRaw((prev) => ({ ...prev, [f.symbol]: e.target.value }));
@@ -183,6 +184,13 @@ export const RebalanceWorksheet: React.FC<RebalanceWorksheetProps> = ({
           <p className="text-sm text-rose-400">Enter a non-negative dollar amount for {parsed.invalid.join(', ')}.</p>
         )}
       </div>
+
+      {parsed.missing.length > 0 && (
+        <p className="text-sm text-slate-400">
+          Enter the current value of each fund to see what to trade ({account.funds.length - parsed.missing.length} of{' '}
+          {account.funds.length} entered).
+        </p>
+      )}
 
       {complete && !result && (
         <p className="text-sm text-amber-400">Enter at least one value.</p>
@@ -229,7 +237,18 @@ export const RebalanceWorksheet: React.FC<RebalanceWorksheetProps> = ({
                     <td className="p-3 text-right text-slate-200">{usd(f.value)}</td>
                     <td className="p-3 text-right text-slate-200">{pct(f.currentPercent)}</td>
                     <td className="p-3 text-right text-slate-400">{pct(f.targetPercent)}</td>
-                    <td className="p-3 text-right text-slate-200">{signedPct(f.deviationPoints)}</td>
+                    <td className="p-3 text-right text-slate-200">
+                      <div className="flex items-center justify-end gap-3">
+                        <span>{signedPct(f.deviationPoints)}</span>
+                        <DeviationGauge
+                          symbol={f.symbol}
+                          currentPercent={f.currentPercent}
+                          targetPercent={f.targetPercent}
+                          thresholdPoints={account.thresholdPoints}
+                          status={f.status}
+                        />
+                      </div>
+                    </td>
                     <td className="p-3">
                       <span className={`px-2 py-0.5 rounded-md text-xs font-semibold ${STATUS_STYLES[f.status]}`}>{STATUS_LABELS[f.status]}</span>
                     </td>
