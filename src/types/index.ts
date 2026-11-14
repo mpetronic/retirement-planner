@@ -165,7 +165,7 @@ export interface OneTimeExpenseMetadata {
 }
 
 export const DEFAULT_EXPENSE_CATEGORIES: string[] = [
-  'Housing',
+  'Home',
   'Transportation',
   'Living',
   'Insurance',
@@ -379,6 +379,7 @@ export interface YearActualsRecord {
   
   // Realized expenses & inflows
   totalLivingExpenses?: number | null;
+  loggedTotalSpending?: number | null; // Sum of every logged expense for the year (SSOT), refreshed from storage
   categoryExpenses?: Record<string, number>;
   healthcareOOP?: number | null; // Realized healthcare out-of-pocket (deductibles, co-pays, prescriptions)
   preMedicareHealthcareCost?: number | null;
@@ -538,6 +539,9 @@ export interface SimulationResultRow {
   livingExpenses: number;
   plannedBaseLivingExpenses?: number; // Base recurring living budget before OOP and one-time
   plannedLivingExpenses?: number; // Total planned living expenses including healthcare OOP allowance
+  plannedHealthcarePremiums?: number; // Modeled premiums and IRMAA, before any realized overrides
+  plannedTotalSpending?: number; // Planned living + OOP + premiums + IRMAA (taxes excluded); guardrail basis
+  totalSpending?: number; // Realized or modeled living + OOP + premiums + IRMAA (taxes excluded)
   healthcareOOP?: number; // Realized or modeled healthcare OOP cost (deductibles, co-pays, coinsurance)
   plannedHealthcareOOP?: number; // Maximum planned annual healthcare OOP ceiling / allowance
   medicareBasePremiums: number;

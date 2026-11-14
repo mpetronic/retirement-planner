@@ -1138,7 +1138,7 @@ describe('runRetirementSimulation fixes', () => {
       const normalized = normalizeDetailedExpenses(legacy);
       expect(normalized.catalog).toBeDefined();
       expect(normalized.catalog.items.length).toBeGreaterThan(0);
-      expect(normalized.catalog.categories).toContain('Housing');
+      expect(normalized.catalog.categories).toContain('Home');
       expect(normalized.costs.MD.amenityFee).toBe(150);
       expect(normalized.costs.FL.amenityFee).toBe(190);
       expect(normalized.frequencies.amenityFee).toBe(12);
@@ -1860,10 +1860,26 @@ describe('runRetirementSimulation fixes', () => {
       const ledger = runRetirementSimulation(inputs);
       const row2026 = ledger.find(r => r.year === 2026);
       expect(row2026).toBeDefined();
-      expect(row2026?.guardrailUpperLimit).toBeCloseTo(115000, 1); // 100k * 1.15
-      expect(row2026?.guardrailLowerLimit).toBeCloseTo(85000, 1);  // 100k * 0.85
+      // Guardrail basis is healthcare inclusive: 100k living + planned premiums and IRMAA
+      const planned2026 = 100000 + (row2026?.plannedHealthcarePremiums ?? 0);
+      expect(row2026?.plannedTotalSpending).toBeCloseTo(planned2026, 1);
+      expect(row2026?.guardrailUpperLimit).toBeCloseTo(planned2026 * 1.15, 1);
+      expect(row2026?.guardrailLowerLimit).toBeCloseTo(planned2026 * 0.85, 1);
       expect(row2026?.actualSurplusGap).toBeGreaterThan(15000);
-      expect(row2026?.permittedSpendingBonus).toBeLessThanOrEqual(15000.01); // Capped by upper guardrail ceiling ($115k - $100k = $15k)
+      expect(row2026?.permittedSpendingBonus).toBeLessThanOrEqual(planned2026 * 0.15 + 0.01); // Capped by upper guardrail ceiling
+    });
+
+    it('uses logged total spending as the realized total and keeps planned on the same scope', () => {
+      const inputs = getBaseActualsTestInputs();
+      inputs.actualTracking = {
+        2026: { year: 2026, totalLivingExpenses: 50000, loggedTotalSpending: 72000 },
+      };
+      const row2026 = runRetirementSimulation(inputs).find(r => r.year === 2026);
+      expect(row2026?.totalSpending).toBe(72000);
+      expect(row2026?.plannedTotalSpending).toBeCloseTo(
+        (row2026?.plannedLivingExpenses ?? 0) + (row2026?.plannedHealthcarePremiums ?? 0),
+        2
+      );
     });
 
     it('should compute Guardrail planned budget from detailed expenses when useDetailedExpenses is true', () => {
@@ -1880,9 +1896,9 @@ describe('runRetirementSimulation fixes', () => {
       inputs.useDetailedExpenses = true;
       inputs.detailedExpenses = {
         catalog: {
-          categories: ['Housing', 'Food'],
+          categories: ['Home', 'Food'],
           items: [
-            { id: 'rent', name: 'Rent', category: 'Housing', defaultFrequency: 12 },
+            { id: 'rent', name: 'Rent', category: 'Home', defaultFrequency: 12 },
             { id: 'groceries', name: 'Groceries', category: 'Food', defaultFrequency: 12 },
           ],
         },
@@ -1911,8 +1927,9 @@ describe('runRetirementSimulation fixes', () => {
       expect(row2026).toBeDefined();
 
       // Guardrail upper/lower limits should be based on $69,813, NOT $54,603
-      expect(row2026?.guardrailUpperLimit).toBeCloseTo(69813 * 1.15, 0);
-      expect(row2026?.guardrailLowerLimit).toBeCloseTo(69813 * 0.85, 0);
+      const planned2026 = 69813 + (row2026?.plannedHealthcarePremiums ?? 0);
+      expect(row2026?.guardrailUpperLimit).toBeCloseTo(planned2026 * 1.15, 0);
+      expect(row2026?.guardrailLowerLimit).toBeCloseTo(planned2026 * 0.85, 0);
 
       // Spending variance should be 0 because actuals exactly equaled the detailed budget
       // and surplus gap should not flag a false $15,210 deficit
@@ -2243,12 +2260,12 @@ describe('runRetirementSimulation fixes', () => {
       // One-time 2: $25,000 roof in Year 5 (2030)
       inputs.detailedExpenses = {
         catalog: {
-          categories: ['Housing', 'One-Time Setup Costs'],
+          categories: ['Home', 'One-Time Setup Costs'],
           items: [
             {
               id: 'rent',
               name: 'Rent / Mortgage',
-              category: 'Housing',
+              category: 'Home',
               defaultFrequency: 12,
               isOneTime: false,
             },
@@ -2326,12 +2343,12 @@ describe('runRetirementSimulation fixes', () => {
 
       inputs.detailedExpenses = {
         catalog: {
-          categories: ['Housing', 'One-Time Setup Costs'],
+          categories: ['Home', 'One-Time Setup Costs'],
           items: [
             {
               id: 'base',
               name: 'Living Baseline',
-              category: 'Housing',
+              category: 'Home',
               defaultFrequency: 12,
               isOneTime: false,
             },
@@ -2378,7 +2395,7 @@ describe('runRetirementSimulation fixes', () => {
       inputs.useDetailedExpenses = true;
       inputs.detailedExpenses = {
         catalog: {
-          categories: ['Living', 'Housing'],
+          categories: ['Living', 'Home'],
           items: [
             {
               id: 'gas',
@@ -2390,14 +2407,14 @@ describe('runRetirementSimulation fixes', () => {
             {
               id: 'snowPlow',
               name: 'Snow Plowing',
-              category: 'Housing',
+              category: 'Home',
               defaultFrequency: 12,
               applicableStates: ['MD'],
             },
             {
               id: 'termite',
               name: 'Termite Bond',
-              category: 'Housing',
+              category: 'Home',
               defaultFrequency: 12,
               applicableStates: ['FL'],
             },

@@ -21,6 +21,8 @@ describe('PlanSyncService', () => {
     };
 
     vi.stubGlobal('localStorage', storageObj);
+    // Node 21+ defines a global navigator without onLine, which reads as offline
+    vi.stubGlobal('navigator', { onLine: true });
     vi.stubGlobal('window', {
       localStorage: storageObj,
       location: { hostname: 'app.myretirement.com' },

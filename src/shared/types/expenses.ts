@@ -22,6 +22,8 @@ export interface ActualExpense {
   enteredBy: string; // e.g. "Mike" | "Wife"
   notes?: string;
   tags?: string[];
+  /** Shared by all rows of one split receipt; the receipt total is the sum of the group's rows. */
+  splitGroupId?: string;
   syncStatus: SyncStatus;
   createdAt: string; // ISO timestamp
   updatedAt: string; // ISO timestamp

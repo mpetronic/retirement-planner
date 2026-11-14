@@ -8,6 +8,9 @@ export interface ExpenseExportFieldConfig {
   format?: (value: unknown) => string | number;
 }
 
+const DYNAMODB_SHEET_NAME = 'DynamoDB Expenses';
+const LOCAL_SHEET_NAME = 'Local Expenses';
+
 export const KNOWN_DB_EXPENSE_COLUMNS: ExpenseExportFieldConfig[] = [
   { key: 'date', label: 'Date', width: 14 },
   { key: 'amount', label: 'Amount ($)', width: 14, format: (v) => (typeof v === 'number' ? v : Number(v) || 0) },
@@ -93,7 +96,10 @@ export function formatDbExpensesForSpreadsheet(
 /**
  * Builds an Excel workbook Blob with all DynamoDB expenses.
  */
-export function generateExpensesExcelBlob(expenses: Array<Record<string, unknown>>): Blob {
+export function generateExpensesExcelBlob(
+  expenses: Array<Record<string, unknown>>,
+  sheetName: string = DYNAMODB_SHEET_NAME
+): Blob {
   const rows = formatDbExpensesForSpreadsheet(expenses);
   const wb = XLSX.utils.book_new();
 
@@ -113,7 +119,7 @@ export function generateExpensesExcelBlob(expenses: Array<Record<string, unknown
     ws['!cols'] = cols;
   }
 
-  XLSX.utils.book_append_sheet(wb, ws, 'DynamoDB Expenses');
+  XLSX.utils.book_append_sheet(wb, ws, sheetName);
 
   const wbout = XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
   return new Blob([wbout], {
@@ -122,14 +128,19 @@ export function generateExpensesExcelBlob(expenses: Array<Record<string, unknown
 }
 
 /**
- * Initiates the file save / download flow for DynamoDB expenses.
+ * Initiates the file save / download flow for expenses. The sheet name and default
+ * filename identify whether the data came from DynamoDB or the local browser database.
  */
 export async function downloadExpensesSpreadsheet(
   expenses: Array<Record<string, unknown>>,
-  suggestedFilename?: string
+  suggestedFilename?: string,
+  source: 'cloud' | 'local' = 'cloud'
 ): Promise<SaveFileResult> {
-  const blob = generateExpensesExcelBlob(expenses);
+  const isLocal = source === 'local';
+  const blob = generateExpensesExcelBlob(expenses, isLocal ? LOCAL_SHEET_NAME : DYNAMODB_SHEET_NAME);
   const dateStr = new Date().toISOString().split('T')[0];
-  const filename = suggestedFilename || `RetirementPlanner_DynamoDB_Expenses_${dateStr}.xlsx`;
+  const filename =
+    suggestedFilename ||
+    `RetirementPlanner_${isLocal ? 'Local' : 'DynamoDB'}_Expenses_${dateStr}.xlsx`;
   return saveFileWithLocationPrompt(blob, filename, 'excel', true);
 }

@@ -10,7 +10,6 @@ import {
   WifiOff,
   History,
   X,
-  Sparkles,
   Utensils,
   ShoppingCart,
   Zap,
@@ -33,6 +32,7 @@ import {
   Pencil,
   Check,
   Smartphone,
+  Split,
 } from 'lucide-react';
 import { getStorageAdapter, AwsCloudStorageAdapter, PlanSyncService } from '../../shared/storage';
 import { ActualExpense, ExpenseCategory } from '../../shared/types/expenses';
@@ -40,16 +40,27 @@ import { resolveLoggedInPayerName } from '../../shared/utils/profileNames';
 import { AuthService } from '../../shared/auth/AuthService';
 import { isLocalhostEnvironment } from '../../shared/utils/appMode';
 import { CloudAuthModal } from '../../components/CloudAuthModal';
-import { AboutDialog } from '../../components/AboutDialog';
+import { ExpenserAboutDialog } from './ExpenserAboutDialog';
+import { EXPENSER_ICON_PATH } from './expenserBranding';
 import { getVersionInfo } from '../../utils/version';
+import {
+  SplitReceiptDialog,
+  type SplitReceiptInitial,
+  type SplitReceiptResult,
+} from '../../components/SplitReceiptDialog';
+import { decideExpenseCacheReset, EXPENSE_SCHEMA_VERSION } from '../../shared/storage/expenseCacheReset';
+import { emptyBlock, fromCents, newBlockKey, newSplitGroupId, toCents } from '../../utils/expenseSplit';
 import {
   getPlannerExpenseCatalog,
   getPlannerCategories,
   mergeWithCustomCategories,
+  sortPlannerExpenseItems,
   savePlannerExpenseLineItem,
   syncPlannerCatalogToCloudStorage,
   PlannerExpenseLineItem,
 } from '../../shared/utils/plannerCategories';
+import { groupExpensesByDay } from '../../shared/utils/recentExpenseGroups';
+import { detectHorizontalSwipe } from '../../shared/utils/swipeGesture';
 
 const ICON_MAP: Record<string, React.ReactNode> = {
   Utensils: <Utensils className="w-4 h-4" />,
@@ -129,7 +140,8 @@ export const ExpenserApp: React.FC = () => {
   const [isSyncingPlan, setIsSyncingPlan] = useState<boolean>(false);
   const [pullDistance, setPullDistance] = useState<number>(0);
   const [syncFeedback, setSyncFeedback] = useState<{ message: string; type: 'success' | 'error' | 'info' } | null>(null);
-  const touchStartRef = useRef<{ y: number; x: number; active: boolean }>({ y: 0, x: 0, active: false });
+  const touchStartRef = useRef<{ y: number; x: number; t: number; active: boolean }>({ y: 0, x: 0, t: 0, active: false });
+  const recentSwipeRef = useRef<{ y: number; x: number; t: number; active: boolean }>({ y: 0, x: 0, t: 0, active: false });
   const [currentUserEmail, setCurrentUserEmail] = useState<string>(() => AuthService.getSession()?.email || '');
   const [isAuthenticated, setIsAuthenticated] = useState<boolean>(() => AuthService.isAuthenticated());
   const versionInfo = useMemo(() => getVersionInfo(), []);
@@ -144,8 +156,7 @@ export const ExpenserApp: React.FC = () => {
     return 'Saved changes will update your expense ledger.';
   }, [isAuthenticated]);
 
-  // Selection and editing state for Recent Expenses
-  const [selectedExpenseIds, setSelectedExpenseIds] = useState<string[]>([]);
+  // Editing state for Recent Expenses
   const [editingExpense, setEditingExpense] = useState<ActualExpense | null>(null);
   const [editAmountStr, setEditAmountStr] = useState<string>('');
   const [editDate, setEditDate] = useState<string>('');
@@ -155,6 +166,18 @@ export const ExpenserApp: React.FC = () => {
   const [editNotes, setEditNotes] = useState<string>('');
   const [isSavingEdit, setIsSavingEdit] = useState<boolean>(false);
   const [editError, setEditError] = useState<string | null>(null);
+
+  // Split receipt dialog (new split, split of an existing expense, or edit of a saved split group)
+  const [splitDialog, setSplitDialog] = useState<{
+    mode: 'new' | 'edit';
+    groupId?: string;
+    originalRows: ActualExpense[];
+    initial: SplitReceiptInitial;
+  } | null>(null);
+  const [isSavingSplit, setIsSavingSplit] = useState<boolean>(false);
+  const [splitError, setSplitError] = useState<string | null>(null);
+  // Receipt totals per split group, calculated from the stored rows (never persisted)
+  const [splitGroupTotals, setSplitGroupTotals] = useState<Record<string, { cents: number; count: number }>>({});
 
   // Mobile / PWA vs Desktop Browser Detection
   const [isMobileOrPwa, setIsMobileOrPwa] = useState<boolean>(() => checkIsMobileOrInstalledPwa());
@@ -260,13 +283,14 @@ export const ExpenserApp: React.FC = () => {
     const plannerItems = getPlannerExpenseCatalog();
     const merged = mergeWithCustomCategories(plannerItems, categories, allowedPlannerCategories);
 
-    return merged.filter(item => {
+    const allowed = merged.filter(item => {
       const groupLower = item.groupCategory.trim().toLowerCase();
       if (allowedPlannerCategories.length > 0 && !allowedPlannerCategories.some(c => c.trim().toLowerCase() === groupLower)) {
         return false;
       }
       return true;
     });
+    return sortPlannerExpenseItems(allowed, allowedPlannerCategories);
   }, [categories, allowedPlannerCategories, planVersion]);
 
   // Filtered Catalog Items by Search Query
@@ -295,6 +319,12 @@ export const ExpenserApp: React.FC = () => {
   }, [allCatalogItems, editCategoryQuery]);
 
   const editSelectedCategoryObj = allCatalogItems.find(c => c.id === editCategoryId);
+
+  // Recent Transactions grouped under day headers for the active sort
+  const recentDayGroups = useMemo(
+    () => groupExpensesByDay(recentExpenses, recentSortBy),
+    [recentExpenses, recentSortBy]
+  );
 
   // Keyboard Navigation for Category Search
   const handleSearchKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
@@ -407,7 +437,7 @@ export const ExpenserApp: React.FC = () => {
         }
       }
 
-      // 2. Actively purge obsolete/stale categories (e.g. Housing - Home Maintenance & Repairs) from storage
+      // 2. Actively purge obsolete/stale categories (e.g. Home - Home Maintenance & Repairs) from storage
       if (detailedExpenses) {
         await syncPlannerCatalogToCloudStorage(detailedExpenses, adapter, profileNames, activeState);
       }
@@ -418,7 +448,10 @@ export const ExpenserApp: React.FC = () => {
 
       const plannerItems = getPlannerExpenseCatalog(activeState);
       const allowedCategories = getPlannerCategories();
-      const merged = mergeWithCustomCategories(plannerItems, cats, allowedCategories);
+      const merged = sortPlannerExpenseItems(
+        mergeWithCustomCategories(plannerItems, cats, allowedCategories),
+        allowedCategories
+      );
       if (merged.length > 0 && !selectedCategoryId) {
         setSelectedCategoryId(merged[0].id);
       }
@@ -460,25 +493,31 @@ export const ExpenserApp: React.FC = () => {
   useEffect(() => {
     const checkSchemaVersionAndFlush = async () => {
       if (typeof window === 'undefined') return;
-      const currentVersion = window.localStorage.getItem('expenser_schema_version');
-      if (currentVersion !== '2') {
-        try {
+      const action = decideExpenseCacheReset({
+        storedVersion: window.localStorage.getItem('expenser_schema_version'),
+        isCloudBacked: adapter instanceof AwsCloudStorageAdapter,
+        canReachCloud: navigator.onLine && AuthService.isAuthenticated(),
+      });
+      if (action === 'none' || action === 'defer') return;
+
+      try {
+        if (action === 'clear-and-repull') {
           if (adapter.clearAllExpenses) {
             await adapter.clearAllExpenses();
           }
-          window.localStorage.setItem('expenser_schema_version', '2');
-          if (navigator.onLine && AuthService.isAuthenticated() && adapter.getAllExpensesFromCloud) {
+          if (adapter.getAllExpensesFromCloud) {
             await adapter.getAllExpensesFromCloud();
           }
-          setSyncFeedback({
-            message: 'Expense cache updated to unified schema.',
-            type: 'info',
-          });
-          setTimeout(() => setSyncFeedback(null), 3000);
-          await loadData();
-        } catch (err) {
-          console.warn('Failed to perform schema cache refresh:', err);
         }
+        window.localStorage.setItem('expenser_schema_version', EXPENSE_SCHEMA_VERSION);
+        setSyncFeedback({
+          message: 'Expense cache updated to unified schema.',
+          type: 'info',
+        });
+        setTimeout(() => setSyncFeedback(null), 3000);
+        await loadData();
+      } catch (err) {
+        console.warn('Failed to perform schema cache refresh:', err);
       }
     };
     checkSchemaVersionAndFlush();
@@ -612,6 +651,11 @@ export const ExpenserApp: React.FC = () => {
         adapter.invalidateCategoryCache();
         await adapter.getCategories(true);
         await adapter.flushPendingExpenses();
+        // Pull the newest household expenses so a spouse's entries merge into Recent.
+        // Failure here must not fail the plan/category sync.
+        await adapter.syncLatestExpensesFromCloud().catch(err => {
+          console.warn('Latest expenses pull failed:', err);
+        });
       }
 
       // 3. Reload Expenser local state
@@ -619,8 +663,8 @@ export const ExpenserApp: React.FC = () => {
 
       if (isManual) {
         const msg = result.action === 'downloaded'
-          ? 'Categories & Plan updated from cloud!'
-          : 'Categories are up to date';
+          ? 'Categories, plan & recent expenses updated from cloud!'
+          : 'Categories & recent expenses are up to date';
         setSyncFeedback({ message: msg, type: 'success' });
         triggerHaptic(15);
         setTimeout(() => setSyncFeedback(null), 2500);
@@ -672,6 +716,8 @@ export const ExpenserApp: React.FC = () => {
       showAboutModal ||
       isMenuOpen ||
       isSavingEdit ||
+      editingExpense !== null ||
+      splitDialog !== null ||
       isCategorySearchOpen ||
       isEditCategoryPickerOpen
     ) {
@@ -684,7 +730,7 @@ export const ExpenserApp: React.FC = () => {
       return;
     }
     const touch = e.touches[0];
-    touchStartRef.current = { y: touch.clientY, x: touch.clientX, active: true };
+    touchStartRef.current = { y: touch.clientY, x: touch.clientX, t: Date.now(), active: true };
   };
 
   const handleTouchMove = (e: React.TouchEvent) => {
@@ -705,14 +751,60 @@ export const ExpenserApp: React.FC = () => {
     }
   };
 
-  const handleTouchEnd = () => {
+  const handleTouchEnd = (e: React.TouchEvent) => {
     if (!touchStartRef.current.active) return;
     touchStartRef.current.active = false;
+
+    // Left swipe on the main screen opens Recent Transactions
+    const endTouch = e.changedTouches[0];
+    if (endTouch) {
+      const swipe = detectHorizontalSwipe({
+        startX: touchStartRef.current.x,
+        startY: touchStartRef.current.y,
+        endX: endTouch.clientX,
+        endY: endTouch.clientY,
+        durationMs: Date.now() - touchStartRef.current.t,
+        viewportWidth: window.innerWidth,
+      });
+      if (swipe === 'left') {
+        triggerHaptic(15);
+        setPullDistance(0);
+        setShowRecentModal(true);
+        return;
+      }
+    }
+
     if (pullDistance >= 55 && !isSyncingPlan) {
       triggerHaptic(15);
       syncPlanAndCategories(true);
     }
     setPullDistance(0);
+  };
+
+  // Right swipe inside the Recent Transactions sheet returns to the main screen
+  const handleRecentTouchStart = (e: React.TouchEvent) => {
+    const touch = e.touches[0];
+    if (!touch) return;
+    recentSwipeRef.current = { y: touch.clientY, x: touch.clientX, t: Date.now(), active: true };
+  };
+
+  const handleRecentTouchEnd = (e: React.TouchEvent) => {
+    if (!recentSwipeRef.current.active) return;
+    recentSwipeRef.current.active = false;
+    const endTouch = e.changedTouches[0];
+    if (!endTouch) return;
+    const swipe = detectHorizontalSwipe({
+      startX: recentSwipeRef.current.x,
+      startY: recentSwipeRef.current.y,
+      endX: endTouch.clientX,
+      endY: endTouch.clientY,
+      durationMs: Date.now() - recentSwipeRef.current.t,
+      viewportWidth: window.innerWidth,
+    });
+    if (swipe === 'right') {
+      triggerHaptic(15);
+      setShowRecentModal(false);
+    }
   };
 
   const handleTouchCancel = () => {
@@ -889,43 +981,183 @@ export const ExpenserApp: React.FC = () => {
     setIsCategorySearchOpen(false);
   };
 
-  // Toggle selection for bulk actions
-  const handleToggleSelectExpense = (id: string) => {
-    setSelectedExpenseIds(prev =>
-      prev.includes(id) ? prev.filter(item => item !== id) : [...prev, id]
-    );
+  // All stored rows of one split receipt
+  const fetchSplitGroupRows = useCallback(
+    async (groupId: string, date: string): Promise<ActualExpense[]> => {
+      const rows = await adapter.getExpenses(Number(date.slice(0, 4)));
+      return rows.filter(row => row.splitGroupId === groupId);
+    },
+    [adapter]
+  );
+
+  // Keep calculated receipt totals current for any split rows in the recent list
+  useEffect(() => {
+    const splitRows = recentExpenses.filter(exp => exp.splitGroupId);
+    if (splitRows.length === 0) {
+      setSplitGroupTotals({});
+      return;
+    }
+    let cancelled = false;
+    const years = [...new Set(splitRows.map(exp => Number(exp.date.slice(0, 4))))];
+    Promise.all(years.map(year => adapter.getExpenses(year)))
+      .then(perYear => {
+        if (cancelled) return;
+        const totals: Record<string, { cents: number; count: number }> = {};
+        for (const row of perYear.flat()) {
+          if (!row.splitGroupId) continue;
+          const entry = totals[row.splitGroupId] ?? { cents: 0, count: 0 };
+          entry.cents += toCents(row.amount);
+          entry.count += 1;
+          totals[row.splitGroupId] = entry;
+        }
+        setSplitGroupTotals(totals);
+      })
+      .catch(err => console.warn('Failed to calculate split receipt totals:', err));
+    return () => {
+      cancelled = true;
+    };
+  }, [recentExpenses, adapter]);
+
+  const openSplitFromEntry = () => {
+    triggerHaptic(10);
+    setSplitError(null);
+    setSplitDialog({
+      mode: 'new',
+      originalRows: [],
+      initial: {
+        date: expenseDate,
+        merchant: notes,
+        totalText: parsedAmount > 0 ? parsedAmount.toFixed(2) : '',
+        blocks: [selectedCategoryId ? { ...emptyBlock(), catalogId: selectedCategoryId } : emptyBlock()],
+      },
+    });
   };
 
-  const handleSelectAllExpenses = () => {
-    if (selectedExpenseIds.length === recentExpenses.length) {
-      setSelectedExpenseIds([]);
-    } else {
-      setSelectedExpenseIds(recentExpenses.map(e => e.expenseId));
+  const openSplitFromExisting = (exp: ActualExpense) => {
+    setSplitError(null);
+    setSplitDialog({
+      mode: 'new',
+      originalRows: [exp],
+      initial: {
+        date: exp.date,
+        merchant: exp.notes || '',
+        totalText: exp.amount.toFixed(2),
+        blocks: [
+          {
+            key: newBlockKey(),
+            catalogId: exp.catalogId || exp.categoryId || '',
+            expenseId: exp.expenseId,
+            amounts: [exp.amount.toFixed(2)],
+          },
+        ],
+      },
+    });
+  };
+
+  const openSplitGroupEditor = async (exp: ActualExpense) => {
+    if (!exp.splitGroupId) return;
+    const rows = await fetchSplitGroupRows(exp.splitGroupId, exp.date);
+    if (rows.length === 0) return;
+    setSplitError(null);
+    setSplitDialog({
+      mode: 'edit',
+      groupId: exp.splitGroupId,
+      originalRows: rows,
+      initial: {
+        date: rows[0].date,
+        merchant: rows[0].notes || '',
+        totalText: null,
+        blocks: rows.map(row => ({
+          key: newBlockKey(),
+          catalogId: row.catalogId || row.categoryId || '',
+          expenseId: row.expenseId,
+          amounts: [row.amount.toFixed(2)],
+        })),
+      },
+    });
+  };
+
+  const handleSaveSplit = async (result: SplitReceiptResult) => {
+    if (!splitDialog) return;
+    setIsSavingSplit(true);
+    setSplitError(null);
+    try {
+      const groupId = splitDialog.groupId ?? newSplitGroupId();
+      const originals = splitDialog.originalRows;
+      const enteredBy = originals[0]?.enteredBy || payerName || resolveLoggedInPayerName();
+      const keptIds = new Set(result.blocks.map(block => block.expenseId).filter(Boolean));
+
+      for (const block of result.blocks) {
+        const item = allCatalogItems.find(c => c.id === block.catalogId);
+        const category = item?.groupCategory || 'Uncategorized';
+        const name = item?.name || item?.displayName || 'Expense';
+        const fields = {
+          date: result.date,
+          amount: fromCents(block.cents),
+          catalogId: block.catalogId,
+          category,
+          name,
+          categoryId: block.catalogId,
+          categoryName: `${category} - ${name}`,
+          notes: result.merchant || undefined,
+          splitGroupId: groupId,
+        };
+        if (block.expenseId) {
+          await adapter.updateExpense(block.expenseId, fields);
+        } else {
+          await adapter.saveExpense({ ...fields, enteredBy });
+        }
+      }
+      for (const original of originals) {
+        if (!keptIds.has(original.expenseId)) {
+          await adapter.deleteExpense(original.expenseId);
+        }
+      }
+
+      setSplitDialog(null);
+      if (splitDialog.mode === 'new' && originals.length === 0) {
+        setAmountStr('0');
+        setNotes('');
+      }
+      setShowSuccessBadge(true);
+      setTimeout(() => setShowSuccessBadge(false), 1800);
+      await loadData();
+    } catch (err) {
+      console.error('Failed to save split receipt:', err);
+      setSplitError(err instanceof Error ? err.message : 'Failed to save split receipt');
+    } finally {
+      setIsSavingSplit(false);
     }
   };
 
-  // Delete Expense (single)
+  const deleteSplitGroupRows = async (rows: ActualExpense[]) => {
+    for (const row of rows) {
+      await adapter.deleteExpense(row.expenseId);
+    }
+  };
+
+  const handleDeleteSplitGroup = async () => {
+    if (!splitDialog) return;
+    const count = splitDialog.originalRows.length;
+    if (!window.confirm(`Delete this whole split receipt (${count} categories)?`)) return;
+    await deleteSplitGroupRows(splitDialog.originalRows);
+    setSplitDialog(null);
+    await loadData();
+  };
+
+  // Delete Expense (single). Rows of a split receipt are deleted together.
   const handleDeleteExpense = async (id: string) => {
+    const target = recentExpenses.find(exp => exp.expenseId === id);
+    if (target?.splitGroupId) {
+      const rows = await fetchSplitGroupRows(target.splitGroupId, target.date);
+      if (!window.confirm(`This is part of a split receipt. Delete all ${rows.length} categories?`)) return;
+      await deleteSplitGroupRows(rows);
+      await loadData();
+      return;
+    }
     if (window.confirm('Delete this expense?')) {
       await adapter.deleteExpense(id);
-      setSelectedExpenseIds(prev => prev.filter(item => item !== id));
       if (editingExpense?.expenseId === id) {
-        setEditingExpense(null);
-      }
-      await loadData();
-    }
-  };
-
-  // Delete Selected Expenses (bulk)
-  const handleDeleteSelectedExpenses = async () => {
-    if (selectedExpenseIds.length === 0) return;
-    const count = selectedExpenseIds.length;
-    if (window.confirm(`Delete ${count} selected expense${count > 1 ? 's' : ''}?`)) {
-      for (const id of selectedExpenseIds) {
-        await adapter.deleteExpense(id);
-      }
-      setSelectedExpenseIds([]);
-      if (editingExpense && selectedExpenseIds.includes(editingExpense.expenseId)) {
         setEditingExpense(null);
       }
       await loadData();
@@ -934,6 +1166,10 @@ export const ExpenserApp: React.FC = () => {
 
   // Start editing an expense
   const handleStartEditExpense = (exp: ActualExpense) => {
+    if (exp.splitGroupId) {
+      void openSplitGroupEditor(exp);
+      return;
+    }
     setEditingExpense(exp);
     setEditAmountStr(exp.amount.toFixed(2));
     setEditDate(exp.date);
@@ -1015,9 +1251,11 @@ export const ExpenserApp: React.FC = () => {
       {/* Top App Header */}
       <header className="px-4 py-2.5 bg-slate-900/90 backdrop-blur border-b border-slate-800/80 shrink-0 z-30 flex items-center justify-between">
         <div className="flex items-center space-x-2.5">
-          <div className="w-8 h-8 rounded-xl bg-gradient-to-tr from-emerald-600 to-teal-400 flex items-center justify-center shadow-lg shadow-emerald-900/30">
-            <Sparkles className="w-4 h-4 text-white" />
-          </div>
+          <img
+            src={EXPENSER_ICON_PATH}
+            alt=""
+            className="w-9 h-9 rounded-xl border border-slate-700/60 shrink-0"
+          />
           <div>
             <h1 className="text-base font-bold tracking-tight text-white">
               Expenser
@@ -1221,7 +1459,7 @@ export const ExpenserApp: React.FC = () => {
                 <div>
                   <div className="text-sm font-medium">Sync Plan & Categories</div>
                   <div className="text-[11px] text-slate-400">
-                    {isSyncingPlan ? 'Syncing with cloud...' : 'Refresh categories from planner'}
+                    {isSyncingPlan ? 'Syncing with cloud...' : 'Refresh categories & latest household expenses'}
                   </div>
                 </div>
               </div>
@@ -1386,15 +1624,12 @@ export const ExpenserApp: React.FC = () => {
           <div className="flex items-center justify-between text-[11px] sm:text-xs font-semibold text-slate-400 uppercase tracking-wider mb-1 px-1">
             <span>Expense Name & Category</span>
             <button
-              onClick={() => {
-                if (categorySearchQuery.trim()) {
-                  setNewCatName(categorySearchQuery.trim());
-                }
-                setShowCategoryModal(true);
-              }}
-              className="text-emerald-400 hover:text-emerald-300 flex items-center gap-0.5 lowercase font-normal cursor-pointer"
+              type="button"
+              onClick={openSplitFromEntry}
+              className="px-2 py-0.5 rounded-md border border-amber-400/50 text-amber-300 hover:text-amber-200 hover:border-amber-300 normal-case font-semibold cursor-pointer"
+              title="Split one charge across several categories"
             >
-              <Plus className="w-3.5 h-3.5" /> new expense name
+              Split
             </button>
           </div>
 
@@ -1492,9 +1727,6 @@ export const ExpenserApp: React.FC = () => {
                           </span>
                           <span className="text-xs font-semibold truncate">{item.name}</span>
                         </div>
-                        <span className="text-[11px] text-slate-500 shrink-0 ml-2 font-mono">
-                          {item.displayName}
-                        </span>
                       </button>
                     );
                   })
@@ -1505,7 +1737,7 @@ export const ExpenserApp: React.FC = () => {
 
           {/* Frequently Logged Shortcuts */}
           {frequentShortcutItems.length > 0 && (
-            <div className="flex space-x-1.5 overflow-x-auto pt-1 pb-0.5 scrollbar-none snap-x items-center">
+            <div data-scrollable="true" className="flex space-x-1.5 overflow-x-auto pt-1 pb-0.5 scrollbar-none snap-x items-center">
               <span className="text-[10px] uppercase font-bold text-slate-500 tracking-wider shrink-0 mr-0.5">
                 Frequent:
               </span>
@@ -1610,65 +1842,31 @@ export const ExpenserApp: React.FC = () => {
 
       {/* Recent Expenses Modal / Drawer */}
       {showRecentModal && (
-        <div className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-sm flex flex-col justify-end sm:justify-center p-0 sm:p-4 animate-in fade-in">
+        <div
+          className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-sm flex flex-col justify-end sm:justify-center p-0 sm:p-4 animate-in fade-in"
+          onTouchStart={handleRecentTouchStart}
+          onTouchEnd={handleRecentTouchEnd}
+          onTouchCancel={() => {
+            recentSwipeRef.current.active = false;
+          }}
+        >
           <div className="bg-slate-900 border border-slate-800 rounded-t-3xl sm:rounded-3xl max-h-[85vh] flex flex-col max-w-md w-full mx-auto shadow-2xl overflow-hidden">
-            {/* Header: Normal or Multi-Select Action Bar */}
+            {/* Header */}
             <div className="p-4 border-b border-slate-800 flex items-center justify-between">
-              {selectedExpenseIds.length > 0 ? (
-                <div className="flex items-center justify-between w-full">
-                  <div className="flex items-center space-x-2">
-                    <span className="text-xs font-bold px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
-                      {selectedExpenseIds.length} selected
-                    </span>
-                    <button
-                      type="button"
-                      onClick={handleSelectAllExpenses}
-                      className="text-xs text-slate-400 hover:text-white underline cursor-pointer"
-                    >
-                      {selectedExpenseIds.length === recentExpenses.length ? 'Deselect all' : 'Select all'}
-                    </button>
-                  </div>
-                  <div className="flex items-center space-x-2">
-                    <button
-                      type="button"
-                      onClick={handleDeleteSelectedExpenses}
-                      className="flex items-center space-x-1 px-2.5 py-1 rounded-lg bg-rose-500/20 hover:bg-rose-500/30 text-rose-300 border border-rose-500/40 text-xs font-semibold cursor-pointer transition-colors"
-                      title="Delete selected entries"
-                    >
-                      <Trash2 className="w-3.5 h-3.5" />
-                      <span>Delete ({selectedExpenseIds.length})</span>
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setSelectedExpenseIds([])}
-                      className="p-1 rounded-lg bg-slate-800 text-slate-400 hover:text-white"
-                      title="Cancel selection"
-                    >
-                      <X className="w-4 h-4" />
-                    </button>
-                  </div>
-                </div>
-              ) : (
-                <>
-                  <div className="flex items-center space-x-2">
-                    <History className="w-5 h-5 text-emerald-400" />
-                    <h2 className="text-base font-bold text-white">Recent Transactions</h2>
-                    <span className="text-xs px-2 py-0.5 rounded-full bg-slate-800 text-slate-400 font-medium">
-                      {recentExpenses.length}
-                    </span>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setShowRecentModal(false);
-                      setSelectedExpenseIds([]);
-                    }}
-                    className="p-1.5 rounded-lg bg-slate-800 text-slate-400 hover:text-white"
-                  >
-                    <X className="w-4 h-4" />
-                  </button>
-                </>
-              )}
+              <div className="flex items-center space-x-2">
+                <History className="w-5 h-5 text-emerald-400" />
+                <h2 className="text-base font-bold text-white">Recent Transactions</h2>
+                <span className="text-xs px-2 py-0.5 rounded-full bg-slate-800 text-slate-400 font-medium">
+                  {recentExpenses.length}
+                </span>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowRecentModal(false)}
+                className="p-1.5 rounded-lg bg-slate-800 text-slate-400 hover:text-white"
+              >
+                <X className="w-4 h-4" />
+              </button>
             </div>
 
             {/* Sort Order Selector */}
@@ -1700,99 +1898,76 @@ export const ExpenserApp: React.FC = () => {
               </div>
             </div>
 
-            <div className="p-4 overflow-y-auto space-y-2 flex-1 divide-y divide-slate-800/60 custom-scrollbar">
+            <div className="px-4 pb-4 overflow-y-auto flex-1 custom-scrollbar">
               {recentExpenses.length === 0 ? (
                 <div className="text-center py-10 text-slate-500 text-sm">
                   No expenses logged yet.
                 </div>
               ) : (
-                recentExpenses.map(exp => {
-                  const isSelected = selectedExpenseIds.includes(exp.expenseId);
-                  return (
-                    <div
-                      key={exp.expenseId}
-                      className={`pt-2.5 pb-2.5 px-2 first:pt-1 rounded-xl flex items-center justify-between transition-colors ${
-                        isSelected
-                          ? 'bg-emerald-500/10 border border-emerald-500/30'
-                          : 'hover:bg-slate-800/40 border border-transparent'
-                      }`}
-                    >
-                      <div className="flex items-center space-x-3 min-w-0 flex-1">
-                        {/* Selection Checkbox */}
-                        <button
-                          type="button"
-                          onClick={() => handleToggleSelectExpense(exp.expenseId)}
-                          className={`w-5 h-5 rounded-md flex items-center justify-center border transition-all cursor-pointer shrink-0 ${
-                            isSelected
-                              ? 'bg-emerald-500 border-emerald-400 text-slate-950'
-                              : 'bg-slate-950 border-slate-700 hover:border-slate-500 text-transparent'
-                          }`}
-                          title={isSelected ? 'Deselect' : 'Select'}
-                        >
-                          <Check className="w-3.5 h-3.5 stroke-[3]" />
-                        </button>
-
-                        {/* Transaction Details (clickable to Edit) */}
-                        <div
-                          onClick={() => handleStartEditExpense(exp)}
-                          className="min-w-0 flex-1 cursor-pointer"
-                        >
-                          <div className="flex items-center space-x-1.5">
-                            <span className="font-semibold text-sm text-white">${exp.amount.toFixed(2)}</span>
-                            <span className="text-xs px-2 py-0.5 rounded-full bg-slate-800 text-slate-300 font-medium truncate max-w-[170px]" title={exp.category && exp.name ? `${exp.category} • ${exp.name}` : exp.categoryName}>
-                              {exp.category && exp.name ? `${exp.name}` : exp.categoryName}
-                              {exp.category && <span className="text-slate-500 ml-1">({exp.category})</span>}
-                            </span>
-                          </div>
-                          <div className="text-[11px] text-slate-400 mt-0.5 flex items-center space-x-1.5 flex-wrap">
-                            <span className={recentSortBy === 'occurred' ? 'text-emerald-300 font-semibold' : 'text-slate-300'}>
-                              {exp.date}
-                            </span>
-                            {exp.createdAt && (
-                              <>
-                                <span className="text-slate-600">•</span>
-                                <span
-                                  className={`text-[10px] ${recentSortBy === 'entered' ? 'text-emerald-300 font-semibold' : 'text-slate-500'}`}
-                                  title={`Logged at ${exp.createdAt}`}
-                                >
-                                  Logged {exp.createdAt.slice(0, 10)}
-                                </span>
-                              </>
-                            )}
-                            <span className="text-slate-600">•</span>
-                            <span>{exp.enteredBy}</span>
-                            {exp.notes && (
-                              <>
-                                <span className="text-slate-600">•</span>
-                                <span className="text-amber-300 truncate max-w-[130px]">{exp.notes}</span>
-                              </>
-                            )}
-                          </div>
-                        </div>
-                      </div>
-
-                      {/* Row Action Buttons */}
-                      <div className="flex items-center space-x-1 shrink-0 ml-2">
-                        <button
-                          type="button"
-                          onClick={() => handleStartEditExpense(exp)}
-                          className="p-2 text-slate-400 hover:text-emerald-400 hover:bg-emerald-500/10 rounded-lg transition-colors cursor-pointer"
-                          title="Edit transaction"
-                        >
-                          <Pencil className="w-4 h-4" />
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => handleDeleteExpense(exp.expenseId)}
-                          className="p-2 text-slate-500 hover:text-rose-400 hover:bg-rose-500/10 rounded-lg transition-colors cursor-pointer"
-                          title="Delete entry"
-                        >
-                          <Trash2 className="w-4 h-4" />
-                        </button>
-                      </div>
+                recentDayGroups.map(group => (
+                  <section key={`${group.dayKey}-${group.expenses[0].expenseId}`}>
+                    {/* Day header */}
+                    <div className="sticky top-0 z-10 -mx-4 px-6 py-1.5 bg-slate-800 text-[11px] font-semibold uppercase tracking-wider text-slate-200 border-y border-slate-700">
+                      {group.label}
                     </div>
-                  );
-                })
+                    <div className="divide-y divide-slate-800/60">
+                      {group.expenses.map(exp => {
+                        const displayName = exp.category && exp.name ? exp.name : exp.categoryName;
+                        const splitTotal = exp.splitGroupId ? splitGroupTotals[exp.splitGroupId] : undefined;
+                        return (
+                          <div
+                            key={exp.expenseId}
+                            role="button"
+                            tabIndex={0}
+                            onClick={() => handleStartEditExpense(exp)}
+                            onKeyDown={e => {
+                              if (e.key === 'Enter' || e.key === ' ') {
+                                e.preventDefault();
+                                handleStartEditExpense(exp);
+                              }
+                            }}
+                            title={exp.category && exp.name ? `${exp.category} • ${exp.name}` : exp.categoryName}
+                            className="py-2.5 px-2 rounded-xl cursor-pointer transition-colors hover:bg-slate-800/40"
+                          >
+                            <div className="flex items-center gap-2 min-w-0">
+                              <span className="flex-1 min-w-0 truncate text-sm font-semibold text-white">
+                                {displayName}
+                              </span>
+                              {exp.splitGroupId && (
+                                <span
+                                  className="inline-flex items-center gap-0.5 whitespace-nowrap shrink-0 text-[10px] px-1.5 py-0.5 rounded-full bg-amber-500/15 text-amber-300 border border-amber-500/30"
+                                  title="Part of a split receipt"
+                                >
+                                  <Split className="w-3 h-3" />
+                                  {splitTotal ? `$${fromCents(splitTotal.cents).toFixed(2)}` : null}
+                                </span>
+                              )}
+                              <span className="whitespace-nowrap shrink-0 text-sm font-semibold text-white">
+                                ${exp.amount.toFixed(2)}
+                              </span>
+                            </div>
+                            <div className="mt-0.5 text-[11px] text-slate-400 truncate">
+                              {recentSortBy === 'entered' && (
+                                <>
+                                  <span className="text-slate-300">{exp.date}</span>
+                                  <span className="text-slate-600"> • </span>
+                                </>
+                              )}
+                              {exp.category && exp.name && <span>{exp.category}<span className="text-slate-600"> • </span></span>}
+                              <span>{exp.enteredBy}</span>
+                              {exp.notes && (
+                                <>
+                                  <span className="text-slate-600"> • </span>
+                                  <span className="text-amber-300">{exp.notes}</span>
+                                </>
+                              )}
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </section>
+                ))
               )}
             </div>
 
@@ -1800,10 +1975,7 @@ export const ExpenserApp: React.FC = () => {
               <span>{recentExpenses.length} transactions stored locally</span>
               <button
                 type="button"
-                onClick={() => {
-                  setShowRecentModal(false);
-                  setSelectedExpenseIds([]);
-                }}
+                onClick={() => setShowRecentModal(false)}
                 className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-white rounded-xl font-medium cursor-pointer"
               >
                 Done
@@ -1811,6 +1983,20 @@ export const ExpenserApp: React.FC = () => {
             </div>
           </div>
         </div>
+      )}
+
+      {/* Split Receipt Dialog */}
+      {splitDialog && (
+        <SplitReceiptDialog
+          mode={splitDialog.mode}
+          catalogItems={allCatalogItems}
+          initial={splitDialog.initial}
+          isSaving={isSavingSplit}
+          error={splitError}
+          onSave={handleSaveSplit}
+          onCancel={() => setSplitDialog(null)}
+          onDeleteGroup={splitDialog.mode === 'edit' ? handleDeleteSplitGroup : undefined}
+        />
       )}
 
       {/* Edit Expense Modal */}
@@ -1976,16 +2162,15 @@ export const ExpenserApp: React.FC = () => {
                                   : 'hover:bg-slate-900 text-slate-300'
                               }`}
                             >
-                              <div className="flex items-center space-x-2 truncate">
+                              <div className="flex items-center space-x-2 min-w-0">
                                 <span
-                                  className="w-2.5 h-2.5 rounded-full shrink-0"
+                                  className="px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider text-slate-900 shrink-0"
                                   style={{ backgroundColor: cat.color || '#3b82f6' }}
-                                />
-                                <span className="truncate">{cat.displayName || cat.name}</span>
+                                >
+                                  {cat.groupCategory}
+                                </span>
+                                <span className="truncate">{cat.name}</span>
                               </div>
-                              <span className="text-[10px] text-slate-500 uppercase tracking-wider shrink-0 ml-1">
-                                {cat.groupCategory}
-                              </span>
                             </button>
                           );
                         })
@@ -2017,6 +2202,33 @@ export const ExpenserApp: React.FC = () => {
               <div className="flex items-center gap-1.5 text-[10px] text-slate-400 bg-slate-950/60 p-2 rounded-xl border border-slate-800/80">
                 <Cloud className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
                 <span>{storageSyncMessage}</span>
+              </div>
+
+              {/* Secondary actions: split across categories or delete */}
+              <div className="grid grid-cols-2 gap-2 pt-1">
+                <button
+                  type="button"
+                  onClick={() => {
+                    const target = editingExpense;
+                    setEditingExpense(null);
+                    openSplitFromExisting(target);
+                  }}
+                  disabled={isSavingEdit}
+                  className="px-4 py-2 rounded-xl border border-amber-400/50 text-amber-300 hover:text-amber-200 hover:border-amber-300 text-xs font-semibold cursor-pointer disabled:opacity-50"
+                  title="Split this charge across several categories"
+                >
+                  Split
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleDeleteExpense(editingExpense.expenseId)}
+                  disabled={isSavingEdit}
+                  className="px-4 py-2 rounded-xl border border-rose-500/40 text-rose-300 hover:bg-rose-500/10 text-xs font-semibold cursor-pointer disabled:opacity-50 flex items-center justify-center gap-1.5"
+                  title="Delete this expense"
+                >
+                  <Trash2 className="w-3.5 h-3.5" />
+                  Delete
+                </button>
               </div>
 
               {/* Action Buttons */}
@@ -2277,12 +2489,10 @@ export const ExpenserApp: React.FC = () => {
         onSyncComplete={loadData}
       />
 
-      {/* About & Version Details Dialog */}
-      <AboutDialog
+      {/* About Dialog: version and build time */}
+      <ExpenserAboutDialog
         isOpen={showAboutModal}
         onClose={() => setShowAboutModal(false)}
-        title="Expenser"
-        subtitle="Retirement Actuals Tracker & Mobile Companion"
       />
     </div>
   );

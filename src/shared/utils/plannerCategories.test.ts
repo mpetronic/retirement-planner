@@ -6,6 +6,7 @@ import {
   getPlannerCategories,
   syncPlannerCatalogToCloudStorage,
   mergeWithCustomCategories,
+  sortPlannerExpenseItems,
 } from './plannerCategories';
 import { DEFAULT_DETAILED_EXPENSES_STATE } from '../../types';
 import type { StorageAdapter } from '../storage';
@@ -186,7 +187,7 @@ describe('plannerCategories synchronization', () => {
         categories: ['Home', 'Living'],
         items: [
           { id: 'md_mortgage', name: 'MD Mortgage', category: 'Home', defaultFrequency: 12, applicableStates: ['MD'] },
-          { id: 'fl_condo', name: 'FL Condo Fee', category: 'Housing', defaultFrequency: 12, applicableStates: ['FL'] },
+          { id: 'fl_condo', name: 'FL Condo Fee', category: 'Retired', defaultFrequency: 12, applicableStates: ['FL'] },
         ],
       },
       costs: {
@@ -200,8 +201,8 @@ describe('plannerCategories synchronization', () => {
     expect(itemsMD.some(i => i.id === 'md_mortgage')).toBe(true);
     // fl_condo is for FL, so must not appear when querying MD
     expect(itemsMD.some(i => i.id === 'fl_condo')).toBe(false);
-    // Housing is not in catalog.categories, so must not appear
-    expect(itemsMD.some(i => i.groupCategory === 'Housing')).toBe(false);
+    // Retired is not in catalog.categories, so must not appear
+    expect(itemsMD.some(i => i.groupCategory === 'Retired')).toBe(false);
   });
 
   it('should strictly prevent mergeWithCustomCategories from leaking obsolete or non-custom categories', () => {
@@ -210,9 +211,9 @@ describe('plannerCategories synchronization', () => {
     ];
     const storageCats = [
       // Standard item excluded for other state (isCustom: false) - MUST NOT BE MERGED
-      { id: 'fl_tax', name: 'Housing - FL Tax', plannedMonthlyDefault: 400, isCustom: false, createdAt: '' },
+      { id: 'fl_tax', name: 'Retired - FL Tax', plannedMonthlyDefault: 400, isCustom: false, createdAt: '' },
       // Custom category with invalid group not in allowedCategories - MUST NOT BE MERGED
-      { id: 'item_custom_old', name: 'Housing - Old Item', plannedMonthlyDefault: 50, isCustom: true, createdAt: '' },
+      { id: 'item_custom_old', name: 'Retired - Old Item', plannedMonthlyDefault: 50, isCustom: true, createdAt: '' },
       // Valid custom category with group Home - SHOULD BE MERGED
       { id: 'item_custom_new', name: 'Home - Pool Maintenance', plannedMonthlyDefault: 100, isCustom: true, createdAt: '' },
     ];
@@ -222,7 +223,7 @@ describe('plannerCategories synchronization', () => {
     expect(merged.some(i => i.id === 'fl_tax')).toBe(false);
     expect(merged.some(i => i.id === 'item_custom_old')).toBe(false);
     expect(merged.some(i => i.id === 'item_custom_new')).toBe(true);
-    expect(merged.some(i => i.groupCategory === 'Housing')).toBe(false);
+    expect(merged.some(i => i.groupCategory === 'Retired')).toBe(false);
   });
 
   it('should return exactly whatever categories are defined in detailedExpenses', () => {
@@ -268,5 +269,44 @@ describe('plannerCategories synchronization', () => {
 
     // Item belonging to undefined/deleted category 'Boating' must not be present
     expect(catalog.some(i => i.id === 'item_deleted_category')).toBe(false);
+  });
+});
+
+describe('sortPlannerExpenseItems', () => {
+  const item = (id: string, groupCategory: string, name: string) => ({
+    id,
+    groupCategory,
+    name,
+    displayName: `${groupCategory} - ${name}`,
+    plannedMonthlyDefault: 0,
+  });
+
+  it('orders by planner category order, then by name ignoring case', () => {
+    const items = [
+      item('a', 'Home', 'water'),
+      item('b', 'Living', 'Groceries'),
+      item('c', 'Home', 'Electric'),
+      item('d', 'Living', 'dining out'),
+    ];
+    const sorted = sortPlannerExpenseItems(items, ['Living', 'Home']);
+    expect(sorted.map(i => i.id)).toEqual(['d', 'b', 'c', 'a']);
+  });
+
+  it('places categories missing from the order last, alphabetically', () => {
+    const items = [
+      item('a', 'Zeta', 'One'),
+      item('b', 'Alpha', 'One'),
+      item('c', 'Living', 'One'),
+    ];
+    const sorted = sortPlannerExpenseItems(items, ['Living']);
+    expect(sorted.map(i => i.id)).toEqual(['c', 'b', 'a']);
+  });
+
+  it('matches category names case-insensitively and does not mutate the input', () => {
+    const items = [item('a', 'home', 'B'), item('b', 'LIVING', 'A')];
+    const copy = [...items];
+    const sorted = sortPlannerExpenseItems(items, ['Living', 'Home']);
+    expect(sorted.map(i => i.id)).toEqual(['b', 'a']);
+    expect(items).toEqual(copy);
   });
 });

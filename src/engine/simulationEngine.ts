@@ -763,6 +763,12 @@ export function runRetirementSimulation(
       }
     }
 
+    // Modeled premiums before any realized overrides, so planned spending shares the scope of actual spending
+    const plannedYourPreMedicareAnnual = yourPreMedicareAnnual;
+    const plannedWifePreMedicareAnnual = wifePreMedicareAnnual;
+    const plannedYourMedicarePremiums = yourMedicarePremiums;
+    const plannedWifeMedicarePremiums = wifeMedicarePremiums;
+
     if (actualRec?.preMedicareHealthcareCost !== undefined && actualRec?.preMedicareHealthcareCost !== null) {
       yourPreMedicareAnnual = actualRec.preMedicareHealthcareCost;
       wifePreMedicareAnnual = 0;
@@ -1177,6 +1183,7 @@ export function runRetirementSimulation(
     let annualPreMedicarePremium = 0;
     let annualMedicareBasePremiums = 0;
     let annualMedicareSurcharges = 0;
+    let annualPlannedPremiums = 0;
     let annualLivingExpenses = 0;
     let annualHealthcareOOP = 0;
     let annualDrawdownCash = 0;
@@ -1489,6 +1496,14 @@ export function runRetirementSimulation(
         monthlyWifePremium = wifePreMedicareAnnual / 12;
         monthlyWifeSurcharge = 0;
       }
+
+      const monthlyPlannedYourPremium = youEligibleForMedicare
+        ? plannedYourMedicarePremiums / 12
+        : (!youDeceased && !isYouWorking && !(inputs.you.healthcare?.coveredByWorkingSpousePlan && isWifeWorking) ? plannedYourPreMedicareAnnual / 12 : 0);
+      const monthlyPlannedWifePremium = wifeEligibleForMedicare
+        ? plannedWifeMedicarePremiums / 12
+        : (!wifeDeceased && !isWifeWorking && !(inputs.wife.healthcare?.coveredByWorkingSpousePlan && isYouWorking) ? plannedWifePreMedicareAnnual / 12 : 0);
+      annualPlannedPremiums += monthlyPlannedYourPremium + monthlyPlannedWifePremium;
 
       const monthlyPreMed = (!youEligibleForMedicare && !youDeceased && !isYouWorking && !(inputs.you.healthcare?.coveredByWorkingSpousePlan && isWifeWorking) ? monthlyYourPremium : 0) +
         (!wifeEligibleForMedicare && !wifeDeceased && !isWifeWorking && !(inputs.wife.healthcare?.coveredByWorkingSpousePlan && isYouWorking) ? monthlyWifePremium : 0);
@@ -2029,6 +2044,7 @@ export function runRetirementSimulation(
     const totalPortfolioValue = yourTaxable + yourPreTax + yourRoth + yourCash + wifeTaxable + wifePreTax + wifeRoth + wifeCash;
     const portfolioGrowth = annualPreTaxGrowth + annualRothGrowth + annualTaxableGrowth + totalDividends + totalCashInterest;
 
+    const plannedHealthcarePremiums = annualPlannedPremiums + annualMedicareSurcharges;
     if (actualRec?.irmaaSurcharges !== undefined && actualRec?.irmaaSurcharges !== null) {
       annualMedicareSurcharges = actualRec.irmaaSurcharges;
     }
@@ -2068,12 +2084,17 @@ export function runRetirementSimulation(
 
     // Guardrails calculation
     const plannedLivingExpenses = (plannedBaseLivingExpensesAnnual + oneTimeCosts) * cpiFactor + plannedHealthcareOOP;
+    // Healthcare-inclusive spending scope: living + out-of-pocket + premiums + IRMAA (taxes excluded)
+    const plannedTotalSpending = plannedLivingExpenses + plannedHealthcarePremiums;
+    const modeledTotalSpending = annualLivingExpenses + annualPreMedicarePremium + annualMedicareBasePremiums + annualMedicareSurcharges;
+    // When expenses are logged for the year, their total is the single source of truth for actual spending
+    const totalSpending = actualRec?.loggedTotalSpending ?? modeledTotalSpending;
     const hasActualSpendRecorded = Boolean(actualRec && (
       (actualRec.totalLivingExpenses !== undefined && actualRec.totalLivingExpenses !== null) ||
       (actualRec.healthcareOOP !== undefined && actualRec.healthcareOOP !== null)
     ));
     const spendingVariance = hasActualSpendRecorded
-      ? (plannedLivingExpenses - annualLivingExpenses)
+      ? (plannedTotalSpending - totalSpending)
       : 0;
     const modeledGrowthRate = (preTaxEquityPortion * inputs.growthAssumptions.equityReturnRate) + ((1 - preTaxEquityPortion) * inputs.growthAssumptions.fixedIncomeReturnRate);
     const startYearPortfolio = (ledger.length > 0) ? ledger[ledger.length - 1].totalPortfolioValue : (
@@ -2084,9 +2105,9 @@ export function runRetirementSimulation(
     const surplusGrowth = Math.max(0, portfolioGrowth - estimatedBaselineGrowth);
     const marketSurplusShare = (inputs.guardrailSettings?.marketSurplusSharePct ?? 0.10) * surplusGrowth;
     const actualSurplusGap = actualRec ? (spendingVariance + marketSurplusShare) : 0;
-    const upperGuardrailLimit = plannedLivingExpenses * (1 + (inputs.guardrailSettings?.upperGuardrailPct ?? 0.15));
-    const lowerGuardrailLimit = plannedLivingExpenses * (1 - (inputs.guardrailSettings?.lowerGuardrailPct ?? 0.15));
-    const permittedSpendingBonus = actualRec ? Math.min(Math.max(0, actualSurplusGap), upperGuardrailLimit - plannedLivingExpenses) : 0;
+    const upperGuardrailLimit = plannedTotalSpending * (1 + (inputs.guardrailSettings?.upperGuardrailPct ?? 0.15));
+    const lowerGuardrailLimit = plannedTotalSpending * (1 - (inputs.guardrailSettings?.lowerGuardrailPct ?? 0.15));
+    const permittedSpendingBonus = actualRec ? Math.min(Math.max(0, actualSurplusGap), upperGuardrailLimit - plannedTotalSpending) : 0;
 
     ledger.push({
       year,
@@ -2138,6 +2159,9 @@ export function runRetirementSimulation(
       livingExpenses: annualLivingExpenses,
       plannedBaseLivingExpenses: (plannedBaseLivingExpensesAnnual + oneTimeCosts) * cpiFactor,
       plannedLivingExpenses,
+      plannedHealthcarePremiums,
+      plannedTotalSpending,
+      totalSpending,
       healthcareOOP: annualHealthcareOOP,
       plannedHealthcareOOP,
       medicareBasePremiums: annualMedicareBasePremiums,

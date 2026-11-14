@@ -25,17 +25,25 @@ export function setStorageAdapter(adapter: StorageAdapter): void {
   defaultAdapter = adapter;
 }
 
+export type ExpenseExportSource = 'cloud' | 'local';
+
+export interface ExpenseExportData {
+  records: Array<Record<string, unknown>>;
+  source: ExpenseExportSource;
+}
+
 /**
- * Fetches all expenses recorded in AWS DynamoDB for the current household.
- * Connects directly through the cloud API endpoint using authenticated credentials.
+ * Fetches every expense from the database backing the active operating mode.
+ * - Production (AwsCloudStorageAdapter): AWS DynamoDB for the current household.
+ * - Localhost / in-memory: the browser's local store only; AWS is never contacted.
  */
-export async function fetchAllExpensesFromDynamoDb(): Promise<Array<Record<string, unknown>>> {
+export async function fetchAllExpensesForExport(): Promise<ExpenseExportData> {
   const adapter = getStorageAdapter();
-  if (adapter instanceof AwsCloudStorageAdapter && adapter.getAllExpensesFromCloud) {
-    return adapter.getAllExpensesFromCloud();
+  const source: ExpenseExportSource = adapter instanceof AwsCloudStorageAdapter ? 'cloud' : 'local';
+  if (!adapter.getAllExpensesFromCloud) {
+    throw new Error('The active storage adapter does not support exporting all expenses.');
   }
-  const cloud = new AwsCloudStorageAdapter();
-  return cloud.getAllExpensesFromCloud();
+  return { records: await adapter.getAllExpensesFromCloud(), source };
 }
 
 export * from '../types/expenses';
