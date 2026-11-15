@@ -111,7 +111,8 @@ export interface MonteCarloSettings {
   stressTest?: StressTestConfig; // Optional multi-year sequence of returns stress test config
   randomizeCPI?: boolean;        // If true (default), randomize annual CPI per trial; if false, hold constant
   constantCPIRate?: number | null; // Optional custom constant CPI rate if held constant (e.g. 0.025)
-  enableRegimeSwitching?: boolean; // If true (default), apply Markov 2-state regime switching and Ornstein-Uhlenbeck mean reversion
+  /** @deprecated Removed: regime switching and mean reversion no longer exist. Kept so older saved plans still load; ignored. */
+  enableRegimeSwitching?: boolean;
   historicalSamplingStrategy?: 'hybrid' | 'block' | 'random'; // Historical bootstrap strategy (hybrid: 35% block / 65% random, block: 100% contiguous, random: 100% random resampled)
   calibrateHistoricalMeans?: boolean; // If true (default), calibrate historical return shocks to match user configured baseline means (e.g. 7% equity / 4% bond)
   enableHistoricalStudentT?: boolean; // If true, apply Student-t fat-tail scaling (df=5) to historical bootstrap shocks. Only applicable in historical mode (not CMA/synthetic).
@@ -478,6 +479,9 @@ export function describeSSReductions(config: SSReductionConfig | null | undefine
     .join(', ');
 }
 
+/** How Roth conversions are determined: none (disabled), a flat annual amount, fill-to-target income, or a custom per-year schedule. */
+export type RothConversionStrategy = 'none' | 'flat' | 'fill-to-target' | 'custom';
+
 export interface AppStateInputs {
   isConfigured: boolean;
   ssReductions?: SSReductionConfig;
@@ -503,7 +507,7 @@ export interface AppStateInputs {
   annualRothConversion: number;
   rothConversionStartYear?: number;
   rothConversionEndYear?: number;
-  rothConversionStrategy: 'flat' | 'fill-to-target' | 'custom';
+  rothConversionStrategy: RothConversionStrategy;
   rothConversionTargetValue: number | null;
   customRothScenarios?: CustomRothScenario[];
   activeCustomScenarioId?: string | null;

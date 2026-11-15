@@ -22,8 +22,8 @@ Use this table to track what has been debated and fixed.
 | # | Finding | Severity | Status |
 |---|---------|----------|--------|
 | 1 | Year-end tax settlement income never taxed | High | Fixed |
-| 2 | MC mean reversion / regime vol narrows distribution | High | Open |
-| 3 | Historical bootstrap arithmetic vs geometric calibration | Medium-High | Open |
+| 2 | MC mean reversion / regime vol narrows distribution | High | Fixed |
+| 3 | Historical bootstrap arithmetic vs geometric calibration | Medium-High | Fixed |
 | 4 | Survivor (wife first): husband's cash wiped out | High (latent) | Open |
 | 5 | Survivor (wife first): Roth conversions stop | Medium-High (latent) | Open |
 | 6 | No federal basis step-up unless FL | Medium | Open |
@@ -109,6 +109,31 @@ entered volatility. Keep regime switching as an opt-in feature, but document tha
 CMA-faithful simulation. At minimum, let the UI show both "CMA-faithful" and "regime/mean-reversion"
 success rates so you see the spread.
 
+**Resolution.** Fixed by removal. The regime-switching generator and the Ornstein-Uhlenbeck correction
+were deleted, along with the crisis-state stagflation CPI oversampling and the `enableRegimeSwitching`
+setting (the field is still accepted when loading old plans but ignored). The synthetic mode is now
+independent annual draws from a correlated normal distribution with the volatility-drag drift
+(`geometricToArithmeticMean`). Findings that drove the decision, measured on 4,000 synthetic 30-year
+paths (7% CAGR, 16% volatility):
+
+- The regime model produced no bear-market clustering (average run of negative years 1.38 versus 1.42
+  for independent draws) and no post-loss rebound (mean return after a negative year 8.2% in both).
+  Long strong streaks were more common (5+ years above 10% in 31% of paths versus 25%).
+- The mean reversion only affected long horizons. At 30 years the 10th percentile terminal multiple
+  was 3.08 versus 2.51 and the 90th percentile 13.7 versus 21.3. At 10 years the regime model's
+  downside was worse, not better (5th percentile CAGR -3.0% versus -1.3%).
+- On the sample plan, regime-on versus regime-off success rates were within about one point in the
+  80-95% range, and up to seven points lower with regimes on when the plan was already failing. The
+  original claim that the success rate was biased upward was not supported in the realistic range.
+- The regime parameters (20% crisis probability, -8% crisis mean, 0.85 and 1.5 volatility multipliers)
+  were not estimated from data, so a "lower of two models" headline would have been noise.
+- Annual stock returns in the table (1970-2025) have excess kurtosis 0.18 and skew -0.77: a fat
+  downside tail, not symmetric fat tails, so a symmetric Student-t was not adopted.
+
+Known limits: the parametric mode is symmetric and under-represents real crash years, and it has no
+volatility clustering. The historical bootstrap mode is the real-history check, and the in-app help
+says so.
+
 ---
 
 ## 3. Historical bootstrap calibrates the arithmetic mean to a geometric target
@@ -129,6 +154,13 @@ not a modeling insight.
 **Recommendation.** Apply the same geometric-to-arithmetic drift conversion in
 `generateHistoricalSequence` (shift to `equityMean + sigma^2/2`), using the historical sample's own
 variance.
+
+**Resolution.** Fixed. `generateHistoricalSequence` now centers the sample on the arithmetic mean
+that corresponds to the configured geometric CAGR, using the historical sample's own volatility
+(`HISTORICAL_STOCK_VOLATILITY`, `HISTORICAL_BOND_VOLATILITY`) and the same `geometricToArithmeticMean`
+conversion the synthetic mode uses. The optional Student-t scaling uses the same baseline. The two
+modes are now directly comparable. Expect historical-mode results to move up by roughly one percent
+a year of compounding versus the previous calibration.
 
 ---
 

@@ -1,9 +1,9 @@
-import { AppStateInputs, LockedReturnSequence } from '../types';
+import { AppStateInputs, LockedReturnSequence, RothConversionStrategy } from '../types';
 import { runRetirementSimulation, calculateSSBenefit, calculateSpousalBenefit } from './simulationEngine';
 import { CONVERSION_TARGET_PRESETS } from './taxRates2026';
 
 export interface OptimizationResult {
-  bestStrategy: 'flat' | 'fill-to-target' | 'custom';
+  bestStrategy: RothConversionStrategy;
   bestAnnualRothConversion: number;
   bestTargetValue: number | null;
   bestYourSSAge: number;
@@ -19,10 +19,14 @@ export interface OptimizationResult {
   };
 }
 
+/** Step and ceiling for the flat Roth conversion amounts the optimizer evaluates. */
+const FLAT_CONVERSION_STEP = 10000;
+const MAX_FLAT_CONVERSION = 400000;
+
 export type OptimizationGoal = 'min_taxes' | 'max_portfolio' | 'min_surcharges' | 'max_roth';
 
 interface RothCandidate {
-  strategy: 'flat' | 'fill-to-target' | 'custom';
+  strategy: RothConversionStrategy;
   annualConversion: number;
   targetValue: number | null;
 }
@@ -45,9 +49,7 @@ export function optimizeRetirementScenario(
 
   if (!inputs.isConfigured) {
     return {
-      bestStrategy: inputs.rothConversionStrategy === 'fill-to-target'
-        ? 'fill-to-target'
-        : (inputs.rothConversionStrategy === 'custom' ? 'custom' : 'flat'),
+      bestStrategy: inputs.rothConversionStrategy,
       bestAnnualRothConversion: inputs.annualRothConversion,
       bestTargetValue: inputs.rothConversionTargetValue,
       bestYourSSAge: inputs.you.targetSSClaimingAge ?? 67,
@@ -81,10 +83,7 @@ export function optimizeRetirementScenario(
   const wifeBirthYear = parseBirthYear(inputs.wife.birthDate, 1962);
   const wifeDeathYear = wifeBirthYear + (inputs.wife.longevityAge ?? 85);
 
-  let bestStrategy: 'flat' | 'fill-to-target' | 'custom' =
-    inputs.rothConversionStrategy === 'fill-to-target'
-      ? 'fill-to-target'
-      : (inputs.rothConversionStrategy === 'custom' ? 'custom' : 'flat');
+  let bestStrategy: RothConversionStrategy = inputs.rothConversionStrategy;
   let bestAnnualRothConversion = inputs.annualRothConversion;
   let bestTargetValue = inputs.rothConversionTargetValue;
   let bestYourSSAge = inputs.you.targetSSClaimingAge ?? 67;
@@ -98,8 +97,11 @@ export function optimizeRetirementScenario(
   // Build comprehensive list of candidate Roth strategies to evaluate
   const rothCandidates: RothCandidate[] = [];
 
-  // Flat conversion candidates: $0 through $400k in $10k increments (41 candidates)
-  for (let amt = 0; amt <= 400000; amt += 10000) {
+  // No-conversion candidate. A flat conversion of $0 is identical, so it is reported as 'none' for clarity.
+  rothCandidates.push({ strategy: 'none', annualConversion: 0, targetValue: null });
+
+  // Flat conversion candidates: $10k through $400k in $10k increments (40 candidates)
+  for (let amt = FLAT_CONVERSION_STEP; amt <= MAX_FLAT_CONVERSION; amt += FLAT_CONVERSION_STEP) {
     rothCandidates.push({ strategy: 'flat', annualConversion: amt, targetValue: null });
   }
 
@@ -247,7 +249,8 @@ export function optimizeRetirementScenario(
   }
 
   return {
-    bestStrategy,
+    // A flat conversion of $0 is the same as no conversions, so report it as 'none'
+    bestStrategy: bestStrategy === 'flat' && bestAnnualRothConversion === 0 ? 'none' : bestStrategy,
     bestAnnualRothConversion,
     bestTargetValue,
     bestYourSSAge,

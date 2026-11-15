@@ -117,7 +117,7 @@ export const DocumentationDialog: React.FC<DocumentationDialogProps> = ({
                 <li><strong className="text-slate-200">35-Year Granular Ledger:</strong> Year-by-year cashflow accounting across Taxable, Pre-Tax IRA, and Roth accounts from Age 65 to 100.</li>
                 <li><strong className="text-slate-200">Precise 2-Year IRMAA Tracking:</strong> Year T MAGI is accurately mapped to Year T+2 Medicare surcharge brackets.</li>
                 <li><strong className="text-slate-200">Automated Roth Optimization:</strong> 2D sweep algorithms evaluate optimal Roth conversion amounts and SS claiming ages.</li>
-                <li><strong className="text-slate-200">1,000+ Monte Carlo Trials:</strong> Both correlated synthetic regime-switching and 100+ year historical backtesting engines.</li>
+                <li><strong className="text-slate-200">1,000+ Monte Carlo Trials:</strong> Both a correlated parametric (CMA-faithful) engine and a real-history bootstrap engine.</li>
               </ul>
             </div>
           </div>
@@ -266,10 +266,10 @@ export const DocumentationDialog: React.FC<DocumentationDialogProps> = ({
               <div className="p-4 bg-slate-950/60 border border-slate-800 rounded-xl space-y-2">
                 <div className="flex items-center gap-2 text-emerald-400 font-bold text-xs">
                   <Sparkles className="w-3.5 h-3.5" />
-                  <span>Roth Conversion Planner (Flat vs Fill-to-Bracket)</span>
+                  <span>Roth Conversion Planner (None, Flat, Fill-to-Bracket, Custom)</span>
                 </div>
                 <p className="text-[11px] text-slate-300 leading-relaxed">
-                  Choose between a fixed annual dollar conversion or dynamic <strong>Fill-to-Target</strong> conversions. Fill-to-Target automatically calculates the exact conversion amount needed each year to fill up to the chosen tax bracket ceiling (e.g. 12%, 22%, 24%) or Medicare IRMAA threshold without spilling over.
+                  Choose between <strong>Fill-to-Target</strong>, a fixed annual dollar conversion (<strong>Flat Target</strong>), a year-by-year <strong>Custom Schedule</strong>, or <strong>None</strong>, which disables all Roth conversions so you can see the baseline plan with no conversions (your saved flat amount and target are kept and return when you switch modes). Fill-to-Target is dynamic: Fill-to-Target automatically calculates the exact conversion amount needed each year to fill up to the chosen tax bracket ceiling (e.g. 12%, 22%, 24%) or Medicare IRMAA threshold without spilling over.
                 </p>
               </div>
 
@@ -418,7 +418,7 @@ export const DocumentationDialog: React.FC<DocumentationDialogProps> = ({
       category: 'Workspaces',
       icon: Sliders,
       badge: 'Stochastic Engine',
-      keywords: ['workspace 3', 'monte carlo', 'stress test', 'volatility', 'regime switching', 'historical backtesting', 'fan chart', 'percentiles', 'p10', 'p50', 'p90', 'bear market', 'gfc', 'stagflation'],
+      keywords: ['workspace 3', 'monte carlo', 'stress test', 'volatility', 'parametric', 'historical backtesting', 'fan chart', 'percentiles', 'p10', 'p50', 'p90', 'bear market', 'gfc', 'stagflation'],
       content: (
         <div className="space-y-6">
           <div className="p-4 bg-slate-900/60 border border-slate-800 rounded-2xl">
@@ -438,19 +438,19 @@ export const DocumentationDialog: React.FC<DocumentationDialogProps> = ({
               <div className="p-4 bg-slate-950/60 border border-slate-800 rounded-xl space-y-2">
                 <span className="text-xs font-bold text-indigo-400 block">1. Synthetic Monte Carlo Model</span>
                 <ul className="text-[11px] text-slate-300 space-y-1 list-disc list-inside leading-relaxed">
-                  <li>Correlated Geometric Brownian Motion across equities and fixed income.</li>
-                  <li><strong>Markov 2-State Regime Switching:</strong> Models alternating bull and bear market volatility clusters.</li>
-                  <li><strong>Ornstein-Uhlenbeck Mean Reversion:</strong> Reverts extended market deviations toward long-term trendlines.</li>
+                  <li>Independent annual draws from a correlated normal distribution across equities and fixed income, using your volatility and correlation inputs.</li>
+                  <li><strong>Volatility drag adjustment:</strong> Annual drift is raised above your CAGR so the median compound path tracks the return you entered.</li>
+                  <li><strong>No regime switching and no mean reversion:</strong> a bad early sequence is never artificially repaired. Limit: annual draws are symmetric, so this mode under-represents real crash years (real history has a fat downside tail) and has no volatility clustering. Use the historical mode as the real-history check.</li>
                   <li>Randomized annual CPI inflation per trial.</li>
                 </ul>
               </div>
 
               <div className="p-4 bg-slate-950/60 border border-slate-800 rounded-xl space-y-2">
-                <span className="text-xs font-bold text-emerald-400 block">2. Historical 100-Year Backtest</span>
+                <span className="text-xs font-bold text-emerald-400 block">2. Historical Bootstrap (1970–2025)</span>
                 <ul className="text-[11px] text-slate-300 space-y-1 list-disc list-inside leading-relaxed">
-                  <li>Draws return and inflation paths directly from historical US market data (1928–present).</li>
+                  <li>Draws return and inflation paths directly from historical US market data (1970–2025), keeping each year's stock, bond and inflation values together.</li>
                   <li><strong>Hybrid Bootstrap Resampling:</strong> Blends 35% contiguous historical blocks with random sample draws to preserve historical drawdowns.</li>
-                  <li>Optional mean-calibration to your baseline asset expectations.</li>
+                  <li>Optional calibration so compound (geometric) growth matches your baseline asset expectations, using the same volatility-drag conversion as the parametric mode. This makes the two modes directly comparable; the historical mode is the harsher, more realistic stress view.</li>
                 </ul>
               </div>
             </div>

@@ -9,6 +9,7 @@ import {
   DEFAULT_GUARDRAIL_SETTINGS,
   DEFAULT_BUCKET_STRATEGY_SETTINGS,
   CustomRothScenario,
+  RothConversionStrategy,
   normalizeDetailedExpenses,
   getSimulationStartYear,
 } from './types';
@@ -127,7 +128,6 @@ const DEFAULT_INPUTS: AppStateInputs = {
     seed: null,
     randomizeCPI: true,
     constantCPIRate: null,
-    enableRegimeSwitching: true,
     historicalSamplingStrategy: 'hybrid',
     calibrateHistoricalMeans: true,
     enableHistoricalStudentT: false,
@@ -675,7 +675,6 @@ function App() {
       deferredInputs.monteCarloSettings?.constantCPIRate != null
         ? deferredInputs.monteCarloSettings.constantCPIRate
         : deferredInputs.growthAssumptions.cpiInflationRate;
-    const enableRegimeSwitching = deferredInputs.monteCarloSettings?.enableRegimeSwitching !== false;
     const historicalStrategy = deferredInputs.monteCarloSettings?.historicalSamplingStrategy ?? 'hybrid';
     const calibrateHistoricalMeans = deferredInputs.monteCarloSettings?.calibrateHistoricalMeans !== false;
     const enableHistoricalStudentT = deferredInputs.monteCarloSettings?.enableHistoricalStudentT === true;
@@ -714,7 +713,6 @@ function App() {
             rand,
             isCpiRandomized,
             constantCpi,
-            enableRegimeSwitching,
             targetCpi
           )
         );
@@ -734,7 +732,6 @@ function App() {
     deferredInputs.monteCarloSettings.nonce,
     deferredInputs.monteCarloSettings.randomizeCPI,
     deferredInputs.monteCarloSettings.constantCPIRate,
-    deferredInputs.monteCarloSettings.enableRegimeSwitching,
     deferredInputs.monteCarloSettings.historicalSamplingStrategy,
     deferredInputs.monteCarloSettings.calibrateHistoricalMeans,
     deferredInputs.monteCarloSettings.enableHistoricalStudentT,
@@ -851,7 +848,7 @@ function App() {
     targetValue: number | null,
     yourAge: number,
     wifeAge: number,
-    strategy?: 'flat' | 'fill-to-target' | 'custom'
+    strategy?: RothConversionStrategy
   ) => {
     const finalStrategy = strategy || activeInputs.rothConversionStrategy;
     const finalTargetValue = targetValue !== null ? targetValue : activeInputs.rothConversionTargetValue;
@@ -870,7 +867,7 @@ function App() {
   };
 
   // Handle changing conversion strategy while preserving last selected target values and active scenario IDs
-  const handleUpdateStrategy = (strategy: 'flat' | 'fill-to-target' | 'custom') => {
+  const handleUpdateStrategy = (strategy: RothConversionStrategy) => {
     handleInputsChange((prev) => {
       let targetValue = prev.rothConversionTargetValue;
       if (strategy === 'fill-to-target' && !targetValue) {

@@ -676,9 +676,9 @@ export const ConfigurationPDF: React.FC<PDFProps> = ({ inputs }) => {
               </Text>
             </View>
             <View style={styles.row}>
-              <Text style={styles.rowLabel}>Regime Switching & Drift:</Text>
+              <Text style={styles.rowLabel}>Return Model:</Text>
               <Text style={styles.rowValue}>
-                {inputs.monteCarloSettings.enableRegimeSwitching !== false ? 'Enabled (Markov 2-State + Reversion)' : 'Disabled (Random Walk)'}
+                {inputs.monteCarloSettings.mode === 'historical' ? 'Historical Bootstrap (re-centered to CMA)' : 'Parametric (independent annual normal draws)'}
               </Text>
             </View>
             <View style={styles.row}>
@@ -769,10 +769,16 @@ export const ConfigurationPDF: React.FC<PDFProps> = ({ inputs }) => {
                 <View style={styles.row}>
                   <Text style={styles.rowLabel}>Strategy Selected:</Text>
                   <Text style={styles.rowValue}>
-                    {inputs.rothConversionStrategy === 'flat' ? 'Flat Annual Conversions' : 'Fill-To-Target Bracket'}
+                    {inputs.rothConversionStrategy === 'none'
+                      ? 'None (No Roth Conversions)'
+                      : inputs.rothConversionStrategy === 'flat'
+                        ? 'Flat Annual Conversions'
+                        : inputs.rothConversionStrategy === 'custom'
+                          ? 'Custom Schedule'
+                          : 'Fill-To-Target Bracket'}
                   </Text>
                 </View>
-                {inputs.rothConversionStrategy === 'flat' ? (
+                {inputs.rothConversionStrategy === 'none' || inputs.rothConversionStrategy === 'custom' ? null : inputs.rothConversionStrategy === 'flat' ? (
                   <View style={styles.row}>
                     <Text style={styles.rowLabel}>Annual Conversion Value:</Text>
                     <Text style={styles.rowValue}>{formatCurrency(inputs.annualRothConversion)}/yr</Text>

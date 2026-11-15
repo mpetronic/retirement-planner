@@ -963,8 +963,12 @@ export function runRetirementSimulation(
     let rothConversionShortfall: number | undefined = undefined;
     let nonQcdTithe = 0;
 
+    // 0. No Roth conversions: leave targetConversion at zero regardless of any stored flat or target settings
+    if (inputs.rothConversionStrategy === 'none') {
+      targetConversion = 0;
+    }
     // 1. Custom Roth Conversion Schedule
-    if (inputs.rothConversionStrategy === 'custom') {
+    else if (inputs.rothConversionStrategy === 'custom') {
       const activeCustomScenario = inputs.customRothScenarios?.find(
         (s) => s.id === inputs.activeCustomScenarioId
       ) || inputs.customRothScenarios?.[0];

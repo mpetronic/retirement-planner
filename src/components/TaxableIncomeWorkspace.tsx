@@ -14,6 +14,7 @@ import {
   AppStateInputs,
   LockedReturnSequence,
   CustomRothScenario,
+  RothConversionStrategy,
   getSimulationStartYear,
 } from '../types';
 import { RangeSlider } from './RangeSlider';
@@ -96,9 +97,9 @@ interface TaxableIncomeWorkspaceProps {
     targetValue: number | null,
     yourAge: number,
     wifeAge: number,
-    strategy?: 'flat' | 'fill-to-target' | 'custom'
+    strategy?: RothConversionStrategy
   ) => void;
-  onUpdateStrategy: (strategy: 'flat' | 'fill-to-target' | 'custom') => void;
+  onUpdateStrategy: (strategy: RothConversionStrategy) => void;
   onUpdateTargetValue: (val: number | null) => void;
   onSaveCustomScenario?: (scenario: CustomRothScenario, applyImmediately?: boolean) => void;
   onDeleteCustomScenario?: (scenarioId: string) => void;
@@ -137,6 +138,7 @@ export const TaxableIncomeWorkspace: React.FC<TaxableIncomeWorkspaceProps> = ({
 
   // Selected benchmark state (only active and defaults in fill-to-target mode)
   const isFillToTarget = inputs.rothConversionStrategy === 'fill-to-target';
+  const isNoConversion = inputs.rothConversionStrategy === 'none';
   const activeTarget = useMemo(() => {
     if (!isFillToTarget) return null;
     return inputs.rothConversionTargetValue || selectedQuickFill || DEFAULT_FILL_TO_TARGET_VALUE;
@@ -750,10 +752,28 @@ export const TaxableIncomeWorkspace: React.FC<TaxableIncomeWorkspaceProps> = ({
               >
                 Custom Schedule
               </button>
+              <button
+                type="button"
+                onClick={() => {
+                  onUpdateStrategy('none');
+                }}
+                className={`text-[10px] px-2.5 py-1 rounded-lg font-bold transition-all cursor-pointer ${
+                  isNoConversion
+                    ? 'bg-slate-300 text-slate-950 shadow'
+                    : 'text-slate-400 hover:text-slate-200'
+                }`}
+                title="Disable all Roth conversions"
+              >
+                None
+              </button>
             </div>
 
             {/* Conversion Window Controls */}
-            <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-xl bg-slate-950 border border-slate-800 text-[11px] font-mono text-slate-300">
+            <div
+              className={`flex items-center gap-1.5 px-2.5 py-1 rounded-xl bg-slate-950 border border-slate-800 text-[11px] font-mono text-slate-300 ${isNoConversion ? 'opacity-40 pointer-events-none' : ''}`}
+              aria-disabled={isNoConversion}
+              title={isNoConversion ? 'Conversion window is not used while Roth conversions are set to None' : undefined}
+            >
               <span className="text-[10px] font-sans text-slate-400">Window:</span>
               <select
                 value={inputs.rothConversionStartYear !== undefined ? inputs.rothConversionStartYear : (simStartYear + 1)}
@@ -765,6 +785,7 @@ export const TaxableIncomeWorkspace: React.FC<TaxableIncomeWorkspaceProps> = ({
                 }}
                 className="bg-slate-900 border border-slate-800 rounded px-1 py-0.5 text-[11px] text-emerald-400 font-bold font-mono focus:outline-none cursor-pointer"
                 title="Roth Conversion Start Year"
+                disabled={isNoConversion}
               >
                 {Array.from({ length: 25 }, (_, i) => simStartYear + i).map((yr) => (
                   <option key={yr} value={yr}>
@@ -783,6 +804,7 @@ export const TaxableIncomeWorkspace: React.FC<TaxableIncomeWorkspaceProps> = ({
                 }}
                 className="bg-slate-900 border border-slate-800 rounded px-1 py-0.5 text-[11px] text-emerald-400 font-bold font-mono focus:outline-none cursor-pointer"
                 title="Roth Conversion End Year"
+                disabled={isNoConversion}
               >
                 {Array.from({ length: 35 }, (_, i) => simStartYear + i).map((yr) => (
                   <option key={yr} value={yr}>
@@ -875,6 +897,15 @@ export const TaxableIncomeWorkspace: React.FC<TaxableIncomeWorkspaceProps> = ({
                 </span>
               )}
             </>
+          ) : isNoConversion ? (
+            <div className="flex flex-wrap items-center gap-3 w-full">
+              <span className="text-[10px] font-bold text-slate-400 uppercase font-mono tracking-wider">
+                No Roth Conversions:
+              </span>
+              <span className="text-[11px] text-slate-400">
+                Conversions are disabled. Pre-tax balances grow and are drawn only through spending and required minimum distributions. Choose another mode to model conversions.
+              </span>
+            </div>
           ) : inputs.rothConversionStrategy === 'custom' ? (
             <div className="flex flex-wrap items-center justify-between gap-3 w-full">
               <div className="flex flex-wrap items-center gap-2.5">
@@ -967,7 +998,7 @@ export const TaxableIncomeWorkspace: React.FC<TaxableIncomeWorkspaceProps> = ({
             </span>
             <div className="flex items-baseline gap-1.5 mt-0.5">
               <span className="text-base font-black text-emerald-400 font-mono">
-                {kpiStats.convStart} – {kpiStats.convEnd}
+                {isNoConversion ? 'None' : `${kpiStats.convStart} – ${kpiStats.convEnd}`}
               </span>
               <span className="text-[9px] text-slate-500 font-mono truncate">
                 ({formatCurrency(kpiStats.totalConversions)})
@@ -1012,6 +1043,20 @@ export const TaxableIncomeWorkspace: React.FC<TaxableIncomeWorkspaceProps> = ({
               </div>
             </div>
             <ShieldAlert className="w-5 h-5 text-amber-500/50 shrink-0 ml-2" />
+          </div>
+        ) : isNoConversion ? (
+          <div className="glass-panel rounded-xl px-3 py-2 flex items-center justify-between border-l-4 border-l-slate-500 bg-slate-900/60">
+            <div className="min-w-0">
+              <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider block truncate">
+                Roth Conversions
+              </span>
+              <div className="flex items-baseline gap-1.5 mt-0.5">
+                <span className="text-base font-black font-mono text-slate-300">Disabled</span>
+                <span className="text-[9px] text-slate-500 font-mono truncate">
+                  {formatCurrency(0)} per year
+                </span>
+              </div>
+            </div>
           </div>
         ) : inputs.rothConversionStrategy === 'custom' ? (
           <div className="glass-panel rounded-xl px-3 py-2 flex items-center justify-between border-l-4 border-l-purple-500 bg-slate-900/60">
@@ -1378,7 +1423,9 @@ export const TaxableIncomeWorkspace: React.FC<TaxableIncomeWorkspaceProps> = ({
                       <span>Recommended Strategy</span>
                     </div>
                     <div className="text-base font-black text-slate-100">
-                      {optimizationResult.bestStrategy === 'fill-to-target' ? (
+                      {optimizationResult.bestStrategy === 'none' ? (
+                        <>No Roth Conversions (None)</>
+                      ) : optimizationResult.bestStrategy === 'fill-to-target' ? (
                         <>Fill-to-Target ({getTargetPresetInfo(optimizationResult.bestTargetValue)?.description || `Target Limit: ${formatCurrency(optimizationResult.bestTargetValue || 0)}`})</>
                       ) : optimizationResult.bestStrategy === 'custom' ? (
                         <>Maintain Active Custom Schedule</>

@@ -133,6 +133,49 @@ describe('optimizeRetirementScenario', () => {
     expect(['flat', 'fill-to-target', 'custom']).toContain(result.bestStrategy);
   });
 
+  it('should accept none as the active strategy and still return a valid recommendation', () => {
+    const inputs = getMockInputs();
+    inputs.rothConversionStrategy = 'none';
+
+    const result = optimizeRetirementScenario(inputs, 'max_portfolio', false, null);
+    expect(['none', 'flat', 'fill-to-target', 'custom']).toContain(result.bestStrategy);
+    expect(Number.isFinite(result.metricValue)).toBe(true);
+  });
+
+  it('should report none instead of a flat $0 conversion when conversions cannot help', () => {
+    const inputs = getMockInputs();
+    // With no pre-tax balances every conversion candidate produces an identical result, so the first
+    // candidate (no conversions) must win and be reported as none, never as a flat $0 conversion.
+    // Salaries are zeroed too, because working years add pre-tax 401(k) contributions.
+    inputs.portfolio.yourPreTaxIRA = 0;
+    inputs.portfolio.wifePreTaxIRA = 0;
+    inputs.you.activeSalary = 0;
+    inputs.wife.activeSalary = 0;
+
+    for (const goal of ['max_portfolio', 'min_taxes', 'min_surcharges'] as const) {
+      const result = optimizeRetirementScenario(inputs, goal, false, null);
+      expect(result.bestStrategy).toBe('none');
+      expect(result.bestAnnualRothConversion).toBe(0);
+    }
+  });
+
+  it('should never report a flat strategy with a zero annual conversion', () => {
+    const inputs = getMockInputs();
+    for (const goal of ['max_portfolio', 'min_taxes', 'min_surcharges', 'max_roth'] as const) {
+      const result = optimizeRetirementScenario(inputs, goal, false, null);
+      expect(result.bestStrategy === 'flat' && result.bestAnnualRothConversion === 0).toBe(false);
+    }
+  });
+
+  it('should keep none as the strategy when the inputs are not configured', () => {
+    const inputs = getMockInputs();
+    inputs.rothConversionStrategy = 'none';
+    inputs.isConfigured = false;
+
+    const result = optimizeRetirementScenario(inputs, 'max_portfolio', false, null);
+    expect(result.bestStrategy).toBe('none');
+  });
+
   it('should return finite metricValue and safe defaults when isConfigured is false', () => {
     const inputs = getMockInputs();
     inputs.isConfigured = false;

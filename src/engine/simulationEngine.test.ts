@@ -834,6 +834,42 @@ describe('runRetirementSimulation', () => {
     expect(row2026!.endYourCash).toBeLessThan(100000);
   });
 
+  describe('Roth conversion strategy "none"', () => {
+    const noneInputs = (strategy: AppStateInputs['rothConversionStrategy']): AppStateInputs => {
+      const inputs = getMockInputs();
+      inputs.portfolio.yourPreTaxIRA = 1000000;
+      inputs.rothConversionStartYear = 2026;
+      inputs.rothConversionEndYear = 2032;
+      // Stored settings that would convert under the other strategies
+      inputs.annualRothConversion = 60000;
+      inputs.rothConversionTargetValue = 250000;
+      inputs.rothConversionStrategy = strategy;
+      return inputs;
+    };
+
+    it('performs no conversions even with a flat amount and a target value stored', () => {
+      const ledger = runRetirementSimulation(noneInputs('none'));
+      for (const row of ledger) {
+        expect(row.intentionalRothConversion ?? 0).toBe(0);
+      }
+    });
+
+    it('matches a flat strategy with a zero annual amount', () => {
+      const none = runRetirementSimulation(noneInputs('none'));
+      const zeroFlatInputs = noneInputs('flat');
+      zeroFlatInputs.annualRothConversion = 0;
+      const zeroFlat = runRetirementSimulation(zeroFlatInputs);
+
+      expect(none.map(r => r.totalPortfolioValue)).toEqual(zeroFlat.map(r => r.totalPortfolioValue));
+      expect(none.map(r => r.fedIncomeTax)).toEqual(zeroFlat.map(r => r.fedIncomeTax));
+    });
+
+    it('converts again when the strategy is switched back to flat (stored settings are preserved)', () => {
+      const flat = runRetirementSimulation(noneInputs('flat'));
+      expect(flat.some(r => (r.intentionalRothConversion ?? 0) > 0)).toBe(true);
+    });
+  });
+
   describe('Prior-year tax-funding income carry-forward', () => {
     const getCarryInputs = (): AppStateInputs => {
       const inputs = getMockInputs();

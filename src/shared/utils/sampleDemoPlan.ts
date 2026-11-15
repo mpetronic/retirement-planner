@@ -85,7 +85,6 @@ export const SAMPLE_DEMO_PLAN: AppStateInputs = {
     seed: null,
     randomizeCPI: true,
     constantCPIRate: null,
-    enableRegimeSwitching: true,
     historicalSamplingStrategy: 'hybrid',
     calibrateHistoricalMeans: true,
     enableHistoricalStudentT: false,

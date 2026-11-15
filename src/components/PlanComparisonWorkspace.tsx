@@ -130,7 +130,9 @@ export const PlanComparisonWorkspace: React.FC<PlanComparisonWorkspaceProps> = (
         (pPort.wifeCash || 0)
       ));
 
-    const rothStrategyText = pInputs.rothConversionStrategy === 'fill-to-target'
+    const rothStrategyText = pInputs.rothConversionStrategy === 'none'
+      ? `No Conversion ($0/yr)`
+      : pInputs.rothConversionStrategy === 'fill-to-target'
       ? `Fill-to-Target Bracket (${formatCurrency(pInputs.rothConversionTargetValue ?? 0)})`
       : pInputs.annualRothConversion > 0
         ? `Flat Annual Conversion (${formatCurrency(pInputs.annualRothConversion)}/yr)`
@@ -870,7 +872,9 @@ export const PlanComparisonWorkspace: React.FC<PlanComparisonWorkspaceProps> = (
                   const isB = selectedPlanBId === plan.id;
                   
                   // Compute details
-                  const rothSummaryBadge = plan.inputs.rothConversionStrategy === 'fill-to-target'
+                  const rothSummaryBadge = plan.inputs.rothConversionStrategy === 'none'
+                    ? `Roth Conv: None ($0)`
+                    : plan.inputs.rothConversionStrategy === 'fill-to-target'
                     ? `Roth Conv: Fill (${formatCurrency(plan.inputs.rothConversionTargetValue ?? 0)})`
                     : plan.inputs.annualRothConversion > 0
                       ? `Roth Conv: Flat (${formatCurrency(plan.inputs.annualRothConversion)})`
