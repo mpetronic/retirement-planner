@@ -30,7 +30,8 @@ import {
   ExpenseItemDefinition,
   HealthcareConfig,
   StateHealthcareConfig,
-  normalizeDetailedExpenses
+  normalizeDetailedExpenses,
+  resolveExpenseCost
 } from '../types';
 import { BASE_MEDICARE_PART_B, BASE_MEDICARE_PART_D } from '../engine/taxRates2026';
 
@@ -52,8 +53,8 @@ interface DetailedExpensesDialogProps {
 export const DetailedExpensesDialog: React.FC<DetailedExpensesDialogProps> = ({
   isOpen,
   onClose,
-  currentState = 'MD',
-  targetState = 'FL',
+  currentState = '',
+  targetState = '',
   detailedExpenses,
   onSave,
   simStartYear = 2026,
@@ -73,14 +74,14 @@ export const DetailedExpensesDialog: React.FC<DetailedExpensesDialogProps> = ({
 
   const [statesList, setStatesList] = useState<string[]>(() => {
     const norm = normalizeDetailedExpenses(detailedExpenses);
-    const initial = norm.states && norm.states.length > 0 ? [...norm.states] : [currentState || 'MD', targetState || 'FL'];
+    const initial = norm.states && norm.states.length > 0 ? [...norm.states] : [currentState, targetState].filter(Boolean);
     const set = new Set<string>(initial);
     if (currentState) set.add(currentState);
     if (targetState) set.add(targetState);
     return Array.from(set);
   });
 
-  const [activeState, setActiveState] = useState<string>(() => currentState || 'MD');
+  const [activeState, setActiveState] = useState<string>(() => currentState);
 
   const [costs, setCosts] = useState<{ [stateCode: string]: Record<string, number> }>(() => {
     const norm = normalizeDetailedExpenses(detailedExpenses);
@@ -97,13 +98,13 @@ export const DetailedExpensesDialog: React.FC<DetailedExpensesDialogProps> = ({
     if (isOpen) {
       const norm = normalizeDetailedExpenses(detailedExpenses);
       setCatalog(norm.catalog);
-      const sList = norm.states && norm.states.length > 0 ? [...norm.states] : [currentState || 'MD', targetState || 'FL'];
+      const sList = norm.states && norm.states.length > 0 ? [...norm.states] : [currentState, targetState].filter(Boolean);
       const set = new Set<string>(sList);
       if (currentState) set.add(currentState);
       if (targetState) set.add(targetState);
       const finalStates = Array.from(set);
       setStatesList(finalStates);
-      setActiveState(currentState || finalStates[0] || 'MD');
+      setActiveState(currentState || finalStates[0] || '');
       setCosts(norm.costs);
       setFrequencies(norm.frequencies);
       setActiveTab('expenses');
@@ -126,7 +127,7 @@ export const DetailedExpensesDialog: React.FC<DetailedExpensesDialogProps> = ({
   const [itemIsOneTime, setItemIsOneTime] = useState<boolean>(false);
   const [itemTargetYear, setItemTargetYear] = useState<number | string>(simStartYear);
   const [itemScopeMode, setItemScopeMode] = useState<'ALL' | 'SPECIFIC'>('ALL');
-  const [itemSelectedStates, setItemSelectedStates] = useState<string[]>([currentState || 'MD']);
+  const [itemSelectedStates, setItemSelectedStates] = useState<string[]>([currentState]);
   const [itemBaseCost, setItemBaseCost] = useState<number>(0);
   const [itemCostsByState, setItemCostsByState] = useState<Record<string, number>>({});
   const [itemError, setItemError] = useState<string | null>(null);
@@ -148,8 +149,8 @@ export const DetailedExpensesDialog: React.FC<DetailedExpensesDialogProps> = ({
 
   // Copy State Costs Modal state
   const [copyCostsModalOpen, setCopyCostsModalOpen] = useState(false);
-  const [copySourceState, setCopySourceState] = useState(currentState || 'MD');
-  const [copyTargetState, setCopyTargetState] = useState(targetState || 'FL');
+  const [copySourceState, setCopySourceState] = useState(currentState);
+  const [copyTargetState, setCopyTargetState] = useState(targetState);
 
   // Helper currency formatter
   const formatCurrency = (val: number) => {
@@ -250,7 +251,7 @@ export const DetailedExpensesDialog: React.FC<DetailedExpensesDialogProps> = ({
         setItemSelectedStates([...appStates]);
       }
 
-      const activeCost = costs[activeState]?.[item.id] ?? costs['ALL']?.[item.id] ?? costs['MD']?.[item.id] ?? 0;
+      const activeCost = resolveExpenseCost(costs, activeState, item.id);
       setItemBaseCost(activeCost);
 
       const stateMap: Record<string, number> = {};
@@ -516,9 +517,7 @@ export const DetailedExpensesDialog: React.FC<DetailedExpensesDialogProps> = ({
       catalog,
       states: statesList,
       costs,
-      frequencies,
-      MD: costs.MD || costs['MD'] || {},
-      FL: costs.FL || costs['FL'] || {}
+      frequencies
     };
     onSave(updatedState);
     onClose();
@@ -607,6 +606,14 @@ export const DetailedExpensesDialog: React.FC<DetailedExpensesDialogProps> = ({
   }, [visibleOneTimeItems, simStartYear]);
 
   // Active state totals calculation
+  const activeStateHasNoCosts = useMemo(() => {
+    if (!activeState) return false;
+    const hasEntered = (stateCode: string) => Object.values(costs[stateCode] || {}).some((value) => value > 0);
+    const hasAllStatesCosts = hasEntered('ALL');
+    const otherStateHasCosts = statesList.some((st) => st !== activeState && hasEntered(st));
+    return !hasEntered(activeState) && !hasAllStatesCosts && otherStateHasCosts;
+  }, [costs, activeState, statesList]);
+
   const activeStateTotals = useMemo(() => {
     const costMap = costs[activeState] || {};
     let recurringAnnual = 0;
@@ -867,6 +874,15 @@ export const DetailedExpensesDialog: React.FC<DetailedExpensesDialogProps> = ({
                   </button>
                 </div>
               </div>
+
+              {activeStateHasNoCosts && (
+                <div className="flex items-center gap-2 px-3 py-2 rounded-lg border border-amber-500/30 bg-amber-500/10 text-xs text-amber-200">
+                  <span>
+                    No costs are set for {activeState}, so its expenses count as $0 until you enter them.
+                    Use Copy Costs to start from another state.
+                  </span>
+                </div>
+              )}
 
               {/* Filters Bar */}
               <div className="flex flex-wrap items-center justify-between gap-3 px-1 text-xs">
@@ -1387,7 +1403,7 @@ export const DetailedExpensesDialog: React.FC<DetailedExpensesDialogProps> = ({
                           onClick={() => {
                             if (window.confirm(`Remove state ${st} from plan?`)) {
                               setStatesList(prev => prev.filter(s => s !== st));
-                              if (activeState === st) setActiveState(currentState || 'MD');
+                              if (activeState === st) setActiveState(currentState);
                             }
                           }}
                           className="p-1 text-slate-500 hover:text-red-400 rounded transition-colors cursor-pointer"

@@ -1,5 +1,6 @@
 import { ExpenseCategory, StorageAdapter, ActualExpense } from '../types/expenses';
-import { normalizeDetailedExpenses, ExpenseItemDefinition, DetailedExpensesState } from '../../types';
+import { normalizeDetailedExpenses, resolveExpenseCost, ALL_STATES_COST_KEY, ExpenseItemDefinition, DetailedExpensesState } from '../../types';
+import { resolveActiveJurisdiction } from '../../engine/stateTaxRegistry';
 
 export interface PlannerExpenseLineItem {
   id: string;
@@ -22,6 +23,40 @@ const GROUP_COLORS: Record<string, string> = {
   Charities: '#14b8a6', // teal
   Other: '#8b5cf6', // purple
 };
+
+/**
+ * State of residence in force this year according to a stored plan, or an empty string when the
+ * plan has no jurisdiction (costs then resolve from the all-states entry only).
+ */
+function resolvePlanState(parsedPlan: { jurisdiction?: Parameters<typeof resolveActiveJurisdiction>[0] } | null | undefined): string {
+  const jurisdiction = parsedPlan?.jurisdiction;
+  if (!jurisdiction?.currentState) return '';
+  return resolveActiveJurisdiction(jurisdiction, new Date().getFullYear()).state;
+}
+
+/**
+ * Seeds a new item's cost without overwriting existing entries. The all-states entry always gets it;
+ * an item restricted to specific states also gets one entry per listed state.
+ */
+function seedItemCost(
+  norm: DetailedExpensesState,
+  itemId: string,
+  monthlyCost: number,
+  applicableStates: string[] | undefined
+): boolean {
+  norm.costs = norm.costs || {};
+  const targets = new Set<string>([ALL_STATES_COST_KEY]);
+  (applicableStates || []).forEach((st) => { if (st !== ALL_STATES_COST_KEY) targets.add(st); });
+  let changed = false;
+  targets.forEach((target) => {
+    norm.costs[target] = norm.costs[target] || {};
+    if (norm.costs[target][itemId] === undefined) {
+      norm.costs[target][itemId] = monthlyCost;
+      changed = true;
+    }
+  });
+  return changed;
+}
 
 export function getPlannerCategories(): string[] {
   if (typeof window === 'undefined') return [];
@@ -51,12 +86,7 @@ export function getPlannerExpenseCatalog(activeState?: string): PlannerExpenseLi
       if (raw) {
         const parsed = JSON.parse(raw);
         const detailed = normalizeDetailedExpenses(parsed.detailedExpenses);
-        const currentYear = new Date().getFullYear();
-        const relocYear = parsed.jurisdiction?.relocationYear;
-        const currentResState = activeState ||
-          (relocYear !== null && relocYear !== undefined && currentYear >= Number(relocYear)
-            ? (parsed.jurisdiction?.targetState || parsed.jurisdiction?.currentState || 'MD')
-            : (parsed.jurisdiction?.currentState || 'MD'));
+        const currentResState = activeState || resolvePlanState(parsed);
 
         if (detailed && detailed.catalog && Array.isArray(detailed.catalog.items) && detailed.catalog.items.length > 0) {
           const allowedCategoriesSet = new Set(
@@ -89,10 +119,6 @@ export function getPlannerExpenseCatalog(activeState?: string): PlannerExpenseLi
             }
           }
 
-          const stateCosts = detailed.costs?.[currentResState] || {};
-          const allCosts = detailed.costs?.['ALL'] || {};
-          const costsMD = detailed.costs?.MD || detailed.MD || {};
-          const costsFL = detailed.costs?.FL || detailed.FL || {};
           const frequencies = detailed.frequencies || {};
 
           for (const item of filteredCatalogItems) {
@@ -104,7 +130,7 @@ export function getPlannerExpenseCatalog(activeState?: string): PlannerExpenseLi
             if (!applies) continue;
 
             const group = item.category || 'Living';
-            const cost = stateCosts[item.id] ?? allCosts[item.id] ?? costsMD[item.id] ?? costsFL[item.id] ?? 0;
+            const cost = resolveExpenseCost(detailed.costs, currentResState, item.id);
             const freq = frequencies[item.id] ?? item.defaultFrequency ?? 12;
             const monthlyCost = freq > 0 ? (cost * freq) / 12 : cost;
 
@@ -197,7 +223,7 @@ export function savePlannerExpenseLineItem(item: {
         groupCategory: existing.category,
         name: existing.name,
         displayName: `${existing.category} - ${existing.name}`,
-        plannedMonthlyDefault: norm.costs?.MD?.[existing.id] ?? norm.costs?.ALL?.[existing.id] ?? monthlyCost,
+        plannedMonthlyDefault: norm.costs?.[resolvePlanState(parsed)]?.[existing.id] ?? norm.costs?.[ALL_STATES_COST_KEY]?.[existing.id] ?? monthlyCost,
         color: GROUP_COLORS[existing.category] || '#6366f1',
         icon: 'Tag',
         isCustom: false,
@@ -225,15 +251,7 @@ export function savePlannerExpenseLineItem(item: {
     if (norm.frequencies[itemId] === undefined) {
       norm.frequencies[itemId] = 12;
     }
-    norm.costs = norm.costs || {};
-    norm.costs.ALL = norm.costs.ALL || {};
-    norm.costs.MD = norm.costs.MD || {};
-    norm.costs.FL = norm.costs.FL || {};
-    if (norm.costs.ALL[itemId] === undefined) norm.costs.ALL[itemId] = monthlyCost;
-    if (norm.costs.MD[itemId] === undefined) norm.costs.MD[itemId] = monthlyCost;
-    if (norm.costs.FL[itemId] === undefined) norm.costs.FL[itemId] = monthlyCost;
-    norm.MD = norm.costs.MD;
-    norm.FL = norm.costs.FL;
+    seedItemCost(norm, itemId, monthlyCost, existing.applicableStates);
 
     parsed.detailedExpenses = norm;
     window.localStorage.setItem('retirement_planner_inputs', JSON.stringify(parsed));
@@ -282,10 +300,7 @@ export function batchRegisterPlannerExpenseLineItems(
     let hasModifications = false;
 
     norm.frequencies = norm.frequencies || {};
-    norm.costs = norm.costs || {};
-    norm.costs.ALL = norm.costs.ALL || {};
-    norm.costs.MD = norm.costs.MD || {};
-    norm.costs.FL = norm.costs.FL || {};
+    const planState = resolvePlanState(parsed);
 
     for (const item of items) {
       const group = (item.groupCategory || 'Living').trim();
@@ -327,16 +342,7 @@ export function batchRegisterPlannerExpenseLineItems(
         norm.frequencies[itemId] = 12;
         hasModifications = true;
       }
-      if (norm.costs.ALL[itemId] === undefined) {
-        norm.costs.ALL[itemId] = monthlyCost;
-        hasModifications = true;
-      }
-      if (norm.costs.MD[itemId] === undefined) {
-        norm.costs.MD[itemId] = monthlyCost;
-        hasModifications = true;
-      }
-      if (norm.costs.FL[itemId] === undefined) {
-        norm.costs.FL[itemId] = monthlyCost;
+      if (seedItemCost(norm, itemId, monthlyCost, existing.applicableStates)) {
         hasModifications = true;
       }
 
@@ -346,7 +352,7 @@ export function batchRegisterPlannerExpenseLineItems(
         groupCategory: group,
         name,
         displayName,
-        plannedMonthlyDefault: norm.costs.MD[itemId] ?? norm.costs.ALL[itemId] ?? monthlyCost,
+        plannedMonthlyDefault: norm.costs[planState]?.[itemId] ?? norm.costs[ALL_STATES_COST_KEY]?.[itemId] ?? monthlyCost,
         color: GROUP_COLORS[group] || '#6366f1',
         icon: 'Tag',
         isCustom: false,
@@ -354,8 +360,6 @@ export function batchRegisterPlannerExpenseLineItems(
     }
 
     if (hasModifications) {
-      norm.MD = norm.costs.MD;
-      norm.FL = norm.costs.FL;
       parsed.detailedExpenses = norm;
       window.localStorage.setItem('retirement_planner_inputs', JSON.stringify(parsed));
     }
@@ -535,26 +539,13 @@ export async function syncPlannerCatalogToCloudStorage(
   if (!effectiveState && typeof window !== 'undefined') {
     try {
       const raw = window.localStorage.getItem('retirement_planner_inputs');
-      if (raw) {
-        const parsed = JSON.parse(raw);
-        const currentYear = new Date().getFullYear();
-        const relocYear = parsed.jurisdiction?.relocationYear;
-        if (relocYear !== null && relocYear !== undefined && currentYear >= Number(relocYear)) {
-          effectiveState = parsed.jurisdiction?.targetState || parsed.jurisdiction?.currentState || 'MD';
-        } else {
-          effectiveState = parsed.jurisdiction?.currentState || 'MD';
-        }
-      }
+      if (raw) effectiveState = resolvePlanState(JSON.parse(raw));
     } catch {
       // fallback
     }
   }
-  const state = effectiveState || 'MD';
+  const state = effectiveState || '';
 
-  const stateCosts = norm.costs?.[state] || {};
-  const allCosts = norm.costs?.['ALL'] || {};
-  const costsMD = norm.costs?.MD || norm.MD || {};
-  const costsFL = norm.costs?.FL || norm.FL || {};
   const frequencies = norm.frequencies || {};
 
   const allowedCategoriesSet = new Set((norm.catalog.categories || []).map(c => c.trim().toLowerCase()));
@@ -584,7 +575,7 @@ export async function syncPlannerCatalogToCloudStorage(
     validActiveItemIds.add(item.id);
 
     const group = item.category || 'Living';
-    const cost = stateCosts[item.id] ?? allCosts[item.id] ?? costsMD[item.id] ?? costsFL[item.id] ?? 0;
+    const cost = resolveExpenseCost(norm.costs, state, item.id);
     const freq = frequencies[item.id] ?? item.defaultFrequency ?? 12;
     const monthlyCost = freq > 0 ? (cost * freq) / 12 : cost;
     const displayName = `${group} - ${item.name}`;

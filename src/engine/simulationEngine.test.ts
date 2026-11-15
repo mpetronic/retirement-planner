@@ -1310,8 +1310,7 @@ describe('runRetirementSimulation fixes', () => {
       const normalized = normalizeDetailedExpenses(undefined);
       expect(normalized.catalog).toBeDefined();
       expect(normalized.catalog.categories.length).toBeGreaterThan(0);
-      expect(normalized.costs.MD).toBeDefined();
-      expect(normalized.costs.FL).toBeDefined();
+      expect(normalized.costs).toEqual({});
     });
 
     it('should accurately calculate living expenses from dynamic custom catalog items and categories', () => {

@@ -140,13 +140,44 @@ export interface ExpenseCatalog {
 
 export interface DetailedExpensesState {
   catalog: ExpenseCatalog;
-  states?: string[]; // Configured state roster (e.g. ['MD', 'FL'])
+  states?: string[]; // Configured state roster (state codes)
   costs: {
     [stateCode: string]: Record<string, number>;
   };
   frequencies: Record<string, number>;
-  MD?: Record<string, number>;
-  FL?: Record<string, number>;
+}
+
+/** Key in DetailedExpensesState.costs holding costs that apply to every state. */
+export const ALL_STATES_COST_KEY = 'ALL';
+
+/**
+ * Resolves an item's cost for a state: the state's own entry, then the all-states entry, then 0.
+ * Never falls back to another state's costs.
+ */
+export function resolveExpenseCost(
+  costs: DetailedExpensesState['costs'] | undefined,
+  stateCode: string,
+  itemId: string
+): number {
+  return costs?.[stateCode]?.[itemId] ?? costs?.[ALL_STATES_COST_KEY]?.[itemId] ?? 0;
+}
+
+/**
+ * Legacy plan format: per-state costs stored as top-level keys of the detailed expenses object
+ * instead of under `costs`. Only the two states that existed in that format were ever written.
+ * This is the only place those keys are read.
+ */
+const LEGACY_TOP_LEVEL_COST_STATE_KEYS = ['MD', 'FL'];
+
+function readLegacyTopLevelCosts(rawObj: Record<string, unknown>): Record<string, Record<string, number>> {
+  const legacy: Record<string, Record<string, number>> = {};
+  for (const stateCode of LEGACY_TOP_LEVEL_COST_STATE_KEYS) {
+    const value = rawObj[stateCode];
+    if (value && typeof value === 'object') {
+      legacy[stateCode] = { ...(value as Record<string, number>) };
+    }
+  }
+  return legacy;
 }
 
 // Backward compatibility types
@@ -219,14 +250,9 @@ export const DEFAULT_DETAILED_EXPENSES_STATE: DetailedExpensesState = {
     categories: [...DEFAULT_EXPENSE_CATEGORIES],
     items: []
   },
-  states: ['MD', 'FL'],
-  costs: {
-    MD: {},
-    FL: {}
-  },
-  frequencies: {},
-  MD: {},
-  FL: {}
+  states: [],
+  costs: {},
+  frequencies: {}
 };
 
 /**
@@ -244,16 +270,11 @@ export function normalizeDetailedExpenses(raw?: unknown): DetailedExpensesState 
   if (rawCatalog && Array.isArray(rawCatalog.items) && Array.isArray(rawCatalog.categories)) {
     const rawCosts = (rawObj.costs || {}) as Record<string, Record<string, number>>;
     const costs: Record<string, Record<string, number>> = { ...rawCosts };
-    if (rawObj.MD && !costs.MD) costs.MD = { ...(rawObj.MD as Record<string, number>) };
-    if (rawObj.FL && !costs.FL) costs.FL = { ...(rawObj.FL as Record<string, number>) };
-    
-    // Ensure default MD and FL objects exist
-    if (!costs.MD) costs.MD = {};
-    if (!costs.FL) costs.FL = {};
+    for (const [stateCode, legacyCosts] of Object.entries(readLegacyTopLevelCosts(rawObj))) {
+      if (!costs[stateCode]) costs[stateCode] = legacyCosts;
+    }
 
-    const rawStates = Array.isArray(rawObj.states) && rawObj.states.length > 0 
-      ? (rawObj.states as string[]) 
-      : ['MD', 'FL'];
+    const rawStates = Array.isArray(rawObj.states) ? (rawObj.states as string[]) : [];
     const stateSet = new Set<string>(rawStates);
     Object.keys(costs).forEach(s => stateSet.add(s));
 
@@ -278,15 +299,12 @@ export function normalizeDetailedExpenses(raw?: unknown): DetailedExpensesState 
       },
       states: Array.from(stateSet),
       costs,
-      frequencies,
-      MD: costs.MD,
-      FL: costs.FL
+      frequencies
     };
   }
 
   // Legacy format migration
-  const legacyMD = (rawObj.MD || {}) as Record<string, number>;
-  const legacyFL = (rawObj.FL || {}) as Record<string, number>;
+  const legacyCosts = readLegacyTopLevelCosts(rawObj);
   const legacyFreqs = (rawObj.frequencies || {}) as Record<string, number>;
 
   const knownOneTimeKeys = new Set([
@@ -302,8 +320,8 @@ export function normalizeDetailedExpenses(raw?: unknown): DetailedExpensesState 
     'post65DentalPremium', 'post65DentalOOP', 'post65VisionPremium', 'post65VisionOOP'
   ]);
 
-  // Infer legacy items if legacy keys exist in raw.MD or raw.FL (excluding healthcare keys)
-  const legacyKeys = Array.from(new Set([...Object.keys(legacyMD), ...Object.keys(legacyFL)]))
+  // Infer legacy items from the keys of every legacy per-state cost map (excluding healthcare keys)
+  const legacyKeys = Array.from(new Set(Object.values(legacyCosts).flatMap((stateCosts) => Object.keys(stateCosts))))
     .filter((key) => !healthcareKeys.has(key));
   const legacyItems: ExpenseItemDefinition[] = legacyKeys.map((key) => {
     const isOneTime = knownOneTimeKeys.has(key);
@@ -317,10 +335,7 @@ export function normalizeDetailedExpenses(raw?: unknown): DetailedExpensesState 
     };
   });
 
-  const costs: Record<string, Record<string, number>> = {
-    MD: { ...legacyMD },
-    FL: { ...legacyFL }
-  };
+  const costs: Record<string, Record<string, number>> = legacyCosts;
 
   const frequencies: Record<string, number> = {
     ...legacyFreqs
@@ -331,11 +346,9 @@ export function normalizeDetailedExpenses(raw?: unknown): DetailedExpensesState 
       categories: [...DEFAULT_EXPENSE_CATEGORIES],
       items: legacyItems
     },
-    states: ['MD', 'FL'],
+    states: Object.keys(costs),
     costs,
-    frequencies,
-    MD: costs.MD,
-    FL: costs.FL
+    frequencies
   };
 }
 

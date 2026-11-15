@@ -76,7 +76,10 @@ describe('plannerCategories synchronization', () => {
     expect(parsed.detailedExpenses.catalog.categories).toContain('Home');
     const catalogItem = parsed.detailedExpenses.catalog.items.find((i: { name: string; category: string }) => i.name === 'Housewares' && i.category === 'Home');
     expect(catalogItem).toBeDefined();
-    expect(parsed.detailedExpenses.costs.MD[catalogItem.id]).toBe(150);
+    // New items are seeded into the all-states bucket so every state resolves a cost
+    expect(parsed.detailedExpenses.costs.ALL[catalogItem.id]).toBe(150);
+    expect(parsed.detailedExpenses.costs.MD).toBeUndefined();
+    expect(parsed.detailedExpenses.costs.FL).toBeUndefined();
   });
 
   it('should sync custom categories array from storage adapter into planner detailed expenses', () => {
