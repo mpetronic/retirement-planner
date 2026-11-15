@@ -114,12 +114,17 @@ export function calculateDynamicRMDHurdleRate(ledger: SimulationResultRow[], cur
 
     const isSingle = row.standardDeduction < STATUTORY_STD_DEDUCTION_SINGLE_MFJ_MIDPOINT * (row.cpiFactor || 1);
     const brackets = isSingle ? FED_BRACKETS_SINGLE : FED_BRACKETS_MFJ;
-    const taxableIncome = row.taxableIncome || 0;
+    // Ledger values are nominal future dollars, so bracket limits must be inflated to match.
+    // Capital gains and qualified dividends sit on top of ordinary income and use preferential
+    // rates, so they are excluded from the base used to find the ordinary marginal bracket.
+    const cpiFactor = row.cpiFactor || 1;
+    const preferentialIncome = (row.capitalGainsTriggered ?? 0) + (row.qualifiedDividends ?? 0);
+    const ordinaryTaxableIncome = Math.max(0, (row.taxableIncome || 0) - preferentialIncome);
 
     // Find marginal federal bracket for top ordinary dollar
     let fedRate = brackets[0].rate;
     for (const b of brackets) {
-      if (taxableIncome <= b.limit) {
+      if (ordinaryTaxableIncome <= b.limit * cpiFactor) {
         fedRate = b.rate;
         break;
       }
@@ -131,9 +136,14 @@ export function calculateDynamicRMDHurdleRate(ledger: SimulationResultRow[], cur
     // multiplying the federal marginal tax rate by 1.85!
     const totalSS = (row.yourSS ?? 0) + (row.wifeSS ?? 0);
     const taxableSS = row.taxableSS ?? 0;
+    // Only the part of the RMD that lands inside the SS phase-in zone triggers the torpedo; each
+    // extra ordinary dollar there makes STATUTORY_MAX_TAXABLE_SS_PORTION of a dollar of SS taxable.
     let ssMultiplier = 1.0;
-    if (totalSS > 0 && taxableSS < STATUTORY_MAX_TAXABLE_SS_PORTION * totalSS) {
-      ssMultiplier = STATUTORY_SS_TORPEDO_MULTIPLIER;
+    if (totalSS > 0) {
+      const remainingTaxableSS = Math.max(0, STATUTORY_MAX_TAXABLE_SS_PORTION * totalSS - taxableSS);
+      const phaseInHeadroom = remainingTaxableSS / STATUTORY_MAX_TAXABLE_SS_PORTION;
+      const torpedoShare = Math.min(1, phaseInHeadroom / annualRMD);
+      ssMultiplier = 1 + (STATUTORY_SS_TORPEDO_MULTIPLIER - 1) * torpedoShare;
     }
 
     const effectiveFedRate = fedRate * ssMultiplier;

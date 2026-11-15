@@ -585,6 +585,7 @@ export interface SimulationResultRow {
   niitTax: number;
   taxableSS: number;
   taxableDividends: number;
+  qualifiedDividends?: number; // Portion of dividends taxed at preferential capital gains rates
   taxableInterest: number;
   cpiFactor: number;
   activeState?: string;

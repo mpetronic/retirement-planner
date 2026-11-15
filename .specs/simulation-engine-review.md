@@ -27,7 +27,7 @@ Use this table to track what has been debated and fixed.
 | 4 | Survivor (wife first): husband's cash wiped out | High (latent) | Fixed |
 | 5 | Survivor (wife first): Roth conversions stop | Medium-High (latent) | Fixed |
 | 6 | No federal basis step-up unless FL | Medium | Fixed |
-| 7 | TE optimizer nominal income vs un-inflated brackets | Medium-High | Open |
+| 7 | TE optimizer nominal income vs un-inflated brackets | Medium-High | Fixed |
 | 8 | OBBBA 2025 federal changes not modeled | Medium | Open |
 | 9 | Maryland state tax errors and stale values | Medium | Open |
 | 10 | 2026 LTCG thresholds look overstated | Low-Medium | Open |
@@ -278,6 +278,20 @@ point where SS is fully taxed.
 `capitalGainsTriggered` plus qualified dividends from the ordinary base, and apply the torpedo
 multiplier only to the portion of the RMD that sits inside the SS phase-in zone (or drop it to a
 weighted average).
+
+**Resolution.** Fixed in `calculateDynamicRMDHurdleRate`, all three parts:
+
+- The bracket lookup now compares income to `b.limit * row.cpiFactor`, so nominal future income is
+  measured against inflated limits, consistent with the existing `isSingle` check.
+- The ordinary base is `taxableIncome - capitalGainsTriggered - qualifiedDividends`. The ledger row had
+  only total dividends, so an optional `qualifiedDividends` field was added to `SimulationResultRow` and
+  populated in `simulationEngine.ts` from the value already computed there.
+- The torpedo multiplier is no longer all-or-nothing. Only the share of the RMD inside the SS phase-in
+  zone (remaining taxable SS divided by `STATUTORY_MAX_TAXABLE_SS_PORTION`, over the RMD) gets the extra
+  `STATUTORY_MAX_TAXABLE_SS_PORTION`, so the multiplier blends from 1.0 up to 1.85.
+
+Tests in `taxEquilibriumEngine.test.ts` cover inflated brackets, the preferential-income exclusion and
+the blended torpedo. Expect a lower hurdle rate and therefore less recommended conversion than before.
 
 ---
 

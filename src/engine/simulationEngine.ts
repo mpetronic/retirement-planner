@@ -2145,6 +2145,7 @@ export function runRetirementSimulation(
       niitTax,
       taxableSS,
       taxableDividends: totalDividends,
+      qualifiedDividends,
       taxableInterest: totalCashInterest,
       cpiFactor,
       ssPaymentLevel,

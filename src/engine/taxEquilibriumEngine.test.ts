@@ -4,7 +4,8 @@ import {
   calculateDynamicRMDHurdleRate,
   DEFAULT_TAX_EQUILIBRIUM_FLOOR_RATE,
 } from './taxEquilibriumEngine';
-import { AppStateInputs } from '../types';
+import { AppStateInputs, SimulationResultRow } from '../types';
+import { FED_BRACKETS_MFJ, FED_STANDARD_DEDUCTION_MFJ } from './taxRates2026';
 
 describe('taxEquilibriumEngine', () => {
   const getMockInputs = (): AppStateInputs => ({
@@ -76,6 +77,58 @@ describe('taxEquilibriumEngine', () => {
 
     // Direct check of helper with empty vs populated ledger
     expect(calculateDynamicRMDHurdleRate([], 'MD')).toBe(DEFAULT_TAX_EQUILIBRIUM_FLOOR_RATE);
+  });
+
+  describe('calculateDynamicRMDHurdleRate bracket and torpedo handling', () => {
+    const NO_INCOME_TAX_STATE = 'TX';
+    const TEST_CPI_FACTOR = 1.75;
+    const TEST_NOMINAL_TAXABLE_INCOME = 150000;
+    const TEST_RMD = 50000;
+    const TEST_SS = 40000;
+    const TEST_STATUTORY_MAX_SS_SHARE = 0.85;
+    const rateOf = (limitRate: number) => FED_BRACKETS_MFJ.find((b) => b.rate === limitRate)!.rate;
+
+    const makeRow = (overrides: Partial<SimulationResultRow>): SimulationResultRow =>
+      ({
+        yourRMD: TEST_RMD,
+        wifeRMD: 0,
+        yourSS: 0,
+        wifeSS: 0,
+        taxableSS: 0,
+        standardDeduction: FED_STANDARD_DEDUCTION_MFJ * TEST_CPI_FACTOR,
+        cpiFactor: TEST_CPI_FACTOR,
+        taxableIncome: TEST_NOMINAL_TAXABLE_INCOME,
+        capitalGainsTriggered: 0,
+        taxableDividends: 0,
+        qualifiedDividends: 0,
+        magi: 0,
+        effectiveLocalTaxRate: 0,
+        ...overrides,
+      }) as SimulationResultRow;
+
+    it('inflates bracket limits to match nominal future income', () => {
+      const rate = calculateDynamicRMDHurdleRate([makeRow({})], NO_INCOME_TAX_STATE);
+      expect(rate).toBeCloseTo(rateOf(0.12));
+    });
+
+    it('excludes capital gains and qualified dividends from the ordinary base', () => {
+      const withGains = makeRow({ taxableIncome: 400000, capitalGainsTriggered: 200000, qualifiedDividends: 50000 });
+      const rate = calculateDynamicRMDHurdleRate([withGains], NO_INCOME_TAX_STATE);
+      expect(rate).toBeCloseTo(rateOf(0.12));
+    });
+
+    it('applies the torpedo only to the RMD share inside the SS phase-in zone', () => {
+      const noSsRate = calculateDynamicRMDHurdleRate([makeRow({})], NO_INCOME_TAX_STATE);
+      const fullyTaxedSS = makeRow({ yourSS: TEST_SS, taxableSS: TEST_SS * TEST_STATUTORY_MAX_SS_SHARE });
+      expect(calculateDynamicRMDHurdleRate([fullyTaxedSS], NO_INCOME_TAX_STATE)).toBeCloseTo(noSsRate);
+
+      const allInZone = makeRow({ yourSS: TEST_SS, taxableSS: 0, yourRMD: 1000 });
+      const partlyInZone = makeRow({ yourSS: TEST_SS, taxableSS: TEST_SS * 0.5 });
+      const zoneRate = calculateDynamicRMDHurdleRate([allInZone], NO_INCOME_TAX_STATE);
+      const partialRate = calculateDynamicRMDHurdleRate([partlyInZone], NO_INCOME_TAX_STATE);
+      expect(zoneRate).toBeGreaterThan(partialRate);
+      expect(partialRate).toBeGreaterThan(noSsRate);
+    });
   });
 
   it('generates a year-by-year schedule with limiting factors', () => {
