@@ -26,7 +26,7 @@ Use this table to track what has been debated and fixed.
 | 3 | Historical bootstrap arithmetic vs geometric calibration | Medium-High | Fixed |
 | 4 | Survivor (wife first): husband's cash wiped out | High (latent) | Open |
 | 5 | Survivor (wife first): Roth conversions stop | Medium-High (latent) | Open |
-| 6 | No federal basis step-up unless FL | Medium | Open |
+| 6 | No federal basis step-up unless FL | Medium | Fixed |
 | 7 | TE optimizer nominal income vs un-inflated brackets | Medium-High | Open |
 | 8 | OBBBA 2025 federal changes not modeled | Medium | Open |
 | 9 | Maryland state tax errors and stale values | Medium | Open |
@@ -223,6 +223,26 @@ basis ratio that is $150k of phantom gain.
 
 **Recommendation.** Apply a full step-up on the decedent's account in all states. If you want to model
 joint accounts later, step up half.
+
+**Resolution.** Fixed, with a corrected diagnosis. The finding's premise was wrong for non-FL states:
+basis is tracked in dollars, so the old non-FL branch (`survivorBasis += decedentTaxable`) already gave
+the decedent's account a full step-up and left the survivor's own basis alone, which is correct under
+IRC 1014. The real defect was the FL branch, which also reset the survivor's own account to full basis
+and erased its embedded gains. Both transitions now use the single state-independent rule and
+`isStateFL` is gone. As part of making the engine state-agnostic:
+
+- The Maryland-style pension exclusion was being computed in the engine and applied to every state. It is
+  now data in the state registry (`pensionExclusionPolicy`) and read through `calculatePensionExclusion`,
+  so states without a policy get none.
+- `MD_PENSION_EXCLUSION_BASE_CAP`, `MD_PIGGYBACK_RATE` and the Maryland bracket tiers moved from
+  `taxRates2026.ts` into the Maryland profile in `stateTaxRegistry.ts`.
+- `resolveActiveJurisdiction` replaces the duplicated active-state logic, including the hard-coded
+  MD/FL relocation toggle. A relocation whose target equals the current state now stays in that state.
+- `calculateMDStateTax` became `calculateStateTax(stateCode, ...)`, and
+  `applyBucketLiquidityConstraintToConversion` takes a plain `activeState` string.
+
+Known limits: the UI components still default to `'MD'` and `'FL'` in places, and the `legacyMD`,
+`legacyFL`, `costsMD` and `costsFL` expense data-model fields are a separate follow-up change.
 
 ---
 

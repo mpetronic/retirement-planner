@@ -1,8 +1,3 @@
-import {
-  MD_GRADUATED_TIERS_SINGLE,
-  MD_GRADUATED_TIERS_MFJ,
-  MD_PIGGYBACK_RATE,
-} from './taxRates2026';
 
 export interface SubJurisdiction {
   id: string;
@@ -25,6 +20,23 @@ export interface StateTaxCalculationParams {
   wifeDeceased?: boolean;
 }
 
+/**
+ * State rule that excludes retirement-plan distributions from taxable income up to a per-person cap,
+ * for filers at or above a minimum age. Some states reduce the cap by Social Security benefits received.
+ */
+export interface PensionExclusionPolicy {
+  perPersonBaseCap: number;
+  minAge: number;
+  reducedBySocialSecurity: boolean;
+}
+
+export interface PensionExclusionPerson {
+  age: number;
+  isAlive: boolean;
+  socialSecurityBenefit: number;
+  eligibleDistributions: number;
+}
+
 export interface StateTaxResult {
   stateTax: number;
   localTax: number;
@@ -40,6 +52,7 @@ export interface StateTaxProfile {
   effectiveTaxRateEstimate: number;
   subJurisdictionLabel?: string;
   subJurisdictions: SubJurisdiction[];
+  pensionExclusionPolicy?: PensionExclusionPolicy;
   calculateTax: (params: StateTaxCalculationParams, effectiveLocalRate?: number) => StateTaxResult;
   getDefaultLocalRate: (countyId?: string | null) => number;
 }
@@ -290,6 +303,37 @@ function createGraduatedTaxProfile(
 }
 
 // ---------------------------------------------------------------------------
+// Maryland profile data (single source of truth for all Maryland-specific values)
+// ---------------------------------------------------------------------------
+const MD_PIGGYBACK_RATE = 0.0320; // flat 3.20% local tax when no county is selected
+const MD_PENSION_EXCLUSION_POLICY: PensionExclusionPolicy = {
+  // Statutory cap equals the max annual Social Security benefit at Full Retirement Age
+  perPersonBaseCap: 34300,
+  minAge: 65,
+  reducedBySocialSecurity: true,
+};
+const MD_GRADUATED_TIERS_SINGLE: TaxBracketTier[] = [
+  { rate: 0.02, limit: 1000 },
+  { rate: 0.03, limit: 2000 },
+  { rate: 0.04, limit: 3000 },
+  { rate: 0.0475, limit: 100000 },
+  { rate: 0.05, limit: 125000 },
+  { rate: 0.0525, limit: 150000 },
+  { rate: 0.055, limit: 250000 },
+  { rate: 0.0575, limit: Infinity }
+];
+const MD_GRADUATED_TIERS_MFJ: TaxBracketTier[] = [
+  { rate: 0.02, limit: 1000 },
+  { rate: 0.03, limit: 2000 },
+  { rate: 0.04, limit: 3000 },
+  { rate: 0.0475, limit: 150000 },
+  { rate: 0.05, limit: 175000 },
+  { rate: 0.0525, limit: 225000 },
+  { rate: 0.055, limit: 300000 },
+  { rate: 0.0575, limit: Infinity }
+];
+
+// ---------------------------------------------------------------------------
 // Maryland Profile (Exact statutory calculation with sliding 15% deduction)
 // ---------------------------------------------------------------------------
 export const MARYLAND_PROFILE: StateTaxProfile = {
@@ -301,6 +345,7 @@ export const MARYLAND_PROFILE: StateTaxProfile = {
   effectiveTaxRateEstimate: 0.0475,
   subJurisdictionLabel: 'County',
   subJurisdictions: MD_COUNTIES,
+  pensionExclusionPolicy: MD_PENSION_EXCLUSION_POLICY,
   getDefaultLocalRate(countyId?: string | null): number {
     if (!countyId) return MD_PIGGYBACK_RATE;
     const match = MD_COUNTIES.find((c) => c.id === countyId);
@@ -1099,4 +1144,51 @@ export function calculateStateAndLocalTax(
     return { stateTax: 0, localTax, totalTax: localTax };
   }
   return profile.calculateTax(params, effectiveLocalRate);
+}
+
+/**
+ * Total retirement-distribution exclusion allowed by the state's pension exclusion policy.
+ * Returns 0 for states with no such policy.
+ */
+export function calculatePensionExclusion(
+  stateCode: string,
+  persons: PensionExclusionPerson[],
+  cpiFactor: number
+): number {
+  const policy = getStateTaxProfile(stateCode)?.pensionExclusionPolicy;
+  if (!policy) return 0;
+  return persons.reduce((total, person) => {
+    if (!person.isAlive || person.age < policy.minAge) return total;
+    const cap = Math.max(
+      0,
+      policy.perPersonBaseCap * cpiFactor - (policy.reducedBySocialSecurity ? person.socialSecurityBenefit : 0)
+    );
+    return total + Math.min(person.eligibleDistributions, cap);
+  }, 0);
+}
+
+export interface JurisdictionSettings {
+  currentState: string;
+  currentCounty?: string | null;
+  currentLocalTaxRate?: number | null;
+  targetState?: string | null;
+  targetCounty?: string | null;
+  targetLocalTaxRate?: number | null;
+  relocationYear: number | null;
+}
+
+export interface ActiveJurisdiction {
+  state: string;
+  county: string | null | undefined;
+  customLocalRate: number | null | undefined;
+  effectiveLocalRate: number;
+}
+
+/** Resolves the state, county and local tax rate in force for a simulation year. */
+export function resolveActiveJurisdiction(jurisdiction: JurisdictionSettings, year: number): ActiveJurisdiction {
+  const isRelocated = jurisdiction.relocationYear !== null && year >= jurisdiction.relocationYear;
+  const state = isRelocated ? (jurisdiction.targetState || jurisdiction.currentState) : jurisdiction.currentState;
+  const county = isRelocated ? jurisdiction.targetCounty : jurisdiction.currentCounty;
+  const customLocalRate = isRelocated ? jurisdiction.targetLocalTaxRate : jurisdiction.currentLocalTaxRate;
+  return { state, county, customLocalRate, effectiveLocalRate: getEffectiveLocalTaxRate(state, county, customLocalRate) };
 }

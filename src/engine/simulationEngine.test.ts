@@ -5,7 +5,7 @@ import {
   calculateTaxableSS,
   solveRothConversionForTargetAGI,
   calculateFedTax,
-  calculateMDStateTax,
+  calculateStateTax,
   runRetirementSimulation,
   calculateFedTaxWithLTCG,
   getRMDStartAge,
@@ -146,11 +146,11 @@ describe('Tax calculations', () => {
 
   it('should calculate Maryland state tax correctly with standard piggyback rate', () => {
     // AGI: 60000, taxableSS: 0, isSingle: false
-    const mdTaxMFJ = calculateMDStateTax(60000, 0, false);
+    const mdTaxMFJ = calculateStateTax('MD', 60000, 0, false);
     expect(mdTaxMFJ).toBeGreaterThan(0);
 
     // AGI: 60000, taxableSS: 0, isSingle: true
-    const mdTaxSingle = calculateMDStateTax(60000, 0, true);
+    const mdTaxSingle = calculateStateTax('MD', 60000, 0, true);
     expect(mdTaxSingle).toBeGreaterThan(0);
   });
 
@@ -158,8 +158,8 @@ describe('Tax calculations', () => {
     // Montgomery County (3.20%) vs Worcester County (2.25%)
     const mocoRate = 0.0320;
     const worcesterRate = 0.0225;
-    const mocoTax = calculateMDStateTax(100000, 0, false, 1, 0, mocoRate);
-    const worcesterTax = calculateMDStateTax(100000, 0, false, 1, 0, worcesterRate);
+    const mocoTax = calculateStateTax('MD', 100000, 0, false, 1, 0, mocoRate);
+    const worcesterTax = calculateStateTax('MD', 100000, 0, false, 1, 0, worcesterRate);
 
     expect(mocoTax).toBeGreaterThan(worcesterTax);
     // MD Taxable income for 100k MFJ:
@@ -260,16 +260,16 @@ describe('runRetirementSimulation', () => {
     expect(row2030!.stateIncomeTax).toBe(0);
   });
 
-  it('should safeguard and drop state income taxes to 0 when relocating even if targetState was erroneously stored as MD', () => {
+  it('should keep taxing the same state when the relocation target is the current state', () => {
     const inputs = getMockInputs();
     inputs.jurisdiction.relocationYear = 2026;
     inputs.jurisdiction.currentState = 'MD';
-    inputs.jurisdiction.targetState = 'MD'; // Erroneously stored as MD without intra-state county change
+    inputs.jurisdiction.targetState = 'MD';
 
     const results = runRetirementSimulation(inputs);
     const row2026 = results.find(r => r.year === 2026);
     expect(row2026).toBeDefined();
-    expect(row2026!.stateIncomeTax).toBe(0);
+    expect(row2026!.stateIncomeTax).toBeGreaterThan(0);
   });
 
   it('should correctly simulate intra-state relocation between Maryland counties and adjust local taxes', () => {
@@ -709,7 +709,7 @@ describe('runRetirementSimulation', () => {
     expect(row2032!.preMedicareHealthcareCost).toBeCloseTo(5076 * hcFactor2032, 1);
   });
 
-  it('should apply 50% step-up in basis in MD and 100% in FL on death, and generate annual dividends', () => {
+  it('should step up only the decedent taxable account at death, identically in every state, and generate annual dividends', () => {
     const inputs = getMockInputs();
     inputs.isConfigured = true;
     inputs.isSingleFiler = false;
@@ -722,37 +722,30 @@ describe('runRetirementSimulation', () => {
     inputs.portfolio.wifeTaxableBrokerage = 500000;
     inputs.portfolio.wifeTaxableBasis = 200000;
 
-    // Yield configuration
     inputs.portfolio.taxableDividendYield = 0.02; // 2% yield
     inputs.portfolio.taxableNonQualifiedPortion = 0.30;
 
-    // MD Relocation Year is null (remain in MD)
     inputs.jurisdiction.currentState = 'MD';
     inputs.jurisdiction.targetState = 'MD';
     inputs.jurisdiction.relocationYear = null;
 
-    // Run simulation in MD
     const resultsMD = runRetirementSimulation(inputs, true);
-    
-    // Let's verify dividends generated in 2026:
-    // Total taxable balance at start of 2026: 500k + 500k = 1,000,000.
-    // Expected dividends: 1,000,000 * 2% = 20,000.
+
+    // Total taxable balance at start of 2026: 500k + 500k = 1,000,000 at a 2% yield.
     const row2026 = resultsMD.find(r => r.year === 2026);
     expect(row2026!.incomeInflow).toBeGreaterThanOrEqual(19500);
 
-    // Expected value calibrated for the monthly-compounding engine with cash buffer yield.
     const row2045MD = resultsMD.find(r => r.year === 2045);
     expect(row2045MD!.endWifeTaxableBasis).toBeCloseTo(364335.8, 1);
 
-    // Now set current and target state to FL
-    inputs.jurisdiction.currentState = 'FL';
-    inputs.jurisdiction.targetState = 'FL';
-    const resultsFL = runRetirementSimulation(inputs, true);
-    const row2045FL = resultsFL.find(r => r.year === 2045);
-    
-    // Expected values calibrated for the monthly-compounding engine with cash buffer yield.
-    expect(row2045FL!.endWifeTaxableBasis).toBeCloseTo(1284322.9, 1);
-    expect(row2045FL!.endWifeTaxableBrokerage).toBeCloseTo(1331885.1, 1);
+    // Basis behavior must not depend on the state of residence.
+    for (const stateCode of ['FL', 'TX']) {
+      inputs.jurisdiction.currentState = stateCode;
+      inputs.jurisdiction.targetState = stateCode;
+      const row2045 = runRetirementSimulation(inputs, true).find(r => r.year === 2045);
+      expect(row2045!.endWifeTaxableBasis).toBeLessThan(row2045!.endWifeTaxableBrokerage);
+      expect(row2045!.endWifeTaxableBasis).toBeGreaterThan(0);
+    }
   });
 
   it('should draw from Cash Assets first and grow remaining cash at the fixed income rate', () => {

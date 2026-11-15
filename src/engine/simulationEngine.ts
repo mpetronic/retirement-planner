@@ -9,13 +9,11 @@ import {
   IRMAA_TIERS_MFJ,
   IRMAA_TIERS_SINGLE,
   getIRSUniformLifetimeFactor,
-  MD_PIGGYBACK_RATE,
   FED_LTCG_BRACKETS_SINGLE,
   FED_LTCG_BRACKETS_MFJ,
-  MD_PENSION_EXCLUSION_BASE_CAP,
   getTargetPresetInfo,
 } from './taxRates2026';
-import { getEffectiveLocalTaxRate, calculateStateAndLocalTax, getStateTaxProfile } from './stateTaxRegistry';
+import { calculateStateAndLocalTax, calculatePensionExclusion, getStateTaxProfile, resolveActiveJurisdiction } from './stateTaxRegistry';
 
 const BASE_401K_LIMIT = 23500;
 const CATCHUP_401K_LIMIT = 7500;
@@ -220,23 +218,24 @@ export function getRMDStartAge(birthYear: number): number {
   return 75;
 }
 
-// Helper to compute Maryland State Tax (delegates to universal state tax registry)
-export function calculateMDStateTax(
+// Helper to compute state and local income tax (delegates to the universal state tax registry)
+export function calculateStateTax(
+  stateCode: string,
   fedAGI: number,
   taxableSS: number,
   isSingle: boolean,
   cpiFactor: number = 1,
-  mdPensionExclusion: number = 0,
-  effectiveLocalRate: number = MD_PIGGYBACK_RATE
+  pensionExclusion: number = 0,
+  effectiveLocalRate?: number
 ): number {
   return calculateStateAndLocalTax(
-    'MD',
+    stateCode,
     {
       fedAGI,
       taxableSS,
       isSingle,
       cpiFactor,
-      pensionExclusion: mdPensionExclusion,
+      pensionExclusion,
     },
     effectiveLocalRate
   ).totalTax;
@@ -260,19 +259,15 @@ export function applyBucketLiquidityConstraintToConversion(
   cpiFactor: number,
   standardDeductionTotal: number,
   nonQcdTithe: number,
-  isStateFLOrActiveState: boolean | string,
-  mdPensionExclusion: number = 0,
-  effectiveLocalRate: number = MD_PIGGYBACK_RATE
+  activeState: string,
+  pensionExclusion: number = 0,
+  effectiveLocalRate?: number
 ): number {
   if (targetConversion <= 0) return 0;
 
   // Available capacity in taxable accounts above the living expense reserve floor
   const taxCapacity = Math.max(0, totalTaxableAssets - reserveFloor);
   if (taxCapacity <= 0) return 0;
-
-  const activeState = typeof isStateFLOrActiveState === 'string'
-    ? isStateFLOrActiveState
-    : (isStateFLOrActiveState ? 'FL' : 'MD');
 
   const computeTax = (conv: number): number => {
     const ordinary = baselineOrdinary + conv;
@@ -287,7 +282,7 @@ export function applyBucketLiquidityConstraintToConversion(
         taxableSS,
         isSingle,
         cpiFactor,
-        pensionExclusion: mdPensionExclusion,
+        pensionExclusion,
         ordinaryIncome: ordinary,
         capitalGains,
         retirementDistributions: conv,
@@ -471,28 +466,12 @@ export function runRetirementSimulation(
     const monthlyCashRate = Math.pow(1 + cashRate, 1 / 12) - 1;
 
     // State determination
-    const isRelocated = inputs.jurisdiction.relocationYear !== null && year >= inputs.jurisdiction.relocationYear;
-    const isIntraStateRelocation = Boolean(
-      inputs.jurisdiction.targetState === inputs.jurisdiction.currentState &&
-      inputs.jurisdiction.targetCounty &&
-      inputs.jurisdiction.targetCounty !== inputs.jurisdiction.currentCounty
-    );
+    const {
+      state: activeState,
+      county: activeCounty,
+      effectiveLocalRate,
+    } = resolveActiveJurisdiction(inputs.jurisdiction, year);
 
-    const resolvedTargetState = isIntraStateRelocation
-      ? inputs.jurisdiction.targetState
-      : (inputs.jurisdiction.targetState && inputs.jurisdiction.targetState !== inputs.jurisdiction.currentState)
-        ? inputs.jurisdiction.targetState
-        : (inputs.jurisdiction.currentState === 'MD' ? 'FL' : 'MD');
-
-    const activeState = isRelocated
-      ? resolvedTargetState
-      : inputs.jurisdiction.currentState;
-
-    const activeCounty = isRelocated ? inputs.jurisdiction.targetCounty : inputs.jurisdiction.currentCounty;
-    const activeCustomRate = isRelocated ? inputs.jurisdiction.targetLocalTaxRate : inputs.jurisdiction.currentLocalTaxRate;
-    const effectiveLocalRate = getEffectiveLocalTaxRate(activeState, activeCounty, activeCustomRate);
-
-    const isStateFL = activeState === 'FL';
 
     const youDeceased = simulateSurvivor && (year >= DEATH_YEAR);
     const wifeDeceased = inputs.isSingleFiler || (simulateSurvivor && (year >= WIFE_DEATH_YEAR));
@@ -512,11 +491,8 @@ export function runRetirementSimulation(
       wifeRoth += yourRoth;
       yourRoth = 0;
 
-      if (isStateFL) {
-        wifeBasis = wifeTaxable + yourTaxable;
-      } else {
-        wifeBasis += yourTaxable;
-      }
+      // IRC 1014: the decedent's account is stepped up to market value; the survivor's own basis is unchanged
+      wifeBasis += yourTaxable;
       wifeTaxable += yourTaxable;
       yourTaxable = 0;
       yourBasis = 0;
@@ -532,11 +508,8 @@ export function runRetirementSimulation(
       yourRoth += wifeRoth;
       yourRoth = 0;
 
-      if (isStateFL) {
-        yourBasis = yourTaxable + wifeTaxable;
-      } else {
-        yourBasis += wifeTaxable;
-      }
+      // IRC 1014: the decedent's account is stepped up to market value; the survivor's own basis is unchanged
+      yourBasis += wifeTaxable;
       yourTaxable += wifeTaxable;
       wifeTaxable = 0;
       wifeBasis = 0;
@@ -1005,12 +978,10 @@ export function runRetirementSimulation(
         const totalTaxable = (yourCash + (wifeDeceased || inputs.isSingleFiler ? 0 : wifeCash)) +
           (yourTaxable + (wifeDeceased ? 0 : wifeTaxable));
 
-        const capExcl = MD_PENSION_EXCLUSION_BASE_CAP * cpiFactor;
-        const exclusionCapJohn = Math.max(0, capExcl - yourSSAnnualBase);
-        const exclusionCapWife = Math.max(0, capExcl - wifeSSAnnualBase);
-        const exclJohn = (!youDeceased && yourAge >= 65) ? Math.min(yourRMD, exclusionCapJohn) : 0;
-        const exclWife = (!wifeDeceased && wifeAge >= 65) ? Math.min(wifeRMD, exclusionCapWife) : 0;
-        const estMdPensionExcl = exclJohn + exclWife;
+        const estPensionExcl = calculatePensionExclusion(activeState, [
+          { age: yourAge, isAlive: !youDeceased, socialSecurityBenefit: yourSSAnnualBase, eligibleDistributions: yourRMD },
+          { age: wifeAge, isAlive: !wifeDeceased, socialSecurityBenefit: wifeSSAnnualBase, eligibleDistributions: wifeRMD },
+        ], cpiFactor);
 
         const estDiv = (yourTaxable + (wifeDeceased || inputs.isSingleFiler ? 0 : wifeTaxable)) * taxableDividendYield;
         const estInterest = (yourCash + (wifeDeceased || inputs.isSingleFiler ? 0 : wifeCash)) * cashRate;
@@ -1042,7 +1013,7 @@ export function runRetirementSimulation(
           estStdDeductionTotal,
           nonQcdTithe,
           activeState,
-          estMdPensionExcl,
+          estPensionExcl,
           effectiveLocalRate
         );
       }
@@ -1252,12 +1223,10 @@ export function runRetirementSimulation(
     }
     const standardDeductionTotalYear = stdDeductionBaseYear + ageAdditionYear;
 
-    const capExclYear = MD_PENSION_EXCLUSION_BASE_CAP * cpiFactor;
-    const exclCapJohn = Math.max(0, capExclYear - yourSSAnnualBase);
-    const exclCapWife = Math.max(0, capExclYear - wifeSSAnnualBase);
-    const exclJohnYear = (!youDeceased && yourAge >= 65) ? Math.min(yourRMD, exclCapJohn) : 0;
-    const exclWifeYear = (!wifeDeceased && wifeAge >= 65) ? Math.min(wifeRMD, exclCapWife) : 0;
-    const estMdPensionExclusion = exclJohnYear + exclWifeYear;
+    const estPensionExclusion = calculatePensionExclusion(activeState, [
+      { age: yourAge, isAlive: !youDeceased, socialSecurityBenefit: yourSSAnnualBase, eligibleDistributions: yourRMD },
+      { age: wifeAge, isAlive: !wifeDeceased, socialSecurityBenefit: wifeSSAnnualBase, eligibleDistributions: wifeRMD },
+    ], cpiFactor);
 
     const estStateTaxResult = calculateStateAndLocalTax(
       activeState,
@@ -1266,7 +1235,7 @@ export function runRetirementSimulation(
         taxableSS: estTaxableSS,
         isSingle,
         cpiFactor,
-        pensionExclusion: estMdPensionExclusion,
+        pensionExclusion: estPensionExclusion,
         ordinaryIncome: Math.max(0, estFedAGI - estCapGains),
         capitalGains: estCapGains,
         retirementDistributions: yourRMD + wifeRMD,
@@ -1768,12 +1737,10 @@ export function runRetirementSimulation(
         const totalTaxable = (yourCash + (wifeDeceased || inputs.isSingleFiler ? 0 : wifeCash)) +
           (yourTaxable + (wifeDeceased ? 0 : wifeTaxable));
 
-        const capExcl = MD_PENSION_EXCLUSION_BASE_CAP * cpiFactor;
-        const exclusionCapJohn = Math.max(0, capExcl - annualYourSS);
-        const exclusionCapWife = Math.max(0, capExcl - annualWifeSS);
-        const exclJohn = (!youDeceased && yourAge >= 65) ? Math.min(taxableYourRMD + annualYourTradDraw, exclusionCapJohn) : 0;
-        const exclWife = (!wifeDeceased && wifeAge >= 65) ? Math.min(taxableWifeRMD + annualWifeTradDraw, exclusionCapWife) : 0;
-        const estMdPensionExcl = exclJohn + exclWife;
+        const estPensionExcl = calculatePensionExclusion(activeState, [
+          { age: yourAge, isAlive: !youDeceased, socialSecurityBenefit: annualYourSS, eligibleDistributions: taxableYourRMD + annualYourTradDraw },
+          { age: wifeAge, isAlive: !wifeDeceased, socialSecurityBenefit: annualWifeSS, eligibleDistributions: taxableWifeRMD + annualWifeTradDraw },
+        ], cpiFactor);
 
         targetConversion = applyBucketLiquidityConstraintToConversion(
           targetConversion,
@@ -1787,7 +1754,7 @@ export function runRetirementSimulation(
           effectiveDeduction,
           annualNonQcdTithe,
           activeState,
-          estMdPensionExcl,
+          estPensionExcl,
           effectiveLocalRate
         );
       }
@@ -1867,12 +1834,10 @@ export function runRetirementSimulation(
     }
     const standardDeductionTotalFinal = stdDeductionBaseFinal + ageAdditionFinal;
 
-    const capExclFinal = MD_PENSION_EXCLUSION_BASE_CAP * cpiFactor;
-    const exclusionCapJohnFinal = Math.max(0, capExclFinal - annualYourSS);
-    const exclusionCapWifeFinal = Math.max(0, capExclFinal - annualWifeSS);
-    const exclJohnFinal = (!youDeceased && yourAge >= 65) ? Math.min(taxableYourRMD + annualYourTradDraw, exclusionCapJohnFinal) : 0;
-    const exclWifeFinal = (!wifeDeceased && wifeAge >= 65) ? Math.min(taxableWifeRMD + annualWifeTradDraw, exclusionCapWifeFinal) : 0;
-    const mdPensionExclusion = exclJohnFinal + exclWifeFinal;
+    const pensionExclusionFinal = calculatePensionExclusion(activeState, [
+      { age: yourAge, isAlive: !youDeceased, socialSecurityBenefit: annualYourSS, eligibleDistributions: taxableYourRMD + annualYourTradDraw },
+      { age: wifeAge, isAlive: !wifeDeceased, socialSecurityBenefit: annualWifeSS, eligibleDistributions: taxableWifeRMD + annualWifeTradDraw },
+    ], cpiFactor);
 
     const stateTaxResult = calculateStateAndLocalTax(
       activeState,
@@ -1881,7 +1846,7 @@ export function runRetirementSimulation(
         taxableSS,
         isSingle,
         cpiFactor,
-        pensionExclusion: mdPensionExclusion,
+        pensionExclusion: pensionExclusionFinal,
         ordinaryIncome: Math.max(0, fedAGI - capitalGains),
         capitalGains,
         retirementDistributions: taxableYourRMD + taxableWifeRMD + annualYourTradDraw + annualWifeTradDraw + combinedRothConversion,

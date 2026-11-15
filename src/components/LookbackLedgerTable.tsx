@@ -2,9 +2,9 @@ import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useSta
 import { createPortal } from 'react-dom';
 import { SimulationResultRow, AppStateInputs, getSimulationStartYear } from '../types';
 import { TableProperties, Info, AlertTriangle, X } from 'lucide-react';
-import { IRMAA_TIERS_MFJ, IRMAA_TIERS_SINGLE, MD_PENSION_EXCLUSION_BASE_CAP } from '../engine/taxRates2026';
+import { IRMAA_TIERS_MFJ, IRMAA_TIERS_SINGLE } from '../engine/taxRates2026';
 import { calculateFedTaxWithLTCG, calculateTaxableSS } from '../engine/simulationEngine';
-import { getEffectiveLocalTaxRate, calculateStateAndLocalTax } from '../engine/stateTaxRegistry';
+import { calculateStateAndLocalTax, calculatePensionExclusion, resolveActiveJurisdiction } from '../engine/stateTaxRegistry';
 import { RowInspectionDialog } from './RowInspectionDialog';
 
 interface LookbackLedgerTableProps {
@@ -308,38 +308,28 @@ export const LookbackLedgerTable: React.FC<LookbackLedgerTableProps> = ({
                 const isSingle = simulateSurvivor && r.year >= deathYear;
                 const cpiFactor = r.cpiFactor;
                 
-                // MD pension exclusion (doesn't change without conversion)
-                const capExcl = MD_PENSION_EXCLUSION_BASE_CAP * cpiFactor;
-                const mdPensionExclusion = (() => {
+                const { state: activeState, effectiveLocalRate } = resolveActiveJurisdiction(inputs.jurisdiction, r.year);
+
+                // Pension exclusion (doesn't change without conversion)
+                const pensionExclusion = (() => {
                   if (isSingle) {
                     const age = inputs.isSingleFiler ? r.yourAge : r.wifeAge;
                     const ss = inputs.isSingleFiler ? r.yourSS : r.wifeSS;
                     const rmdAndDraw = (inputs.isSingleFiler ? r.yourRMD : r.wifeRMD) + r.otherTaxableIncome;
-                    return (age >= 65) ? Math.min(rmdAndDraw, Math.max(0, capExcl - ss)) : 0;
-                  } else {
-                    const exclJohn = (r.yourAge >= 65) ? Math.min(r.yourRMD + r.otherTaxableIncome, Math.max(0, capExcl - r.yourSS)) : 0;
-                    const exclWife = (r.wifeAge >= 65) ? Math.min(r.wifeRMD + r.otherTaxableIncome, Math.max(0, capExcl - r.wifeSS)) : 0;
-                    return Math.min(exclJohn + exclWife, Math.max(0, capExcl - r.yourSS) + Math.max(0, capExcl - r.wifeSS));
+                    return calculatePensionExclusion(activeState, [
+                      { age, isAlive: true, socialSecurityBenefit: ss, eligibleDistributions: rmdAndDraw },
+                    ], cpiFactor);
                   }
+                  return calculatePensionExclusion(activeState, [
+                    { age: r.yourAge, isAlive: true, socialSecurityBenefit: r.yourSS, eligibleDistributions: r.yourRMD + r.otherTaxableIncome },
+                    { age: r.wifeAge, isAlive: true, socialSecurityBenefit: r.wifeSS, eligibleDistributions: r.wifeRMD + r.otherTaxableIncome },
+                  ], cpiFactor);
                 })();
 
                 const otherAGIWithout = Math.max(0, r.fedAGI - r.taxableSS - r.intentionalRothConversion);
                 const totalSS = r.yourSS + r.wifeSS;
                 const taxableSSWithout = calculateTaxableSS(totalSS, otherAGIWithout, isSingle);
                 const agiWithout = otherAGIWithout + taxableSSWithout;
-
-                const isRelocated = inputs.jurisdiction.relocationYear !== null && r.year >= inputs.jurisdiction.relocationYear;
-                const isIntraStateRelocation = Boolean(
-                  inputs.jurisdiction.targetState === inputs.jurisdiction.currentState &&
-                  inputs.jurisdiction.targetCounty &&
-                  inputs.jurisdiction.targetCounty !== inputs.jurisdiction.currentCounty
-                );
-                const activeState = isRelocated
-                  ? (isIntraStateRelocation ? inputs.jurisdiction.targetState : (inputs.jurisdiction.targetState || 'FL'))
-                  : inputs.jurisdiction.currentState;
-                const activeCounty = isRelocated ? inputs.jurisdiction.targetCounty : inputs.jurisdiction.currentCounty;
-                const activeCustomRate = isRelocated ? inputs.jurisdiction.targetLocalTaxRate : inputs.jurisdiction.currentLocalTaxRate;
-                const effectiveLocalRate = getEffectiveLocalTaxRate(activeState, activeCounty, activeCustomRate);
 
                 const stateTaxWith = r.stateIncomeTax;
                 const stateTaxWithoutResult = calculateStateAndLocalTax(
@@ -349,7 +339,7 @@ export const LookbackLedgerTable: React.FC<LookbackLedgerTableProps> = ({
                     taxableSS: taxableSSWithout,
                     isSingle,
                     cpiFactor,
-                    pensionExclusion: mdPensionExclusion,
+                    pensionExclusion,
                     ordinaryIncome: Math.max(0, agiWithout - (r.capitalGainsTriggered || 0)),
                     capitalGains: r.capitalGainsTriggered || 0,
                     retirementDistributions: Math.max(0, ((r.yourRMD || 0) + (r.wifeRMD || 0) + (r.otherTaxableIncome || 0)) - (r.intentionalRothConversion || 0)),

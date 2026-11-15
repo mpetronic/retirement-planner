@@ -3,12 +3,6 @@
 export const BASE_MEDICARE_PART_B = 202.90;
 export const BASE_MEDICARE_PART_D = 34.50;
 
-/**
- * Maryland Maximum Pension Exclusion Baseline Cap ($34,300 per eligible individual age 65+)
- * Statutory cap set by Comptroller of Maryland equal to the max annual Social Security benefit at Full Retirement Age.
- */
-export const MD_PENSION_EXCLUSION_BASE_CAP = 34300;
-
 export interface TaxBracket {
   rate: number;
   limit: number; // upper limit of this bracket (Infinity for the top bracket)
@@ -293,28 +287,3 @@ export function getIRSUniformLifetimeFactor(age: number): number {
   return factors[age] || factors[72];
 }
 
-// Maryland State Tax Bracket Rates (Graduated)
-// MD has piggyback local taxes which average 3.20% (added directly to the State's graduated rate)
-export const MD_GRADUATED_TIERS_SINGLE = [
-  { rate: 0.02, limit: 1000 },
-  { rate: 0.03, limit: 2000 },
-  { rate: 0.04, limit: 3000 },
-  { rate: 0.0475, limit: 100000 },
-  { rate: 0.05, limit: 125000 },
-  { rate: 0.0525, limit: 150000 },
-  { rate: 0.055, limit: 250000 },
-  { rate: 0.0575, limit: Infinity }
-];
-
-export const MD_GRADUATED_TIERS_MFJ = [
-  { rate: 0.02, limit: 1000 },
-  { rate: 0.03, limit: 2000 },
-  { rate: 0.04, limit: 3000 },
-  { rate: 0.0475, limit: 150000 },
-  { rate: 0.05, limit: 175000 },
-  { rate: 0.0525, limit: 225000 },
-  { rate: 0.055, limit: 300000 },
-  { rate: 0.0575, limit: Infinity }
-];
-
-export const MD_PIGGYBACK_RATE = 0.0320; // flat 3.20% local tax

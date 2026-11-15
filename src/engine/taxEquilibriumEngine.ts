@@ -254,7 +254,7 @@ export function calculateTaxEquilibriumSchedule(
     };
   }
 
-  const currentState = inputs.jurisdiction?.currentState || 'MD';
+  const currentState = inputs.jurisdiction.currentState;
   const solvedSchedule: Record<number, number> = {};
   const yearlyDetails: YearlyTaxEquilibriumPoint[] = [];
   let totalBenchmarkSum = 0;
