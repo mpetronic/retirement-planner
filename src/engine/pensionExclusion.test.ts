@@ -10,18 +10,8 @@ const retiree = (over: Partial<{ age: number; isAlive: boolean; socialSecurityBe
 });
 
 describe('calculatePensionExclusion', () => {
-  it('caps the exclusion per person for a state that defines a policy', () => {
-    const exclusion = calculatePensionExclusion('MD', [retiree(), retiree()], 1);
-    expect(exclusion).toBeGreaterThan(0);
-    expect(exclusion).toBeLessThan(200000);
-  });
-
-  it('reduces the cap by Social Security benefits and ignores ineligible people', () => {
-    const full = calculatePensionExclusion('MD', [retiree()], 1);
-    const reduced = calculatePensionExclusion('MD', [retiree({ socialSecurityBenefit: 10000 })], 1);
-    expect(reduced).toBeCloseTo(full - 10000, 6);
-    expect(calculatePensionExclusion('MD', [retiree({ age: 64 })], 1)).toBe(0);
-    expect(calculatePensionExclusion('MD', [retiree({ isAlive: false })], 1)).toBe(0);
+  it('gives Maryland no exclusion because IRA distributions do not qualify', () => {
+    expect(calculatePensionExclusion('MD', [retiree(), retiree()], 1)).toBe(0);
   });
 
   it('returns zero for states without a pension exclusion policy', () => {

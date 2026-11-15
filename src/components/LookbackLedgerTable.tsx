@@ -5,6 +5,7 @@ import { TableProperties, Info, AlertTriangle, X } from 'lucide-react';
 import { IRMAA_TIERS_MFJ, IRMAA_TIERS_SINGLE } from '../engine/taxRates';
 import { calculateFedTaxWithLTCG, calculateTaxableSS } from '../engine/simulationEngine';
 import { calculateStateAndLocalTax, calculatePensionExclusion, resolveActiveJurisdiction } from '../engine/stateTaxRegistry';
+import { countAgedFilers } from '../engine/federalDeduction';
 import { RowInspectionDialog } from './RowInspectionDialog';
 
 interface LookbackLedgerTableProps {
@@ -339,6 +340,8 @@ export const LookbackLedgerTable: React.FC<LookbackLedgerTableProps> = ({
                     taxableSS: taxableSSWithout,
                     isSingle,
                     cpiFactor,
+                    taxYear: r.year,
+                    agedFilerCount: countAgedFilers(isSingle, !!inputs.isSingleFiler, r.yourAge, r.wifeAge, false),
                     pensionExclusion,
                     ordinaryIncome: Math.max(0, agiWithout - (r.capitalGainsTriggered || 0)),
                     capitalGains: r.capitalGainsTriggered || 0,

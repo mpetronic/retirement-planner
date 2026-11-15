@@ -1,3 +1,6 @@
+import { MARYLAND_PROFILE } from './states/md';
+import { applyBrackets, type TaxBracketTier } from './states/stateTaxPrimitives';
+
 
 export interface SubJurisdiction {
   id: string;
@@ -11,6 +14,10 @@ export interface StateTaxCalculationParams {
   isSingle: boolean;
   cpiFactor?: number;
   pensionExclusion?: number;
+  /** Calendar tax year, used by states whose rules are year-keyed. Omitted means the latest rules. */
+  taxYear?: number;
+  /** Number of filers aged 65 or older, for age-based exemptions. */
+  agedFilerCount?: number;
   ordinaryIncome?: number;
   capitalGains?: number;
   retirementDistributions?: number;
@@ -57,42 +64,14 @@ export interface StateTaxProfile {
   getDefaultLocalRate: (countyId?: string | null) => number;
 }
 
-export interface TaxBracketTier {
-  rate: number;
-  limit: number;
-}
+export type { TaxBracketTier } from './states/stateTaxPrimitives';
 
 // ---------------------------------------------------------------------------
 // Sub-jurisdiction definitions
 // ---------------------------------------------------------------------------
 
-// 24 Maryland local jurisdictions (23 counties + Baltimore City)
-export const MD_COUNTIES: SubJurisdiction[] = [
-  { id: 'allegany', name: 'Allegany County', defaultLocalRate: 0.0305 },
-  { id: 'anne_arundel', name: 'Anne Arundel County', defaultLocalRate: 0.0270 },
-  { id: 'baltimore_city', name: 'Baltimore City', defaultLocalRate: 0.0320 },
-  { id: 'baltimore_county', name: 'Baltimore County', defaultLocalRate: 0.0320 },
-  { id: 'calvert', name: 'Calvert County', defaultLocalRate: 0.0300 },
-  { id: 'caroline', name: 'Caroline County', defaultLocalRate: 0.0320 },
-  { id: 'carroll', name: 'Carroll County', defaultLocalRate: 0.0303 },
-  { id: 'cecil', name: 'Cecil County', defaultLocalRate: 0.0280 },
-  { id: 'charles', name: 'Charles County', defaultLocalRate: 0.0303 },
-  { id: 'dorchester', name: 'Dorchester County', defaultLocalRate: 0.0320 },
-  { id: 'frederick', name: 'Frederick County', defaultLocalRate: 0.0296 },
-  { id: 'garrett', name: 'Garrett County', defaultLocalRate: 0.0265 },
-  { id: 'harford', name: 'Harford County', defaultLocalRate: 0.0306 },
-  { id: 'howard', name: 'Howard County', defaultLocalRate: 0.0320 },
-  { id: 'kent', name: 'Kent County', defaultLocalRate: 0.0320 },
-  { id: 'montgomery', name: 'Montgomery County', defaultLocalRate: 0.0320 },
-  { id: 'prince_georges', name: "Prince George's County", defaultLocalRate: 0.0320 },
-  { id: 'queen_annes', name: "Queen Anne's County", defaultLocalRate: 0.0320 },
-  { id: 'st_marys', name: "St. Mary's County", defaultLocalRate: 0.0300 },
-  { id: 'somerset', name: 'Somerset County', defaultLocalRate: 0.0320 },
-  { id: 'talbot', name: 'Talbot County', defaultLocalRate: 0.0240 },
-  { id: 'washington', name: 'Washington County', defaultLocalRate: 0.0295 },
-  { id: 'wicomico', name: 'Wicomico County', defaultLocalRate: 0.0320 },
-  { id: 'worcester', name: 'Worcester County', defaultLocalRate: 0.0225 },
-];
+// Maryland counties live in states/md.ts
+export { MD_COUNTIES } from './states/md';
 
 // Representative Indiana Counties (all 92 levy Adopted Local Income Tax)
 export const IN_COUNTIES: SubJurisdiction[] = [
@@ -275,20 +254,7 @@ function createGraduatedTaxProfile(
         return { stateTax: 0, localTax: 0, totalTax: 0 };
       }
 
-      const tiers = params.isSingle ? tiersSingle : tiersMFJ;
-      let stateTax = 0;
-      let previousLimit = 0;
-
-      for (let i = 0; i < tiers.length; i++) {
-        const tier = tiers[i];
-        if (taxableIncome > tier.limit) {
-          stateTax += (tier.limit - previousLimit) * tier.rate;
-          previousLimit = tier.limit;
-        } else {
-          stateTax += (taxableIncome - previousLimit) * tier.rate;
-          break;
-        }
-      }
+      const stateTax = applyBrackets(taxableIncome, params.isSingle ? tiersSingle : tiersMFJ);
 
       const localRate = effectiveLocalRate !== undefined ? effectiveLocalRate : (options.defaultLocalRate ?? 0);
       const localTax = taxableIncome * localRate;
@@ -301,97 +267,6 @@ function createGraduatedTaxProfile(
     },
   };
 }
-
-// ---------------------------------------------------------------------------
-// Maryland profile data (single source of truth for all Maryland-specific values)
-// ---------------------------------------------------------------------------
-const MD_PIGGYBACK_RATE = 0.0320; // flat 3.20% local tax when no county is selected
-const MD_PENSION_EXCLUSION_POLICY: PensionExclusionPolicy = {
-  // Statutory cap equals the max annual Social Security benefit at Full Retirement Age
-  perPersonBaseCap: 34300,
-  minAge: 65,
-  reducedBySocialSecurity: true,
-};
-const MD_GRADUATED_TIERS_SINGLE: TaxBracketTier[] = [
-  { rate: 0.02, limit: 1000 },
-  { rate: 0.03, limit: 2000 },
-  { rate: 0.04, limit: 3000 },
-  { rate: 0.0475, limit: 100000 },
-  { rate: 0.05, limit: 125000 },
-  { rate: 0.0525, limit: 150000 },
-  { rate: 0.055, limit: 250000 },
-  { rate: 0.0575, limit: Infinity }
-];
-const MD_GRADUATED_TIERS_MFJ: TaxBracketTier[] = [
-  { rate: 0.02, limit: 1000 },
-  { rate: 0.03, limit: 2000 },
-  { rate: 0.04, limit: 3000 },
-  { rate: 0.0475, limit: 150000 },
-  { rate: 0.05, limit: 175000 },
-  { rate: 0.0525, limit: 225000 },
-  { rate: 0.055, limit: 300000 },
-  { rate: 0.0575, limit: Infinity }
-];
-
-// ---------------------------------------------------------------------------
-// Maryland Profile (Exact statutory calculation with sliding 15% deduction)
-// ---------------------------------------------------------------------------
-export const MARYLAND_PROFILE: StateTaxProfile = {
-  code: 'MD',
-  name: 'Maryland',
-  hasIncomeTax: true,
-  hasLocalTax: true,
-  topRate: 0.0575,
-  effectiveTaxRateEstimate: 0.0475,
-  subJurisdictionLabel: 'County',
-  subJurisdictions: MD_COUNTIES,
-  pensionExclusionPolicy: MD_PENSION_EXCLUSION_POLICY,
-  getDefaultLocalRate(countyId?: string | null): number {
-    if (!countyId) return MD_PIGGYBACK_RATE;
-    const match = MD_COUNTIES.find((c) => c.id === countyId);
-    return match ? match.defaultLocalRate : MD_PIGGYBACK_RATE;
-  },
-  calculateTax(params: StateTaxCalculationParams, effectiveLocalRate?: number): StateTaxResult {
-    const { fedAGI, taxableSS, isSingle, cpiFactor = 1, pensionExclusion = 0 } = params;
-
-    const stdDeductionRate = 0.15 * fedAGI;
-    let stdDeduction = 0;
-    if (isSingle) {
-      stdDeduction = Math.min(Math.max(stdDeductionRate, 1700 * cpiFactor), 2550 * cpiFactor);
-    } else {
-      stdDeduction = Math.min(Math.max(stdDeductionRate, 3450 * cpiFactor), 5150 * cpiFactor);
-    }
-
-    const mdTaxableIncome = fedAGI - stdDeduction - taxableSS - pensionExclusion;
-    if (mdTaxableIncome <= 0) {
-      return { stateTax: 0, localTax: 0, totalTax: 0 };
-    }
-
-    const tiers = isSingle ? MD_GRADUATED_TIERS_SINGLE : MD_GRADUATED_TIERS_MFJ;
-    let stateTax = 0;
-    let previousLimit = 0;
-
-    for (let i = 0; i < tiers.length; i++) {
-      const tier = tiers[i];
-      if (mdTaxableIncome > tier.limit) {
-        stateTax += (tier.limit - previousLimit) * tier.rate;
-        previousLimit = tier.limit;
-      } else {
-        stateTax += (mdTaxableIncome - previousLimit) * tier.rate;
-        break;
-      }
-    }
-
-    const localRate = effectiveLocalRate !== undefined ? effectiveLocalRate : MD_PIGGYBACK_RATE;
-    const localTax = mdTaxableIncome * localRate;
-
-    return {
-      stateTax,
-      localTax,
-      totalTax: stateTax + localTax,
-    };
-  },
-};
 
 // ---------------------------------------------------------------------------
 // All 50 States + DC Registry

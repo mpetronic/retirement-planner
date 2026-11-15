@@ -29,7 +29,7 @@ Use this table to track what has been debated and fixed.
 | 6 | No federal basis step-up unless FL | Medium | Fixed |
 | 7 | TE optimizer nominal income vs un-inflated brackets | Medium-High | Fixed |
 | 8 | OBBBA 2025 federal changes not modeled | Medium | Fixed |
-| 9 | Maryland state tax errors and stale values | Medium | Open |
+| 9 | Maryland state tax errors and stale values | Medium | Fixed |
 | 10 | 2026 LTCG thresholds look overstated | Low-Medium | Open |
 | 11 | IRMAA thresholds inflated to lookback year | Low-Medium | Open |
 | 12 | Survivor filing-status inconsistencies | Low | Open |
@@ -379,6 +379,30 @@ deduction limitation for the 37% bracket is not modeled.
 **Recommendation.** Make the pension exclusion opt-in with a per-account "qualified employer plan"
 flag (default off for IRA-labeled accounts); update the cap, deduction and brackets to current law; add
 the exemptions with the phase-out.
+
+**Resolution.** Fixed. Maryland moved into its own module, `states/md.ts`, with rules in a year-keyed
+table (`MD_YEAR_RULES`) so a yearly update is a new entry and not a logic change. Shared helpers
+(`applyBrackets`, `resolveYearRules`, `phaseOutFraction`) live in `states/stateTaxPrimitives.ts`; other
+states can migrate to the same pattern one at a time. Values follow the Comptroller's December 2025 tax
+alert:
+
+- Pension exclusion removed for Maryland, with no opt-in flag. It does not cover traditional IRA
+  distributions and this plan has no qualifying employer-plan income. The generic exclusion mechanism
+  stays in the registry for other states.
+- Standard deduction is the flat $3,350 single / $6,700 joint, indexed through `cpiFactor`.
+- Personal exemption is $3,200 per filer plus $1,000 per filer 65 or older, phased out in steps
+  (full, half, quarter, none) above $100k single / $150k joint.
+- Brackets gained 6.25% (over $500k single / $600k joint) and 6.5% (over $1M / $1.2M), and the 2%
+  surtax applies to capital gains when federal AGI exceeds $350k. `taxYear` and `agedFilerCount` are
+  now passed to every state tax call.
+
+Known limits: the exemption phase-out steps and the age-65 amount come from secondary sources and the
+Form 502 table, not the alert, and the $1,000 age-65 amount is assumed to phase out the same way. The
+2026 standard deduction is not confirmed (the alert says it is indexed), so 2025 amounts are indexed by
+`cpiFactor`. The surtax uses the engine's capital gains figure, which includes qualified dividends, so
+it slightly overstates the surtax at high income. County local rates were not updated: the alert lists
+Dorchester 3.30%, Calvert 3.20%, Cecil 2.74%, St. Mary's 3.20%, Allegany 3.20% (2026) and Kent 3.30%
+(2026), and Anne Arundel has a progressive local tax.
 
 ---
 

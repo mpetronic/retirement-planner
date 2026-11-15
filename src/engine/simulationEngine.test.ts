@@ -162,11 +162,11 @@ describe('Tax calculations', () => {
     const worcesterTax = calculateStateTax('MD', 100000, 0, false, 1, 0, worcesterRate);
 
     expect(mocoTax).toBeGreaterThan(worcesterTax);
-    // MD Taxable income for 100k MFJ:
-    // std deduction = min(max(15000, 3450), 5150) = 5150
-    // mdTaxableIncome = 100000 - 5150 = 94850
-    // State tax is identical, difference is exactly (0.0320 - 0.0225) * 94850 = 0.0095 * 94850 = 901.075
-    expect(mocoTax - worcesterTax).toBeCloseTo(94850 * (mocoRate - worcesterRate), 2);
+    // MD taxable income for 100k MFJ (no one aged 65):
+    // flat std deduction 6700 and two 3200 exemptions (AGI is under the 150k joint phase-out)
+    // mdTaxableIncome = 100000 - 6700 - 6400 = 86900
+    // State tax is identical, difference is exactly (0.0320 - 0.0225) * 86900 = 825.55
+    expect(mocoTax - worcesterTax).toBeCloseTo(86900 * (mocoRate - worcesterRate), 2);
   });
 });
 
@@ -423,7 +423,7 @@ describe('runRetirementSimulation', () => {
     const actualEndTaxable = row2040!.endYourTaxableBrokerage + row2040!.endWifeTaxableBrokerage;
     // Expected value calibrated for the monthly-compounding engine with cash buffer yield
     // and prior-year tax-funding income carried into the following tax year.
-    expect(actualEndTaxable).toBeCloseTo(664780.5, 0);
+    expect(actualEndTaxable).toBeCloseTo(669638.2, 0);
   });
 
   it('should apply pre-Medicare premiums and detailed health expenses correctly based on age, work status, and retirement', () => {
@@ -736,7 +736,7 @@ describe('runRetirementSimulation', () => {
     expect(row2026!.incomeInflow).toBeGreaterThanOrEqual(19500);
 
     const row2045MD = resultsMD.find(r => r.year === 2045);
-    expect(row2045MD!.endWifeTaxableBasis).toBeCloseTo(364335.8, 1);
+    expect(row2045MD!.endWifeTaxableBasis).toBeCloseTo(361632.7, 1);
 
     // Basis behavior must not depend on the state of residence.
     for (const stateCode of ['FL', 'TX']) {
@@ -836,7 +836,7 @@ describe('runRetirementSimulation', () => {
     expect(row2026).toBeDefined();
 
     // Deficit will exhaust all 50k cash first.
-    expect(row2026!.drawdownCash).toBeCloseTo(50409.13, 1);
+    expect(row2026!.drawdownCash).toBeCloseTo(50409.35, 1);
     expect(row2026!.endYourCash).toBe(0);
 
     // Remaining deficit is drawn from Taxable Brokerage.
@@ -1702,7 +1702,8 @@ describe('runRetirementSimulation fixes', () => {
 
       // Standard deduction reported on the row should be elevated due to itemized optimization ($10k SALT + $50k charity = $60k > standard deduction)
       expect(rowWithGifts.standardDeduction).toBeGreaterThan(baseStdDed);
-      expect(rowWithGifts.standardDeduction).toBeGreaterThanOrEqual(50000);
+      // The SALT portion depends on the state tax, so only the charity-driven lower bound is asserted.
+      expect(rowWithGifts.standardDeduction).toBeGreaterThanOrEqual(45000);
     });
 
     it('should contribute max pre-tax 401(k) and reduce taxable salary in pre-retirement working years', () => {
