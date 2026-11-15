@@ -36,7 +36,7 @@ src/
 │   └── InputControlSidebar.tsx  # Primary input parameters (balances, variables, growth)
 ├── engine/
 │   ├── simulationEngine.ts      # Pure-function processing pipeline loop script
-│   └── taxRates2026.ts          # Static lookups for Federal, MD, FL, and IRMAA tiers
+│   └── taxRates.ts          # Static lookups for Federal, MD, FL, and IRMAA tiers
 ├── types/
 │   └── index.ts                 # Centralized type definitions and schema block mappings
 ├── App.tsx                      # Root state wrapper orchestration point

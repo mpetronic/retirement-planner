@@ -4,17 +4,17 @@ import {
   BASE_MEDICARE_PART_D,
   FED_BRACKETS_MFJ,
   FED_BRACKETS_SINGLE,
-  FED_STANDARD_DEDUCTION_MFJ,
-  FED_STANDARD_DEDUCTION_SINGLE,
   IRMAA_TIERS_MFJ,
   IRMAA_TIERS_SINGLE,
   getIRSUniformLifetimeFactor,
   FED_LTCG_BRACKETS_SINGLE,
   FED_LTCG_BRACKETS_MFJ,
   getTargetPresetInfo,
-} from './taxRates2026';
+} from './taxRates';
+import { calculateFederalDeduction, countAgedFilers } from './federalDeduction';
 import { calculateStateAndLocalTax, calculatePensionExclusion, getStateTaxProfile, resolveActiveJurisdiction } from './stateTaxRegistry';
 
+const TARGET_AGI_DEDUCTION_ITERATIONS = 12;
 const BASE_401K_LIMIT = 23500;
 const CATCHUP_401K_LIMIT = 7500;
 const ENHANCED_CATCHUP_401K_LIMIT = 11250;
@@ -257,7 +257,7 @@ export function applyBucketLiquidityConstraintToConversion(
   totalSS: number,
   isSingle: boolean,
   cpiFactor: number,
-  standardDeductionTotal: number,
+  deductionContext: { year: number; agedFilerCount: number; propertyTax: number },
   nonQcdTithe: number,
   activeState: string,
   pensionExclusion: number = 0,
@@ -291,10 +291,16 @@ export function applyBucketLiquidityConstraintToConversion(
     );
     const stateTax = stateTaxResult.totalTax;
 
-    const saltCap = 10000 * cpiFactor;
-    const saltDeduction = Math.min(saltCap, stateTax);
-    const itemizedDeduction = saltDeduction + nonQcdTithe;
-    const stdDeduction = Math.max(standardDeductionTotal, itemizedDeduction);
+    const { totalDeduction: stdDeduction } = calculateFederalDeduction({
+      year: deductionContext.year,
+      isSingle,
+      cpiFactor,
+      agedFilerCount: deductionContext.agedFilerCount,
+      fedAGI,
+      stateIncomeTax: stateTax,
+      propertyTax: deductionContext.propertyTax,
+      nonQcdTithe,
+    });
 
     const taxableOrdinary = Math.max(0, fedAGI - capitalGains - stdDeduction);
     const { totalTax: fedBaseTax } = calculateFedTaxWithLTCG(taxableOrdinary, capitalGains, isSingle, cpiFactor);
@@ -819,6 +825,7 @@ export function runRetirementSimulation(
 
     let plannedBaseLivingExpensesAnnual = inputs.annualLivingExpenses ?? 100000;
     let oneTimeCosts = 0;
+    let saltEligiblePropertyTaxToday = 0;
     const monthlyLivingExpensesBase = new Array(12).fill(0);
 
     if (inputs.useDetailedExpenses && inputs.detailedExpenses) {
@@ -854,6 +861,7 @@ export function runRetirementSimulation(
           const freq = freqs[item.id] ?? item.defaultFrequency ?? 12;
           const annualItemCost = cost * freq;
           detailedRecurringAnnual += annualItemCost;
+          if (item.isSALTEligible) saltEligiblePropertyTaxToday += annualItemCost;
 
           if (freq === 12) {
             for (let m = 0; m < 12; m++) {
@@ -885,6 +893,8 @@ export function runRetirementSimulation(
         monthlyLivingExpensesBase[m] = monthlyPortion;
       }
     }
+
+    const saltEligiblePropertyTaxNominal = saltEligiblePropertyTaxToday * cpiFactor;
 
     let baseLivingExpensesAnnual = plannedBaseLivingExpensesAnnual;
     if (actualRec) {
@@ -993,16 +1003,7 @@ export function runRetirementSimulation(
         const estCapitalGains = estDiv * (1 - taxableNonQualifiedPortion);
         const estTotalSS = (!youDeceased ? yourSSAnnualBase : 0) + (!wifeDeceased ? wifeSSAnnualBase : 0);
 
-        const stdDeductionBase = isSingle ? FED_STANDARD_DEDUCTION_SINGLE * cpiFactor : FED_STANDARD_DEDUCTION_MFJ * cpiFactor;
-        let ageAddition = 0;
-        if (isSingle) {
-          const activeSurvivorAge = inputs.isSingleFiler ? yourAge : wifeAge;
-          if (activeSurvivorAge >= 65) ageAddition += 1950 * cpiFactor;
-        } else {
-          if (yourAge >= 65) ageAddition += 1650 * cpiFactor;
-          if (!wifeDeceased && wifeAge >= 65) ageAddition += 1650 * cpiFactor;
-        }
-        const estStdDeductionTotal = stdDeductionBase + ageAddition;
+        const estAgedFilerCount = countAgedFilers(isSingle, !!inputs.isSingleFiler, yourAge, wifeAge, wifeDeceased);
 
         targetConversion = applyBucketLiquidityConstraintToConversion(
           targetConversion,
@@ -1013,7 +1014,7 @@ export function runRetirementSimulation(
           estTotalSS,
           isSingle,
           cpiFactor,
-          estStdDeductionTotal,
+          { year, agedFilerCount: estAgedFilerCount, propertyTax: saltEligiblePropertyTaxNominal },
           nonQcdTithe,
           activeState,
           estPensionExcl,
@@ -1219,16 +1220,7 @@ export function runRetirementSimulation(
     const estTaxableSS = calculateTaxableSS(predictableSS, baseOtherAGI, isSingle);
     const estFedAGI = baseOrdinary + estTaxableSS + estCapGains;
 
-    const stdDeductionBaseYear = isSingle ? FED_STANDARD_DEDUCTION_SINGLE * cpiFactor : FED_STANDARD_DEDUCTION_MFJ * cpiFactor;
-    let ageAdditionYear = 0;
-    if (isSingle) {
-      const activeSurvivorAge = inputs.isSingleFiler ? yourAge : wifeAge;
-      if (activeSurvivorAge >= 65) ageAdditionYear += 1950 * cpiFactor;
-    } else {
-      if (yourAge >= 65) ageAdditionYear += 1650 * cpiFactor;
-      if (!wifeDeceased && wifeAge >= 65) ageAdditionYear += 1650 * cpiFactor;
-    }
-    const standardDeductionTotalYear = stdDeductionBaseYear + ageAdditionYear;
+    const agedFilerCountYear = countAgedFilers(isSingle, !!inputs.isSingleFiler, yourAge, wifeAge, wifeDeceased);
 
     const estPensionExclusion = calculatePensionExclusion(activeState, [
       { age: yourAge, isAlive: !youDeceased, socialSecurityBenefit: yourSSAnnualBase, eligibleDistributions: yourRMD },
@@ -1250,10 +1242,16 @@ export function runRetirementSimulation(
       effectiveLocalRate
     );
     const estStateTax = estStateTaxResult.totalTax;
-    const activeProfileEst = getStateTaxProfile(activeState);
-    const saltCapYear = (activeProfileEst?.hasIncomeTax || effectiveLocalRate > 0) ? 10000 * cpiFactor : 0;
-    const estItemized = Math.min(saltCapYear, estStateTax);
-    const estDeduction = Math.max(standardDeductionTotalYear, estItemized);
+    const { totalDeduction: estDeduction } = calculateFederalDeduction({
+      year,
+      isSingle,
+      cpiFactor,
+      agedFilerCount: agedFilerCountYear,
+      fedAGI: estFedAGI,
+      stateIncomeTax: estStateTax,
+      propertyTax: saltEligiblePropertyTaxNominal,
+      nonQcdTithe: 0,
+    });
 
     const estTaxableOrdinary = Math.max(0, estFedAGI - estCapGains - estDeduction);
     const { totalTax: estFedBaseTax } = calculateFedTaxWithLTCG(estTaxableOrdinary, estCapGains, isSingle, cpiFactor);
@@ -1703,25 +1701,53 @@ export function runRetirementSimulation(
       const currentBaselineOrdinary = (annualYourSalary + annualWifeSalary - annualTotal401k) +
         taxableCombinedRMD + ordinaryDividendsRealized + currentInterest + currentTradDraw;
 
-      const stdDeductionBase = isSingle ? FED_STANDARD_DEDUCTION_SINGLE * cpiFactor : FED_STANDARD_DEDUCTION_MFJ * cpiFactor;
-      let ageAddition = 0;
-      if (isSingle) {
-        const activeSurvivorAge = inputs.isSingleFiler ? yourAge : wifeAge;
-        if (activeSurvivorAge >= 65) ageAddition += 1950 * cpiFactor;
-      } else {
-        if (yourAge >= 65) ageAddition += 1650 * cpiFactor;
-        if (!wifeDeceased && wifeAge >= 65) ageAddition += 1650 * cpiFactor;
-      }
-      const currentStdDeduction = stdDeductionBase + ageAddition;
-      const activeProfileMid = getStateTaxProfile(activeState);
-      const saltCap = (activeProfileMid?.hasIncomeTax || effectiveLocalRate > 0) ? 10000 * cpiFactor : 0;
-      const estimatedItemized = saltCap + annualNonQcdTithe;
-      const effectiveDeduction = Math.max(currentStdDeduction, estimatedItemized);
+      const midAgedFilerCount = countAgedFilers(isSingle, !!inputs.isSingleFiler, yourAge, wifeAge, wifeDeceased);
+      // State tax depends on the conversion being sized, so estimate it at each candidate AGI.
+      const midTotalSS = annualYourSS + annualWifeSS;
+      const midPensionExclusion = calculatePensionExclusion(activeState, [
+        { age: yourAge, isAlive: !youDeceased, socialSecurityBenefit: annualYourSS, eligibleDistributions: taxableYourRMD + annualYourTradDraw },
+        { age: wifeAge, isAlive: !wifeDeceased, socialSecurityBenefit: annualWifeSS, eligibleDistributions: taxableWifeRMD + annualWifeTradDraw },
+      ], cpiFactor);
+      const deductionAtAGI = (agi: number): number => {
+        let taxableSSAtAGI = 0;
+        for (let i = 0; i < TARGET_AGI_DEDUCTION_ITERATIONS; i++) {
+          taxableSSAtAGI = calculateTaxableSS(midTotalSS, Math.max(0, agi - taxableSSAtAGI), isSingle);
+        }
+        const midStateTax = calculateStateAndLocalTax(
+          activeState,
+          {
+            fedAGI: agi,
+            taxableSS: taxableSSAtAGI,
+            isSingle,
+            cpiFactor,
+            pensionExclusion: midPensionExclusion,
+            ordinaryIncome: Math.max(0, agi - currentCapitalGains),
+            capitalGains: currentCapitalGains,
+            retirementDistributions: Math.max(0, agi - taxableSSAtAGI - currentCapitalGains),
+          },
+          effectiveLocalRate
+        ).totalTax;
+        return calculateFederalDeduction({
+          year,
+          isSingle,
+          cpiFactor,
+          agedFilerCount: midAgedFilerCount,
+          fedAGI: agi,
+          stateIncomeTax: midStateTax,
+          propertyTax: saltEligiblePropertyTaxNominal,
+          nonQcdTithe: annualNonQcdTithe,
+        }).totalDeduction;
+      };
 
       let targetAGI: number;
       if (isBracketTarget && presetInfo) {
         const targetTaxable = (isSingle ? presetInfo.singleBase : presetInfo.jointBase) * cpiFactor;
-        targetAGI = targetTaxable + effectiveDeduction;
+        // The deduction itself depends on AGI (senior phase-out, SALT phase-down, charity floor), so
+        // iterate until the target AGI and the deduction taken at that AGI agree.
+        targetAGI = targetTaxable + deductionAtAGI(currentBaselineOrdinary + currentCapitalGains);
+        for (let iter = 0; iter < TARGET_AGI_DEDUCTION_ITERATIONS; iter++) {
+          targetAGI = targetTaxable + deductionAtAGI(targetAGI);
+        }
       } else if (presetInfo) {
         const targetMAGI = (isSingle ? presetInfo.singleBase : presetInfo.jointBase) * cpiFactor;
         targetAGI = targetMAGI;
@@ -1758,7 +1784,7 @@ export function runRetirementSimulation(
           annualYourSS + annualWifeSS,
           isSingle,
           cpiFactor,
-          effectiveDeduction,
+          { year, agedFilerCount: midAgedFilerCount, propertyTax: saltEligiblePropertyTaxNominal },
           annualNonQcdTithe,
           activeState,
           estPensionExcl,
@@ -1834,16 +1860,7 @@ export function runRetirementSimulation(
     const taxableSS = calculateTaxableSS(totalSS, otherAGI, isSingle);
     const fedAGI = nonSSOrdinary + taxableSS + capitalGains;
 
-    const stdDeductionBaseFinal = isSingle ? FED_STANDARD_DEDUCTION_SINGLE * cpiFactor : FED_STANDARD_DEDUCTION_MFJ * cpiFactor;
-    let ageAdditionFinal = 0;
-    if (isSingle) {
-      const activeSurvivorAge = inputs.isSingleFiler ? yourAge : wifeAge;
-      if (activeSurvivorAge >= 65) ageAdditionFinal += 1950 * cpiFactor;
-    } else {
-      if (yourAge >= 65) ageAdditionFinal += 1650 * cpiFactor;
-      if (!wifeDeceased && wifeAge >= 65) ageAdditionFinal += 1650 * cpiFactor;
-    }
-    const standardDeductionTotalFinal = stdDeductionBaseFinal + ageAdditionFinal;
+    const agedFilerCountFinal = countAgedFilers(isSingle, !!inputs.isSingleFiler, yourAge, wifeAge, wifeDeceased);
 
     const pensionExclusionFinal = calculatePensionExclusion(activeState, [
       { age: yourAge, isAlive: !youDeceased, socialSecurityBenefit: annualYourSS, eligibleDistributions: taxableYourRMD + annualYourTradDraw },
@@ -1866,10 +1883,16 @@ export function runRetirementSimulation(
     );
     const stateIncomeTax = stateTaxResult.totalTax;
 
-    const saltCapFinal = 10000 * cpiFactor;
-    const saltDeduction = Math.min(saltCapFinal, stateIncomeTax);
-    const itemizedDeduction = saltDeduction + annualNonQcdTithe;
-    const stdDeduction = Math.max(standardDeductionTotalFinal, itemizedDeduction);
+    const { totalDeduction: stdDeduction } = calculateFederalDeduction({
+      year,
+      isSingle,
+      cpiFactor,
+      agedFilerCount: agedFilerCountFinal,
+      fedAGI,
+      stateIncomeTax,
+      propertyTax: saltEligiblePropertyTaxNominal,
+      nonQcdTithe: annualNonQcdTithe,
+    });
 
     const taxableOrdinary = Math.max(0, fedAGI - capitalGains - stdDeduction);
     const { totalTax: fedBaseTax } = calculateFedTaxWithLTCG(taxableOrdinary, capitalGains, isSingle, cpiFactor);
@@ -2138,6 +2161,7 @@ export function runRetirementSimulation(
       magi,
       fedAGI,
       standardDeduction: stdDeduction,
+      isSingleReturn: isSingle,
       taxableIncome: Math.max(0, fedAGI - stdDeduction),
       fedIncomeTax: finalFedTax,
       stateIncomeTax: finalStateTax,

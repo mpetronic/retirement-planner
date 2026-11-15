@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useSta
 import { createPortal } from 'react-dom';
 import { SimulationResultRow, AppStateInputs, getSimulationStartYear } from '../types';
 import { TableProperties, Info, AlertTriangle, X } from 'lucide-react';
-import { IRMAA_TIERS_MFJ, IRMAA_TIERS_SINGLE } from '../engine/taxRates2026';
+import { IRMAA_TIERS_MFJ, IRMAA_TIERS_SINGLE } from '../engine/taxRates';
 import { calculateFedTaxWithLTCG, calculateTaxableSS } from '../engine/simulationEngine';
 import { calculateStateAndLocalTax, calculatePensionExclusion, resolveActiveJurisdiction } from '../engine/stateTaxRegistry';
 import { RowInspectionDialog } from './RowInspectionDialog';

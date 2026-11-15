@@ -22,7 +22,7 @@ import {
   mulberry32,
   MonteCarloSummary,
 } from './engine/monteCarloEngine';
-import { DEFAULT_FILL_TO_TARGET_VALUE } from './engine/taxRates2026';
+import { DEFAULT_FILL_TO_TARGET_VALUE } from './engine/taxRates';
 import { DashboardLayout } from './components/DashboardLayout';
 import { ActiveViewType } from './components/SidebarNavigation';
 import { useActiveView } from './hooks/useActiveView';

@@ -2,7 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import { X, TrendingUp, TrendingDown, Wallet, Activity, ShieldAlert, Shield, Award } from 'lucide-react';
 import { SimulationResultRow, AppStateInputs } from '../types';
-import { IRMAA_TIERS_SINGLE, IRMAA_TIERS_MFJ } from '../engine/taxRates2026';
+import { IRMAA_TIERS_SINGLE, IRMAA_TIERS_MFJ } from '../engine/taxRates';
 import { SankeyFlowDiagram } from './SankeyFlowDiagram';
 
 interface RowInspectionDialogProps {

@@ -2,7 +2,7 @@
 
 Read-only review performed 2026-11-14 against commit `08d8d5b` (branch `variable-social-security`).
 
-Scope: `src/engine/simulationEngine.ts`, `src/engine/taxRates2026.ts`, `src/engine/stateTaxRegistry.ts`
+Scope: `src/engine/simulationEngine.ts`, `src/engine/taxRates.ts`, `src/engine/stateTaxRegistry.ts`
 (Maryland in detail), `src/engine/monteCarloEngine.ts`, `src/engine/taxEquilibriumEngine.ts`,
 `src/engine/optimizer.ts`, and the default inputs in `src/App.tsx`. The Expenser app was excluded.
 `bucketEngine.ts` and `rebalancingEngine.ts` were not reviewed because the simulation engine does not
@@ -28,7 +28,7 @@ Use this table to track what has been debated and fixed.
 | 5 | Survivor (wife first): Roth conversions stop | Medium-High (latent) | Fixed |
 | 6 | No federal basis step-up unless FL | Medium | Fixed |
 | 7 | TE optimizer nominal income vs un-inflated brackets | Medium-High | Fixed |
-| 8 | OBBBA 2025 federal changes not modeled | Medium | Open |
+| 8 | OBBBA 2025 federal changes not modeled | Medium | Fixed |
 | 9 | Maryland state tax errors and stale values | Medium | Open |
 | 10 | 2026 LTCG thresholds look overstated | Low-Medium | Open |
 | 11 | IRMAA thresholds inflated to lookback year | Low-Medium | Open |
@@ -247,7 +247,7 @@ and erased its embedded gains. Both transitions now use the single state-indepen
   now data in the state registry (`pensionExclusionPolicy`) and read through `calculatePensionExclusion`,
   so states without a policy get none.
 - `MD_PENSION_EXCLUSION_BASE_CAP`, `MD_PIGGYBACK_RATE` and the Maryland bracket tiers moved from
-  `taxRates2026.ts` into the Maryland profile in `stateTaxRegistry.ts`.
+  `taxRates.ts` into the Maryland profile in `stateTaxRegistry.ts`.
 - `resolveActiveJurisdiction` replaces the duplicated active-state logic, including the hard-coded
   MD/FL relocation toggle. A relocation whose target equals the current state now stays in that state.
 - `calculateMDStateTax` became `calculateStateTax(stateCode, ...)`, and
@@ -322,8 +322,34 @@ sensitive to them. With the senior deduction plus a $40k SALT cap plus tithing, 
 2026-2028 when the engine says you do not.
 
 **Recommendation.** Add a year-keyed table of statutory values (SALT cap, senior deduction, charitable
-floor) in `taxRates2026.ts`, named constants per the project rule, and look them up by simulation year.
+floor) in `taxRates.ts`, named constants per the project rule, and look them up by simulation year.
 Add property tax as an input (or let detailed expenses tag an item as SALT-eligible).
+
+**Resolution.** Fixed. The five copies of the deduction logic in `simulationEngine.ts` (the liquidity
+helper, the conversion estimate, the yearly estimate, the mid-year estimate and the final calculation)
+now call one function, `calculateFederalDeduction`, in the new `federalDeduction.ts`. Statutory values
+are named constants in `taxRates.ts`:
+
+- Senior deduction: $6,000 per filer 65 or older for 2025-2028, phased out at 6% of MAGI above $150k MFJ
+  / $75k single, applied on top of either the standard or itemized deduction.
+- SALT cap: $40,000 in 2025, growing 1% a year through 2029, then $10,000 from 2030. It is not indexed
+  by `cpiFactor`, and phases down by 30% of MAGI above a threshold that starts at $500,000, floored at
+  $10,000.
+- Charitable: from 2026 itemized gifts lose a 0.5%-of-AGI floor, and non-itemizers get the capped cash
+  deduction ($2,000 MFJ / $1,000 single).
+- The age-65 additional standard deduction amounts moved into constants as well.
+
+Property tax uses the expense worksheet: a recurring item can be flagged "Counts toward SALT deduction"
+(`isSALTEligible`, shown as a SALT badge in the list). The flagged annual total for the active state is
+inflated by `cpiFactor` and added to state income tax under the SALT cap, so it also helps in states
+with no income tax. Fill-to-bracket targeting now iterates the target AGI against a deduction that
+depends on AGI, and the mid-year deduction estimate computes state tax at each candidate AGI. Ledger
+rows gained `isSingleReturn`, because the tax equilibrium hurdle rate guessed filing status from the
+deduction size, which no longer works once deductions are larger.
+
+Known limits: property tax is not escalated separately from CPI, the non-itemizer charitable deduction
+is assumed not to be indexed and all non-QCD tithing is assumed to be cash gifts, and the 35% itemized
+deduction limitation for the 37% bracket is not modeled.
 
 ---
 
@@ -338,7 +364,7 @@ Add property tax as an input (or let detailed expenses tag an item as SALT-eligi
   Maryland's pension exclusion covers employee retirement systems (401k, 403b, pensions, annuities);
   traditional IRA distributions are explicitly excluded. Your accounts are labeled IRA. If they are
   rollover IRAs, Maryland still denies it.
-- **Stale cap.** `MD_PENSION_EXCLUSION_BASE_CAP = 34300` at `taxRates2026.ts:10` is the 2022 figure;
+- **Stale cap.** `MD_PENSION_EXCLUSION_BASE_CAP = 34300` at `taxRates.ts:10` is the 2022 figure;
   it was $39,500 for 2024 (verify 2025/2026).
 - **Missing personal exemptions.** Maryland allows $3,200 per person plus $1,000 per person 65+,
   phased out above $100k/$150k FAGI. The MD profile at `stateTaxRegistry.ts:309-348` models none. In a
@@ -347,7 +373,7 @@ Add property tax as an input (or let detailed expenses tag an item as SALT-eligi
   Maryland's 2025 budget act replaced it with a flat $3,350 single / $6,700 MFJ.
 - **Missing 2025 brackets and surtax.** The same act added 6.25% and 6.5% brackets (over $500k/$600k
   and $1M/$1.2M) and a 2% surtax on capital gains for FAGI over $350k. The tiers at
-  `taxRates2026.ts:298-318` top out at 5.75%. Probably not your income band, but a big conversion year
+  `taxRates.ts:298-318` top out at 5.75%. Probably not your income band, but a big conversion year
   could cross $350k.
 
 **Recommendation.** Make the pension exclusion opt-in with a per-account "qualified employer plan"
@@ -360,7 +386,7 @@ the exemptions with the phase-out.
 
 **Severity: Low-Medium (verify)**
 
-**What I found.** `taxRates2026.ts:75-86` sets the 0% threshold at $50,200 single / $100,500 MFJ and
+**What I found.** `taxRates.ts:75-86` sets the 0% threshold at $50,200 single / $100,500 MFJ and
 the 15% ceiling at $554,000 / $623,000. My recollection of Rev. Proc. 2025-32 is $49,450 / $98,900 and
 $545,500 / $613,700. The ordinary brackets in the same file do match 2026, so this looks like a
 one-off.
@@ -462,7 +488,7 @@ ideally credit them back at FRA, which SSA does).
 - OASDI wage base $176,100 at line 23: 2026 is $184,500.
 - `BASE_QCD_LIMIT = 105000` at `types/index.ts:369` is 2024; 2026 is $111,000. Since cpiFactor starts
   at 1.0 in 2026, the base is two years low.
-- Part D base premium $34.50 at `taxRates2026.ts:4`: 2026 base beneficiary premium is $38.99 (plan
+- Part D base premium $34.50 at `taxRates.ts:4`: 2026 base beneficiary premium is $38.99 (plan
   premiums vary; user-configurable).
 - The additional Medicare tax threshold ($200k) is inflated at lines 649/691; it is not indexed in law.
 

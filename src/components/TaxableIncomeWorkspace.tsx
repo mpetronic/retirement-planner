@@ -42,7 +42,7 @@ import {
   DEFAULT_FILL_TO_TARGET_VALUE, 
   CONVERSION_TARGET_PRESETS,
   FED_STANDARD_DEDUCTION_MFJ 
-} from '../engine/taxRates2026';
+} from '../engine/taxRates';
 import { CustomRothScenarioModal } from './CustomRothScenarioModal';
 
 ChartJS.register(...registerables);

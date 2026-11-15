@@ -130,6 +130,7 @@ export interface ExpenseItemDefinition {
   isOneTime?: boolean;
   targetYear?: number | null; // The specific year a one-time expense occurs (in today's dollars)
   applicableStates?: string[]; // ['ALL'] (default) or specific state codes (e.g. ['FL'], ['MD'])
+  isSALTEligible?: boolean; // Recurring item (e.g. property tax) counted toward the federal SALT itemized deduction
   dueMonths?: number[]; // Array of 1-based month numbers (1 to 12) when this non-monthly expense is due
 }
 
@@ -585,6 +586,7 @@ export interface SimulationResultRow {
   niitTax: number;
   taxableSS: number;
   taxableDividends: number;
+  isSingleReturn?: boolean; // True when the year was filed as a single return
   qualifiedDividends?: number; // Portion of dividends taxed at preferential capital gains rates
   taxableInterest: number;
   cpiFactor: number;

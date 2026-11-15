@@ -5,7 +5,7 @@ import {
   DEFAULT_TAX_EQUILIBRIUM_FLOOR_RATE,
 } from './taxEquilibriumEngine';
 import { AppStateInputs, SimulationResultRow } from '../types';
-import { FED_BRACKETS_MFJ, FED_STANDARD_DEDUCTION_MFJ } from './taxRates2026';
+import { FED_BRACKETS_MFJ, FED_STANDARD_DEDUCTION_MFJ } from './taxRates';
 
 describe('taxEquilibriumEngine', () => {
   const getMockInputs = (): AppStateInputs => ({

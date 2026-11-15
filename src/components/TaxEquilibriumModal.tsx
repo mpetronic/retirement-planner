@@ -13,7 +13,7 @@ import {
 } from 'lucide-react';
 import { AppStateInputs, LockedReturnSequence } from '../types';
 import { calculateTaxEquilibriumSchedule, TaxEquilibriumResult, YearlyTaxEquilibriumPoint } from '../engine/taxEquilibriumEngine';
-import { STATUTORY_IRMAA_LOOKBACK_YEARS } from '../engine/taxRates2026';
+import { STATUTORY_IRMAA_LOOKBACK_YEARS } from '../engine/taxRates';
 
 interface ColumnHelpHeaderProps {
   label: string;

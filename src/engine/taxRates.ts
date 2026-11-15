@@ -287,3 +287,44 @@ export function getIRSUniformLifetimeFactor(age: number): number {
   return factors[age] || factors[72];
 }
 
+
+/**
+ * Additional standard deduction for each filer age 65 or older (IRC Section 63(f)), 2026 amounts.
+ * Indexed to inflation through cpiFactor at the call site.
+ */
+export const FED_ADDITIONAL_STD_DEDUCTION_AGED_MFJ = 1650;
+export const FED_ADDITIONAL_STD_DEDUCTION_AGED_SINGLE = 1950;
+export const STATUTORY_AGED_DEDUCTION_AGE = 65;
+
+/**
+ * One Big Beautiful Bill Act (Public Law 119-21) senior deduction, tax years 2025 through 2028.
+ * Per filer age 65 or older, not inflation indexed, available whether or not the filer itemizes.
+ */
+export const OBBBA_SENIOR_DEDUCTION_FIRST_YEAR = 2025;
+export const OBBBA_SENIOR_DEDUCTION_LAST_YEAR = 2028;
+export const OBBBA_SENIOR_DEDUCTION_PER_FILER = 6000;
+export const OBBBA_SENIOR_DEDUCTION_PHASEOUT_RATE = 0.06;
+export const OBBBA_SENIOR_DEDUCTION_PHASEOUT_THRESHOLD_MFJ = 150000;
+export const OBBBA_SENIOR_DEDUCTION_PHASEOUT_THRESHOLD_SINGLE = 75000;
+
+/**
+ * OBBBA state and local tax (SALT) deduction cap. Base cap and phase-down threshold apply in the first
+ * year and grow 1% per year through the last enhanced year. After that the pre-OBBBA cap returns.
+ * The cap shrinks by 30% of MAGI above the threshold but never below the pre-OBBBA cap.
+ */
+export const OBBBA_SALT_CAP_FIRST_YEAR = 2025;
+export const OBBBA_SALT_CAP_LAST_YEAR = 2029;
+export const OBBBA_SALT_CAP_FIRST_YEAR_AMOUNT = 40000;
+export const OBBBA_SALT_CAP_ANNUAL_GROWTH = 0.01;
+export const OBBBA_SALT_PHASEDOWN_THRESHOLD_FIRST_YEAR = 500000;
+export const OBBBA_SALT_PHASEDOWN_RATE = 0.30;
+export const PRE_OBBBA_SALT_CAP = 10000;
+
+/**
+ * OBBBA charitable changes effective 2026: itemized gifts are reduced by a floor of 0.5% of AGI, and
+ * non-itemizers may deduct cash gifts up to a fixed amount. These amounts are not inflation indexed.
+ */
+export const OBBBA_CHARITABLE_FIRST_YEAR = 2026;
+export const OBBBA_CHARITABLE_ITEMIZED_AGI_FLOOR_RATE = 0.005;
+export const OBBBA_NON_ITEMIZER_CHARITABLE_DEDUCTION_MFJ = 2000;
+export const OBBBA_NON_ITEMIZER_CHARITABLE_DEDUCTION_SINGLE = 1000;

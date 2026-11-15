@@ -34,7 +34,7 @@ import {
   resolveExpenseCost,
   ALL_STATES_COST_KEY
 } from '../types';
-import { BASE_MEDICARE_PART_B, BASE_MEDICARE_PART_D } from '../engine/taxRates2026';
+import { BASE_MEDICARE_PART_B, BASE_MEDICARE_PART_D } from '../engine/taxRates';
 
 interface DetailedExpensesDialogProps {
   isOpen: boolean;
@@ -126,6 +126,7 @@ export const DetailedExpensesDialog: React.FC<DetailedExpensesDialogProps> = ({
   const [itemFrequency, setItemFrequency] = useState<number>(12);
   const [itemDueMonths, setItemDueMonths] = useState<number[]>([]);
   const [itemIsOneTime, setItemIsOneTime] = useState<boolean>(false);
+  const [itemIsSALTEligible, setItemIsSALTEligible] = useState<boolean>(false);
   const [itemTargetYear, setItemTargetYear] = useState<number | string>(simStartYear);
   const [itemScopeMode, setItemScopeMode] = useState<'ALL' | 'SPECIFIC'>('ALL');
   const [itemSelectedStates, setItemSelectedStates] = useState<string[]>([currentState]);
@@ -241,6 +242,7 @@ export const DetailedExpensesDialog: React.FC<DetailedExpensesDialogProps> = ({
       setItemDescription(item.description || '');
       setItemFrequency(isOneTime ? 1 : (frequencies[item.id] ?? item.defaultFrequency ?? 12));
       setItemDueMonths(item.dueMonths ? [...item.dueMonths] : []);
+      setItemIsSALTEligible(!!item.isSALTEligible);
       setItemTargetYear(item.targetYear ?? simStartYear);
       
       const appStates = item.applicableStates || ['ALL'];
@@ -272,6 +274,7 @@ export const DetailedExpensesDialog: React.FC<DetailedExpensesDialogProps> = ({
       setItemIsOneTime(isOneTime);
       setItemFrequency(isOneTime ? 1 : 12);
       setItemDueMonths([]);
+      setItemIsSALTEligible(false);
       setItemTargetYear(defaultYear ?? simStartYear);
       setItemScopeMode('ALL');
       setItemSelectedStates(statesList.length > 0 ? [...statesList] : [activeState]);
@@ -334,6 +337,7 @@ export const DetailedExpensesDialog: React.FC<DetailedExpensesDialogProps> = ({
                 defaultFrequency: finalFrequency,
                 dueMonths: (finalFrequency < 12 || itemIsOneTime) && itemDueMonths.length > 0 ? itemDueMonths : undefined,
                 isOneTime: itemIsOneTime,
+                isSALTEligible: !itemIsOneTime && itemIsSALTEligible ? true : undefined,
                 targetYear: finalTargetYear,
                 applicableStates: finalApplicableStates
               }
@@ -354,6 +358,7 @@ export const DetailedExpensesDialog: React.FC<DetailedExpensesDialogProps> = ({
         defaultFrequency: finalFrequency,
         dueMonths: (finalFrequency < 12 || itemIsOneTime) && itemDueMonths.length > 0 ? itemDueMonths : undefined,
         isOneTime: itemIsOneTime,
+        isSALTEligible: !itemIsOneTime && itemIsSALTEligible ? true : undefined,
         targetYear: finalTargetYear,
         applicableStates: finalApplicableStates
       };
@@ -1021,6 +1026,11 @@ export const DetailedExpensesDialog: React.FC<DetailedExpensesDialogProps> = ({
                                         <span className="text-[9px] font-semibold text-cyan-300 bg-cyan-950/70 px-1.5 py-0.5 rounded border border-cyan-500/30 flex items-center gap-0.5" title="Scheduled due month(s)">
                                           <Calendar className="w-2.5 h-2.5" />
                                           {item.dueMonths.map(m => ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'][m - 1]).join(', ')}
+                                        </span>
+                                      )}
+                                      {item.isSALTEligible && (
+                                        <span className="text-[9px] font-semibold text-emerald-300 bg-emerald-950/70 px-1.5 py-0.5 rounded border border-emerald-500/30" title="Counts toward the federal SALT itemized deduction">
+                                          SALT
                                         </span>
                                       )}
                                       {hasDifferingStateCosts && (
@@ -1702,6 +1712,23 @@ export const DetailedExpensesDialog: React.FC<DetailedExpensesDialogProps> = ({
                     })}
                   </div>
                 </div>
+              )}
+
+              {!itemIsOneTime && (
+                <label className="flex items-start gap-2 p-3 bg-slate-950 rounded-lg border border-slate-800 cursor-pointer text-slate-200">
+                  <input
+                    type="checkbox"
+                    checked={itemIsSALTEligible}
+                    onChange={(e) => setItemIsSALTEligible(e.target.checked)}
+                    className="mt-0.5 text-emerald-500 focus:ring-0"
+                  />
+                  <span>
+                    <span className="block font-semibold text-xs">Counts toward SALT deduction (e.g. property tax)</span>
+                    <span className="block text-[10px] text-slate-400">
+                      Adds this item to state and local taxes when the planner decides between the standard and itemized federal deduction.
+                    </span>
+                  </span>
+                </label>
               )}
 
               {/* State Scope Selector */}

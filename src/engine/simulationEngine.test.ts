@@ -1061,6 +1061,31 @@ describe('runRetirementSimulation', () => {
       expect(withActual[1].priorYearTaxFundingGains).toBe(0);
     });
   });
+  it('counts expense items flagged SALT eligible toward the itemized deduction, even with no state income tax', () => {
+    const PROPERTY_TAX_ANNUAL = 40000;
+    const buildInputs = (flagged: boolean) => {
+      const inputs = getMockInputs();
+      inputs.useDetailedExpenses = true;
+      inputs.jurisdiction.currentState = 'FL';
+      inputs.jurisdiction.targetState = 'FL';
+      inputs.jurisdiction.relocationYear = null;
+      inputs.detailedExpenses = {
+        catalog: {
+          categories: ['Home'],
+          items: [{ id: 'propTax', name: 'Property Tax', category: 'Home', defaultFrequency: 1, isSALTEligible: flagged }],
+        },
+        states: ['FL'],
+        costs: { ALL: { propTax: PROPERTY_TAX_ANNUAL } },
+        frequencies: { propTax: 1 },
+      };
+      return inputs;
+    };
+
+    const withFlag = runRetirementSimulation(buildInputs(true)).find((r) => r.year === 2026)!;
+    const withoutFlag = runRetirementSimulation(buildInputs(false)).find((r) => r.year === 2026)!;
+    expect(withFlag.standardDeduction).toBeGreaterThan(withoutFlag.standardDeduction);
+    expect(withFlag.standardDeduction).toBeGreaterThanOrEqual(PROPERTY_TAX_ANNUAL);
+  });
 });
 
 describe('calculateFedTaxWithLTCG', () => {

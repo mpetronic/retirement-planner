@@ -13,7 +13,7 @@ import {
   STATUTORY_SS_TORPEDO_MULTIPLIER,
   STATUTORY_IRMAA_LOOKBACK_YEARS,
   STATUTORY_MEDICARE_ELIGIBILITY_AGE,
-} from './taxRates2026';
+} from './taxRates';
 import { getStateTaxProfile } from './stateTaxRegistry';
 
 /**
@@ -112,7 +112,7 @@ export function calculateDynamicRMDHurdleRate(ledger: SimulationResultRow[], cur
     const annualRMD = (row.yourRMD ?? 0) + (row.wifeRMD ?? 0);
     if (annualRMD <= 0) continue;
 
-    const isSingle = row.standardDeduction < STATUTORY_STD_DEDUCTION_SINGLE_MFJ_MIDPOINT * (row.cpiFactor || 1);
+    const isSingle = row.isSingleReturn ?? (row.standardDeduction < STATUTORY_STD_DEDUCTION_SINGLE_MFJ_MIDPOINT * (row.cpiFactor || 1));
     const brackets = isSingle ? FED_BRACKETS_SINGLE : FED_BRACKETS_MFJ;
     // Ledger values are nominal future dollars, so bracket limits must be inflated to match.
     // Capital gains and qualified dividends sit on top of ordinary income and use preferential
