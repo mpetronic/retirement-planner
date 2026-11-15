@@ -24,8 +24,8 @@ Use this table to track what has been debated and fixed.
 | 1 | Year-end tax settlement income never taxed | High | Fixed |
 | 2 | MC mean reversion / regime vol narrows distribution | High | Fixed |
 | 3 | Historical bootstrap arithmetic vs geometric calibration | Medium-High | Fixed |
-| 4 | Survivor (wife first): husband's cash wiped out | High (latent) | Open |
-| 5 | Survivor (wife first): Roth conversions stop | Medium-High (latent) | Open |
+| 4 | Survivor (wife first): husband's cash wiped out | High (latent) | Fixed |
+| 5 | Survivor (wife first): Roth conversions stop | Medium-High (latent) | Fixed |
 | 6 | No federal basis step-up unless FL | Medium | Fixed |
 | 7 | TE optimizer nominal income vs un-inflated brackets | Medium-High | Open |
 | 8 | OBBBA 2025 federal changes not modeled | Medium | Open |
@@ -186,6 +186,12 @@ portfolio total.
 **Recommendation.** Change line 538 to `wifeCash = 0;`. Add a test for the wife-predeceases transition
 that checks cash conservation.
 
+**Resolution.** Fixed together with #5. The transition now zeroes `wifeCash`. The same block had a
+second copy of the typo that the review missed: `yourRoth += wifeRoth; yourRoth = 0;` wiped the
+husband's Roth balance and left the wife's behind, so it now zeroes `wifeRoth`. Tests cover the
+wife-predeceases transition (her cash, Roth and pre-tax balances end at zero and the husband keeps
+the combined Roth).
+
 ---
 
 ## 5. Survivor mode, wife predeceases: Roth conversions silently stop
@@ -203,6 +209,12 @@ is exactly when you would want to compare conversion strategies, and the engine 
 
 **Recommendation.** Branch on which spouse survives: if `youDeceased` use `wifePreTax`, else if
 `wifeDeceased` use `yourPreTax`, else split. The same fix applies to the four sites listed.
+
+**Resolution.** Fixed together with #4. Two per-year flags, `isSoleSurvivorWife` and
+`isSoleSurvivorYou`, identify which spouse holds the merged pre-tax balance. The available-balance
+caps and the conversion application (flat, custom and fill-to-target, in both the estimate and final
+passes) use the survivor's own balance, and a husband survivor's conversion is credited to
+`yourConverted`. Tests run all three strategies after a wife-first death.
 
 ---
 

@@ -483,6 +483,9 @@ export function runRetirementSimulation(
     }
 
     const isSurvivorActive = youDeceased || wifeDeceased;
+    // Once a spouse dies, the decedent's pre-tax balance is merged into the survivor's, so only the survivor's balance is convertible
+    const isSoleSurvivorWife = youDeceased && !wifeDeceased;
+    const isSoleSurvivorYou = wifeDeceased && !youDeceased;
 
     // Spousal transition on primary death
     if (youDeceased && year === DEATH_YEAR && !inputs.isSingleFiler && !wifeDeceased) {
@@ -506,7 +509,7 @@ export function runRetirementSimulation(
       yourPreTax += wifePreTax;
       wifePreTax = 0;
       yourRoth += wifeRoth;
-      yourRoth = 0;
+      wifeRoth = 0;
 
       // IRC 1014: the decedent's account is stepped up to market value; the survivor's own basis is unchanged
       yourBasis += wifeTaxable;
@@ -515,7 +518,7 @@ export function runRetirementSimulation(
       wifeBasis = 0;
 
       yourCash += wifeCash;
-      yourCash = 0;
+      wifeCash = 0;
     }
 
     // Standard spouse ages for year
@@ -958,7 +961,7 @@ export function runRetirementSimulation(
     }
 
     if (targetConversion > 0) {
-      const totalAvailablePreTax = isSurvivorActive || youDeceased ? wifePreTax : (yourPreTax + (wifeDeceased ? 0 : wifePreTax));
+      const totalAvailablePreTax = isSoleSurvivorWife ? wifePreTax : isSoleSurvivorYou ? yourPreTax : (yourPreTax + (wifeDeceased ? 0 : wifePreTax));
 
       if (inputs.rothConversionStrategy === 'custom') {
         if (targetConversion > totalAvailablePreTax + 0.01) {
@@ -1019,10 +1022,14 @@ export function runRetirementSimulation(
       }
 
       if (targetConversion > 0) {
-        if (isSurvivorActive || youDeceased) {
+        if (isSoleSurvivorWife) {
           wifeConverted = Math.min(targetConversion, wifePreTax);
           wifePreTax -= wifeConverted;
           wifeRoth += wifeConverted;
+        } else if (isSoleSurvivorYou) {
+          yourConverted = Math.min(targetConversion, yourPreTax);
+          yourPreTax -= yourConverted;
+          yourRoth += yourConverted;
         } else {
           const halfTarget = targetConversion / 2;
           const husbandDrawn = Math.min(halfTarget, yourPreTax);
@@ -1760,7 +1767,7 @@ export function runRetirementSimulation(
       }
 
       if (targetConversion > 0) {
-        const totalAvailablePreTax = isSurvivorActive || youDeceased ? wifePreTax : (yourPreTax + (wifeDeceased ? 0 : wifePreTax));
+        const totalAvailablePreTax = isSoleSurvivorWife ? wifePreTax : isSoleSurvivorYou ? yourPreTax : (yourPreTax + (wifeDeceased ? 0 : wifePreTax));
         if (targetConversion > totalAvailablePreTax + 0.01) {
           isRothConversionCapped = true;
           rothConversionShortfall = Math.max(0, targetConversion - totalAvailablePreTax);
@@ -1769,10 +1776,14 @@ export function runRetirementSimulation(
           isRothConversionCapped = false;
         }
 
-        if (isSurvivorActive || youDeceased) {
+        if (isSoleSurvivorWife) {
           wifeConverted = Math.min(targetConversion, wifePreTax);
           wifePreTax -= wifeConverted;
           wifeRoth += wifeConverted;
+        } else if (isSoleSurvivorYou) {
+          yourConverted = Math.min(targetConversion, yourPreTax);
+          yourPreTax -= yourConverted;
+          yourRoth += yourConverted;
         } else {
           const halfTarget = targetConversion / 2;
           const husbandDrawn = Math.min(halfTarget, yourPreTax);

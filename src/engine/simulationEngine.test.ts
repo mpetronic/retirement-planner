@@ -748,6 +748,74 @@ describe('runRetirementSimulation', () => {
     }
   });
 
+  describe('wife predeceases husband', () => {
+    const WIFE_LONGEVITY_AGE = 70; // Born 1964, so she dies in 2034 while the husband (born 1960) is 74
+    const WIFE_DEATH_YEAR = 1964 + WIFE_LONGEVITY_AGE;
+
+    const getWifeFirstInputs = () => {
+      const inputs = getMockInputs();
+      inputs.isConfigured = true;
+      inputs.isSingleFiler = false;
+      inputs.simulateSurvivor = true;
+      inputs.you.birthDate = '1960-01-01';
+      inputs.you.longevityAge = 90;
+      inputs.wife.birthDate = '1964-01-01';
+      inputs.wife.longevityAge = WIFE_LONGEVITY_AGE;
+      inputs.portfolio.yourCash = 100000;
+      inputs.portfolio.wifeCash = 50000;
+      inputs.portfolio.yourRothIRA = 100000;
+      inputs.portfolio.wifeRothIRA = 50000;
+      inputs.jurisdiction.currentState = 'MD';
+      inputs.jurisdiction.targetState = 'MD';
+      inputs.jurisdiction.relocationYear = null;
+      return inputs;
+    };
+
+    it('should merge the wife cash and Roth into the husband and zero out her balances', () => {
+      const results = runRetirementSimulation(getWifeFirstInputs(), true);
+      const before = results.find(r => r.year === WIFE_DEATH_YEAR - 1)!;
+      const after = results.find(r => r.year === WIFE_DEATH_YEAR)!;
+
+      expect(after.endWifeCash).toBe(0);
+      expect(after.endWifeRothIRA).toBe(0);
+      expect(after.endWifePreTaxIRA).toBe(0);
+      // The husband inherits both balances instead of losing them
+      expect(after.endYourRothIRA).toBeGreaterThanOrEqual(before.endYourRothIRA + before.endWifeRothIRA);
+      expect(after.endYourCash).toBeGreaterThan(0);
+    });
+
+    for (const strategy of ['flat', 'custom', 'fill-to-target'] as const) {
+      it(`should keep converting the husband's pre-tax balance after the wife dies (${strategy})`, () => {
+        const inputs = getWifeFirstInputs();
+        inputs.rothConversionStrategy = strategy;
+        inputs.annualRothConversion = 20000;
+        inputs.rothConversionStartYear = WIFE_DEATH_YEAR + 1;
+        inputs.rothConversionEndYear = 2045;
+        inputs.rothConversionTargetValue = 600000; // AGI ceiling, set well above the survivor baseline income
+        // Enough taxable money that the liquidity constraint never caps the conversion tax
+        inputs.portfolio.yourTaxableBrokerage = 5000000;
+        inputs.portfolio.yourTaxableBasis = 5000000;
+        inputs.portfolio.yourPreTaxIRA = 400000;
+        inputs.customRothScenarios = [{
+          id: 'wife-first',
+          name: 'wife-first',
+          schedule: Object.fromEntries(Array.from({ length: 10 }, (_, i) => [WIFE_DEATH_YEAR + 1 + i, 20000])),
+          createdAt: '',
+          updatedAt: '',
+        }];
+        inputs.activeCustomScenarioId = 'wife-first';
+
+        const results = runRetirementSimulation(inputs, true);
+        const survivorRows = results.filter(r => r.year > WIFE_DEATH_YEAR && r.year <= WIFE_DEATH_YEAR + 5);
+        expect(survivorRows.length).toBeGreaterThan(0);
+        for (const row of survivorRows) {
+          expect(row.endWifePreTaxIRA).toBe(0);
+          expect(row.intentionalRothConversion).toBeGreaterThan(0);
+        }
+      });
+    }
+  });
+
   it('should draw from Cash Assets first and grow remaining cash at the fixed income rate', () => {
     const inputs = getMockInputs();
     inputs.growthAssumptions.minCashReserveDollars = 0; // Disable min cash reserve floor for legacy full drawdown test
