@@ -314,11 +314,11 @@ export const LookbackLedgerTable: React.FC<LookbackLedgerTableProps> = ({
                   if (isSingle) {
                     const age = inputs.isSingleFiler ? r.yourAge : r.wifeAge;
                     const ss = inputs.isSingleFiler ? r.yourSS : r.wifeSS;
-                    const rmdAndDraw = (inputs.isSingleFiler ? r.yourRMD : r.wifeRMD) + r.drawdownPreTax;
+                    const rmdAndDraw = (inputs.isSingleFiler ? r.yourRMD : r.wifeRMD) + r.otherTaxableIncome;
                     return (age >= 65) ? Math.min(rmdAndDraw, Math.max(0, capExcl - ss)) : 0;
                   } else {
-                    const exclJohn = (r.yourAge >= 65) ? Math.min(r.yourRMD + r.drawdownPreTax, Math.max(0, capExcl - r.yourSS)) : 0;
-                    const exclWife = (r.wifeAge >= 65) ? Math.min(r.wifeRMD + r.drawdownPreTax, Math.max(0, capExcl - r.wifeSS)) : 0;
+                    const exclJohn = (r.yourAge >= 65) ? Math.min(r.yourRMD + r.otherTaxableIncome, Math.max(0, capExcl - r.yourSS)) : 0;
+                    const exclWife = (r.wifeAge >= 65) ? Math.min(r.wifeRMD + r.otherTaxableIncome, Math.max(0, capExcl - r.wifeSS)) : 0;
                     return Math.min(exclJohn + exclWife, Math.max(0, capExcl - r.yourSS) + Math.max(0, capExcl - r.wifeSS));
                   }
                 })();
@@ -352,7 +352,7 @@ export const LookbackLedgerTable: React.FC<LookbackLedgerTableProps> = ({
                     pensionExclusion: mdPensionExclusion,
                     ordinaryIncome: Math.max(0, agiWithout - (r.capitalGainsTriggered || 0)),
                     capitalGains: r.capitalGainsTriggered || 0,
-                    retirementDistributions: Math.max(0, ((r.yourRMD || 0) + (r.wifeRMD || 0) + (r.drawdownPreTax || 0)) - (r.intentionalRothConversion || 0)),
+                    retirementDistributions: Math.max(0, ((r.yourRMD || 0) + (r.wifeRMD || 0) + (r.otherTaxableIncome || 0)) - (r.intentionalRothConversion || 0)),
                   },
                   effectiveLocalRate
                 );

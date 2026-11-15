@@ -21,7 +21,7 @@ Use this table to track what has been debated and fixed.
 
 | # | Finding | Severity | Status |
 |---|---------|----------|--------|
-| 1 | Year-end tax settlement income never taxed | High | Open |
+| 1 | Year-end tax settlement income never taxed | High | Fixed |
 | 2 | MC mean reversion / regime vol narrows distribution | High | Open |
 | 3 | Historical bootstrap arithmetic vs geometric calibration | Medium-High | Open |
 | 4 | Survivor (wife first): husband's cash wiped out | High (latent) | Open |
@@ -69,6 +69,15 @@ feeds the tax equilibrium engine, which reads `capitalGainsTriggered` from the l
 income" taxed in the following year (realistic, since the April settlement is a next-year event), or
 iterate the settlement once: recompute tax including the funding income and re-settle the delta. The
 carry-forward is simpler and matches how it actually works on a real return.
+
+**Resolution.** Fixed with the carry-forward. Gains and pre-tax draws created by funding the year-end
+settlement are carried into the next year's taxable-income accumulators as prior-year tax-funding
+income. The ledger now separates cash flow (`drawdownPreTax`, `drawdownTaxable`) from income taxed in
+the year (`otherTaxableIncome`, `capitalGainsTriggered`), and exposes the carried-in amounts as
+`priorYearTaxFundingGains` and `priorYearTaxFundingPreTaxDraw`. Known limits: nothing is carried out
+of an actual-record year (its simulated settlement is replaced by real balances and real tax), the
+carry out of the final plan year is never taxed, and the carried income is not included in the
+quarterly estimated-tax precompute, so its tax surfaces in that year's settlement.
 
 ---
 

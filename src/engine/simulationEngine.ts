@@ -401,6 +401,13 @@ export function runRetirementSimulation(
   let isTitheInitialized = false;
   let titheReserveBank = 0;
 
+  // Prior-year tax-funding income carried into the next tax year. When the year-end tax settlement is
+  // paid by selling brokerage or drawing from a pre-tax IRA, that sale/draw is itself taxable. The
+  // settlement is a next-year (April) event, so the income is recognized on the following year's return.
+  let carriedTaxFundingGains = 0;
+  let carriedYourTaxFundingDraw = 0;
+  let carriedWifeTaxFundingDraw = 0;
+
   // Let's run year-by-year from simStartYear to endSimulationYear
   for (let year = simStartYear; year <= endSimulationYear; year++) {
     const yearsElapsed = year - simStartYear;
@@ -1191,9 +1198,15 @@ export function runRetirementSimulation(
     let annualDrawdownTaxable = 0;
     let annualDrawdownPreTax = 0;
     let annualDrawdownRoth = 0;
-    let annualYourTradDraw = 0;
-    let annualWifeTradDraw = 0;
-    let annualCapitalGainsTriggered = 0;
+    // Taxable-income accumulators start from the income created by funding last year's tax settlement
+    const priorYearTaxFundingGains = carriedTaxFundingGains;
+    const priorYearTaxFundingPreTaxDraw = carriedYourTaxFundingDraw + carriedWifeTaxFundingDraw;
+    let annualYourTradDraw = carriedYourTaxFundingDraw;
+    let annualWifeTradDraw = carriedWifeTaxFundingDraw;
+    let annualCapitalGainsTriggered = carriedTaxFundingGains;
+    carriedTaxFundingGains = 0;
+    carriedYourTaxFundingDraw = 0;
+    carriedWifeTaxFundingDraw = 0;
 
     let annualPreTaxGrowth = 0;
     let annualRothGrowth = 0;
@@ -1924,12 +1937,12 @@ export function runRetirementSimulation(
           }
         }
       }
-      // Step 2: Brokerage
+      // Step 2: Brokerage (realized gains are taxed next year as prior-year tax-funding income)
       if (deficit > 0) {
         if (!youDeceased && yourTaxable > 0) {
           const draw = Math.min(deficit, yourTaxable);
           const basisRatio = yourTaxable > 0 ? (yourBasis / yourTaxable) : 0;
-          annualCapitalGainsTriggered += Math.max(0, draw * (1 - basisRatio));
+          carriedTaxFundingGains += Math.max(0, draw * (1 - basisRatio));
           annualDrawdownTaxable += draw;
           deficit -= draw;
           yourTaxable -= draw;
@@ -1938,25 +1951,25 @@ export function runRetirementSimulation(
         if (deficit > 0 && wifeTaxable > 0) {
           const draw = Math.min(deficit, wifeTaxable);
           const basisRatio = wifeTaxable > 0 ? (wifeBasis / wifeTaxable) : 0;
-          annualCapitalGainsTriggered += Math.max(0, draw * (1 - basisRatio));
+          carriedTaxFundingGains += Math.max(0, draw * (1 - basisRatio));
           annualDrawdownTaxable += draw;
           deficit -= draw;
           wifeTaxable -= draw;
           wifeBasis -= draw * basisRatio;
         }
       }
-      // Step 3: Discretionary Pre-Tax
+      // Step 3: Discretionary Pre-Tax (draws are taxed next year as prior-year tax-funding income)
       if (deficit > 0) {
         if (!youDeceased && yourPreTax > 0) {
           const draw = Math.min(deficit, yourPreTax);
-          annualYourTradDraw += draw;
+          carriedYourTaxFundingDraw += draw;
           annualDrawdownPreTax += draw;
           deficit -= draw;
           yourPreTax -= draw;
         }
         if (deficit > 0 && !wifeDeceased && wifePreTax > 0) {
           const draw = Math.min(deficit, wifePreTax);
-          annualWifeTradDraw += draw;
+          carriedWifeTaxFundingDraw += draw;
           annualDrawdownPreTax += draw;
           deficit -= draw;
           wifePreTax -= draw;
@@ -1995,6 +2008,14 @@ export function runRetirementSimulation(
     } else if (netTaxSettlement < 0) {
       // Overpayment refund credited to buffer
       annualCashBuffer += (-netTaxSettlement);
+    }
+
+    // An actual-record year is reconciled to real balances and real tax below, so its simulated
+    // settlement funding never happened and must not create taxable income next year.
+    if (actualRec) {
+      carriedTaxFundingGains = 0;
+      carriedYourTaxFundingDraw = 0;
+      carriedWifeTaxFundingDraw = 0;
     }
 
     // 4. Sweep remaining unspent annual surplus into Taxable Brokerage
@@ -2131,7 +2152,9 @@ export function runRetirementSimulation(
       requestedCustomRothConversion: requestedCustomAmount,
       isRothConversionCapped,
       rothConversionShortfall,
-      otherTaxableIncome: drawdownPreTax,
+      otherTaxableIncome: annualYourTradDraw + annualWifeTradDraw,
+      priorYearTaxFundingGains,
+      priorYearTaxFundingPreTaxDraw,
       magi,
       fedAGI,
       standardDeduction: stdDeduction,

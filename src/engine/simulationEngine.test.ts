@@ -11,7 +11,7 @@ import {
   getRMDStartAge,
 } from './simulationEngine';
 import { SAMPLE_DEMO_PLAN } from '../shared/utils/sampleDemoPlan';
-import { DEFAULT_DETAILED_EXPENSES, DEFAULT_EXPENSE_FREQUENCIES, normalizeDetailedExpenses, DetailedExpensesState, AppStateInputs, getSSPaymentLevel, describeSSReductions, SSReductionConfig } from '../types';
+import { DEFAULT_DETAILED_EXPENSES, DEFAULT_EXPENSE_FREQUENCIES, normalizeDetailedExpenses, DetailedExpensesState, AppStateInputs, SimulationResultRow, getSSPaymentLevel, describeSSReductions, SSReductionConfig } from '../types';
 
 describe('calculateSSBenefit', () => {
   const PIA = 1000;
@@ -421,8 +421,9 @@ describe('runRetirementSimulation', () => {
     
     
     const actualEndTaxable = row2040!.endYourTaxableBrokerage + row2040!.endWifeTaxableBrokerage;
-    // Expected value calibrated for the monthly-compounding engine with cash buffer yield.
-    expect(actualEndTaxable).toBeCloseTo(664784, 0);
+    // Expected value calibrated for the monthly-compounding engine with cash buffer yield
+    // and prior-year tax-funding income carried into the following tax year.
+    expect(actualEndTaxable).toBeCloseTo(664780.5, 0);
   });
 
   it('should apply pre-Medicare premiums and detailed health expenses correctly based on age, work status, and retirement', () => {
@@ -741,7 +742,7 @@ describe('runRetirementSimulation', () => {
 
     // Expected value calibrated for the monthly-compounding engine with cash buffer yield.
     const row2045MD = resultsMD.find(r => r.year === 2045);
-    expect(row2045MD!.endWifeTaxableBasis).toBeCloseTo(367370.1, 1);
+    expect(row2045MD!.endWifeTaxableBasis).toBeCloseTo(364335.8, 1);
 
     // Now set current and target state to FL
     inputs.jurisdiction.currentState = 'FL';
@@ -831,6 +832,137 @@ describe('runRetirementSimulation', () => {
     expect(row2026!.drawdownCash).toBeGreaterThan(0);
     expect(row2026!.drawdownTaxable).toBe(0);
     expect(row2026!.endYourCash).toBeLessThan(100000);
+  });
+
+  describe('Prior-year tax-funding income carry-forward', () => {
+    const getCarryInputs = (): AppStateInputs => {
+      const inputs = getMockInputs();
+      inputs.isSingleFiler = true;
+      inputs.you.birthDate = '1960-01-01';
+      inputs.you.plannedRetirementAge = 60;
+      inputs.you.estimatedPIA = 0;
+      inputs.you.targetSSClaimingAge = null;
+      inputs.annualLivingExpenses = 120000;
+      inputs.portfolio.yourPreTaxIRA = 0;
+      inputs.portfolio.yourRothIRA = 0;
+      inputs.portfolio.yourTaxableBrokerage = 0;
+      inputs.portfolio.yourTaxableBasis = 0;
+      inputs.portfolio.yourCash = 0;
+      return inputs;
+    };
+
+    // Year-end settlement draws = cash withdrawn this year minus the in-year draws taxed this year
+    const settlementPreTaxDraw = (row: SimulationResultRow): number =>
+      row.drawdownPreTax - (row.otherTaxableIncome - (row.priorYearTaxFundingPreTaxDraw ?? 0));
+
+    const sumOfMagiComponents = (row: SimulationResultRow): number =>
+      Math.max(0, (row.yourSalary ?? 0) + (row.wifeSalary ?? 0) - (row.employee401kContribution ?? 0)) +
+      row.yourRMD + row.wifeRMD + row.otherTaxableIncome + row.intentionalRothConversion +
+      row.capitalGainsTriggered + row.taxableDividends + row.taxableInterest + row.taxableSS;
+
+    it('should tax a pre-tax IRA draw that funded the tax settlement as ordinary income in the following year', () => {
+      const inputs = getCarryInputs();
+      inputs.portfolio.yourPreTaxIRA = 3000000;
+
+      const ledger = runRetirementSimulation(inputs);
+      expect(ledger[0].priorYearTaxFundingPreTaxDraw).toBe(0);
+
+      let yearsWithCarry = 0;
+      for (let i = 1; i < 10; i++) {
+        const prev = ledger[i - 1];
+        const row = ledger[i];
+        const carriedIn = row.priorYearTaxFundingPreTaxDraw ?? 0;
+
+        // The carry-in is exactly the settlement draw taken at the end of the prior year
+        expect(carriedIn).toBeCloseTo(settlementPreTaxDraw(prev), 2);
+        // It is included in this year's taxed pre-tax draws and therefore in MAGI
+        expect(row.otherTaxableIncome).toBeGreaterThanOrEqual(carriedIn);
+        expect(row.magi).toBeCloseTo(sumOfMagiComponents(row), 0);
+        expect(row.priorYearTaxFundingGains ?? 0).toBe(0);
+        if (carriedIn > 0) yearsWithCarry++;
+      }
+      expect(yearsWithCarry).toBeGreaterThan(0);
+    });
+
+    it('should carry only the realized gain portion when the tax settlement is funded by selling brokerage', () => {
+      const inputs = getCarryInputs();
+      inputs.portfolio.yourTaxableBrokerage = 3000000;
+      inputs.portfolio.yourTaxableBasis = 600000;
+
+      const ledger = runRetirementSimulation(inputs);
+      expect(ledger[0].priorYearTaxFundingGains).toBe(0);
+
+      let yearsWithCarry = 0;
+      for (let i = 1; i < 10; i++) {
+        const prev = ledger[i - 1];
+        const row = ledger[i];
+        const carriedGains = row.priorYearTaxFundingGains ?? 0;
+        const priorSettlement = prev.fedIncomeTax + prev.stateIncomeTax -
+          (prev.incomeTaxWithheld ?? 0) - (prev.quarterlyEstimatedTaxesPaid ?? 0);
+
+        // Only the gain portion of the sale is income, so it is always less than the tax it paid
+        expect(carriedGains).toBeLessThan(Math.max(priorSettlement, 0.01));
+        expect(row.capitalGainsTriggered).toBeGreaterThanOrEqual(carriedGains);
+        expect(row.magi).toBeCloseTo(sumOfMagiComponents(row), 0);
+        expect(row.priorYearTaxFundingPreTaxDraw ?? 0).toBe(0);
+        if (carriedGains > 0) yearsWithCarry++;
+      }
+      expect(yearsWithCarry).toBeGreaterThan(0);
+    });
+
+    it('should carry no income when the tax settlement is paid from cash', () => {
+      const inputs = getCarryInputs();
+      // Joint filers with both spouses retired and no Social Security
+      inputs.isSingleFiler = false;
+      inputs.wife.birthDate = '1960-01-01';
+      inputs.wife.plannedRetirementAge = 60;
+      inputs.wife.estimatedPIA = 0;
+      inputs.wife.targetSSClaimingAge = null;
+      inputs.portfolio.wifePreTaxIRA = 0;
+      inputs.portfolio.wifeRothIRA = 0;
+      inputs.portfolio.wifeTaxableBrokerage = 0;
+      inputs.portfolio.wifeTaxableBasis = 0;
+      inputs.portfolio.wifeCash = 0;
+      inputs.growthAssumptions.minCashReserveDollars = 0;
+      inputs.portfolio.yourPreTaxIRA = 3000000;
+      inputs.portfolio.yourCash = 3000000;
+      // A year-end fill-to-target conversion creates a tax bill that the quarterly estimates did not
+      // anticipate, while living expenses and the settlement are met from cash
+      inputs.rothConversionStrategy = 'fill-to-target';
+      inputs.rothConversionTargetValue = 250000;
+
+      const ledger = runRetirementSimulation(inputs);
+
+      let yearsWithSettlementDue = 0;
+      for (let i = 0; i < 4; i++) {
+        const row = ledger[i];
+        const settlement = row.fedIncomeTax + row.stateIncomeTax -
+          (row.incomeTaxWithheld ?? 0) - (row.quarterlyEstimatedTaxesPaid ?? 0);
+        if (settlement > 0) yearsWithSettlementDue++;
+
+        expect(ledger[i + 1].priorYearTaxFundingPreTaxDraw ?? 0).toBe(0);
+        expect(ledger[i + 1].priorYearTaxFundingGains ?? 0).toBe(0);
+      }
+      expect(yearsWithSettlementDue).toBeGreaterThan(0);
+    });
+
+    it('should not carry tax-funding income out of an actual-record year', () => {
+      const inputs = getCarryInputs();
+      inputs.portfolio.yourPreTaxIRA = 3000000;
+
+      const baseline = runRetirementSimulation(inputs);
+      const firstYear = baseline[0].year;
+      // Confirm the projected run does carry income out of the first year
+      expect(baseline[1].priorYearTaxFundingPreTaxDraw ?? 0).toBeGreaterThan(0);
+
+      inputs.actualTracking = {
+        [firstYear]: { year: firstYear, endYourPreTaxIRA: 2900000 },
+      };
+      const withActual = runRetirementSimulation(inputs);
+      expect(withActual[0].isActual).toBe(true);
+      expect(withActual[1].priorYearTaxFundingPreTaxDraw).toBe(0);
+      expect(withActual[1].priorYearTaxFundingGains).toBe(0);
+    });
   });
 });
 

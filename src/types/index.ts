@@ -546,12 +546,14 @@ export interface SimulationResultRow {
   wifeRMD: number;
   yourSalary?: number; // Pre-retirement annual active salary earned
   wifeSalary?: number; // Pre-retirement annual active salary earned
-  capitalGainsTriggered: number;
+  capitalGainsTriggered: number; // Capital gains taxed this year (in-year sales + prior-year tax-funding gains)
   intentionalRothConversion: number;
   requestedCustomRothConversion?: number;
   isRothConversionCapped?: boolean;
   rothConversionShortfall?: number;
-  otherTaxableIncome: number; // Placeholder if needed
+  otherTaxableIncome: number; // Discretionary pre-tax IRA draws taxed this year (in-year draws + prior-year tax-funding draws)
+  priorYearTaxFundingGains?: number; // Portion of capitalGainsTriggered realized by selling brokerage to pay last year's tax settlement
+  priorYearTaxFundingPreTaxDraw?: number; // Portion of otherTaxableIncome drawn from pre-tax IRAs to pay last year's tax settlement
   
   // MAGI & Tax Calculations
   magi: number;
@@ -599,7 +601,7 @@ export interface SimulationResultRow {
   
   // Drawdowns
   drawdownTaxable: number;
-  drawdownPreTax: number;
+  drawdownPreTax: number; // Cash withdrawn this year, including year-end tax settlement draws (taxed next year)
   drawdownRoth: number;
   drawdownCash: number;
   reinvestedSurplus?: number; // Total annual surplus reinvested into Taxable Brokerage

@@ -238,7 +238,7 @@ export const TaxableIncomeWorkspace: React.FC<TaxableIncomeWorkspaceProps> = ({
       const employee401k = r.employee401kContribution || 0;
       const taxableSalary = Math.max(0, grossSalary - employee401k);
       const forcedRMDs = (r.yourRMD || 0) + (r.wifeRMD || 0);
-      const preTaxDraws = r.drawdownPreTax || 0;
+      const preTaxDraws = r.otherTaxableIncome || 0;
       const investmentIncome = (r.taxableDividends || 0) + (r.taxableInterest || 0) + (r.capitalGainsTriggered || 0);
       const otherIncome = r.otherTaxableIncome || 0;
 

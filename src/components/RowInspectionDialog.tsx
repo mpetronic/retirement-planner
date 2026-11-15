@@ -309,6 +309,12 @@ export const RowInspectionDialog: React.FC<RowInspectionDialogProps> = ({
                       <span className="text-slate-400">Extra Pre-Tax Drawdowns:</span>
                       <span className="font-mono text-slate-200">{formatCurrency(pretaxDrawdown)}</span>
                     </div>
+                    {(row.priorYearTaxFundingPreTaxDraw ?? 0) > 0 && (
+                      <div className="flex justify-between items-center pl-4 text-xs">
+                        <span className="text-slate-500">of which drawn to pay last year's taxes:</span>
+                        <span className="font-mono text-slate-400">{formatCurrency(row.priorYearTaxFundingPreTaxDraw ?? 0)}</span>
+                      </div>
+                    )}
                     <div className="flex justify-between items-center">
                       <span className="text-slate-400">Roth Conversions:</span>
                       <span className="font-mono text-slate-200">{formatCurrency(rothConv)}</span>
@@ -317,6 +323,12 @@ export const RowInspectionDialog: React.FC<RowInspectionDialogProps> = ({
                       <span className="text-slate-400">Realized Capital Gains:</span>
                       <span className="font-mono text-slate-200">{formatCurrency(capitalGains)}</span>
                     </div>
+                    {(row.priorYearTaxFundingGains ?? 0) > 0 && (
+                      <div className="flex justify-between items-center pl-4 text-xs">
+                        <span className="text-slate-500">of which realized to pay last year's taxes:</span>
+                        <span className="font-mono text-slate-400">{formatCurrency(row.priorYearTaxFundingGains ?? 0)}</span>
+                      </div>
+                    )}
                     <div className="flex justify-between items-center">
                       <span className="text-slate-400">Dividends Yield:</span>
                       <span className="font-mono text-slate-200">{formatCurrency(row.taxableDividends)}</span>
