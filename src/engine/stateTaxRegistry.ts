@@ -1192,3 +1192,16 @@ export function resolveActiveJurisdiction(jurisdiction: JurisdictionSettings, ye
   const customLocalRate = isRelocated ? jurisdiction.targetLocalTaxRate : jurisdiction.currentLocalTaxRate;
   return { state, county, customLocalRate, effectiveLocalRate: getEffectiveLocalTaxRate(state, county, customLocalRate) };
 }
+
+/** Suggested destination when a plan first enables relocation: the first listed state other than the current one. */
+export function getDefaultRelocationState(currentState: string): string {
+  const candidate = getSupportedStates().find((st) => st.code !== currentState);
+  return candidate ? candidate.code : currentState;
+}
+
+/** True when the state levies sub-jurisdiction (county or city) income tax and none has been chosen. */
+export function needsSubJurisdiction(stateCode: string | null | undefined, countyId: string | null | undefined): boolean {
+  if (!stateCode || countyId) return false;
+  const profile = getStateTaxProfile(stateCode);
+  return Boolean(profile?.hasLocalTax && profile.subJurisdictions.length > 0);
+}

@@ -1,4 +1,4 @@
-import { AppStateInputs, SimulationResultRow, LockedReturnSequence, getSimulationStartYear, getSSPaymentLevel, BASE_QCD_LIMIT, normalizeDetailedExpenses, StateHealthcareConfig } from '../types';
+import { AppStateInputs, SimulationResultRow, LockedReturnSequence, getSimulationStartYear, getSSPaymentLevel, BASE_QCD_LIMIT, normalizeDetailedExpenses, ALL_STATES_COST_KEY, StateHealthcareConfig } from '../types';
 import {
   BASE_MEDICARE_PART_B,
   BASE_MEDICARE_PART_D,
@@ -822,7 +822,7 @@ export function runRetirementSimulation(
       const de = normalizeDetailedExpenses(inputs.detailedExpenses);
       const items = de.catalog?.items ?? [];
       const stateCosts = de.costs?.[activeState];
-      const allCosts = de.costs?.['ALL'];
+      const allCosts = de.costs?.[ALL_STATES_COST_KEY];
       const defaultStateCosts = de.costs?.[inputs.jurisdiction.currentState];
       const freqs = de.frequencies || {};
 

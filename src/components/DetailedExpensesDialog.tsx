@@ -31,7 +31,8 @@ import {
   HealthcareConfig,
   StateHealthcareConfig,
   normalizeDetailedExpenses,
-  resolveExpenseCost
+  resolveExpenseCost,
+  ALL_STATES_COST_KEY
 } from '../types';
 import { BASE_MEDICARE_PART_B, BASE_MEDICARE_PART_D } from '../engine/taxRates2026';
 
@@ -256,7 +257,7 @@ export const DetailedExpensesDialog: React.FC<DetailedExpensesDialogProps> = ({
 
       const stateMap: Record<string, number> = {};
       statesList.forEach((st) => {
-        stateMap[st] = costs[st]?.[item.id] ?? costs['ALL']?.[item.id] ?? activeCost;
+        stateMap[st] = costs[st]?.[item.id] ?? costs[ALL_STATES_COST_KEY]?.[item.id] ?? activeCost;
       });
       setItemCostsByState(stateMap);
     } else {
@@ -609,7 +610,7 @@ export const DetailedExpensesDialog: React.FC<DetailedExpensesDialogProps> = ({
   const activeStateHasNoCosts = useMemo(() => {
     if (!activeState) return false;
     const hasEntered = (stateCode: string) => Object.values(costs[stateCode] || {}).some((value) => value > 0);
-    const hasAllStatesCosts = hasEntered('ALL');
+    const hasAllStatesCosts = hasEntered(ALL_STATES_COST_KEY);
     const otherStateHasCosts = statesList.some((st) => st !== activeState && hasEntered(st));
     return !hasEntered(activeState) && !hasAllStatesCosts && otherStateHasCosts;
   }, [costs, activeState, statesList]);

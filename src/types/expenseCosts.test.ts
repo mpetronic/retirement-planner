@@ -40,6 +40,17 @@ describe('normalizeDetailedExpenses', () => {
     expect('MD' in norm).toBe(false);
   });
 
+  it('does not list the all-states cost bucket as a state', () => {
+    const norm = normalizeDetailedExpenses({
+      catalog: { categories: ['Living'], items: [] },
+      states: ['MD', 'FL', 'ALL'],
+      costs: { ALL: { rent: 1 }, MD: {}, FL: {} },
+      frequencies: {},
+    });
+    expect(norm.states).toEqual(expect.arrayContaining(['MD', 'FL']));
+    expect(norm.states).not.toContain('ALL');
+  });
+
   it('migrates the legacy top-level per-state format into costs', () => {
     const norm = normalizeDetailedExpenses({
       MD: { groceries: 800 },

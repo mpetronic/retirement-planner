@@ -41,6 +41,7 @@ import {
   getStateTaxProfile,
   getSubJurisdictions,
   getEffectiveLocalTaxRate,
+  getDefaultRelocationState,
 } from '../engine/stateTaxRegistry';
 import { SAMPLE_DEMO_PLAN } from '../shared/utils/sampleDemoPlan';
 import { NumericInput } from './NumericInput';
@@ -990,12 +991,12 @@ export const ParametersWorkspace: React.FC<ParametersWorkspaceProps> = ({
                 <div>
                   <label className="text-xs font-bold text-slate-200 block mb-1">State of Residence</label>
                   <select
-                    value={inputs.jurisdiction.currentState || 'MD'}
+                    value={inputs.jurisdiction.currentState}
                     onChange={(e) => {
                       const newState = e.target.value;
                       const profile = getStateTaxProfile(newState);
                       if (profile?.hasLocalTax) {
-                        const defaultCounty = profile.subJurisdictions[0]?.id || 'montgomery';
+                        const defaultCounty = profile.subJurisdictions[0]?.id ?? null;
                         onChange({
                           ...inputs,
                           jurisdiction: {
@@ -1028,10 +1029,10 @@ export const ParametersWorkspace: React.FC<ParametersWorkspaceProps> = ({
                 </div>
 
                 {(() => {
-                  const currentProfile = getStateTaxProfile(inputs.jurisdiction.currentState || 'MD');
+                  const currentProfile = getStateTaxProfile(inputs.jurisdiction.currentState);
                   const hasCounties = (currentProfile?.subJurisdictions && currentProfile.subJurisdictions.length > 0);
                   const effectiveRate = getEffectiveLocalTaxRate(
-                    inputs.jurisdiction.currentState || 'MD',
+                    inputs.jurisdiction.currentState,
                     inputs.jurisdiction.currentCounty,
                     inputs.jurisdiction.currentLocalTaxRate
                   );
@@ -1063,7 +1064,7 @@ export const ParametersWorkspace: React.FC<ParametersWorkspaceProps> = ({
                             className="w-full bg-slate-900 border border-slate-800 rounded-xl px-3 py-2 text-xs font-medium text-slate-100 focus:outline-none focus:border-emerald-500"
                           >
                             <option value="" disabled>Select {currentProfile?.subJurisdictionLabel || 'County'}...</option>
-                            {getSubJurisdictions(inputs.jurisdiction.currentState || 'MD').map((c) => (
+                            {getSubJurisdictions(inputs.jurisdiction.currentState).map((c) => (
                               <option key={c.id} value={c.id}>
                                 {c.name} ({(c.defaultLocalRate * 100).toFixed(2)}%)
                               </option>
@@ -1132,9 +1133,9 @@ export const ParametersWorkspace: React.FC<ParametersWorkspaceProps> = ({
 
                 {/* Total Effective State & Local Tax Display */}
                 {(() => {
-                  const primaryProfile = getStateTaxProfile(inputs.jurisdiction.currentState || 'MD');
+                  const primaryProfile = getStateTaxProfile(inputs.jurisdiction.currentState);
                   const primaryLocalRate = getEffectiveLocalTaxRate(
-                    inputs.jurisdiction.currentState || 'MD',
+                    inputs.jurisdiction.currentState,
                     inputs.jurisdiction.currentCounty,
                     inputs.jurisdiction.currentLocalTaxRate
                   );
@@ -1234,9 +1235,9 @@ export const ParametersWorkspace: React.FC<ParametersWorkspaceProps> = ({
                       onChange={(e) => {
                         if (e.target.checked) {
                           const year = lastRelocationYear.current ?? simStartYear;
-                          const targetSt = inputs.jurisdiction.targetState || (inputs.jurisdiction.currentState === 'MD' ? 'FL' : 'MD');
+                          const targetSt = inputs.jurisdiction.targetState || getDefaultRelocationState(inputs.jurisdiction.currentState);
                           const profile = getStateTaxProfile(targetSt);
-                          const defaultTargetCounty = profile?.hasLocalTax ? (profile.subJurisdictions[0]?.id || 'montgomery') : null;
+                          const defaultTargetCounty = profile?.hasLocalTax ? (profile.subJurisdictions[0]?.id ?? null) : null;
                           onChange({
                             ...inputs,
                             jurisdiction: {
@@ -1265,11 +1266,11 @@ export const ParametersWorkspace: React.FC<ParametersWorkspaceProps> = ({
                       <div>
                         <label className="text-xs font-bold text-slate-200 block mb-1">Destination State</label>
                         <select
-                          value={inputs.jurisdiction.targetState || (inputs.jurisdiction.currentState === 'MD' ? 'FL' : 'MD')}
+                          value={inputs.jurisdiction.targetState || getDefaultRelocationState(inputs.jurisdiction.currentState)}
                           onChange={(e) => {
                             const newTargetState = e.target.value;
                             const profile = getStateTaxProfile(newTargetState);
-                            const defaultCounty = profile?.hasLocalTax ? (profile.subJurisdictions[0]?.id || 'montgomery') : null;
+                            const defaultCounty = profile?.hasLocalTax ? (profile.subJurisdictions[0]?.id ?? null) : null;
                             onChange({
                               ...inputs,
                               jurisdiction: {
@@ -1291,7 +1292,7 @@ export const ParametersWorkspace: React.FC<ParametersWorkspaceProps> = ({
                       </div>
 
                       {(() => {
-                        const targetProfile = getStateTaxProfile(inputs.jurisdiction.targetState || 'FL');
+                        const targetProfile = getStateTaxProfile(inputs.jurisdiction.targetState);
                         const hasTargetCounties = (targetProfile?.subJurisdictions && targetProfile.subJurisdictions.length > 0);
                         if (!hasTargetCounties) return null;
 
@@ -1315,7 +1316,7 @@ export const ParametersWorkspace: React.FC<ParametersWorkspaceProps> = ({
                               className="w-full bg-slate-900 border border-slate-800 rounded-xl px-3 py-2 text-xs font-medium text-slate-100 focus:outline-none focus:border-amber-500"
                             >
                               <option value="" disabled>Select Destination {targetProfile?.subJurisdictionLabel || 'County'}...</option>
-                              {getSubJurisdictions(inputs.jurisdiction.targetState || 'FL').map((c) => (
+                              {getSubJurisdictions(inputs.jurisdiction.targetState).map((c) => (
                                 <option key={c.id} value={c.id}>
                                   {c.name} ({(c.defaultLocalRate * 100).toFixed(2)}%)
                                 </option>
@@ -1327,10 +1328,10 @@ export const ParametersWorkspace: React.FC<ParametersWorkspaceProps> = ({
                     </div>
 
                     {(() => {
-                      const targetProfile = getStateTaxProfile(inputs.jurisdiction.targetState || 'FL');
+                      const targetProfile = getStateTaxProfile(inputs.jurisdiction.targetState);
                       const hasTargetCounties = (targetProfile?.subJurisdictions && targetProfile.subJurisdictions.length > 0);
                       const targetEffectiveRate = getEffectiveLocalTaxRate(
-                        inputs.jurisdiction.targetState || 'FL',
+                        inputs.jurisdiction.targetState,
                         inputs.jurisdiction.targetCounty,
                         inputs.jurisdiction.targetLocalTaxRate
                       );
@@ -1423,7 +1424,7 @@ export const ParametersWorkspace: React.FC<ParametersWorkspaceProps> = ({
                   </div>
                 ) : (
                   <div className="p-3.5 bg-slate-950/40 rounded-xl border border-slate-800/80 text-[11px] text-slate-400 leading-relaxed">
-                    Continuous residency in {getStateTaxProfile(inputs.jurisdiction.currentState || 'MD')?.name || inputs.jurisdiction.currentState}
+                    Continuous residency in {getStateTaxProfile(inputs.jurisdiction.currentState)?.name || inputs.jurisdiction.currentState}
                     {inputs.jurisdiction.currentCounty ? ` (${inputs.jurisdiction.currentCounty})` : ''} with standard state and local tax rates applied for all simulation years.
                   </div>
                 )}
@@ -1445,7 +1446,7 @@ export const ParametersWorkspace: React.FC<ParametersWorkspaceProps> = ({
               </div>
               <span className="text-xs px-2.5 py-1 rounded-lg font-mono font-bold bg-slate-800 text-slate-400 border border-slate-700">
                 {inputs.jurisdiction.currentState}
-                {inputs.jurisdiction.relocationYear !== null ? ` → ${inputs.jurisdiction.targetState || 'FL'}` : ' (Continuous)'}
+                {inputs.jurisdiction.relocationYear !== null ? ` → ${inputs.jurisdiction.targetState}` : ' (Continuous)'}
               </span>
             </div>
 
@@ -1454,17 +1455,17 @@ export const ParametersWorkspace: React.FC<ParametersWorkspaceProps> = ({
               <div className="p-3.5 bg-slate-950/60 rounded-xl border border-slate-800 space-y-1.5">
                 <div className="flex items-center justify-between">
                   <span className="text-xs font-bold text-slate-200">
-                    {getStateTaxProfile(inputs.jurisdiction.currentState || 'MD')?.name || inputs.jurisdiction.currentState} ({inputs.jurisdiction.currentState})
+                    {getStateTaxProfile(inputs.jurisdiction.currentState)?.name || inputs.jurisdiction.currentState} ({inputs.jurisdiction.currentState})
                   </span>
                   <span className="text-[10px] font-mono text-emerald-400 font-semibold">Current</span>
                 </div>
-                {getStateTaxProfile(inputs.jurisdiction.currentState || 'MD')?.hasIncomeTax ? (
+                {getStateTaxProfile(inputs.jurisdiction.currentState)?.hasIncomeTax ? (
                   <>
                     <p className="text-[10px] text-slate-400 leading-normal">
-                      State income tax rate: <strong>Up to {((getStateTaxProfile(inputs.jurisdiction.currentState || 'MD')?.topRate ?? 0) * 100).toFixed(2)}%</strong>
+                      State income tax rate: <strong>Up to {((getStateTaxProfile(inputs.jurisdiction.currentState)?.topRate ?? 0) * 100).toFixed(2)}%</strong>
                     </p>
                     <p className="text-[10px] text-slate-400 leading-normal">
-                      Local tax rate: <strong>{(getEffectiveLocalTaxRate(inputs.jurisdiction.currentState || 'MD', inputs.jurisdiction.currentCounty, inputs.jurisdiction.currentLocalTaxRate) * 100).toFixed(2)}%</strong>
+                      Local tax rate: <strong>{(getEffectiveLocalTaxRate(inputs.jurisdiction.currentState, inputs.jurisdiction.currentCounty, inputs.jurisdiction.currentLocalTaxRate) * 100).toFixed(2)}%</strong>
                       {inputs.jurisdiction.currentCounty ? ` (${inputs.jurisdiction.currentCounty})` : ''}
                     </p>
                     <p className="text-[10px] text-slate-500 pt-1">
@@ -1475,7 +1476,7 @@ export const ParametersWorkspace: React.FC<ParametersWorkspaceProps> = ({
                   <>
                     <p className="text-[10px] text-emerald-400 font-semibold leading-normal">0.00% State Income Tax</p>
                     <p className="text-[10px] text-emerald-400 font-semibold leading-normal">
-                      {(getEffectiveLocalTaxRate(inputs.jurisdiction.currentState || 'MD', inputs.jurisdiction.currentCounty, inputs.jurisdiction.currentLocalTaxRate) * 100).toFixed(2)}% Local Tax
+                      {(getEffectiveLocalTaxRate(inputs.jurisdiction.currentState, inputs.jurisdiction.currentCounty, inputs.jurisdiction.currentLocalTaxRate) * 100).toFixed(2)}% Local Tax
                     </p>
                     <p className="text-[10px] text-slate-500 pt-1">
                       $0 state tax on IRA withdrawals, salaries, and capital gains.
@@ -1489,7 +1490,7 @@ export const ParametersWorkspace: React.FC<ParametersWorkspaceProps> = ({
                 <div className="flex items-center justify-between">
                   <span className="text-xs font-bold text-amber-300">
                     {inputs.jurisdiction.relocationYear !== null
-                      ? `${getStateTaxProfile(inputs.jurisdiction.targetState || 'FL')?.name || inputs.jurisdiction.targetState} (${inputs.jurisdiction.targetState || 'FL'})`
+                      ? `${getStateTaxProfile(inputs.jurisdiction.targetState)?.name || inputs.jurisdiction.targetState} (${inputs.jurisdiction.targetState})`
                       : 'Continuous Plan'}
                   </span>
                   <span className="text-[10px] font-mono text-amber-400 font-semibold">
@@ -1497,13 +1498,13 @@ export const ParametersWorkspace: React.FC<ParametersWorkspaceProps> = ({
                   </span>
                 </div>
                 {inputs.jurisdiction.relocationYear !== null ? (
-                  getStateTaxProfile(inputs.jurisdiction.targetState || 'FL')?.hasIncomeTax ? (
+                  getStateTaxProfile(inputs.jurisdiction.targetState)?.hasIncomeTax ? (
                     <>
                       <p className="text-[10px] text-slate-400 leading-normal">
-                        State income tax rate: <strong>Up to {((getStateTaxProfile(inputs.jurisdiction.targetState || 'FL')?.topRate ?? 0) * 100).toFixed(2)}%</strong>
+                        State income tax rate: <strong>Up to {((getStateTaxProfile(inputs.jurisdiction.targetState)?.topRate ?? 0) * 100).toFixed(2)}%</strong>
                       </p>
                       <p className="text-[10px] text-slate-400 leading-normal">
-                        Destination local tax: <strong>{(getEffectiveLocalTaxRate(inputs.jurisdiction.targetState || 'FL', inputs.jurisdiction.targetCounty, inputs.jurisdiction.targetLocalTaxRate) * 100).toFixed(2)}%</strong>
+                        Destination local tax: <strong>{(getEffectiveLocalTaxRate(inputs.jurisdiction.targetState, inputs.jurisdiction.targetCounty, inputs.jurisdiction.targetLocalTaxRate) * 100).toFixed(2)}%</strong>
                         {inputs.jurisdiction.targetCounty ? ` (${inputs.jurisdiction.targetCounty})` : ''}
                       </p>
                       <p className="text-[10px] text-slate-500 pt-1">
@@ -1894,7 +1895,7 @@ export const ParametersWorkspace: React.FC<ParametersWorkspaceProps> = ({
                   <div>
                     <span className="text-xs font-bold text-slate-200 block">Itemized Expense Catalog Active</span>
                     <span className="text-[10px] text-slate-400">
-                      {getStateTaxProfile(inputs.jurisdiction.currentState || 'MD')?.name || inputs.jurisdiction.currentState}: {formatCurrency(mdMonthlySum * 12)}/yr (${Math.round(mdMonthlySum).toLocaleString()}/mo)
+                      {getStateTaxProfile(inputs.jurisdiction.currentState)?.name || inputs.jurisdiction.currentState}: {formatCurrency(mdMonthlySum * 12)}/yr (${Math.round(mdMonthlySum).toLocaleString()}/mo)
                       {inputs.jurisdiction.relocationYear !== null && inputs.jurisdiction.targetState !== inputs.jurisdiction.currentState && (
                         ` • ${getStateTaxProfile(inputs.jurisdiction.targetState)?.name || inputs.jurisdiction.targetState}: ${formatCurrency(flMonthlySum * 12)}/yr (${Math.round(flMonthlySum).toLocaleString()}/mo)`
                       )}

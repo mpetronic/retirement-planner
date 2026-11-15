@@ -28,7 +28,7 @@ const GROUP_COLORS: Record<string, string> = {
  * State of residence in force this year according to a stored plan, or an empty string when the
  * plan has no jurisdiction (costs then resolve from the all-states entry only).
  */
-function resolvePlanState(parsedPlan: { jurisdiction?: Parameters<typeof resolveActiveJurisdiction>[0] } | null | undefined): string {
+export function resolvePlanState(parsedPlan: { jurisdiction?: Parameters<typeof resolveActiveJurisdiction>[0] } | null | undefined): string {
   const jurisdiction = parsedPlan?.jurisdiction;
   if (!jurisdiction?.currentState) return '';
   return resolveActiveJurisdiction(jurisdiction, new Date().getFullYear()).state;

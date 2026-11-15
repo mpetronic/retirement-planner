@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { AppStateInputs, DEFAULT_DETAILED_EXPENSES_STATE, DEFAULT_CHARITY_SETTINGS } from '../types';
-import { getSupportedStates, getSubJurisdictions } from '../engine/stateTaxRegistry';
+import { getSupportedStates, getSubJurisdictions, getDefaultRelocationState } from '../engine/stateTaxRegistry';
 import { SAMPLE_DEMO_PLAN } from '../shared/utils/sampleDemoPlan';
 import {
   User,
@@ -951,7 +951,7 @@ export const OnboardingWizard: React.FC<OnboardingWizardProps> = ({ onComplete, 
                           onChange={(e) => {
                             setEnableRelocation(e.target.checked);
                             if (e.target.checked && !targetState) {
-                              setTargetState(currentState === 'MD' ? 'FL' : 'MD');
+                              setTargetState(getDefaultRelocationState(currentState));
                               setTargetCounty('');
                             }
                           }}

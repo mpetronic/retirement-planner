@@ -1,21 +1,29 @@
 import React, { useState } from 'react';
-import { getSubJurisdictions } from '../engine/stateTaxRegistry';
+import { getSubJurisdictions, getStateTaxProfile } from '../engine/stateTaxRegistry';
 import { MapPin, AlertCircle, ShieldCheck } from 'lucide-react';
 
 interface LegacyCountyModalProps {
   isOpen: boolean;
-  needsTargetCounty?: boolean;
+  currentState: string;
+  /** Set when the relocation destination also needs a local jurisdiction chosen. */
+  targetState?: string;
   onConfirm: (currentCounty: string, targetCounty?: string) => void;
 }
 
 export const LegacyCountyModal: React.FC<LegacyCountyModalProps> = ({
   isOpen,
-  needsTargetCounty = false,
+  currentState,
+  targetState,
   onConfirm,
 }) => {
-  const mdCounties = getSubJurisdictions('MD');
-  const [currentCounty, setCurrentCounty] = useState<string>('montgomery');
-  const [targetCounty, setTargetCounty] = useState<string>('montgomery');
+  const needsTargetCounty = Boolean(targetState);
+  const currentOptions = getSubJurisdictions(currentState);
+  const targetOptions = targetState ? getSubJurisdictions(targetState) : [];
+  const currentProfile = getStateTaxProfile(currentState);
+  const targetProfile = targetState ? getStateTaxProfile(targetState) : undefined;
+  const currentLabel = currentProfile?.subJurisdictionLabel || 'County';
+  const [currentCounty, setCurrentCounty] = useState<string>(() => currentOptions[0]?.id ?? '');
+  const [targetCounty, setTargetCounty] = useState<string>(() => targetOptions[0]?.id ?? '');
 
   if (!isOpen) return null;
 
@@ -35,7 +43,7 @@ export const LegacyCountyModal: React.FC<LegacyCountyModalProps> = ({
           </div>
           <div>
             <h2 className="text-base font-bold text-slate-100 flex items-center gap-2">
-              Action Required: Select Maryland County
+              Action Required: Select {currentProfile?.name || currentState} {currentLabel}
             </h2>
             <p className="text-xs text-slate-400 mt-0.5">
               Accurate state &amp; local tax calculations require your local jurisdiction
@@ -48,16 +56,16 @@ export const LegacyCountyModal: React.FC<LegacyCountyModalProps> = ({
           <div className="p-3.5 bg-amber-500/5 border border-amber-500/20 rounded-xl text-xs text-amber-300/90 flex gap-3 leading-relaxed">
             <AlertCircle className="w-5 h-5 text-amber-400 shrink-0 mt-0.5" />
             <p>
-              Your plan specifies <strong>Maryland</strong> as your tax residence, but does not have a county assigned.
-              In Maryland, total state tax includes both state graduated brackets (up to 5.75%) and county piggyback local tax (2.25% &ndash; 3.20%).
-              Please choose your county below to ensure precise tax projections.
+              Your plan specifies <strong>{currentProfile?.name || currentState}</strong> as your tax residence, but does not have a {currentLabel.toLowerCase()} assigned.
+              Total tax there includes a local income tax that depends on where you live.
+              Please choose your {currentLabel.toLowerCase()} below to ensure precise tax projections.
             </p>
           </div>
 
           <div className="space-y-4">
             <div className="space-y-1.5">
               <label className="text-xs font-bold text-slate-300 block">
-                Primary Residence County *
+                Primary Residence {currentLabel} *
               </label>
               <select
                 value={currentCounty}
@@ -65,7 +73,7 @@ export const LegacyCountyModal: React.FC<LegacyCountyModalProps> = ({
                 className="w-full bg-slate-950 border border-slate-800 focus:border-emerald-500 rounded-xl px-3 py-2 text-xs text-slate-100 focus:outline-none"
                 required
               >
-                {mdCounties.map((c) => (
+                {currentOptions.map((c) => (
                   <option key={c.id} value={c.id}>
                     {c.name} &mdash; {(c.defaultLocalRate * 100).toFixed(2)}% local tax
                   </option>
@@ -76,7 +84,7 @@ export const LegacyCountyModal: React.FC<LegacyCountyModalProps> = ({
             {needsTargetCounty && (
               <div className="space-y-1.5 pt-2 border-t border-slate-800/60">
                 <label className="text-xs font-bold text-slate-300 block">
-                  Target Relocation County (Maryland) *
+                  Target Relocation {targetProfile?.subJurisdictionLabel || 'County'} ({targetProfile?.name || targetState}) *
                 </label>
                 <select
                   value={targetCounty}
@@ -84,7 +92,7 @@ export const LegacyCountyModal: React.FC<LegacyCountyModalProps> = ({
                   className="w-full bg-slate-950 border border-slate-800 focus:border-emerald-500 rounded-xl px-3 py-2 text-xs text-slate-100 focus:outline-none"
                   required
                 >
-                  {mdCounties.map((c) => (
+                  {targetOptions.map((c) => (
                     <option key={c.id} value={c.id}>
                       {c.name} &mdash; {(c.defaultLocalRate * 100).toFixed(2)}% local tax
                     </option>

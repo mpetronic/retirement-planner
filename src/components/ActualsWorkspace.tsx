@@ -8,6 +8,7 @@ import {
   getSimulationStartYear,
   DEFAULT_EXPENSE_CATEGORIES,
   normalizeDetailedExpenses,
+  ALL_STATES_COST_KEY,
 } from '../types';
 import {
   ClipboardCheck,
@@ -1053,7 +1054,7 @@ export const ActualsWorkspace: React.FC<ActualsWorkspaceProps> = ({
         : inputs.jurisdiction.currentState;
       const norm = normalizeDetailedExpenses(inputs.detailedExpenses);
       const stateCosts = norm.costs[activeState] || {};
-      const allCosts = norm.costs['ALL'] || {};
+      const allCosts = norm.costs[ALL_STATES_COST_KEY] || {};
       const defaultStateCosts = norm.costs[inputs.jurisdiction.currentState] || {};
       const freqs = norm.frequencies;
       const sum = norm.catalog.items

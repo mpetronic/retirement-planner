@@ -277,6 +277,8 @@ export function normalizeDetailedExpenses(raw?: unknown): DetailedExpensesState 
     const rawStates = Array.isArray(rawObj.states) ? (rawObj.states as string[]) : [];
     const stateSet = new Set<string>(rawStates);
     Object.keys(costs).forEach(s => stateSet.add(s));
+    // The all-states cost bucket is not a state of residence
+    stateSet.delete(ALL_STATES_COST_KEY);
 
     const frequencies: Record<string, number> = {
       ...((rawObj.frequencies as Record<string, number>) || {})

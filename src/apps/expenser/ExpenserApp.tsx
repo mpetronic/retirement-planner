@@ -58,6 +58,7 @@ import {
   savePlannerExpenseLineItem,
   syncPlannerCatalogToCloudStorage,
   PlannerExpenseLineItem,
+  resolvePlanState,
 } from '../../shared/utils/plannerCategories';
 import { groupExpensesByDay } from '../../shared/utils/recentExpenseGroups';
 import { detectHorizontalSwipe } from '../../shared/utils/swipeGesture';
@@ -422,11 +423,7 @@ export const ExpenserApp: React.FC = () => {
         try {
           const parsed = JSON.parse(raw);
           detailedExpenses = parsed.detailedExpenses;
-          const currentYear = new Date().getFullYear();
-          const relocYear = parsed.jurisdiction?.relocationYear;
-          activeState = (relocYear !== null && relocYear !== undefined && currentYear >= Number(relocYear))
-            ? (parsed.jurisdiction?.targetState || parsed.jurisdiction?.currentState || 'MD')
-            : (parsed.jurisdiction?.currentState || 'MD');
+          activeState = resolvePlanState(parsed);
           profileNames = {
             primaryName: parsed.you?.name || 'Primary',
             spouseName: parsed.wife?.name || 'Spouse',

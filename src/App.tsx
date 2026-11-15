@@ -45,6 +45,7 @@ import { NotFoundPage } from './components/NotFoundPage';
 import { AuthService } from './shared/auth/AuthService';
 import { getStorageAdapter, PlanSyncService } from './shared/storage';
 import { syncPlannerCatalogToCloudStorage, syncCustomCategoriesToPlanner } from './shared/utils/plannerCategories';
+import { resolveActiveJurisdiction, needsSubJurisdiction } from './engine/stateTaxRegistry';
 import { SAMPLE_DEMO_PLAN } from './shared/utils/sampleDemoPlan';
 import { isLocalhostEnvironment, resolveAppMode } from './shared/utils/appMode';
 
@@ -446,6 +447,10 @@ function App() {
     }
   }, [inputs, savedPlans, isAuthenticated, simulateSurvivor, isDemoMode]);
 
+  const activeStateCode = activeInputs.jurisdiction
+    ? resolveActiveJurisdiction(activeInputs.jurisdiction, new Date().getFullYear()).state
+    : '';
+
   // Automatically sync planner line items & profile names to cloud DynamoDB / local IndexedDB when authenticated or on localhost
   useEffect(() => {
     if (!isDemoMode && (isLocalhostEnvironment() || isAuthenticated) && activeInputs.detailedExpenses && activeInputs.detailedExpenses.catalog) {
@@ -455,13 +460,7 @@ function App() {
         spouseName: activeInputs.wife?.name || 'Spouse',
         isSingleFiler: Boolean(activeInputs.isSingleFiler),
       };
-      const currentYear = new Date().getFullYear();
-      const relocYear = activeInputs.jurisdiction?.relocationYear;
-      const activeState = (relocYear !== null && relocYear !== undefined && currentYear >= Number(relocYear))
-        ? (activeInputs.jurisdiction?.targetState || activeInputs.jurisdiction?.currentState || 'MD')
-        : (activeInputs.jurisdiction?.currentState || 'MD');
-
-      syncPlannerCatalogToCloudStorage(activeInputs.detailedExpenses, adapter, profileNames, activeState).catch((err) => {
+      syncPlannerCatalogToCloudStorage(activeInputs.detailedExpenses, adapter, profileNames, activeStateCode).catch((err) => {
         console.warn('Failed to background sync catalog to storage:', err);
       });
     }
@@ -470,9 +469,7 @@ function App() {
     activeInputs.you?.name,
     activeInputs.wife?.name,
     activeInputs.isSingleFiler,
-    activeInputs.jurisdiction?.currentState,
-    activeInputs.jurisdiction?.targetState,
-    activeInputs.jurisdiction?.relocationYear,
+    activeStateCode,
     isAuthenticated,
     isDemoMode,
   ]);
@@ -1206,11 +1203,17 @@ function App() {
         onClose={() => setShowCloudModal(false)}
       />
 
-      {/* Legacy Plan Maryland County Selection Modal */}
-      {Boolean(activeInputs.isConfigured && activeInputs.jurisdiction?.currentState === 'MD' && !activeInputs.jurisdiction?.currentCounty) && (
+      {/* Legacy plan local-jurisdiction (county) selection modal */}
+      {Boolean(activeInputs.isConfigured && needsSubJurisdiction(activeInputs.jurisdiction?.currentState, activeInputs.jurisdiction?.currentCounty)) && (
         <LegacyCountyModal
           isOpen={true}
-          needsTargetCounty={Boolean(activeInputs.jurisdiction?.targetState === 'MD' && !activeInputs.jurisdiction?.targetCounty && activeInputs.jurisdiction?.relocationYear !== null)}
+          currentState={activeInputs.jurisdiction.currentState}
+          targetState={
+            activeInputs.jurisdiction.relocationYear !== null &&
+            needsSubJurisdiction(activeInputs.jurisdiction.targetState, activeInputs.jurisdiction.targetCounty)
+              ? activeInputs.jurisdiction.targetState
+              : undefined
+          }
           onConfirm={handleLegacyCountyConfirm}
         />
       )}
