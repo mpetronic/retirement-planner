@@ -426,6 +426,11 @@ $49,450 / $545,500, MFJ $98,900 / $613,700. The four limits in `FED_LTCG_BRACKET
 `FED_LTCG_BRACKETS_MFJ` in `taxRates.ts` now use those values, and the `calculateFedTaxWithLTCG` test
 expectation was updated to match (10,550 at 15% = 1,582.50).
 
+**Yearly update procedure.** Federal brackets, LTCG brackets, standard deductions, the aged additional
+deduction and IRMAA tiers now live in year-keyed tables in `federalTaxRules.ts` (`FED_YEAR_RULES`). When
+the IRS publishes a new revenue procedure, add one entry for the new year. A simulated year uses the
+latest entry at or before it, inflated by the plan CPI rate from that entry's year. No logic changes.
+
 ---
 
 ## 11. IRMAA thresholds are inflated to the lookback year, not the premium year

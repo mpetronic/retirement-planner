@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useSta
 import { createPortal } from 'react-dom';
 import { SimulationResultRow, AppStateInputs, getSimulationStartYear } from '../types';
 import { TableProperties, Info, AlertTriangle, X } from 'lucide-react';
-import { IRMAA_TIERS_MFJ, IRMAA_TIERS_SINGLE } from '../engine/taxRates';
+import { getFederalIndexing, getFederalRules } from '../engine/federalTaxRules';
 import { calculateFedTaxWithLTCG, calculateTaxableSS } from '../engine/simulationEngine';
 import { calculateStateAndLocalTax, calculatePensionExclusion, resolveActiveJurisdiction } from '../engine/stateTaxRegistry';
 import { countAgedFilers } from '../engine/federalDeduction';
@@ -136,9 +136,10 @@ export const LookbackLedgerTable: React.FC<LookbackLedgerTableProps> = ({
       const year = r.year;
       const magi = r.magi;
       
-      const cpiFactor = r.cpiFactor;
+      const cpiFactor = r.federalIndexFactor ?? r.cpiFactor;
       const isSingle = simulateSurvivor && year >= deathYear;
-      const tiers = isSingle ? IRMAA_TIERS_SINGLE : IRMAA_TIERS_MFJ;
+      const irmaaRules = getFederalRules(year).irmaaTiers;
+      const tiers = isSingle ? irmaaRules.single : irmaaRules.mfj;
 
       // Find which tier the current MAGI falls into
       let currentTierIdx = 0;
@@ -266,7 +267,6 @@ export const LookbackLedgerTable: React.FC<LookbackLedgerTableProps> = ({
               const conversionTax = (() => {
                 if (r.intentionalRothConversion <= 0) return 0;
                 
-                const cpiFactor = r.cpiFactor;
                 const isSingle = simulateSurvivor && r.year >= deathYear;
                 
                 // Dividends and capital gains are unchanged by the conversion
@@ -287,7 +287,7 @@ export const LookbackLedgerTable: React.FC<LookbackLedgerTableProps> = ({
                   taxableOrdinaryWithout, 
                   capitalGains, 
                   isSingle, 
-                  cpiFactor
+                  getFederalIndexing(r.year, r.cpiFactor, simStartYear, inputs.growthAssumptions.cpiInflationRate)
                 );
                 
                 const niitThreshold = isSingle ? 200000 : 250000;
@@ -847,8 +847,9 @@ export const LookbackLedgerTable: React.FC<LookbackLedgerTableProps> = ({
                     {/* IRMAA Tier Reference Popup */}
                     {(() => {
                       const isSingle = simulateSurvivor && r.year >= deathYear;
-                      const tiers = isSingle ? IRMAA_TIERS_SINGLE : IRMAA_TIERS_MFJ;
-                      const cpiFactor = r.cpiFactor;
+                      const irmaaRules = getFederalRules(r.year).irmaaTiers;
+                      const tiers = isSingle ? irmaaRules.single : irmaaRules.mfj;
+                      const cpiFactor = r.federalIndexFactor ?? r.cpiFactor;
                       const healthcareFactor = Math.pow(1 + inputs.growthAssumptions.healthcareInflationRate, r.year - simStartYear);
                       return (
                         <HoverPopup align="right" className="w-[380px] whitespace-normal bg-slate-950/95 backdrop-blur-md border border-slate-800 rounded-2xl p-4 shadow-2xl text-xs text-slate-300 pointer-events-none font-sans normal-case">

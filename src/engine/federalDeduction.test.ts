@@ -9,7 +9,6 @@ import {
 } from './federalDeduction';
 import {
   FED_STANDARD_DEDUCTION_MFJ,
-  FED_ADDITIONAL_STD_DEDUCTION_AGED_MFJ,
   OBBBA_SENIOR_DEDUCTION_PER_FILER,
   OBBBA_SENIOR_DEDUCTION_PHASEOUT_RATE,
   OBBBA_SENIOR_DEDUCTION_PHASEOUT_THRESHOLD_MFJ,
@@ -21,17 +20,19 @@ import {
   OBBBA_NON_ITEMIZER_CHARITABLE_DEDUCTION_MFJ,
   PRE_OBBBA_SALT_CAP,
 } from './taxRates';
+import { getFederalRules } from './federalTaxRules';
 
 const FIRST_ENHANCED_SENIOR_YEAR = 2027;
 const YEAR_AFTER_SENIOR_DEDUCTION = 2029;
 const YEAR_AFTER_SALT_ENHANCEMENT = 2030;
 const TWO_AGED_FILERS = 2;
+const AGED_ADDITION_MFJ = getFederalRules(FIRST_ENHANCED_SENIOR_YEAR).additionalStandardDeductionAged.mfj;
 const LOW_AGI = 100000;
 
 const baseParams = (overrides: Partial<FederalDeductionParams>): FederalDeductionParams => ({
   year: FIRST_ENHANCED_SENIOR_YEAR,
   isSingle: false,
-  cpiFactor: 1,
+  federal: { rules: getFederalRules(FIRST_ENHANCED_SENIOR_YEAR), indexFactor: 1 },
   agedFilerCount: TWO_AGED_FILERS,
   fedAGI: LOW_AGI,
   stateIncomeTax: 0,
@@ -80,7 +81,7 @@ describe('federalDeduction', () => {
   describe('calculateFederalDeduction', () => {
     it('uses the standard deduction plus age and senior additions when itemizing is smaller', () => {
       const result = calculateFederalDeduction(baseParams({}));
-      const standard = FED_STANDARD_DEDUCTION_MFJ + TWO_AGED_FILERS * FED_ADDITIONAL_STD_DEDUCTION_AGED_MFJ;
+      const standard = FED_STANDARD_DEDUCTION_MFJ + TWO_AGED_FILERS * AGED_ADDITION_MFJ;
       expect(result.usesItemized).toBe(false);
       expect(result.standardDeduction).toBe(standard);
       expect(result.totalDeduction).toBe(standard + OBBBA_SENIOR_DEDUCTION_PER_FILER * TWO_AGED_FILERS);
@@ -117,7 +118,7 @@ describe('federalDeduction', () => {
     it('gives non-itemizers the capped charitable deduction from 2026', () => {
       const tithe = 10000;
       const result = calculateFederalDeduction(baseParams({ nonQcdTithe: tithe }));
-      const standard = FED_STANDARD_DEDUCTION_MFJ + TWO_AGED_FILERS * FED_ADDITIONAL_STD_DEDUCTION_AGED_MFJ;
+      const standard = FED_STANDARD_DEDUCTION_MFJ + TWO_AGED_FILERS * AGED_ADDITION_MFJ;
       expect(result.totalDeduction).toBe(
         standard + OBBBA_NON_ITEMIZER_CHARITABLE_DEDUCTION_MFJ + OBBBA_SENIOR_DEDUCTION_PER_FILER * TWO_AGED_FILERS
       );

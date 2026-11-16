@@ -2,7 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import { X, TrendingUp, TrendingDown, Wallet, Activity, ShieldAlert, Shield, Award } from 'lucide-react';
 import { SimulationResultRow, AppStateInputs } from '../types';
-import { IRMAA_TIERS_SINGLE, IRMAA_TIERS_MFJ } from '../engine/taxRates';
+import { getFederalRules } from '../engine/federalTaxRules';
 import { SankeyFlowDiagram } from './SankeyFlowDiagram';
 
 interface RowInspectionDialogProps {
@@ -143,10 +143,11 @@ export const RowInspectionDialog: React.FC<RowInspectionDialogProps> = ({
   const cashInterest = row.taxableInterest;
 
   // 4. Surcharge Cliffs & Limits
-  const irmaaTiers = isSingle ? IRMAA_TIERS_SINGLE : IRMAA_TIERS_MFJ;
+  const irmaaRules = getFederalRules(row.year).irmaaTiers;
+  const irmaaTiers = isSingle ? irmaaRules.single : irmaaRules.mfj;
   const currentTier = irmaaTiers.find(t => t.tierNumber === row.surchargeTier) || irmaaTiers[0];
   // Tier limits are for the premium year, so they scale with this year's CPI (compared to t-2 MAGI)
-  const premiumYearCpi = row.cpiFactor;
+  const premiumYearCpi = row.federalIndexFactor ?? row.cpiFactor;
   
   // Find limits for this year's surcharge tier (based on t-2 MAGI)
   const tierMinLimit = (() => {

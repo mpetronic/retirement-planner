@@ -1,23 +1,22 @@
-// 2026 Tax Rates & Reference Data for the Retirement Scenario Optimizer
+// Tax rates & reference data for the Retirement Scenario Optimizer. Federal brackets, deductions and
+// IRMAA tiers live in the year-keyed tables in federalTaxRules.ts.
+import { getFederalRules } from './federalTaxRules';
+export type { TaxBracket, IRMAATier } from './federalTaxRules';
 
 export const BASE_MEDICARE_PART_B = 202.90;
 export const BASE_MEDICARE_PART_D = 34.50;
 
-export interface TaxBracket {
-  rate: number;
-  limit: number; // upper limit of this bracket (Infinity for the top bracket)
-}
-
-export interface IRMAATier {
-  tierNumber: number;
-  limit: number; // MAGI upper limit
-  partBSurcharge: number;
-  partDSurcharge: number;
-}
-
-// 2026 Federal Standard Deductions
-export const FED_STANDARD_DEDUCTION_MFJ = 32200;
-export const FED_STANDARD_DEDUCTION_SINGLE = 16100;
+/**
+ * Latest-known-year federal rules, for static UI presets and defaults only. Engine calculations must
+ * look rules up by tax year through getFederalIndexing so each simulated year uses its own table.
+ */
+const LATEST_FEDERAL_RULES = getFederalRules();
+export const FED_BRACKETS_MFJ = LATEST_FEDERAL_RULES.brackets.mfj;
+export const FED_BRACKETS_SINGLE = LATEST_FEDERAL_RULES.brackets.single;
+export const FED_STANDARD_DEDUCTION_MFJ = LATEST_FEDERAL_RULES.standardDeduction.mfj;
+export const FED_STANDARD_DEDUCTION_SINGLE = LATEST_FEDERAL_RULES.standardDeduction.single;
+export const IRMAA_TIERS_MFJ = LATEST_FEDERAL_RULES.irmaaTiers.mfj;
+export const IRMAA_TIERS_SINGLE = LATEST_FEDERAL_RULES.irmaaTiers.single;
 export const STATUTORY_STD_DEDUCTION_SINGLE_MFJ_MIDPOINT = (FED_STANDARD_DEDUCTION_SINGLE + FED_STANDARD_DEDUCTION_MFJ) / 2;
 
 /**
@@ -42,63 +41,6 @@ export const STATUTORY_IRMAA_LOOKBACK_YEARS = 2;
  * Statutory Medicare eligibility age (Title XVIII of the Social Security Act)
  */
 export const STATUTORY_MEDICARE_ELIGIBILITY_AGE = 65;
-
-// 2026 Federal Brackets (MFJ) - Single Source of Truth
-export const FED_BRACKETS_MFJ: TaxBracket[] = [
-  { rate: 0.10, limit: 24800 },
-  { rate: 0.12, limit: 100800 },
-  { rate: 0.22, limit: 211400 },
-  { rate: 0.24, limit: 403550 },
-  { rate: 0.32, limit: 512450 },
-  { rate: 0.35, limit: 768700 },
-  { rate: 0.37, limit: Infinity }
-];
-
-// 2026 Federal Brackets (Single) - Single Source of Truth
-export const FED_BRACKETS_SINGLE: TaxBracket[] = [
-  { rate: 0.10, limit: 12400 },
-  { rate: 0.12, limit: 50400 },
-  { rate: 0.22, limit: 105700 },
-  { rate: 0.24, limit: 201775 },
-  { rate: 0.32, limit: 256225 },
-  { rate: 0.35, limit: 640600 },
-  { rate: 0.37, limit: Infinity }
-];
-
-// 2026 Federal Long-Term Capital Gains Brackets (Single)
-export const FED_LTCG_BRACKETS_SINGLE: TaxBracket[] = [
-  { rate: 0.00, limit: 49450 },
-  { rate: 0.15, limit: 545500 },
-  { rate: 0.20, limit: Infinity }
-];
-
-// 2026 Federal Long-Term Capital Gains Brackets (MFJ)
-export const FED_LTCG_BRACKETS_MFJ: TaxBracket[] = [
-  { rate: 0.00, limit: 98900 },
-  { rate: 0.15, limit: 613700 },
-  { rate: 0.20, limit: Infinity }
-];
-
-// 2026 IRMAA Tiers (MFJ)
-// Tier 5 represents greater than or equal to $750k, so we set its limit to Infinity
-export const IRMAA_TIERS_MFJ: IRMAATier[] = [
-  { tierNumber: 0, limit: 218000, partBSurcharge: 0.00, partDSurcharge: 0.00 },
-  { tierNumber: 1, limit: 274000, partBSurcharge: 81.20, partDSurcharge: 14.50 },
-  { tierNumber: 2, limit: 342000, partBSurcharge: 202.90, partDSurcharge: 37.50 },
-  { tierNumber: 3, limit: 410000, partBSurcharge: 324.60, partDSurcharge: 60.40 },
-  { tierNumber: 4, limit: 749999, partBSurcharge: 446.30, partDSurcharge: 83.30 },
-  { tierNumber: 5, limit: Infinity, partBSurcharge: 487.00, partDSurcharge: 91.00 }
-];
-
-// 2026 IRMAA Tiers (Single)
-export const IRMAA_TIERS_SINGLE: IRMAATier[] = [
-  { tierNumber: 0, limit: 109000, partBSurcharge: 0.00, partDSurcharge: 0.00 },
-  { tierNumber: 1, limit: 137000, partBSurcharge: 81.20, partDSurcharge: 14.50 },
-  { tierNumber: 2, limit: 171000, partBSurcharge: 202.90, partDSurcharge: 37.50 },
-  { tierNumber: 3, limit: 205000, partBSurcharge: 324.60, partDSurcharge: 60.40 },
-  { tierNumber: 4, limit: 499999, partBSurcharge: 446.30, partDSurcharge: 83.30 },
-  { tierNumber: 5, limit: Infinity, partBSurcharge: 487.00, partDSurcharge: 91.00 }
-];
 
 /**
  * Default Fill-to-Target benchmark target (derived dynamically from the 12% Federal Tax Bracket ceiling in FED_BRACKETS_MFJ)
@@ -288,12 +230,6 @@ export function getIRSUniformLifetimeFactor(age: number): number {
 }
 
 
-/**
- * Additional standard deduction for each filer age 65 or older (IRC Section 63(f)), 2026 amounts.
- * Indexed to inflation through cpiFactor at the call site.
- */
-export const FED_ADDITIONAL_STD_DEDUCTION_AGED_MFJ = 1650;
-export const FED_ADDITIONAL_STD_DEDUCTION_AGED_SINGLE = 1950;
 export const STATUTORY_AGED_DEDUCTION_AGE = 65;
 
 /**

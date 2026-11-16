@@ -590,6 +590,8 @@ export interface SimulationResultRow {
   qualifiedDividends?: number; // Portion of dividends taxed at preferential capital gains rates
   taxableInterest: number;
   cpiFactor: number;
+  /** Factor that carries this year's federal rule-table dollar limits (brackets, deductions, IRMAA tiers) to this year. */
+  federalIndexFactor?: number;
   activeState?: string;
   activeCounty?: string | null;
   effectiveLocalTaxRate?: number;

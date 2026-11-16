@@ -1,8 +1,4 @@
 import {
-  FED_STANDARD_DEDUCTION_MFJ,
-  FED_STANDARD_DEDUCTION_SINGLE,
-  FED_ADDITIONAL_STD_DEDUCTION_AGED_MFJ,
-  FED_ADDITIONAL_STD_DEDUCTION_AGED_SINGLE,
   STATUTORY_AGED_DEDUCTION_AGE,
   OBBBA_SENIOR_DEDUCTION_FIRST_YEAR,
   OBBBA_SENIOR_DEDUCTION_LAST_YEAR,
@@ -22,6 +18,7 @@ import {
   OBBBA_NON_ITEMIZER_CHARITABLE_DEDUCTION_MFJ,
   OBBBA_NON_ITEMIZER_CHARITABLE_DEDUCTION_SINGLE,
 } from './taxRates';
+import type { FederalIndexing } from './federalTaxRules';
 
 /**
  * Counts filers age 65 or older who are still alive and on the return.
@@ -74,7 +71,8 @@ export function getSeniorDeduction(year: number, isSingle: boolean, agedFilerCou
 export interface FederalDeductionParams {
   year: number;
   isSingle: boolean;
-  cpiFactor: number;
+  /** Year-keyed federal rules and the factor that indexes their dollar limits to this year. */
+  federal: FederalIndexing;
   agedFilerCount: number;
   /** Federal AGI, used as the MAGI proxy for every phase-out and the charitable floor. */
   fedAGI: number;
@@ -100,11 +98,11 @@ export interface FederalDeductionResult {
  * plus the OBBBA senior deduction, which applies either way.
  */
 export function calculateFederalDeduction(params: FederalDeductionParams): FederalDeductionResult {
-  const { year, isSingle, cpiFactor, agedFilerCount, fedAGI, stateIncomeTax, propertyTax, nonQcdTithe } = params;
+  const { year, isSingle, federal, agedFilerCount, fedAGI, stateIncomeTax, propertyTax, nonQcdTithe } = params;
 
-  const baseStandard = (isSingle ? FED_STANDARD_DEDUCTION_SINGLE : FED_STANDARD_DEDUCTION_MFJ) * cpiFactor;
-  const agedAddition =
-    agedFilerCount * (isSingle ? FED_ADDITIONAL_STD_DEDUCTION_AGED_SINGLE : FED_ADDITIONAL_STD_DEDUCTION_AGED_MFJ) * cpiFactor;
+  const status = isSingle ? 'single' : 'mfj';
+  const baseStandard = federal.rules.standardDeduction[status] * federal.indexFactor;
+  const agedAddition = agedFilerCount * federal.rules.additionalStandardDeductionAged[status] * federal.indexFactor;
   const charitableRulesApply = year >= OBBBA_CHARITABLE_FIRST_YEAR;
 
   const nonItemizerCharity = charitableRulesApply

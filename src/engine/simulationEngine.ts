@@ -2,16 +2,11 @@ import { AppStateInputs, SimulationResultRow, LockedReturnSequence, getSimulatio
 import {
   BASE_MEDICARE_PART_B,
   BASE_MEDICARE_PART_D,
-  FED_BRACKETS_MFJ,
-  FED_BRACKETS_SINGLE,
-  IRMAA_TIERS_MFJ,
-  IRMAA_TIERS_SINGLE,
   getIRSUniformLifetimeFactor,
-  FED_LTCG_BRACKETS_SINGLE,
-  FED_LTCG_BRACKETS_MFJ,
   getTargetPresetInfo,
 } from './taxRates';
 import { calculateFederalDeduction, countAgedFilers } from './federalDeduction';
+import { FederalIndexing, getFederalIndexing } from './federalTaxRules';
 import { calculateStateAndLocalTax, calculatePensionExclusion, getStateTaxProfile, resolveActiveJurisdiction } from './stateTaxRegistry';
 
 const TARGET_AGI_DEDUCTION_ITERATIONS = 12;
@@ -148,17 +143,17 @@ export function solveRothConversionForTargetAGI(
 export function calculateFedTax(
   taxableIncome: number,
   isSingle: boolean,
-  cpiFactor: number
+  federal: FederalIndexing
 ): number {
   if (taxableIncome <= 0) return 0;
   
-  const brackets = isSingle ? FED_BRACKETS_SINGLE : FED_BRACKETS_MFJ;
+  const brackets = isSingle ? federal.rules.brackets.single : federal.rules.brackets.mfj;
   let tax = 0;
   let previousLimit = 0;
   
   for (let i = 0; i < brackets.length; i++) {
     const bracket = brackets[i];
-    const inflatedLimit = bracket.limit === Infinity ? Infinity : bracket.limit * cpiFactor;
+    const inflatedLimit = bracket.limit === Infinity ? Infinity : bracket.limit * federal.indexFactor;
     
     if (taxableIncome > inflatedLimit) {
       tax += (inflatedLimit - previousLimit) * bracket.rate;
@@ -177,9 +172,9 @@ export function calculateFedTaxWithLTCG(
   taxableOrdinaryIncome: number,
   taxableCapitalGains: number,
   isSingle: boolean,
-  cpiFactor: number
+  federal: FederalIndexing
 ): { ordinaryTax: number; ltcgTax: number; totalTax: number } {
-  const ordinaryTax = calculateFedTax(taxableOrdinaryIncome, isSingle, cpiFactor);
+  const ordinaryTax = calculateFedTax(taxableOrdinaryIncome, isSingle, federal);
 
   if (taxableCapitalGains <= 0) {
     return {
@@ -189,10 +184,11 @@ export function calculateFedTaxWithLTCG(
     };
   }
 
-  const ltcgBrackets = isSingle ? FED_LTCG_BRACKETS_SINGLE : FED_LTCG_BRACKETS_MFJ;
-  
-  const limit0 = ltcgBrackets[0].limit * cpiFactor;
-  const limit15 = ltcgBrackets[1].limit * cpiFactor;
+  const ltcgBrackets = isSingle ? federal.rules.ltcgBrackets.single : federal.rules.ltcgBrackets.mfj;
+  const [, midBracket, topBracket] = ltcgBrackets;
+
+  const limit0 = ltcgBrackets[0].limit * federal.indexFactor;
+  const limit15 = midBracket.limit * federal.indexFactor;
 
   const totalTaxable = taxableOrdinaryIncome + taxableCapitalGains;
 
@@ -203,7 +199,7 @@ export function calculateFedTaxWithLTCG(
   const ltcg20Start = Math.max(taxableOrdinaryIncome, limit15);
   const ltcg20 = Math.max(0, totalTaxable - ltcg20Start);
 
-  const ltcgTax = (ltcg15 * 0.15) + (ltcg20 * 0.20);
+  const ltcgTax = (ltcg15 * midBracket.rate) + (ltcg20 * topBracket.rate);
   
   return {
     ordinaryTax,
@@ -257,7 +253,7 @@ export function applyBucketLiquidityConstraintToConversion(
   totalSS: number,
   isSingle: boolean,
   cpiFactor: number,
-  deductionContext: { year: number; agedFilerCount: number; propertyTax: number },
+  deductionContext: { year: number; agedFilerCount: number; propertyTax: number; federal: FederalIndexing },
   nonQcdTithe: number,
   activeState: string,
   pensionExclusion: number = 0,
@@ -296,7 +292,7 @@ export function applyBucketLiquidityConstraintToConversion(
     const { totalDeduction: stdDeduction } = calculateFederalDeduction({
       year: deductionContext.year,
       isSingle,
-      cpiFactor,
+      federal: deductionContext.federal,
       agedFilerCount: deductionContext.agedFilerCount,
       fedAGI,
       stateIncomeTax: stateTax,
@@ -305,7 +301,7 @@ export function applyBucketLiquidityConstraintToConversion(
     });
 
     const taxableOrdinary = Math.max(0, fedAGI - capitalGains - stdDeduction);
-    const { totalTax: fedBaseTax } = calculateFedTaxWithLTCG(taxableOrdinary, capitalGains, isSingle, cpiFactor);
+    const { totalTax: fedBaseTax } = calculateFedTaxWithLTCG(taxableOrdinary, capitalGains, isSingle, deductionContext.federal);
 
     const niitThreshold = isSingle ? 200000 : 250000;
     const excessMAGI = Math.max(0, fedAGI - niitThreshold);
@@ -441,6 +437,9 @@ export function runRetirementSimulation(
       }
       healthcareFactor *= (1 + annualHcInflation);
     }
+
+    // Federal rules for this tax year, with their dollar limits indexed to this year's dollars
+    const federal = getFederalIndexing(year, cpiFactor, simStartYear, inputs.growthAssumptions.cpiInflationRate);
     
     // Growth rates by account type (Equities vs Fixed Income allocation)
     let equityRate = inputs.growthAssumptions.equityReturnRate;
@@ -1016,7 +1015,7 @@ export function runRetirementSimulation(
           estTotalSS,
           isSingle,
           cpiFactor,
-          { year, agedFilerCount: estAgedFilerCount, propertyTax: saltEligiblePropertyTaxNominal },
+          { year, agedFilerCount: estAgedFilerCount, propertyTax: saltEligiblePropertyTaxNominal, federal },
           nonQcdTithe,
           activeState,
           estPensionExcl,
@@ -1136,11 +1135,11 @@ export function runRetirementSimulation(
     let wifePartBSurcharge = 0;
     let wifePartDSurcharge = 0;
     let surchargeTier = 0;
-    const irmaaTiers = (isSurvivorActive || inputs.isSingleFiler) ? IRMAA_TIERS_SINGLE : IRMAA_TIERS_MFJ;
+    const irmaaTiers = (isSurvivorActive || inputs.isSingleFiler) ? federal.rules.irmaaTiers.single : federal.rules.irmaaTiers.mfj;
     // Tier limits are published for the premium year, so scale by this year's CPI (compared to year-2 MAGI)
     for (let i = irmaaTiers.length - 1; i >= 0; i--) {
       const prevTier = irmaaTiers[i - 1];
-      const prevLimit = prevTier ? (prevTier.limit === Infinity ? Infinity : prevTier.limit * cpiFactor) : 0;
+      const prevLimit = prevTier ? (prevTier.limit === Infinity ? Infinity : prevTier.limit * federal.indexFactor) : 0;
       if (magiTwoYearsAgo > prevLimit) {
         surchargeTier = irmaaTiers[i].tierNumber;
         const basePartB = irmaaTiers[i].partBSurcharge * healthcareFactor;
@@ -1249,7 +1248,7 @@ export function runRetirementSimulation(
     const { totalDeduction: estDeduction } = calculateFederalDeduction({
       year,
       isSingle,
-      cpiFactor,
+      federal,
       agedFilerCount: agedFilerCountYear,
       fedAGI: estFedAGI,
       stateIncomeTax: estStateTax,
@@ -1258,7 +1257,7 @@ export function runRetirementSimulation(
     });
 
     const estTaxableOrdinary = Math.max(0, estFedAGI - estCapGains - estDeduction);
-    const { totalTax: estFedBaseTax } = calculateFedTaxWithLTCG(estTaxableOrdinary, estCapGains, isSingle, cpiFactor);
+    const { totalTax: estFedBaseTax } = calculateFedTaxWithLTCG(estTaxableOrdinary, estCapGains, isSingle, federal);
     const expectedAnnualTax = estFedBaseTax + estStateTax;
 
     const expectedNetTaxDue = Math.max(0, expectedAnnualTax - annualTotalTaxWithholding);
@@ -1736,7 +1735,7 @@ export function runRetirementSimulation(
         return calculateFederalDeduction({
           year,
           isSingle,
-          cpiFactor,
+          federal,
           agedFilerCount: midAgedFilerCount,
           fedAGI: agi,
           stateIncomeTax: midStateTax,
@@ -1790,7 +1789,7 @@ export function runRetirementSimulation(
           annualYourSS + annualWifeSS,
           isSingle,
           cpiFactor,
-          { year, agedFilerCount: midAgedFilerCount, propertyTax: saltEligiblePropertyTaxNominal },
+          { year, agedFilerCount: midAgedFilerCount, propertyTax: saltEligiblePropertyTaxNominal, federal },
           annualNonQcdTithe,
           activeState,
           estPensionExcl,
@@ -1894,7 +1893,7 @@ export function runRetirementSimulation(
     const { totalDeduction: stdDeduction } = calculateFederalDeduction({
       year,
       isSingle,
-      cpiFactor,
+      federal,
       agedFilerCount: agedFilerCountFinal,
       fedAGI,
       stateIncomeTax,
@@ -1903,7 +1902,7 @@ export function runRetirementSimulation(
     });
 
     const taxableOrdinary = Math.max(0, fedAGI - capitalGains - stdDeduction);
-    const { totalTax: fedBaseTax } = calculateFedTaxWithLTCG(taxableOrdinary, capitalGains, isSingle, cpiFactor);
+    const { totalTax: fedBaseTax } = calculateFedTaxWithLTCG(taxableOrdinary, capitalGains, isSingle, federal);
     let fedIncomeTax = fedBaseTax;
 
     const niitThreshold = isSingle ? 200000 : 250000;
@@ -2180,6 +2179,7 @@ export function runRetirementSimulation(
       qualifiedDividends,
       taxableInterest: totalCashInterest,
       cpiFactor,
+      federalIndexFactor: federal.indexFactor,
       ssPaymentLevel,
       activeState,
       activeCounty,

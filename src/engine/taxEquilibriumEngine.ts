@@ -2,9 +2,6 @@ import { AppStateInputs, SimulationResultRow, LockedReturnSequence, getSimulatio
 import { runRetirementSimulation } from './simulationEngine';
 import {
   FED_BRACKETS_MFJ,
-  FED_BRACKETS_SINGLE,
-  IRMAA_TIERS_MFJ,
-  IRMAA_TIERS_SINGLE,
   STATUTORY_STD_DEDUCTION_SINGLE_MFJ_MIDPOINT,
   STATUTORY_NIIT_RATE,
   STATUTORY_NIIT_THRESHOLD_SINGLE,
@@ -15,6 +12,7 @@ import {
   STATUTORY_MEDICARE_ELIGIBILITY_AGE,
 } from './taxRates';
 import { getStateTaxProfile } from './stateTaxRegistry';
+import { getFederalRules } from './federalTaxRules';
 
 /**
  * Conversion Search Step Sizes for Coarse-to-Fine Convergence
@@ -113,11 +111,12 @@ export function calculateDynamicRMDHurdleRate(ledger: SimulationResultRow[], cur
     if (annualRMD <= 0) continue;
 
     const isSingle = row.isSingleReturn ?? (row.standardDeduction < STATUTORY_STD_DEDUCTION_SINGLE_MFJ_MIDPOINT * (row.cpiFactor || 1));
-    const brackets = isSingle ? FED_BRACKETS_SINGLE : FED_BRACKETS_MFJ;
+    const federalRules = getFederalRules(row.year);
+    const brackets = isSingle ? federalRules.brackets.single : federalRules.brackets.mfj;
     // Ledger values are nominal future dollars, so bracket limits must be inflated to match.
     // Capital gains and qualified dividends sit on top of ordinary income and use preferential
     // rates, so they are excluded from the base used to find the ordinary marginal bracket.
-    const cpiFactor = row.cpiFactor || 1;
+    const cpiFactor = row.federalIndexFactor ?? (row.cpiFactor || 1);
     const preferentialIncome = (row.capitalGainsTriggered ?? 0) + (row.qualifiedDividends ?? 0);
     const ordinaryTaxableIncome = Math.max(0, (row.taxableIncome || 0) - preferentialIncome);
 
@@ -344,13 +343,14 @@ export function calculateTaxEquilibriumSchedule(
         if (deltaIRMAA > 0 && deltaIRMAA / step > IRMAA_CLIFF_DRAG_DETECTION_THRESHOLD) {
           limitingFactor = 'IRMAA Cliff Boundary';
           const isSingle = (simulateSurvivor || inputs.isSingleFiler);
-          const tiers = isSingle ? IRMAA_TIERS_SINGLE : IRMAA_TIERS_MFJ;
+          const irmaaRules = getFederalRules(year).irmaaTiers;
+          const tiers = isSingle ? irmaaRules.single : irmaaRules.mfj;
           const nextTierNum = nextEval.irmaaRow?.surchargeTier && nextEval.irmaaRow.surchargeTier > 0 
             ? nextEval.irmaaRow.surchargeTier 
             : 1;
           limitingTier = nextTierNum;
           const prevTierIndex = Math.max(0, nextTierNum - 1);
-          const cpiFactor = curEval.ledgerRow?.cpiFactor || 1;
+          const cpiFactor = curEval.ledgerRow?.federalIndexFactor ?? (curEval.ledgerRow?.cpiFactor || 1);
           const baseThreshold = tiers[prevTierIndex]?.limit ?? tiers[0].limit;
           limitingThreshold = baseThreshold * cpiFactor;
           const lookbackYear = year + STATUTORY_IRMAA_LOOKBACK_YEARS;

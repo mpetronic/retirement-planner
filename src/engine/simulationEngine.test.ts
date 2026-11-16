@@ -10,7 +10,10 @@ import {
   calculateFedTaxWithLTCG,
   getRMDStartAge,
 } from './simulationEngine';
-import { IRMAA_TIERS_MFJ } from './taxRates';
+import { getFederalRules, FederalIndexing } from './federalTaxRules';
+
+// 2026 rules at the 2026 start year, so no indexing is applied
+const FEDERAL_2026_UNINDEXED: FederalIndexing = { rules: getFederalRules(2026), indexFactor: 1 };
 import { SAMPLE_DEMO_PLAN } from '../shared/utils/sampleDemoPlan';
 import { DEFAULT_DETAILED_EXPENSES, DEFAULT_EXPENSE_FREQUENCIES, normalizeDetailedExpenses, DetailedExpensesState, AppStateInputs, SimulationResultRow, getSSPaymentLevel, describeSSReductions, SSReductionConfig } from '../types';
 
@@ -135,13 +138,13 @@ describe('calculateTaxableSS', () => {
 describe('Tax calculations', () => {
   it('should calculate federal income tax correctly', () => {
     // 0 taxable income = 0 tax
-    const zeroTax = calculateFedTax(0, false, 1.0);
+    const zeroTax = calculateFedTax(0, false, FEDERAL_2026_UNINDEXED);
     expect(zeroTax).toBe(0);
 
     // MFJ with 50,000 taxable income, 1.0 CPI factor
     // 2026 brackets MFJ: 10% on first $24,800, then 12% on the rest
     // Expected: 24800 * 0.10 + (50000 - 24800) * 0.12 = 2480 + 25200 * 0.12 = 2480 + 3024 = 5504
-    const mfjTax = calculateFedTax(50000, false, 1.0);
+    const mfjTax = calculateFedTax(50000, false, FEDERAL_2026_UNINDEXED);
     expect(mfjTax).toBeCloseTo(5504, 1);
   });
 
@@ -1094,9 +1097,9 @@ describe('calculateFedTaxWithLTCG', () => {
     // Single filer, taxable ordinary = 40,000, taxable LTCG = 20,000.
     // 0% bracket tops out at 49,450 (Rev. Proc. 2025-32), so 60,000 - 49,450 = 10,550 is taxed at 15%.
     // Expected ltcgTax: 10,550 * 0.15 = 1582.5.
-    const res = calculateFedTaxWithLTCG(40000, 20000, true, 1);
+    const res = calculateFedTaxWithLTCG(40000, 20000, true, FEDERAL_2026_UNINDEXED);
     expect(res.ltcgTax).toBeCloseTo(1582.5, 1);
-    expect(res.ordinaryTax).toBe(calculateFedTax(40000, true, 1));
+    expect(res.ordinaryTax).toBe(calculateFedTax(40000, true, FEDERAL_2026_UNINDEXED));
     expect(res.totalTax).toBe(res.ordinaryTax + 1582.5);
   });
 });
@@ -2364,7 +2367,7 @@ describe('runRetirementSimulation fixes', () => {
 
       // Steer 2026 MAGI to sit above the unindexed Tier 0 limit but below that limit indexed to 2028.
       // 2028 premiums use 2028 thresholds, so the 2028 row must stay in Tier 0.
-      const unindexedTier0Limit = IRMAA_TIERS_MFJ[0].limit;
+      const unindexedTier0Limit = getFederalRules(2026).irmaaTiers.mfj[0].limit;
       const indexedTier0Limit = unindexedTier0Limit * probeCpi;
       const targetMAGI = (unindexedTier0Limit + indexedTier0Limit) / 2;
       inputs.you.activeSalary += targetMAGI - probeMAGI;
