@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useEffect, useRef } from 'react';
+import React, { useState, useMemo, useEffect, useRef, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import {
   X,
@@ -24,6 +24,7 @@ import {
 import {
   getPlannerExpenseCatalog,
   savePlannerExpenseLineItem,
+  findCatalogItem,
   PlannerExpenseLineItem,
 } from '../shared/utils/plannerCategories';
 import { getPlannerProfileNames, resolveLoggedInPayerName } from '../shared/utils/profileNames';
@@ -552,13 +553,20 @@ export const ImportExpensesModal: React.FC<ImportExpensesModalProps> = ({
     }
   };
 
+  // A row is unresolved when it is uncategorized or names an expense that is not in the catalog
+  const needsCatalogItem = useCallback(
+    (row: Pick<ParsedWorksheetRow, 'category' | 'lineItem'>): boolean =>
+      isUncategorized(row) || !findCatalogItem(catalogItems, row.category, row.lineItem),
+    [catalogItems]
+  );
+
   // Filtered rows for the worksheet
   const filteredRows = useMemo(() => {
     return parsedRows.filter(r => {
       if (hideDuplicates && r.isDuplicate) return false;
 
       // Filter tabs
-      if (activeFilterTab === 'UNKNOWN' && !isUncategorized(r)) return false;
+      if (activeFilterTab === 'UNKNOWN' && !needsCatalogItem(r)) return false;
       if (activeFilterTab === 'DUPLICATES' && !r.isDuplicate) return false;
       if (activeFilterTab === 'PAYMENTS' && !r.isPaymentTransfer) return false;
 
@@ -579,12 +587,12 @@ export const ImportExpensesModal: React.FC<ImportExpensesModalProps> = ({
 
       return true;
     });
-  }, [parsedRows, hideDuplicates, activeFilterTab, searchTerm]);
+  }, [parsedRows, hideDuplicates, activeFilterTab, searchTerm, needsCatalogItem]);
 
   // Counts and totals
   const selectedRows = useMemo(() => parsedRows.filter(r => r.selected && !r.isPaymentTransfer), [parsedRows]);
   const totalSpendSelected = useMemo(() => selectedRows.reduce((sum, r) => sum + r.amount, 0), [selectedRows]);
-  const unknownCount = useMemo(() => parsedRows.filter(isUncategorized).length, [parsedRows]);
+  const unknownCount = useMemo(() => parsedRows.filter(needsCatalogItem).length, [parsedRows, needsCatalogItem]);
   const selectedUncategorizedCount = useMemo(() => selectedRows.filter(isUncategorized).length, [selectedRows]);
   const duplicateCount = useMemo(() => parsedRows.filter(r => r.isDuplicate).length, [parsedRows]);
   const paymentCount = useMemo(() => parsedRows.filter(r => r.isPaymentTransfer).length, [parsedRows]);
@@ -592,6 +600,20 @@ export const ImportExpensesModal: React.FC<ImportExpensesModalProps> = ({
   // Execute Submission
   const handleExecuteSubmit = async () => {
     if (selectedRows.length === 0) return;
+
+    const rowsMissingCatalogItem = selectedRows.filter(
+      row => !isUncategorized(row) && !findCatalogItem(catalogItems, row.category, row.lineItem)
+    );
+    if (rowsMissingCatalogItem.length > 0) {
+      const missingNames = Array.from(new Set(rowsMissingCatalogItem.map(row => `${row.category} - ${row.lineItem}`)));
+      setImportStatusMessage(
+        `${rowsMissingCatalogItem.length} selected ${rowsMissingCatalogItem.length === 1 ? 'expense uses' : 'expenses use'} ` +
+        `an expense name that is not in your catalog (${missingNames.join(', ')}). ` +
+        'Choose an existing expense name or create it with "Create New Expense Name" before importing.'
+      );
+      setActiveFilterTab('UNKNOWN');
+      return;
+    }
 
     if (selectedUncategorizedCount > 0) {
       setImportStatusMessage(
@@ -613,7 +635,12 @@ export const ImportExpensesModal: React.FC<ImportExpensesModalProps> = ({
         .map(row => {
           const catDisplayName = `${row.category} - ${row.lineItem}`;
           const noteText = [row.rawDescription, row.notes].filter(Boolean).join(' | ');
-          const catalogId = `cat_${row.category.toLowerCase()}_${row.lineItem.toLowerCase().replace(/[^a-z0-9]/g, '_')}`;
+          // Every selected row was checked against the catalog above, so the lookup always succeeds here
+          const catalogItem = findCatalogItem(catalogItems, row.category, row.lineItem);
+          if (!catalogItem) {
+            throw new Error(`No catalog item for ${catDisplayName}`);
+          }
+          const catalogId = catalogItem.id;
 
           return {
             date: row.date,
@@ -1019,7 +1046,7 @@ export const ImportExpensesModal: React.FC<ImportExpensesModalProps> = ({
                 </thead>
                 <tbody className="divide-y divide-slate-100 dark:divide-slate-800/60 font-sans">
                   {filteredRows.map(row => {
-                    const isRowUnknown = isUncategorized(row);
+                    const isRowUnknown = needsCatalogItem(row);
                     const categoryLineItems = catalogItems.filter(c => c.groupCategory === row.category);
 
                     return (

@@ -56,6 +56,7 @@ import {
   mergeWithCustomCategories,
   sortPlannerExpenseItems,
   savePlannerExpenseLineItem,
+  newCatalogItemId,
   syncPlannerCatalogToCloudStorage,
   PlannerExpenseLineItem,
   resolvePlanState,
@@ -936,7 +937,7 @@ export const ExpenserApp: React.FC = () => {
     const group = newCatGroup.trim() || 'Living';
     const itemName = newCatName.trim();
     const formattedDisplayName = `${group} - ${itemName}`;
-    const newId = `item_custom_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
+    const newId = newCatalogItemId();
     const budgetVal = parseFloat(newCatBudget) || 0;
 
     // 1. Permanently register in Planner SSOT detailedExpenses catalog in localStorage

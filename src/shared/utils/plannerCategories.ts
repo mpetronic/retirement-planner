@@ -185,6 +185,34 @@ export function getPlannerExpenseCatalog(activeState?: string): PlannerExpenseLi
   return lineItems;
 }
 
+/** Number of random base-36 characters appended to a new catalog item id. */
+const CATALOG_ITEM_ID_RANDOM_LENGTH = 5;
+
+/**
+ * The single source of ids for newly created catalog items, so every creation path uses one
+ * convention: "item_<timestamp>_<random>".
+ */
+export function newCatalogItemId(): string {
+  const randomPart = Math.random().toString(36).substring(2, 2 + CATALOG_ITEM_ID_RANDOM_LENGTH);
+  return `item_${Date.now()}_${randomPart}`;
+}
+
+/**
+ * Finds the catalog item a category and expense name refer to, ignoring case and surrounding
+ * whitespace. Returns undefined when the catalog has no such item; callers must not invent an id.
+ */
+export function findCatalogItem(
+  catalogItems: PlannerExpenseLineItem[],
+  category: string,
+  lineItem: string
+): PlannerExpenseLineItem | undefined {
+  const categoryKey = category.trim().toLowerCase();
+  const lineItemKey = lineItem.trim().toLowerCase();
+  return catalogItems.find(
+    (item) => item.groupCategory.trim().toLowerCase() === categoryKey && item.name.trim().toLowerCase() === lineItemKey
+  );
+}
+
 export function savePlannerExpenseLineItem(item: {
   id?: string;
   name: string;
@@ -213,7 +241,7 @@ export function savePlannerExpenseLineItem(item: {
       i => (item.id && i.id === item.id) || (i.name.trim().toLowerCase() === name.toLowerCase() && i.category.trim().toLowerCase() === group.toLowerCase())
     );
 
-    const itemId = existing?.id || item.id || `item_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
+    const itemId = existing?.id || item.id || newCatalogItemId();
     const monthlyCost = Number(item.plannedMonthlyDefault) || 0;
 
     if (existing && hasCategory) {
@@ -281,93 +309,6 @@ export function savePlannerExpenseLineItem(item: {
     console.error('Failed to save line item to planner inputs:', err);
     return null;
   }
-}
-
-/**
- * Atomically registers a batch of line items into the planner catalog in a single memory pass
- * with a single localStorage write and no redundant reactive event spam during bulk imports.
- */
-export function batchRegisterPlannerExpenseLineItems(
-  items: Array<{ name: string; groupCategory: string; plannedMonthlyDefault?: number }>
-): Map<string, PlannerExpenseLineItem> {
-  const resultMap = new Map<string, PlannerExpenseLineItem>();
-  if (typeof window === 'undefined' || items.length === 0) return resultMap;
-
-  try {
-    const raw = window.localStorage.getItem('retirement_planner_inputs');
-    const parsed = raw ? JSON.parse(raw) : {};
-    const norm = normalizeDetailedExpenses(parsed.detailedExpenses);
-    let hasModifications = false;
-
-    norm.frequencies = norm.frequencies || {};
-    const planState = resolvePlanState(parsed);
-
-    for (const item of items) {
-      const group = (item.groupCategory || 'Living').trim();
-      const name = item.name.trim();
-      if (!name) continue;
-
-      const mapKey = `${group.toLowerCase()}:::${name.toLowerCase()}`;
-
-      // Check group category
-      if (!norm.catalog.categories.includes(group)) {
-        norm.catalog.categories.push(group);
-        hasModifications = true;
-      }
-
-      // Check item
-      let existing = norm.catalog.items.find(
-        i => i.name.trim().toLowerCase() === name.toLowerCase() && i.category.trim().toLowerCase() === group.toLowerCase()
-      );
-
-      const itemId = existing?.id || `item_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
-      const monthlyCost = Number(item.plannedMonthlyDefault) || 0;
-
-      if (!existing) {
-        const newItem: ExpenseItemDefinition = {
-          id: itemId,
-          name,
-          category: group,
-          defaultFrequency: 12,
-          isOneTime: false,
-          targetYear: null,
-          applicableStates: ['ALL'],
-        };
-        norm.catalog.items.push(newItem);
-        existing = newItem;
-        hasModifications = true;
-      }
-
-      if (norm.frequencies[itemId] === undefined) {
-        norm.frequencies[itemId] = 12;
-        hasModifications = true;
-      }
-      if (seedItemCost(norm, itemId, monthlyCost, existing.applicableStates)) {
-        hasModifications = true;
-      }
-
-      const displayName = `${group} - ${name}`;
-      resultMap.set(mapKey, {
-        id: itemId,
-        groupCategory: group,
-        name,
-        displayName,
-        plannedMonthlyDefault: norm.costs[planState]?.[itemId] ?? norm.costs[ALL_STATES_COST_KEY]?.[itemId] ?? monthlyCost,
-        color: GROUP_COLORS[group] || '#6366f1',
-        icon: 'Tag',
-        isCustom: false,
-      });
-    }
-
-    if (hasModifications) {
-      parsed.detailedExpenses = norm;
-      window.localStorage.setItem('retirement_planner_inputs', JSON.stringify(parsed));
-    }
-  } catch (err) {
-    console.error('Failed to batch register line items to planner inputs:', err);
-  }
-
-  return resultMap;
 }
 
 export function syncCustomCategoriesToPlanner(customCategories: ExpenseCategory[]): void {

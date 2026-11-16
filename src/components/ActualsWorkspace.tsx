@@ -51,7 +51,7 @@ import { ActualExpense } from '../shared/types/expenses';
 import { getExpenseLineItemIdentity } from '../utils/expenseLineItem';
 import { AuthService } from '../shared/auth/AuthService';
 import { isLocalhostEnvironment } from '../shared/utils/appMode';
-import { syncCustomCategoriesToPlanner, savePlannerExpenseLineItem } from '../shared/utils/plannerCategories';
+import { syncCustomCategoriesToPlanner } from '../shared/utils/plannerCategories';
 import { downloadExpensesSpreadsheet } from '../utils/expensesExcelExport';
 import { ActiveViewType } from './SidebarNavigation';
 import { RangeSlider } from './RangeSlider';
@@ -236,20 +236,8 @@ export const ActualsWorkspace: React.FC<ActualsWorkspaceProps> = ({
       if (cats && cats.length > 0) {
         syncCustomCategoriesToPlanner(cats);
       }
-
-      // 2. Also register any line items from logged transactions if missing from catalog
-      for (const exp of allExps) {
-        const group = exp.category || (exp.categoryName && exp.categoryName.includes(' - ') ? exp.categoryName.split(' - ')[0].trim() : 'Living');
-        const name = exp.name || (exp.categoryName && exp.categoryName.includes(' - ') ? exp.categoryName.split(' - ').slice(1).join(' - ').trim() : exp.categoryName || 'Expense');
-        if (group === 'Healthcare') continue;
-
-        savePlannerExpenseLineItem({
-          id: exp.catalogId || exp.categoryId,
-          name,
-          groupCategory: group,
-          plannedMonthlyDefault: 0,
-        });
-      }
+      // Logged expenses never add catalog items: one whose id is not in the catalog is listed as an
+      // unbudgeted row, and new catalog items are only created by an explicit user action.
     } catch (err) {
       console.error('Failed to load logged actual expenses:', err);
     } finally {

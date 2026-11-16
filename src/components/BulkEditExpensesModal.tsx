@@ -24,6 +24,7 @@ import {
   getPlannerCategories,
   savePlannerExpenseLineItem,
   resolveExpenseCategoryAndLineItem,
+  findCatalogItem,
   PlannerExpenseLineItem,
 } from '../shared/utils/plannerCategories';
 import { normalizeMerchant, batchSaveLearnedMerchantRules } from '../shared/utils/merchantMatcher';
@@ -442,6 +443,28 @@ export const BulkEditExpensesModal: React.FC<BulkEditExpensesModalProps> = ({
     targetNotes,
   ]);
 
+  // Category and expense name combinations this edit would produce that are not in the catalog yet.
+  // They are listed in the confirmation step, so applying the edit is the approval to create them.
+  const newCatalogItemsToCreate = useMemo(() => {
+    if (!updateCategoryEnabled && !updateLineItemEnabled) return [];
+    const missing = new Map<string, { category: string; lineItem: string }>();
+    for (const exp of selectedExpenses) {
+      const current = resolveExpenseCategoryAndLineItem(exp, effectiveCatalogItems);
+      const category = updateCategoryEnabled ? resolvedTargetCategory : current.category;
+      const lineItem = updateLineItemEnabled ? resolvedTargetLineItem : current.lineItem;
+      if (!category || !lineItem || findCatalogItem(effectiveCatalogItems, category, lineItem)) continue;
+      missing.set(`${category.toLowerCase()}|${lineItem.toLowerCase()}`, { category, lineItem });
+    }
+    return Array.from(missing.values());
+  }, [
+    selectedExpenses,
+    effectiveCatalogItems,
+    updateCategoryEnabled,
+    updateLineItemEnabled,
+    resolvedTargetCategory,
+    resolvedTargetLineItem,
+  ]);
+
   // Execute the bulk update
   const handleExecuteBulkUpdate = async () => {
     if (!canApplyBulkUpdate) return;
@@ -456,12 +479,14 @@ export const BulkEditExpensesModal: React.FC<BulkEditExpensesModalProps> = ({
       const finalCategory = resolvedTargetCategory;
       const finalLineItem = resolvedTargetLineItem;
 
-      // Register new line item in catalog once if modified
-      if (updateCategoryEnabled || updateLineItemEnabled) {
-        savePlannerExpenseLineItem({
-          name: finalLineItem,
-          groupCategory: finalCategory,
-        });
+      // Create the catalog items the confirmation step listed, so every row is saved with a real catalog id
+      const createdCatalogIds = new Map<string, string>();
+      for (const { category, lineItem } of newCatalogItemsToCreate) {
+        const created = savePlannerExpenseLineItem({ name: lineItem, groupCategory: category });
+        if (!created) {
+          throw new Error(`Could not create catalog item "${category} - ${lineItem}". No expenses were changed.`);
+        }
+        createdCatalogIds.set(`${category.toLowerCase()}|${lineItem.toLowerCase()}`, created.id);
       }
 
       // Prepare batch updates and merchant rules
@@ -485,10 +510,14 @@ export const BulkEditExpensesModal: React.FC<BulkEditExpensesModalProps> = ({
           }
         }
 
-        const matchingCatalog = effectiveCatalogItems.find(
-          c => c.groupCategory.toLowerCase() === itemCategory.toLowerCase() && c.name.toLowerCase() === itemLineItem.toLowerCase()
-        );
-        const canonicalCatalogId = matchingCatalog ? matchingCatalog.id : `cat_${itemCategory.toLowerCase().replace(/[^a-z0-9]/g, '_')}_${itemLineItem.toLowerCase().replace(/[^a-z0-9]/g, '_')}`;
+        // A notes-only edit leaves the row's catalog id alone; otherwise it must resolve to a catalog item
+        const canonicalCatalogId = updateCategoryEnabled || updateLineItemEnabled
+          ? (findCatalogItem(effectiveCatalogItems, itemCategory, itemLineItem)?.id ??
+              createdCatalogIds.get(`${itemCategory.toLowerCase()}|${itemLineItem.toLowerCase()}`))
+          : (exp.catalogId || exp.categoryId);
+        if (!canonicalCatalogId) {
+          throw new Error(`No catalog item for "${itemCategory} - ${itemLineItem}". No expenses were changed.`);
+        }
 
         updatesBatch.push({
           id: exp.expenseId,
@@ -1407,6 +1436,24 @@ export const BulkEditExpensesModal: React.FC<BulkEditExpensesModalProps> = ({
                     {resolvedTargetLineItem}
                     {isCustomLineItem && ' (New)'}
                   </span>
+                </div>
+              )}
+
+              {newCatalogItemsToCreate.length > 0 && (
+                <div className="pt-1.5 border-t border-slate-800 space-y-1">
+                  <div className="flex items-center gap-1.5 font-semibold text-amber-300">
+                    <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
+                    <span>
+                      {newCatalogItemsToCreate.length === 1
+                        ? 'This will add 1 new item to your expense catalog ($0 budget):'
+                        : `This will add ${newCatalogItemsToCreate.length} new items to your expense catalog ($0 budget):`}
+                    </span>
+                  </div>
+                  <ul className="pl-5 list-disc text-amber-200/90 font-mono">
+                    {newCatalogItemsToCreate.map(({ category, lineItem }) => (
+                      <li key={`${category}|${lineItem}`}>{category} - {lineItem}</li>
+                    ))}
+                  </ul>
                 </div>
               )}
 

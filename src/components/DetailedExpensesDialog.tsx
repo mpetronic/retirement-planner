@@ -35,6 +35,7 @@ import {
   ALL_STATES_COST_KEY
 } from '../types';
 import { BASE_MEDICARE_PART_B, BASE_MEDICARE_PART_D } from '../engine/taxRates';
+import { newCatalogItemId } from '../shared/utils/plannerCategories';
 
 interface DetailedExpensesDialogProps {
   isOpen: boolean;
@@ -319,7 +320,7 @@ export const DetailedExpensesDialog: React.FC<DetailedExpensesDialogProps> = ({
       ? ['ALL'] 
       : (itemSelectedStates.length > 0 ? itemSelectedStates : [activeState]);
 
-    const itemId = editingItem ? editingItem.id : `item_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
+    const itemId = editingItem ? editingItem.id : newCatalogItemId();
     const finalFrequency = itemIsOneTime ? 1 : itemFrequency;
     const finalTargetYear = itemIsOneTime ? Number(itemTargetYear) : undefined;
 
