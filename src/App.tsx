@@ -13,7 +13,7 @@ import {
   normalizeDetailedExpenses,
   getSimulationStartYear,
 } from './types';
-import { runRetirementSimulation } from './engine/simulationEngine';
+import { runRetirementSimulation, getSimulationHorizonYears } from './engine/simulationEngine';
 import {
   runMonteCarloSimulation,
   computeRepresentativeSequences,
@@ -653,6 +653,9 @@ function App() {
     document.documentElement.style.fontSize = `${globalFontSize}px`;
   }, [globalFontSize]);
 
+  // Number of simulated years, so generated return sequences always cover the full horizon.
+  const horizonYears = useMemo(() => getSimulationHorizonYears(deferredInputs), [deferredInputs]);
+
   // 1. Generate 1,000 return sequences once, keyed ONLY on deferred volatility/correlation/seed/cpi.
   const returnSequences = useMemo(() => {
     const trials = deferredInputs.monteCarloSettings?.trials || 1000;
@@ -695,7 +698,8 @@ function App() {
             equityMean,
             bondMean,
             targetCpi,
-            enableHistoricalStudentT
+            enableHistoricalStudentT,
+            horizonYears
           )
         );
       } else {
@@ -710,7 +714,8 @@ function App() {
             rand,
             isCpiRandomized,
             constantCpi,
-            targetCpi
+            targetCpi,
+            horizonYears
           )
         );
       }
@@ -732,6 +737,7 @@ function App() {
     deferredInputs.monteCarloSettings.historicalSamplingStrategy,
     deferredInputs.monteCarloSettings.calibrateHistoricalMeans,
     deferredInputs.monteCarloSettings.enableHistoricalStudentT,
+    horizonYears,
   ]);
 
   // 2. Compute representative market return sequences (P10, P50, P90) instantaneously (<0.1ms).
@@ -1015,6 +1021,7 @@ function App() {
         ledger={displayActiveLedger}
         parallelLedgers={displayParallelLedgers}
         successRate={monteCarloSummary.successRate}
+        monteCarloSummary={displayMonteCarloSummary}
         inputs={activeInputs}
         activeView={activeView}
         onNavigate={handleNavigate}

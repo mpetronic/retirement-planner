@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { AppStateInputs, StressTestConfig, StressTestYearOverride, getSimulationStartYear } from '../types';
+import { getSimulationHorizonYears } from '../engine/simulationEngine';
 import { 
   Zap, 
   Plus, 
@@ -371,7 +372,7 @@ export const StressTestControlPanel: React.FC<StressTestControlPanelProps> = ({
                       onChange={(e) => updateYearOverride(index, 'year', Number(e.target.value))}
                       className="text-xs font-mono font-bold px-2.5 py-1 bg-slate-900 text-slate-100 border border-slate-700 rounded-lg focus:outline-none focus:border-rose-500 cursor-pointer"
                     >
-                      {Array.from({ length: 35 }, (_, i) => simStartYear + i).map((yr) => (
+                      {Array.from({ length: getSimulationHorizonYears(inputs) }, (_, i) => simStartYear + i).map((yr) => (
                         <option key={yr} value={yr}>
                           Year {yr}
                         </option>

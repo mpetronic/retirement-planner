@@ -37,7 +37,7 @@ Use this table to track what has been debated and fixed.
 | 14 | Survivor benefit 100% from age 60 | Low | Fixed |
 | 15 | SS earnings test not modeled | Low | Open |
 | 16 | Stale 2025 statutory constants | Low | Fixed |
-| 17 | MC sequences hard-capped at 35 years | Low-Medium | Open |
+| 17 | MC sequences hard-capped at 35 years | Low-Medium | Fixed |
 | 18 | Bear-market rule uses look-ahead | Low-Medium | Open |
 | 19 | RMD counted when not distributed; cross-spouse QCD | Low | Open |
 | 20 | Minor tax-base omissions | Low | Open |
@@ -638,6 +638,20 @@ wife's longevity to 100 makes the last 4 years silently deterministic, and the p
 at 35.
 
 **Recommendation.** Generate `endSimulationYear - simStartYear + 1` years.
+
+**Resolution.** Fixed. `simulationEngine.ts` exports `getSimulationEndYear` and
+`getSimulationHorizonYears`, and `runRetirementSimulation` uses the same end-year helper so the two
+cannot drift. `generateSyntheticSequence` and `generateHistoricalSequence` take a `years` argument
+(default `MONTE_CARLO_SEQUENCE_YEARS`); `runMonteCarloSimulation` and the sequence memo in `App.tsx`
+pass the horizon, and the memo now re-keys on birth dates, longevity, filer status and start year so
+changing longevity regenerates the sequences. A historical block longer than the 56-year dataset wraps
+to 1970. Stress-test overrides iterate the sequence length. The percentile table is sized by the
+longest ledger any trial produced, which also fixed a related survivor-mode bug: the loop stops in the
+final longevity year, so the table's last row had no data and the Plan Health Summary showed $0 for
+P10 and P50. Hard-coded 35s and the literal 2060 in the Monte Carlo workspace, the stress-test year
+picker, the Roth end-year picker and the bucket year list now derive from the horizon. Known effect:
+each trial now consumes `horizon` draws from the shared seeded stream instead of 35, so seeded results
+for any horizon other than 35 years differ from earlier runs. The first trial is unchanged.
 
 ---
 

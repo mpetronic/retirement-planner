@@ -621,7 +621,7 @@ export const PlanComparisonWorkspace: React.FC<PlanComparisonWorkspaceProps> = (
       },
       {
         id: 'endingEstate',
-        name: `Ending Net Estate (Age ${endingAge})`,
+        name: `Ending Portfolio (Age ${endingAge})`,
         desc: `Final terminal value of combined accounts in year ${globalEndingYear} after all years of growth, taxes, and drawdowns under ${globalScenario ? globalScenario.toUpperCase() : 'active'} return assumptions.`,
         valA: statsA.endingEstate,
         valB: statsB.endingEstate,

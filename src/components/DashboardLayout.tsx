@@ -1,5 +1,7 @@
 import React, { useMemo } from 'react';
 import { SimulationResultRow, AppStateInputs, describeSSReductions } from '../types';
+import { MonteCarloSummary } from '../engine/monteCarloEngine';
+import { formatSuccessRate } from '../utils/formatters';
 import {
   DollarSign,
   TrendingUp,
@@ -22,6 +24,8 @@ interface DashboardLayoutProps {
     p90: SimulationResultRow[];
   };
   successRate: number;
+  /** All-trial percentile table, already CPI-discounted when the display is in today's dollars. */
+  monteCarloSummary: MonteCarloSummary;
   inputs: AppStateInputs;
   activeView: ActiveViewType;
   onNavigate: (view: ActiveViewType) => void;
@@ -66,6 +70,7 @@ export const DashboardLayout: React.FC<DashboardLayoutProps> = ({
   ledger,
   parallelLedgers,
   successRate,
+  monteCarloSummary,
   inputs,
   activeView,
   onNavigate,
@@ -178,6 +183,11 @@ export const DashboardLayout: React.FC<DashboardLayoutProps> = ({
       flat: computeForLedger(parallelLedgers.flat),
     };
   }, [ledger, parallelLedgers]);
+
+  // Final-year percentiles across every Monte Carlo trial. These are statistics of the whole
+  // distribution, unlike the P10/P50/P90 ledgers, which each follow one trial picked by market return.
+  const finalPercentiles = monteCarloSummary.percentiles[monteCarloSummary.percentiles.length - 1];
+  const scenarioPathLabel = globalScenario === 'flat' ? '' : `, ${globalScenario.toUpperCase()} path`;
 
   const currentViewMeta = VIEW_TITLES[activeView] || { title: 'Retirement Planner', category: 'Dashboard' };
 
@@ -420,14 +430,19 @@ export const DashboardLayout: React.FC<DashboardLayoutProps> = ({
             <div className="glass-panel rounded-lg px-3 py-1.5 flex items-center justify-between border-l-4 border-l-emerald-500 bg-slate-900/60">
               <div className="min-w-0">
                 <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider block truncate">
-                  Ending Net Estate (Age {stats.active.endingAge})
+                  Ending Portfolio{scenarioPathLabel} (Age {stats.active.endingAge})
                 </span>
                 <div className="flex items-baseline gap-1.5 mt-0.5">
                   <span className="text-base font-black text-emerald-400 font-mono">
                     {formatCurrency(stats.active.endingEstate)}
                   </span>
-                  <span className="text-[9px] text-slate-500 font-mono truncate">
-                    ({formatCurrency(stats.p10.endingEstate)}–{formatCurrency(stats.p90.endingEstate)})
+                  <span
+                    className="text-[9px] text-slate-500 font-mono truncate"
+                    title="10th / 50th / 90th percentile of ending portfolio across all Monte Carlo trials"
+                  >
+                    {finalPercentiles
+                      ? `All trials P10/P50/P90: ${formatCurrency(finalPercentiles.p10)} / ${formatCurrency(finalPercentiles.p50)} / ${formatCurrency(finalPercentiles.p90)}`
+                      : ''}
                   </span>
                 </div>
               </div>
@@ -475,7 +490,7 @@ export const DashboardLayout: React.FC<DashboardLayoutProps> = ({
                 </span>
                 <div className="flex items-baseline gap-1.5 mt-0.5">
                   <span className="text-base font-black text-blue-400 font-mono">
-                    {(successRate * 100).toFixed(1)}%
+                    {formatSuccessRate(successRate)}
                   </span>
                   <span className="text-[9px] text-slate-500 font-mono truncate">
                     ({inputs.monteCarloSettings.trials} trials)

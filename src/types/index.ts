@@ -62,13 +62,13 @@ export interface PortfolioBalances {
 export interface LockedReturnSequence {
   id: string; // Unique timestamp or ID of the sequence
   mode: 'monte-carlo' | 'historical';
-  equityReturns: number[]; // Array of 35 rates (2026 to 2060)
-  fixedIncomeReturns: number[]; // Array of 35 rates (2026 to 2060)
-  inflationRates?: number[]; // Array of 35 inflation rates (2026 to 2060)
+  equityReturns: number[]; // One rate per simulated year, starting at the simulation start year
+  fixedIncomeReturns: number[]; // One rate per simulated year, starting at the simulation start year
+  inflationRates?: number[]; // One inflation rate per simulated year
 }
 
 export interface StressTestYearOverride {
-  year: number;            // e.g. 2028 (2026 to 2060)
+  year: number;            // e.g. 2028, any year within the simulation horizon
   equityReturn: number;    // e.g. -0.25 (-25%)
   fixedIncomeReturn: number; // e.g. -0.05 (-5%)
 }

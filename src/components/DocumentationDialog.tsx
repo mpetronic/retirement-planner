@@ -293,7 +293,7 @@ export const DocumentationDialog: React.FC<DocumentationDialogProps> = ({
                   <span>2D Automated Optimization Sweep</span>
                 </div>
                 <p className="text-[11px] text-slate-300 leading-relaxed">
-                  The built-in optimization engine tests hundreds of candidate combinations of Roth conversion amounts and Social Security claiming ages (from age 62 to 70 for both spouses) to identify configurations that maximize ending net estate or minimize lifetime tax liabilities.
+                  The built-in optimization engine tests hundreds of candidate combinations of Roth conversion amounts and Social Security claiming ages (from age 62 to 70 for both spouses) to identify configurations that maximize ending portfolio value or minimize lifetime tax liabilities.
                 </p>
               </div>
 

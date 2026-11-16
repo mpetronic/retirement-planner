@@ -2,6 +2,8 @@ import React, { useMemo } from 'react';
 import { Chart } from 'react-chartjs-2';
 import { Chart as ChartJS, registerables, ChartOptions, TooltipItem } from 'chart.js';
 import { AppStateInputs, MonteCarloSettings, describeSSReductions } from '../types';
+import { getSimulationEndYear, getSimulationHorizonYears } from '../engine/simulationEngine';
+import { formatSuccessRate } from '../utils/formatters';
 import { MonteCarloSummary } from '../engine/monteCarloEngine';
 import { StressTestControlPanel } from './StressTestControlPanel';
 import { RangeSlider } from './RangeSlider';
@@ -53,6 +55,10 @@ export const MonteCarloWorkspace: React.FC<MonteCarloWorkspaceProps> = ({
 }) => {
   const successRate = summary.successRate;
 
+  // Last simulated year, taken from the percentile table so it matches the data shown.
+  const finalYear = summary.percentiles[summary.percentiles.length - 1]?.year ?? getSimulationEndYear(inputs);
+  const horizonYears = getSimulationHorizonYears(inputs);
+
   const endingAges = useMemo(() => {
     const parseBirthYear = (dateStr: string | undefined, fallback: number): number => {
       if (!dateStr) return fallback;
@@ -70,10 +76,10 @@ export const MonteCarloWorkspace: React.FC<MonteCarloWorkspaceProps> = ({
     const wifeBirthYear = parseBirthYear(inputs.wife.birthDate, 1964);
 
     return {
-      you: 2060 - youBirthYear,
-      wife: 2060 - wifeBirthYear,
+      you: finalYear - youBirthYear,
+      wife: finalYear - wifeBirthYear,
     };
-  }, [inputs.you.birthDate, inputs.wife.birthDate]);
+  }, [inputs.you.birthDate, inputs.wife.birthDate, finalYear]);
 
   // Formatting helpers
   const formatCurrency = (val: number) => {
@@ -295,23 +301,23 @@ export const MonteCarloWorkspace: React.FC<MonteCarloWorkspaceProps> = ({
   // Return rates dataset preparation
   const activeEquityReturns = useMemo(() => {
     if (globalScenario === 'flat') {
-      return Array(35).fill(inputs.growthAssumptions.equityReturnRate);
+      return Array(horizonYears).fill(inputs.growthAssumptions.equityReturnRate);
     }
     const seq = globalScenario === 'p10' ? summary.representativeSequences.worst
               : globalScenario === 'p90' ? summary.representativeSequences.best
               : summary.representativeSequences.median;
-    return seq ? seq.equityReturns : Array(35).fill(inputs.growthAssumptions.equityReturnRate);
-  }, [globalScenario, inputs.growthAssumptions.equityReturnRate, summary.representativeSequences]);
+    return seq ? seq.equityReturns : Array(horizonYears).fill(inputs.growthAssumptions.equityReturnRate);
+  }, [globalScenario, horizonYears, inputs.growthAssumptions.equityReturnRate, summary.representativeSequences]);
 
   const activeFixedIncomeReturns = useMemo(() => {
     if (globalScenario === 'flat') {
-      return Array(35).fill(inputs.growthAssumptions.fixedIncomeReturnRate);
+      return Array(horizonYears).fill(inputs.growthAssumptions.fixedIncomeReturnRate);
     }
     const seq = globalScenario === 'p10' ? summary.representativeSequences.worst
               : globalScenario === 'p90' ? summary.representativeSequences.best
               : summary.representativeSequences.median;
-    return seq ? seq.fixedIncomeReturns : Array(35).fill(inputs.growthAssumptions.fixedIncomeReturnRate);
-  }, [globalScenario, inputs.growthAssumptions.fixedIncomeReturnRate, summary.representativeSequences]);
+    return seq ? seq.fixedIncomeReturns : Array(horizonYears).fill(inputs.growthAssumptions.fixedIncomeReturnRate);
+  }, [globalScenario, horizonYears, inputs.growthAssumptions.fixedIncomeReturnRate, summary.representativeSequences]);
 
   const stressedYearSet = useMemo(() => {
     const st = inputs.monteCarloSettings.stressTest;
@@ -448,7 +454,7 @@ export const MonteCarloWorkspace: React.FC<MonteCarloWorkspaceProps> = ({
               {/* Central Text */}
               <div className="absolute flex flex-col items-center justify-center text-center">
                 <span className="text-3xl font-black text-slate-100 font-mono tracking-tight">
-                  {formatPercent(successRate)}
+                  {formatSuccessRate(successRate)}
                 </span>
                 <span className="text-[9px] text-slate-400 font-bold uppercase tracking-wider">
                   Success Rate
@@ -463,20 +469,27 @@ export const MonteCarloWorkspace: React.FC<MonteCarloWorkspaceProps> = ({
                 <span className="font-mono text-slate-200 font-bold">{inputs.monteCarloSettings.trials}</span>
               </div>
               <div className="flex justify-between items-center bg-slate-950/20 p-2 rounded-lg border border-slate-800/30">
-                <span className="text-slate-400">Worst ending estate (P10)</span>
+                <span className="text-slate-400">10th percentile ending portfolio</span>
                 <span className="font-mono text-rose-400 font-bold">{formatCurrency(summary.percentiles[summary.percentiles.length - 1].p10)}</span>
               </div>
               <div className="flex justify-between items-center bg-slate-950/20 p-2 rounded-lg border border-slate-800/30">
-                <span className="text-slate-400">Median ending estate (P50)</span>
+                <span className="text-slate-400">Median ending portfolio</span>
                 <span className="font-mono text-blue-400 font-bold">{formatCurrency(summary.percentiles[summary.percentiles.length - 1].p50)}</span>
               </div>
+              <div className="flex justify-between items-center bg-slate-950/20 p-2 rounded-lg border border-slate-800/30">
+                <span className="text-slate-400">90th percentile ending portfolio</span>
+                <span className="font-mono text-emerald-400 font-bold">{formatCurrency(summary.percentiles[summary.percentiles.length - 1].p90)}</span>
+              </div>
+              <p className="text-[10px] text-slate-500 leading-normal pt-1">
+                These are percentiles across all trials. The P10, P50 and P90 ledgers in other workspaces each follow one trial chosen by cumulative market return, so their final values will differ from these figures.
+              </p>
             </div>
           </div>
 
           <div className="mt-6">
             <p className="text-[10px] text-slate-400 leading-normal flex items-start gap-1.5">
               <Info className="w-3.5 h-3.5 text-emerald-400 flex-shrink-0 mt-0.5" />
-              Success rate represents the percent of simulations where the joint retirement estate remained solvent (&gt; $0) through year 2060 (Age {endingAges.you}{inputs.isSingleFiler ? '' : '/' + endingAges.wife}).
+              Success rate represents the percent of simulations where the joint retirement estate remained solvent (&gt; $0) through year {finalYear} (Age {endingAges.you}{inputs.isSingleFiler ? '' : '/' + endingAges.wife}).
             </p>
           </div>
         </div>
@@ -1178,17 +1191,17 @@ export const MonteCarloWorkspace: React.FC<MonteCarloWorkspaceProps> = ({
                     <div className="p-2.5 bg-slate-900/60 rounded-lg border border-slate-800/80 text-[10px] text-slate-300 leading-normal">
                       {(inputs.monteCarloSettings.historicalSamplingStrategy ?? 'hybrid') === 'hybrid' && (
                         <span>
-                          <strong className="text-emerald-400">Hybrid (Recommended):</strong> 35% of the configured trials replay 35-year contiguous chronological blocks (e.g. 1973–2007) to preserve exact historic bear market clusters, while 65% of the trials resample random individual years to test novel sequence permutations.
+                          <strong className="text-emerald-400">Hybrid (Recommended):</strong> 35% of the configured trials replay contiguous chronological blocks as long as the plan horizon (e.g. 1973–2007 for a 35-year plan) to preserve exact historic bear market clusters, while 65% of the trials resample random individual years to test novel sequence permutations.
                         </span>
                       )}
                       {inputs.monteCarloSettings.historicalSamplingStrategy === 'block' && (
                         <span>
-                          <strong className="text-emerald-400">100% Contiguous Chronological Blocks:</strong> Every trial strictly replays actual 35-year continuous historic windows (1970–2004, 1973–2007, 1982–2016, etc.) preserving true macroeconomic persistence and lived sequences.
+                          <strong className="text-emerald-400">100% Contiguous Chronological Blocks:</strong> Every trial strictly replays actual continuous historic windows as long as the plan horizon (for a 35-year plan: 1970–2004, 1973–2007, 1982–2016, etc.) preserving true macroeconomic persistence and lived sequences.
                         </span>
                       )}
                       {inputs.monteCarloSettings.historicalSamplingStrategy === 'random' && (
                         <span>
-                          <strong className="text-emerald-400">100% Random Year Resampling:</strong> Every trial randomly shuffles 35 individual years from 1970–2025 with replacement (preserving joint stock/bond/inflation synchronization per year) to stress-test arbitrary combinations.
+                          <strong className="text-emerald-400">100% Random Year Resampling:</strong> Every trial randomly draws one individual year per plan year from 1970–2025 with replacement (preserving joint stock/bond/inflation synchronization per year) to stress-test arbitrary combinations.
                         </span>
                       )}
                     </div>
@@ -1391,7 +1404,7 @@ export const MonteCarloWorkspace: React.FC<MonteCarloWorkspaceProps> = ({
       <div className="glass-panel rounded-2xl p-3.5 border border-slate-800 bg-slate-900/20 space-y-2">
         <div>
           <h4 className="text-xs font-bold text-slate-200 uppercase tracking-wider">Ending Portfolio Estate Percentile Trajectories</h4>
-          <p className="text-[10px] text-slate-400">View final estate value outcomes across the 35-year retirement horizon.</p>
+          <p className="text-[10px] text-slate-400">View final estate value outcomes across the {horizonYears}-year retirement horizon.</p>
         </div>
 
         <div className="h-96 bg-slate-950/40 rounded-xl border border-slate-800/40 p-4">

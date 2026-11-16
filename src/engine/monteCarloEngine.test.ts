@@ -19,8 +19,9 @@ import {
   HISTORICAL_STOCK_VOLATILITY,
   HISTORICAL_BOND_VOLATILITY,
   geometricToArithmeticMean,
+  MONTE_CARLO_SEQUENCE_YEARS,
 } from './monteCarloEngine';
-import { runRetirementSimulation } from './simulationEngine';
+import { runRetirementSimulation, getSimulationHorizonYears } from './simulationEngine';
 import { AppStateInputs } from '../types';
 
 describe('mulberry32 seedable PRNG', () => {
@@ -208,8 +209,11 @@ describe('runMonteCarloSimulation', () => {
     expect(summary.successRate).toBeLessThanOrEqual(1.0);
 
     expect(summary.percentiles).toBeInstanceOf(Array);
-    expect(summary.percentiles.length).toBe(35);
+    // Horizon runs to the later longevity year: wife born 1968 + 95 = 2063, so 2026 through 2063.
+    expect(getSimulationHorizonYears(inputs)).toBe(38);
+    expect(summary.percentiles.length).toBe(38);
     expect(summary.percentiles[0].year).toBe(2026);
+    expect(summary.percentiles[37].year).toBe(2063);
 
     // Verify representative paths
     expect(summary.representativeSequences.worst).toBeDefined();
@@ -221,6 +225,37 @@ describe('runMonteCarloSimulation', () => {
     const lastYearPercentiles = summary.percentiles[lastYearIndex];
     expect(lastYearPercentiles.p10).toBeLessThanOrEqual(lastYearPercentiles.p50);
     expect(lastYearPercentiles.p50).toBeLessThanOrEqual(lastYearPercentiles.p90);
+  });
+
+  it('should size sequences and percentiles to a horizon longer than the default length', () => {
+    const inputs = getMockInputs();
+    inputs.wife.longevityAge = 105; // 1968 + 105 = 2073, so 48 simulated years
+    const horizon = getSimulationHorizonYears(inputs);
+    expect(horizon).toBe(48);
+    expect(horizon).toBeGreaterThan(MONTE_CARLO_SEQUENCE_YEARS);
+
+    const summary = runMonteCarloSimulation(inputs);
+    expect(summary.percentiles.length).toBe(horizon);
+    expect(summary.representativeSequences.median.equityReturns.length).toBe(horizon);
+  });
+
+  it('should fill a historical block longer than the dataset by wrapping', () => {
+    const years = HISTORICAL_RETURNS.length + 10;
+    const seq = generateHistoricalSequence(true, 0, mulberry32(1), false, 0.025, false, undefined, undefined, undefined, false, years);
+    expect(seq.equityReturns.length).toBe(years);
+    expect(seq.equityReturns[HISTORICAL_RETURNS.length]).toBeCloseTo(
+      Math.min(EQUITY_RETURN_MAX, Math.max(EQUITY_RETURN_MIN, HISTORICAL_RETURNS[0].stock))
+    );
+  });
+
+  it('should end the percentile table on the last simulated year in survivor mode', () => {
+    const inputs = getMockInputs();
+    const summary = runMonteCarloSimulation(inputs, true);
+    const last = summary.percentiles[summary.percentiles.length - 1];
+    // Survivor mode stops at the final longevity year, one row short of the calendar horizon.
+    expect(summary.percentiles.length).toBe(getSimulationHorizonYears(inputs) - 1);
+    expect(last.year).toBe(2062);
+    expect(last.p50).toBeGreaterThan(0);
   });
 
   it('should support deterministic seed reproducibility and trial IDs', () => {
@@ -552,7 +587,7 @@ describe('Constant vs Randomized CPI Simulation', () => {
 
     const summary = runMonteCarloSimulation(inputs);
     expect(summary.trialsRun).toBe(20);
-    expect(summary.percentiles.length).toBe(35);
+    expect(summary.percentiles.length).toBe(getSimulationHorizonYears(inputs));
   });
 
   it('should generate independent annual sequences with mean and volatility matching the inputs', () => {
@@ -1080,7 +1115,7 @@ describe('Constant vs Randomized CPI Simulation', () => {
       const summary = runMonteCarloSimulation(baseInputs);
       expect(summary.trialsRun).toBe(50);
       expect(summary.successRate).toBeGreaterThanOrEqual(0);
-      expect(summary.percentiles.length).toBe(35);
+      expect(summary.percentiles.length).toBe(getSimulationHorizonYears(baseInputs));
     });
   });
 

@@ -1,5 +1,5 @@
 import { AppStateInputs, LockedReturnSequence, StressTestConfig, StressTestYearOverride, getSimulationStartYear } from '../types';
-import { runRetirementSimulation } from './simulationEngine';
+import { runRetirementSimulation, getSimulationHorizonYears } from './simulationEngine';
 
 // Modern historical stock (S&P 500 total return) and bond (US 10-Yr Treasury total return) annual returns from 1970 to 2025.
 // These 56 years provide a highly realistic distribution of modern inflation and interest rate regimes.
@@ -129,7 +129,7 @@ export function geometricToArithmeticMean(geometricMean: number, volatility: num
 }
 
 /**
- * Generates joint stock/bond returns for 35 years using a bivariate normal distribution with
+ * Generates joint stock/bond returns for the requested number of years (default 35) using a bivariate normal distribution with
  * independent annual draws (no regime switching, no mean reversion). This is the CMA-faithful
  * parametric model: it reproduces the entered volatility and correlation and, through the volatility
  * drag adjustment, makes the median compound path track the entered geometric CAGR.
@@ -147,7 +147,8 @@ export function generateSyntheticSequence(
   rand: () => number = Math.random,
   randomizeCPI: boolean = true,
   constantCPIRate?: number | null,
-  targetCPIRate?: number
+  targetCPIRate?: number,
+  years: number = MONTE_CARLO_SEQUENCE_YEARS
 ): Omit<LockedReturnSequence, 'id'> {
   const equityReturns: number[] = [];
   const fixedIncomeReturns: number[] = [];
@@ -157,7 +158,7 @@ export function generateSyntheticSequence(
   const equityDrift = geometricToArithmeticMean(equityMean, equityVol);
   const bondDrift = geometricToArithmeticMean(bondMean, bondVol);
 
-  for (let i = 0; i < MONTE_CARLO_SEQUENCE_YEARS; i++) {
+  for (let i = 0; i < years; i++) {
     // Correlated standard normal variables (Box-Muller)
     const z1 = nextGaussian(rand);
     const z2 = nextGaussian(rand);
@@ -206,7 +207,7 @@ export const HISTORICAL_STOCK_VOLATILITY = historicalStdDev(HISTORICAL_RETURNS.m
 export const HISTORICAL_BOND_VOLATILITY = historicalStdDev(HISTORICAL_RETURNS.map(y => y.bond), HISTORICAL_BOND_MEAN);
 
 /**
- * Generates a historical bootstrapped sequence of 35 years.
+ * Generates a historical bootstrapped sequence of the requested number of years (default 35).
  * Can be random sampling (with replacement) or contiguous block sampling.
  * Optionally calibrates (shifts) historical shocks so their compound (geometric) growth matches
  * user-configured baseline return rates, and their mean inflation matches the inflation target.
@@ -221,7 +222,8 @@ export function generateHistoricalSequence(
   equityMean?: number,
   bondMean?: number,
   targetCPIRate?: number,
-  enableStudentT: boolean = false
+  enableStudentT: boolean = false,
+  years: number = MONTE_CARLO_SEQUENCE_YEARS
 ): Omit<LockedReturnSequence, 'id'> {
   const equityReturns: number[] = [];
   const fixedIncomeReturns: number[] = [];
@@ -242,16 +244,17 @@ export function generateHistoricalSequence(
   const df = 5;
 
   if (blockSampling) {
-    // Select a continuous 35-year historical segment.
-    // Restrict starting index to [0, count - 35] so every block is fully contiguous without wrapping.
+    // Select a continuous historical segment. Starting index is restricted to [0, count - years] so a
+    // block that fits the dataset is fully contiguous. A block longer than the dataset wraps around
+    // to the first historical year once it runs off the end.
     const count = HISTORICAL_RETURNS.length;
-    const maxStartIdx = Math.max(0, count - 35);
+    const maxStartIdx = Math.max(0, count - years);
     let idx = startYearIndex !== undefined 
       ? Math.min(startYearIndex, maxStartIdx) 
       : Math.floor(rand() * (maxStartIdx + 1));
       
-    for (let i = 0; i < 35; i++) {
-      const yearData = HISTORICAL_RETURNS[idx];
+    for (let i = 0; i < years; i++) {
+      const yearData = HISTORICAL_RETURNS[idx % count];
       let eq = yearData.stock + stockShift;
       let fi = yearData.bond + bondShift;
 
@@ -274,7 +277,7 @@ export function generateHistoricalSequence(
     }
   } else {
     // Standard random year bootstrap (sampling with replacement)
-    for (let i = 0; i < 35; i++) {
+    for (let i = 0; i < years; i++) {
       const idx = Math.floor(rand() * HISTORICAL_RETURNS.length);
       const yearData = HISTORICAL_RETURNS[idx];
       let eq = yearData.stock + stockShift;
@@ -310,7 +313,7 @@ export interface MonteCarloTrialResult {
   trialIndex: number;
   success: boolean; // Portfolio survived (ended above $0)
   endingEstate: number;
-  portfolioHistory: number[]; // Length 35, portfolio value each year
+  portfolioHistory: number[]; // One entry per simulated year (the simulation horizon)
   sequence: LockedReturnSequence;
   timeToRuin: number | null; // Year of first ruin, or null if survived
 }
@@ -327,9 +330,11 @@ export interface MonteCarloSummary {
     p90: number; // 90th percentile (Best Case)
   }[];
   representativeSequences: {
-    worst: LockedReturnSequence;  // Trial near 10th percentile
-    median: LockedReturnSequence; // Trial near 50th percentile
-    best: LockedReturnSequence;   // Trial near 90th percentile
+    // Each is a single trial ranked by cumulative blended market return, not by ending estate, so
+    // its final portfolio value will not match the same percentile in `percentiles`.
+    worst: LockedReturnSequence;  // Trial at the 10th percentile of cumulative market return
+    median: LockedReturnSequence; // Trial at the 50th percentile of cumulative market return
+    best: LockedReturnSequence;   // Trial at the 90th percentile of cumulative market return
   };
   medianSurvivalYears: number | null; // Median years of survival for failed trials
 }
@@ -355,7 +360,7 @@ export function applyStressTestToSequence<T extends Omit<LockedReturnSequence, '
   const equityReturns = [...seq.equityReturns];
   const fixedIncomeReturns = [...seq.fixedIncomeReturns];
 
-  for (let yearIdx = 0; yearIdx < 35; yearIdx++) {
+  for (let yearIdx = 0; yearIdx < seq.equityReturns.length; yearIdx++) {
     const year = startYear + yearIdx;
     const ov = overrideMap.get(year);
     if (ov) {
@@ -486,6 +491,7 @@ export function runMonteCarloSimulation(
     : inputs.growthAssumptions.cpiInflationRate;
 
   const targetCpi = inputs.growthAssumptions.cpiInflationRate;
+  const horizonYears = getSimulationHorizonYears(inputs);
 
   // Compile raw sequences across all trials
   const rawSequences: Omit<LockedReturnSequence, 'id'>[] = [];
@@ -507,7 +513,8 @@ export function runMonteCarloSimulation(
         equityMean,
         bondMean,
         targetCpi,
-        enableStudentT
+        enableStudentT,
+        horizonYears
       ));
     } else {
       rawSequences.push(generateSyntheticSequence(
@@ -519,7 +526,8 @@ export function runMonteCarloSimulation(
         rand,
         isCpiRandomized,
         constantCpi,
-        targetCpi
+        targetCpi,
+        horizonYears
       ));
     }
   }
@@ -569,7 +577,7 @@ export function runMonteCarloSimulation(
   if (failedTrials.length > 0) {
     const survivalYears = failedTrials.map(r => {
       const idx = r.portfolioHistory.findIndex(v => v <= 0.01);
-      return idx !== -1 ? idx : 35;
+      return idx !== -1 ? idx : r.portfolioHistory.length;
     });
     survivalYears.sort((a, b) => a - b);
     const mid = Math.floor(survivalYears.length / 2);
@@ -579,8 +587,11 @@ export function runMonteCarloSimulation(
   }
 
   // Compile annual percentile values
+  // Rows cover the longest ledger any trial produced, so the final row is always the last simulated
+  // year (survivor mode ends a year earlier than the calendar horizon).
+  const percentileYears = results.reduce((max, r) => Math.max(max, r.portfolioHistory.length), 0);
   const percentiles: MonteCarloSummary['percentiles'] = [];
-  for (let yearIdx = 0; yearIdx < 35; yearIdx++) {
+  for (let yearIdx = 0; yearIdx < percentileYears; yearIdx++) {
     const year = simStartYear + yearIdx;
     
     // Collect portfolio values for this year across all trials

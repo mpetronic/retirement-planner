@@ -410,6 +410,23 @@ export function parseBirthYearAndMonth(dateStr: string | undefined, defaultYear:
 }
 
 // Full multi-decade simulation runner
+/**
+ * Last calendar year the simulation runs: the later of the two spouses' longevity years, or only
+ * your longevity year for a single filer. Never earlier than the simulation start year.
+ */
+export function getSimulationEndYear(inputs: AppStateInputs): number {
+  const { year: yourBirthYear } = parseBirthYearAndMonth(inputs.you.birthDate, 1960);
+  const { year: wifeBirthYear } = parseBirthYearAndMonth(inputs.wife.birthDate, 1964);
+  const yourDeathYear = yourBirthYear + (inputs.you.longevityAge ?? 85);
+  const wifeDeathYear = inputs.isSingleFiler ? 0 : (wifeBirthYear + (inputs.wife.longevityAge ?? 95));
+  return Math.max(getSimulationStartYear(inputs), inputs.isSingleFiler ? yourDeathYear : Math.max(yourDeathYear, wifeDeathYear));
+}
+
+/** Number of annual steps in the simulation, from the start year through the last survivor's longevity year. */
+export function getSimulationHorizonYears(inputs: AppStateInputs): number {
+  return getSimulationEndYear(inputs) - getSimulationStartYear(inputs) + 1;
+}
+
 export function runRetirementSimulation(
   inputs: AppStateInputs,
   simulateSurvivor: boolean = false,
@@ -448,7 +465,7 @@ export function runRetirementSimulation(
   const endYear = inputs.rothConversionEndYear !== undefined ? inputs.rothConversionEndYear : (simStartYear + 8);
 
   // The simulation runs until the last survivor passes away
-  const endSimulationYear = Math.max(simStartYear, inputs.isSingleFiler ? DEATH_YEAR : Math.max(DEATH_YEAR, WIFE_DEATH_YEAR));
+  const endSimulationYear = getSimulationEndYear(inputs);
 
   // Check if a stochastic sequence of returns is active
   const activeSeq = activeSequence;

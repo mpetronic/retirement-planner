@@ -17,6 +17,7 @@ import {
   RothConversionStrategy,
   getSimulationStartYear,
 } from '../types';
+import { getSimulationHorizonYears } from '../engine/simulationEngine';
 import { RangeSlider } from './RangeSlider';
 import { 
   Calculator,
@@ -808,7 +809,7 @@ export const TaxableIncomeWorkspace: React.FC<TaxableIncomeWorkspaceProps> = ({
                 title="Roth Conversion End Year"
                 disabled={isNoConversion}
               >
-                {Array.from({ length: 35 }, (_, i) => simStartYear + i).map((yr) => (
+                {Array.from({ length: getSimulationHorizonYears(inputs) }, (_, i) => simStartYear + i).map((yr) => (
                   <option key={yr} value={yr}>
                     {formatYearOption(yr)}
                   </option>
@@ -1451,7 +1452,7 @@ export const TaxableIncomeWorkspace: React.FC<TaxableIncomeWorkspaceProps> = ({
                       {/* Metric 1: Net Ending Estate */}
                       <div className="bg-slate-950/40 border border-slate-800/60 p-3.5 rounded-xl flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
                         <div className="space-y-0.5">
-                          <span className="text-xs font-bold text-slate-200">Ending Net Estate</span>
+                          <span className="text-xs font-bold text-slate-200">Ending Portfolio</span>
                           <span className="text-[10px] text-slate-500 block">Total portfolio value remaining at simulation end</span>
                         </div>
                         <div className="flex items-center gap-4 justify-between sm:justify-end">
