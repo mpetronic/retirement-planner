@@ -48,6 +48,7 @@ import {
 } from 'lucide-react';
 import { getStorageAdapter, fetchAllExpensesForExport } from '../shared/storage';
 import { ActualExpense } from '../shared/types/expenses';
+import { getExpenseLineItemIdentity } from '../utils/expenseLineItem';
 import { AuthService } from '../shared/auth/AuthService';
 import { isLocalhostEnvironment } from '../shared/utils/appMode';
 import { syncCustomCategoriesToPlanner, savePlannerExpenseLineItem } from '../shared/utils/plannerCategories';
@@ -86,6 +87,9 @@ const getItemMonthlySchedule = (item: CatalogItem, cost: number, freq: number): 
   }
   return schedule;
 };
+
+/** Row id of the single living-expenses row shown when detailed expenses are off. */
+const GENERAL_LIVING_LINE_ITEM_ID = 'general-living';
 
 type ComparisonSortField = 'name' | 'planned' | 'actual' | 'variance' | 'usage' | 'payers' | 'logs';
 
@@ -289,9 +293,7 @@ export const ActualsWorkspace: React.FC<ActualsWorkspaceProps> = ({
 
     for (const exp of loggedExpenses) {
       totalSpend += exp.amount;
-      const group = exp.category || (exp.categoryName && exp.categoryName.includes(' - ') ? exp.categoryName.split(' - ')[0].trim() : exp.categoryName || 'Uncategorized');
-      const itemName = exp.name || (exp.categoryName && exp.categoryName.includes(' - ') ? exp.categoryName.split(' - ').slice(1).join(' - ').trim() : exp.categoryName || 'Expense');
-      const keyId = exp.catalogId || exp.categoryId || `cat_${group}_${itemName}`;
+      const { group, itemName, key: keyId } = getExpenseLineItemIdentity(exp);
 
       byCategory[group] = (byCategory[group] || 0) + exp.amount;
       if (exp.categoryName) {
@@ -330,18 +332,13 @@ export const ActualsWorkspace: React.FC<ActualsWorkspaceProps> = ({
     }
   };
 
-  // Active line item expenses matching the selected category/line item
+  // Expenses belonging to the selected row. Uses the same key as the per-row counts, so the
+  // breakdown lists exactly the entries the row's log count refers to.
   const matchesSelectedLineItem = useCallback((e: ActualExpense) => {
     if (!selectedLineItemForBreakdown) return false;
-    const targetId = selectedLineItemForBreakdown.id;
-    const targetNameLower = selectedLineItemForBreakdown.name.toLowerCase();
-    if ((e.catalogId && e.catalogId === targetId) || (e.categoryId && e.categoryId === targetId)) return true;
-    if (e.name && e.name.toLowerCase() === targetNameLower) return true;
-    const catLower = (e.categoryName || '').toLowerCase();
-    if (catLower === targetNameLower) return true;
-    if (catLower.endsWith(` - ${targetNameLower}`)) return true;
-    if (catLower.endsWith(targetNameLower)) return true;
-    return false;
+    // With detailed expenses off, the single general row stands for every logged expense
+    if (selectedLineItemForBreakdown.id === GENERAL_LIVING_LINE_ITEM_ID) return true;
+    return getExpenseLineItemIdentity(e).key === selectedLineItemForBreakdown.id;
   }, [selectedLineItemForBreakdown]);
 
   const activeLineItemExpenses = useMemo(
@@ -689,7 +686,7 @@ export const ActualsWorkspace: React.FC<ActualsWorkspaceProps> = ({
       const variance = plannedAmount - actualAmount;
       const percentUsed = plannedAmount > 0 ? (actualAmount / plannedAmount) * 100 : actualAmount > 0 ? 999 : 0;
       items.push({
-        id: 'general-living',
+        id: GENERAL_LIVING_LINE_ITEM_ID,
         name: 'General Living Expenses',
         group: 'Living',
         plannedAnnual: plannedAmount,
