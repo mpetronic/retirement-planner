@@ -131,6 +131,8 @@ export interface StorageAdapter {
   updateExpense(id: string, updates: Partial<ActualExpense>): Promise<ActualExpense>;
   updateExpensesBatch?(batch: Array<{ id: string; updates: Partial<ActualExpense> }>): Promise<ActualExpense[]>;
   deleteExpense(id: string): Promise<void>;
+  /** Deletes many expenses at once. `date` (YYYY-MM-DD) lets cloud adapters address records without a lookup. */
+  deleteExpensesBatch?(items: Array<{ id: string; date: string }>): Promise<void>;
   clearAllExpenses?(): Promise<void>;
 
   // Pending queue sync

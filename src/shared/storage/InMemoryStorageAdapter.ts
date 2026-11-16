@@ -157,6 +157,11 @@ export class InMemoryStorageAdapter implements StorageAdapter {
     this.expenses = this.expenses.filter(e => e.expenseId !== id);
   }
 
+  async deleteExpensesBatch(items: Array<{ id: string; date: string }>): Promise<void> {
+    const idSet = new Set(items.map(item => item.id));
+    this.expenses = this.expenses.filter(e => !idSet.has(e.expenseId));
+  }
+
   async clearAllExpenses(): Promise<void> {
     this.expenses = [];
   }

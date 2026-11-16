@@ -126,7 +126,6 @@ export const BulkEditExpensesModal: React.FC<BulkEditExpensesModalProps> = ({
   // Delete confirmation & Execution state
   const [showDeleteConfirmModal, setShowDeleteConfirmModal] = useState<boolean>(false);
   const [isDeleting, setIsDeleting] = useState<boolean>(false);
-  const [deleteProgress, setDeleteProgress] = useState<{ current: number; total: number }>({ current: 0, total: 0 });
 
   // Load catalog definitions
   const refreshCatalog = useCallback(() => {
@@ -597,17 +596,17 @@ export const BulkEditExpensesModal: React.FC<BulkEditExpensesModalProps> = ({
     if (selectedExpenses.length === 0) return;
 
     setIsDeleting(true);
-    setDeleteProgress({ current: 0, total: selectedExpenses.length });
     setFeedbackMessage(null);
 
     try {
       const adapter = getStorageAdapter();
-      let processed = 0;
-
-      for (const exp of selectedExpenses) {
-        await adapter.deleteExpense(exp.expenseId);
-        processed++;
-        setDeleteProgress({ current: processed, total: selectedExpenses.length });
+      if (adapter.deleteExpensesBatch) {
+        // One transaction (and one cloud request per chunk) instead of one per record
+        await adapter.deleteExpensesBatch(selectedExpenses.map((exp) => ({ id: exp.expenseId, date: exp.date })));
+      } else {
+        for (const exp of selectedExpenses) {
+          await adapter.deleteExpense(exp.expenseId);
+        }
       }
 
       setSelectedIds(new Set());
@@ -1610,26 +1609,6 @@ export const BulkEditExpensesModal: React.FC<BulkEditExpensesModalProps> = ({
                 )}
               </div>
             </div>
-
-            {/* Progress indicator during delete */}
-            {isDeleting && (
-              <div className="space-y-1.5">
-                <div className="flex justify-between text-xs text-slate-400 font-mono">
-                  <span>Deleting records...</span>
-                  <span>
-                    {deleteProgress.current} / {deleteProgress.total}
-                  </span>
-                </div>
-                <div className="w-full bg-slate-800 rounded-full h-2 overflow-hidden">
-                  <div
-                    className="h-full bg-rose-500 rounded-full transition-all duration-150"
-                    style={{
-                      width: `${deleteProgress.total > 0 ? (deleteProgress.current / deleteProgress.total) * 100 : 0}%`,
-                    }}
-                  />
-                </div>
-              </div>
-            )}
 
             {/* Modal Actions */}
             <div className="flex items-center justify-end gap-2.5 pt-2">

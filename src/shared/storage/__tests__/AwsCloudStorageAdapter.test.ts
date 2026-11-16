@@ -215,6 +215,76 @@ describe('AwsCloudStorageAdapter', () => {
     );
   });
 
+  describe('deleting expenses', () => {
+    const logExpense = (id: number) =>
+      adapter.saveExpense({
+        date: '2026-09-15',
+        amount: 10 + id,
+        categoryId: 'cat_fuel',
+        categoryName: 'Fuel',
+        enteredBy: 'Mike',
+      });
+
+    const signIn = () => {
+      vi.spyOn(AuthService, 'isAuthenticated').mockReturnValue(true);
+      vi.spyOn(AuthService, 'getIdToken').mockResolvedValue('mock_token');
+    };
+
+    it('passes the expense date so the cloud can delete by key', async () => {
+      const saved = await logExpense(1);
+      signIn();
+      const fetchSpy = vi.spyOn(global, 'fetch').mockResolvedValue({ ok: true } as unknown as Response);
+
+      await adapter.deleteExpense(saved.expenseId);
+
+      expect(fetchSpy).toHaveBeenCalledWith(
+        expect.stringContaining(`/api/expenses/${encodeURIComponent(saved.expenseId)}?date=2026-09-15`),
+        expect.objectContaining({ method: 'DELETE' })
+      );
+    });
+
+    it('batch deletes locally and sends chunked cloud requests instead of one per record', async () => {
+      const saved = await Promise.all([logExpense(1), logExpense(2), logExpense(3)]);
+      const keep = await logExpense(4);
+      signIn();
+      const fetchSpy = vi.spyOn(global, 'fetch').mockResolvedValue({ ok: true } as unknown as Response);
+
+      await adapter.deleteExpensesBatch(saved.map(e => ({ id: e.expenseId, date: e.date })));
+
+      // Read via the local adapter: adapter.getExpenses would trigger an extra cloud pull
+      const remaining = await mockLocal.getExpenses(2026);
+      expect(remaining.map(e => e.expenseId)).toEqual([keep.expenseId]);
+      expect(fetchSpy).toHaveBeenCalledTimes(1);
+      const [url, init] = fetchSpy.mock.calls[0];
+      expect(String(url)).toContain('/api/expenses/batch-delete');
+      expect((init as RequestInit).method).toBe('POST');
+      expect(JSON.parse((init as RequestInit).body as string).expenses).toEqual(
+        saved.map(e => ({ expenseId: e.expenseId, date: '2026-09-15' }))
+      );
+    });
+
+    it('still deletes locally when signed out, without contacting the cloud', async () => {
+      const saved = await logExpense(1);
+      const fetchSpy = vi.spyOn(global, 'fetch');
+
+      await adapter.deleteExpensesBatch([{ id: saved.expenseId, date: saved.date }]);
+
+      expect(await adapter.getExpenses(2026)).toHaveLength(0);
+      expect(fetchSpy).not.toHaveBeenCalled();
+    });
+
+    it('does not throw when the cloud request fails', async () => {
+      const saved = await logExpense(1);
+      signIn();
+      vi.spyOn(global, 'fetch').mockResolvedValue({ ok: false, status: 500 } as unknown as Response);
+
+      await expect(
+        adapter.deleteExpensesBatch([{ id: saved.expenseId, date: saved.date }])
+      ).resolves.toBeUndefined();
+      expect(await mockLocal.getExpenses(2026)).toHaveLength(0);
+    });
+  });
+
   it('does not overwrite newer local edits with stale remote snapshots during cloud sync', async () => {
     // Local record already flushed (SYNCED) with a newer edit at 12:00, so the
     // pending-ID guard cannot protect it; only the timestamp guard can.

@@ -79,6 +79,29 @@ describe('InMemoryStorageAdapter', () => {
     expect(pending.length).toBe(0);
   });
 
+  it('deletes several expenses in one batch and leaves the rest', async () => {
+    const make = (amount: number) =>
+      adapter.saveExpense({
+        date: '2026-09-24',
+        amount,
+        categoryId: 'cat_groceries',
+        categoryName: 'Groceries & Household',
+        enteredBy: 'Wife',
+      });
+    const a = await make(1);
+    const b = await make(2);
+    const keep = await make(3);
+
+    await adapter.deleteExpensesBatch([
+      { id: a.expenseId, date: a.date },
+      { id: b.expenseId, date: b.date },
+    ]);
+    await adapter.deleteExpensesBatch([]);
+
+    const remaining = await adapter.getExpenses(2026);
+    expect(remaining.map(e => e.expenseId)).toEqual([keep.expenseId]);
+  });
+
   it('exports and imports a full archive', async () => {
     await adapter.saveExpense({
       date: '2026-09-24',

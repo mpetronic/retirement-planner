@@ -6,6 +6,7 @@ import { CloudRebalancingStorage } from './rebalancing/CloudRebalancingStorage';
 
 const FLUSH_BATCH_SIZE = 25;
 const FLUSH_MAX_ATTEMPTS = 3;
+const DELETE_BATCH_CHUNK_SIZE = 100;
 export const DEFAULT_LATEST_EXPENSES_PULL = 50;
 const PENDING_CATEGORY_PUSHES_KEY = 'expenser_pending_category_pushes';
 
@@ -563,13 +564,16 @@ export class AwsCloudStorageAdapter implements StorageAdapter {
   }
 
   async deleteExpense(id: string): Promise<void> {
+    // Capture the date before the local delete so the cloud can address the record by key directly.
+    const existing = await this.localAdapter.getExpenseById(id);
     await this.localAdapter.deleteExpense(id);
 
     if (typeof window !== 'undefined' && navigator.onLine && AuthService.isAuthenticated()) {
       try {
         const headers = await this.getAuthHeaders();
         if (headers) {
-          await fetch(`${this.getApiEndpoint()}/api/expenses/${encodeURIComponent(id)}`, {
+          const dateQuery = existing?.date ? `?date=${encodeURIComponent(existing.date)}` : '';
+          await fetch(`${this.getApiEndpoint()}/api/expenses/${encodeURIComponent(id)}${dateQuery}`, {
             method: 'DELETE',
             headers,
           });
@@ -577,6 +581,38 @@ export class AwsCloudStorageAdapter implements StorageAdapter {
       } catch (err) {
         console.warn('Failed to delete expense on cloud:', err);
       }
+    }
+  }
+
+  async deleteExpensesBatch(items: Array<{ id: string; date: string }>): Promise<void> {
+    if (items.length === 0) return;
+
+    if (this.localAdapter.deleteExpensesBatch) {
+      await this.localAdapter.deleteExpensesBatch(items);
+    } else {
+      for (const item of items) {
+        await this.localAdapter.deleteExpense(item.id);
+      }
+    }
+
+    if (typeof window === 'undefined' || !navigator.onLine || !AuthService.isAuthenticated()) return;
+
+    try {
+      const headers = await this.getAuthHeaders();
+      if (!headers) return;
+      for (let i = 0; i < items.length; i += DELETE_BATCH_CHUNK_SIZE) {
+        const chunk = items.slice(i, i + DELETE_BATCH_CHUNK_SIZE);
+        const response = await fetch(`${this.getApiEndpoint()}/api/expenses/batch-delete`, {
+          method: 'POST',
+          headers,
+          body: JSON.stringify({ expenses: chunk.map(item => ({ expenseId: item.id, date: item.date })) }),
+        });
+        if (!response.ok) {
+          console.warn(`Failed to delete expenses on cloud (HTTP ${response.status})`);
+        }
+      }
+    } catch (err) {
+      console.warn('Failed to delete expenses on cloud:', err);
     }
   }
 
