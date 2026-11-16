@@ -1076,32 +1076,62 @@ describe('runRetirementSimulation', () => {
     expect(row2026!.drawdownTaxable).toBeGreaterThan(0);
   });
 
-  it('should expend cash runway and freeze equity sales during bear markets', () => {
-    const inputs = getMockInputs();
-    inputs.growthAssumptions.minCashReserveDollars = 100000;
-    inputs.isSingleFiler = true;
-    inputs.you.birthDate = '1960-01-01';
-    inputs.you.plannedRetirementAge = 60;
-    inputs.annualLivingExpenses = 50000;
+  describe('bear-market cash runway rule', () => {
+    const bearInputs = (): AppStateInputs => {
+      const inputs = getMockInputs();
+      inputs.growthAssumptions.minCashReserveDollars = 100000;
+      inputs.isSingleFiler = true;
+      inputs.you.birthDate = '1960-01-01';
+      inputs.you.plannedRetirementAge = 60;
+      inputs.annualLivingExpenses = 50000;
 
-    // Set negative equity return (bear market)
-    inputs.growthAssumptions.equityReturnRate = -0.20;
+      // Every year is a down year for equities
+      inputs.growthAssumptions.equityReturnRate = -0.20;
 
-    // Starting balances
-    inputs.portfolio.yourCash = 100000;
-    inputs.portfolio.yourTaxableBrokerage = 200000;
-    inputs.portfolio.yourTaxableBasis = 150000;
-    inputs.portfolio.yourPreTaxIRA = 0;
-    inputs.portfolio.yourRothIRA = 0;
+      // Starting balances
+      inputs.portfolio.yourCash = 100000;
+      inputs.portfolio.yourTaxableBrokerage = 400000;
+      inputs.portfolio.yourTaxableBasis = 300000;
+      inputs.portfolio.yourPreTaxIRA = 0;
+      inputs.portfolio.yourRothIRA = 0;
+      return inputs;
+    };
 
-    const results = runRetirementSimulation(inputs);
-    const row2026 = results.find(r => r.year === 2026);
-    expect(row2026).toBeDefined();
+    it('does not look ahead: the first down year still protects the cash floor and sells brokerage', () => {
+      const results = runRetirementSimulation(bearInputs());
+      const row2026 = results.find(r => r.year === 2026);
+      expect(row2026).toBeDefined();
 
-    // In a bear market, cash runway absorbs the deficit to protect equities from being sold at a loss
-    expect(row2026!.drawdownCash).toBeGreaterThan(0);
-    expect(row2026!.drawdownTaxable).toBe(0);
-    expect(row2026!.endYourCash).toBeLessThan(100000);
+      // In January 2026 the planner cannot know 2026 will end negative, so the normal rule applies
+      expect(row2026!.drawdownTaxable).toBeGreaterThan(0);
+      expect(row2026!.endYourCash).toBeGreaterThanOrEqual(100000);
+    });
+
+    it('expends cash runway and freezes equity sales in the year after an observed down year', () => {
+      const results = runRetirementSimulation(bearInputs());
+      const row2027 = results.find(r => r.year === 2027);
+      expect(row2027).toBeDefined();
+
+      // 2026 closed negative, so in 2027 cash runway absorbs the deficit to avoid selling equities at a loss
+      expect(row2027!.drawdownCash).toBeGreaterThan(0);
+      expect(row2027!.drawdownTaxable).toBe(0);
+      expect(row2027!.endYourCash).toBeLessThan(100000);
+    });
+
+    it('treats a recorded negative actual return for the year before the start as an observed down year', () => {
+      const inputs = bearInputs();
+      inputs.actualTracking = {
+        2025: { year: 2025, equityReturnRate: -0.10 },
+      };
+      const results = runRetirementSimulation(inputs);
+      const row2026 = results.find(r => r.year === 2026);
+      expect(row2026).toBeDefined();
+
+      // The 2025 loss is known on 1 Jan 2026, so the first simulation year runs under the bear-market rule
+      expect(row2026!.drawdownCash).toBeGreaterThan(0);
+      expect(row2026!.drawdownTaxable).toBe(0);
+      expect(row2026!.endYourCash).toBeLessThan(100000);
+    });
   });
 
   describe('Roth conversion strategy "none"', () => {

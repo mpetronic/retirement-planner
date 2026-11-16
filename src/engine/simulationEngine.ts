@@ -483,6 +483,16 @@ export function runRetirementSimulation(
   let carriedYourTaxFundingDraw = 0;
   let carriedWifeTaxFundingDraw = 0;
 
+  // The bear-market drawdown rule keys on the most recent return the planner could actually observe:
+  // last year's equity return. Using the current year's return would be look-ahead, because in January
+  // nobody knows the year will end negative. Seeded from a recorded actual for the year before the
+  // simulation starts when one exists; otherwise the first year has no observable loss behind it.
+  const preStartActualRec = inputs.actualTracking?.[simStartYear - 1];
+  let priorYearEquityRate: number | null =
+    preStartActualRec?.equityReturnRate !== undefined && preStartActualRec?.equityReturnRate !== null
+      ? preStartActualRec.equityReturnRate
+      : null;
+
   // Let's run year-by-year from simStartYear to endSimulationYear
   for (let year = simStartYear; year <= endSimulationYear; year++) {
     const yearsElapsed = year - simStartYear;
@@ -534,6 +544,9 @@ export function runRetirementSimulation(
     } else if (activeSeq) {
       bondRate = activeSeq.fixedIncomeReturns[yearsElapsed] !== undefined ? activeSeq.fixedIncomeReturns[yearsElapsed] : bondRate;
     }
+
+    // Bear-market regime for this year's drawdown decisions, based on last year's observed equity return
+    const isBearMarket = priorYearEquityRate !== null && priorYearEquityRate < 0;
 
     const preTaxEquityPortion = inputs.growthAssumptions.preTaxEquityPortion ?? 0.50;
     const taxableEquityPortion = inputs.growthAssumptions.taxableEquityPortion ?? 0.60;
@@ -1723,9 +1736,8 @@ export function runRetirementSimulation(
         }
 
         // Step 1: Draw from pre-existing Cash savings
-        // In bear markets (negative equity return), freeze equity sales from brokerage and allow cash
-        // runway to deplete to absorb living deficits. In up markets, protect the minCashReserveTarget floor.
-        const isBearMarket = equityRate < 0;
+        // In bear markets (prior year's equity return was negative), freeze equity sales from brokerage and
+        // allow cash runway to deplete to absorb living deficits. Otherwise, protect the minCashReserveTarget floor.
         if (deficit > 0) {
           const currentTotalCash = (youDeceased ? 0 : yourCash) + (wifeDeceased || inputs.isSingleFiler ? 0 : wifeCash);
           const availableCashForDraw = isBearMarket ? currentTotalCash : Math.max(0, currentTotalCash - minCashReserveTarget);
@@ -2117,9 +2129,8 @@ export function runRetirementSimulation(
         annualCashBuffer -= draw;
         deficit -= draw;
       }
-      // Step 1: Cash savings (in bear markets, pay from cash first; in up markets, protect minCashReserveTarget floor)
+      // Step 1: Cash savings (in bear markets per last year's return, pay from cash first; otherwise protect minCashReserveTarget floor)
       if (deficit > 0) {
-        const isBearMarket = equityRate < 0;
         const currentTotalCash = (youDeceased ? 0 : yourCash) + (wifeDeceased || inputs.isSingleFiler ? 0 : wifeCash);
         const availableCashForDraw = isBearMarket ? currentTotalCash : Math.max(0, currentTotalCash - minCashReserveTarget);
         if (availableCashForDraw > 0) {
@@ -2427,7 +2438,10 @@ export function runRetirementSimulation(
       guardrailLowerLimit: lowerGuardrailLimit,
       permittedSpendingBonus,
     });
+
+    // This year's return becomes next year's observable bear-market signal
+    priorYearEquityRate = equityRate;
   }
-  
+
   return ledger;
 }

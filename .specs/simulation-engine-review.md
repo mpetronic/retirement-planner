@@ -38,7 +38,7 @@ Use this table to track what has been debated and fixed.
 | 15 | SS earnings test not modeled | Low | Open |
 | 16 | Stale 2025 statutory constants | Low | Fixed |
 | 17 | MC sequences hard-capped at 35 years | Low-Medium | Fixed |
-| 18 | Bear-market rule uses look-ahead | Low-Medium | Open |
+| 18 | Bear-market rule uses look-ahead | Low-Medium | Fixed |
 | 19 | RMD counted when not distributed; cross-spouse QCD | Low | Open |
 | 20 | Minor tax-base omissions | Low | Open |
 | 21 | Modeling assumptions to make explicit | Info | Open |
@@ -665,6 +665,20 @@ This is look-ahead: the simulated planner always avoids selling into down years.
 
 **Recommendation.** Base the rule on the prior year's return, or on a trailing drawdown from the
 portfolio's high-water mark, both of which are observable.
+
+**Resolution.** Fixed. The rule now keys on the prior year's equity return. `runRetirementSimulation`
+keeps a `priorYearEquityRate` that is seeded from a recorded actual for the year before the simulation
+start (if one exists) and updated at the end of each year's iteration. `isBearMarket` is computed once
+per year right after the year's rates are resolved and shared by the living-expense drawdown and the
+year-end tax settlement drawdown, replacing the two local `equityRate < 0` checks. With no observable
+prior-year loss, the first simulation year runs under the normal floor-protection rule. Tests cover the
+no-look-ahead first year, the cash-first behavior in the year after an observed loss, and the pre-start
+actual seeding. Known effect: in Monte Carlo and the stress tests, the first year of every drawdown now
+sells equities at the low and the cash-first behavior begins one year later, so success rates and
+terminal wealth shift slightly down compared with earlier runs. This is the realistic outcome the
+look-ahead was hiding. The prior-year signal was chosen over a high-water-mark drawdown because it is
+already in hand, needs no extra state, and mirrors how the engine already uses prior-year CPI to drive
+the current year's inflation factor.
 
 ---
 
