@@ -5,6 +5,8 @@ import {
   remainingCents,
   withRemainderApplied,
   toDuplicateCandidates,
+  findPossibleDuplicates,
+  POSSIBLE_DUPLICATE_DATE_WINDOW_DAYS,
   newSplitGroupId,
   hasInvalidAmount,
   type SplitBlockDraft,
@@ -74,6 +76,90 @@ describe('toDuplicateCandidates', () => {
       { date: '2026-11-04', amount: 20, splitGroupId: 'g2' },
     ]);
     expect(result).toHaveLength(2);
+  });
+});
+
+describe('findPossibleDuplicates', () => {
+  const row = (expenseId: string, date: string, amount: number, createdAt: string, splitGroupId?: string) => ({
+    expenseId,
+    date,
+    amount,
+    createdAt,
+    splitGroupId,
+  });
+
+  it('flags same-day same-amount entries and suggests all but the earliest created', () => {
+    const result = findPossibleDuplicates([
+      row('manual', '2026-03-10', 42.5, '2026-03-10T12:00:00Z'),
+      row('imported', '2026-03-10', 42.5, '2026-04-01T09:00:00Z'),
+      row('other', '2026-03-10', 42.51, '2026-03-10T12:00:00Z'),
+    ]);
+    expect(result.groupCount).toBe(1);
+    expect([...result.byExpenseId.keys()].sort()).toEqual(['imported', 'manual']);
+    expect(result.byExpenseId.get('manual')!.daysApart).toBe(0);
+    expect(result.extraExpenseIds).toEqual(['imported']);
+  });
+
+  it('matches entries within the date window, including across a month end', () => {
+    const result = findPossibleDuplicates([
+      row('manual', '2026-02-27', 80, '2026-02-27T12:00:00Z'),
+      row('posted', '2026-03-02', 80, '2026-03-05T09:00:00Z'),
+    ]);
+    expect(POSSIBLE_DUPLICATE_DATE_WINDOW_DAYS).toBe(3);
+    expect(result.byExpenseId.get('posted')!.daysApart).toBe(3);
+    expect(result.byExpenseId.get('posted')!.groupFirstDate).toBe('2026-02-27');
+    expect(result.extraExpenseIds).toEqual(['posted']);
+  });
+
+  it('does not match entries outside the window', () => {
+    const result = findPossibleDuplicates([
+      row('a', '2026-03-01', 80, '2026-03-01T12:00:00Z'),
+      row('b', '2026-03-05', 80, '2026-03-05T12:00:00Z'),
+    ]);
+    expect(result.groupCount).toBe(0);
+    expect(result.byExpenseId.size).toBe(0);
+  });
+
+  it('flags a chain of near-date repeats but suggests none of them for deletion', () => {
+    const result = findPossibleDuplicates([
+      row('mon', '2026-03-02', 5, '2026-03-02T08:00:00Z'),
+      row('wed', '2026-03-04', 5, '2026-03-04T08:00:00Z'),
+      row('fri', '2026-03-06', 5, '2026-03-06T08:00:00Z'),
+    ]);
+    expect(result.groupCount).toBe(1);
+    expect(result.byExpenseId.size).toBe(3);
+    expect(result.byExpenseId.get('mon')!.daysApart).toBe(4);
+    expect(result.extraExpenseIds).toEqual([]);
+  });
+
+  it('counts a split receipt once at its total and flags every row of it', () => {
+    const result = findPossibleDuplicates([
+      row('split-a', '2026-11-04', 25, '2026-11-04T10:00:00Z', 'g1'),
+      row('split-b', '2026-11-04', 75, '2026-11-04T10:00:00Z', 'g1'),
+      row('statement', '2026-11-05', 100, '2026-11-20T10:00:00Z'),
+      row('unrelated', '2026-11-04', 25, '2026-11-04T10:00:00Z'),
+    ]);
+    expect([...result.byExpenseId.keys()].sort()).toEqual(['split-a', 'split-b', 'statement']);
+    expect(result.extraExpenseIds).toEqual(['statement']);
+  });
+
+  it('keeps the split receipt and suggests its rows only when it was created later', () => {
+    const result = findPossibleDuplicates([
+      row('statement', '2026-11-04', 100, '2026-11-01T10:00:00Z'),
+      row('split-a', '2026-11-04', 25, '2026-11-10T10:00:00Z', 'g1'),
+      row('split-b', '2026-11-04', 75, '2026-11-10T10:00:00Z', 'g1'),
+    ]);
+    expect(result.extraExpenseIds.sort()).toEqual(['split-a', 'split-b']);
+  });
+
+  it('ignores zero amounts and unparseable dates', () => {
+    const result = findPossibleDuplicates([
+      row('z1', '2026-03-01', 0, ''),
+      row('z2', '2026-03-01', 0, ''),
+      row('bad1', 'not-a-date', 10, ''),
+      row('bad2', 'not-a-date', 10, ''),
+    ]);
+    expect(result.groupCount).toBe(0);
   });
 });
 

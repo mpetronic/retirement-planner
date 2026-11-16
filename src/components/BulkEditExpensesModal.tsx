@@ -15,6 +15,7 @@ import {
   MinusSquare,
   AlertTriangle,
   Trash2,
+  Copy,
 } from 'lucide-react';
 import { getStorageAdapter } from '../shared/storage';
 import { ActualExpense, LearnedMerchantRule } from '../shared/types/expenses';
@@ -26,6 +27,7 @@ import {
   PlannerExpenseLineItem,
 } from '../shared/utils/plannerCategories';
 import { normalizeMerchant, batchSaveLearnedMerchantRules } from '../shared/utils/merchantMatcher';
+import { findPossibleDuplicates, POSSIBLE_DUPLICATE_DATE_WINDOW_DAYS } from '../utils/expenseSplit';
 
 export interface BulkEditExpensesModalProps {
   isOpen: boolean;
@@ -87,6 +89,7 @@ export const BulkEditExpensesModal: React.FC<BulkEditExpensesModalProps> = ({
   const [filterText, setFilterText] = useState<string>('');
   const [filterMonth, setFilterMonth] = useState<number | 'ALL'>('ALL');
   const [filterPayer, setFilterPayer] = useState<string>('ALL');
+  const [filterDuplicatesOnly, setFilterDuplicatesOnly] = useState<boolean>(false);
 
   // Sorting state
   const [sortField, setSortField] = useState<'date' | 'amount' | 'category' | 'lineItem' | 'payer'>('date');
@@ -233,9 +236,16 @@ export const BulkEditExpensesModal: React.FC<BulkEditExpensesModalProps> = ({
     return Array.from(set).sort();
   }, [effectiveCatalogItems, effectiveTargetCategory]);
 
+  // Possible duplicates among the loaded expenses (same amount, dates within the window)
+  const possibleDuplicates = useMemo(() => findPossibleDuplicates(expenses), [expenses]);
+
   // Reactive filtering pipeline
   const filteredExpenses = useMemo(() => {
     return expenses.filter((exp) => {
+      if (filterDuplicatesOnly && !possibleDuplicates.byExpenseId.has(exp.expenseId)) {
+        return false;
+      }
+
       const { category, lineItem } = resolveExpenseCategoryAndLineItem(exp, effectiveCatalogItems);
 
       // Category filter
@@ -281,12 +291,21 @@ export const BulkEditExpensesModal: React.FC<BulkEditExpensesModalProps> = ({
 
       return true;
     });
-  }, [expenses, filterCategory, filterLineItem, filterMonth, filterPayer, filterText, effectiveCatalogItems]);
+  }, [expenses, filterCategory, filterLineItem, filterMonth, filterPayer, filterText, effectiveCatalogItems, filterDuplicatesOnly, possibleDuplicates]);
 
   // Sorted expenses
   const sortedExpenses = useMemo(() => {
     const list = [...filteredExpenses];
     list.sort((a, b) => {
+      // In the duplicates view, members of a group stay together; the column sort orders rows within a group
+      if (filterDuplicatesOnly) {
+        const groupA = possibleDuplicates.byExpenseId.get(a.expenseId);
+        const groupB = possibleDuplicates.byExpenseId.get(b.expenseId);
+        if (groupA && groupB && groupA.groupId !== groupB.groupId) {
+          return groupB.groupFirstDate.localeCompare(groupA.groupFirstDate) || groupA.groupId - groupB.groupId;
+        }
+      }
+
       let comparison = 0;
       const parsedA = resolveExpenseCategoryAndLineItem(a, effectiveCatalogItems);
       const parsedB = resolveExpenseCategoryAndLineItem(b, effectiveCatalogItems);
@@ -308,7 +327,7 @@ export const BulkEditExpensesModal: React.FC<BulkEditExpensesModalProps> = ({
       return sortDirection === 'asc' ? comparison : -comparison;
     });
     return list;
-  }, [filteredExpenses, sortField, sortDirection, effectiveCatalogItems]);
+  }, [filteredExpenses, sortField, sortDirection, effectiveCatalogItems, filterDuplicatesOnly, possibleDuplicates]);
 
   // Selection metrics
   const selectedExpenses = useMemo(() => {
@@ -380,6 +399,13 @@ export const BulkEditExpensesModal: React.FC<BulkEditExpensesModalProps> = ({
     setFilterText('');
     setFilterMonth('ALL');
     setFilterPayer('ALL');
+    setFilterDuplicatesOnly(false);
+  };
+
+  // Select the suggested extra copy in each duplicate group that is currently shown
+  const handleSelectDuplicateExtras = () => {
+    const shownIds = new Set(sortedExpenses.map((e) => e.expenseId));
+    setSelectedIds(new Set(possibleDuplicates.extraExpenseIds.filter((id) => shownIds.has(id))));
   };
 
   const hasActiveFilters =
@@ -387,7 +413,8 @@ export const BulkEditExpensesModal: React.FC<BulkEditExpensesModalProps> = ({
     filterLineItem !== 'ALL' ||
     filterText.trim() !== '' ||
     filterMonth !== 'ALL' ||
-    filterPayer !== 'ALL';
+    filterPayer !== 'ALL' ||
+    filterDuplicatesOnly;
 
   // Determine effective target category & line item
   const resolvedTargetCategory = isCustomCategory ? customCategoryInput.trim() : targetCategory.trim();
@@ -742,6 +769,23 @@ export const BulkEditExpensesModal: React.FC<BulkEditExpensesModalProps> = ({
               </div>
             )}
 
+            {/* Possible Duplicates Filter */}
+            <button
+              type="button"
+              onClick={() => setFilterDuplicatesOnly((prev) => !prev)}
+              disabled={possibleDuplicates.byExpenseId.size === 0 && !filterDuplicatesOnly}
+              title={`Entries with the same amount dated within ${POSSIBLE_DUPLICATE_DATE_WINDOW_DAYS} days of each other`}
+              className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-semibold border transition-colors cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed ${
+                filterDuplicatesOnly
+                  ? 'bg-amber-500/20 text-amber-200 border-amber-500/50'
+                  : 'bg-slate-900 text-slate-300 border-slate-700 hover:border-amber-500/50 hover:text-amber-200'
+              }`}
+            >
+              <Copy className="w-3.5 h-3.5" />
+              <span>Possible duplicates</span>
+              <span className="font-mono">({possibleDuplicates.byExpenseId.size})</span>
+            </button>
+
             {/* Clear Filters Button */}
             {hasActiveFilters && (
               <button
@@ -801,6 +845,17 @@ export const BulkEditExpensesModal: React.FC<BulkEditExpensesModalProps> = ({
               Showing <strong className="text-white font-mono">{sortedExpenses.length}</strong> of{' '}
               <strong className="text-slate-300 font-mono">{expenses.length}</strong>
             </span>
+
+            {filterDuplicatesOnly && (
+              <button
+                type="button"
+                onClick={handleSelectDuplicateExtras}
+                title="Selects every copy except the earliest-created one in each same-day group, and the later-created copy of a two-entry near-date pair. Larger near-date groups are left for you to select."
+                className="px-2 py-0.5 rounded-lg bg-amber-500/15 hover:bg-amber-500/25 text-amber-200 font-semibold border border-amber-500/40 text-[11px] cursor-pointer"
+              >
+                Select extras
+              </button>
+            )}
 
             {selectedIds.size > 0 && (
               <span className="px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 font-semibold border border-emerald-500/30 font-mono text-[11px]">
@@ -954,6 +1009,7 @@ export const BulkEditExpensesModal: React.FC<BulkEditExpensesModalProps> = ({
                 {sortedExpenses.map((exp) => {
                   const isSelected = selectedIds.has(exp.expenseId);
                   const { category, lineItem } = resolveExpenseCategoryAndLineItem(exp, effectiveCatalogItems);
+                  const duplicateInfo = possibleDuplicates.byExpenseId.get(exp.expenseId);
 
                   return (
                     <tr
@@ -978,7 +1034,16 @@ export const BulkEditExpensesModal: React.FC<BulkEditExpensesModalProps> = ({
                           {category}
                         </span>
                       </td>
-                      <td className="px-3.5 py-2.5 font-semibold text-white whitespace-nowrap">{lineItem}</td>
+                      <td className="px-3.5 py-2.5 font-semibold text-white whitespace-nowrap">
+                        {lineItem}
+                        {duplicateInfo && (
+                          <span className="ml-2 inline-block px-1.5 py-0.5 rounded bg-amber-500/15 text-amber-300 text-[10px] font-semibold border border-amber-500/40">
+                            {duplicateInfo.daysApart === 0
+                              ? 'Possible duplicate'
+                              : `Possible duplicate (${duplicateInfo.daysApart} ${duplicateInfo.daysApart === 1 ? 'day' : 'days'} apart)`}
+                          </span>
+                        )}
+                      </td>
                       <td className="px-3.5 py-2.5 text-slate-300 max-w-xs truncate">
                         {exp.notes ? (
                           <span className="text-amber-200/90">{exp.notes}</span>
