@@ -133,6 +133,15 @@ describe('calculateSurvivorBenefit', () => {
     expect(calculateSurvivorBenefit(PIA, 62, 60)).toBeCloseTo(PIA * SS_SURVIVOR_EARLIEST_AGE_FACTOR, 1);
   });
 
+  it('should base survivor benefit on PIA or death-age DRCs when the worker dies before claiming', () => {
+    // Planned to claim at 70, but died at 64 (before FRA): 100% of PIA, no unearned DRCs
+    expect(calculateSurvivorBenefit(PIA, 70, 67, 64)).toBeCloseTo(PIA, 1);
+    // Planned to claim at 70, but died at 68 (after FRA, before claiming): DRCs accrued only up to age 68 (8%)
+    expect(calculateSurvivorBenefit(PIA, 70, 67, 68)).toBeCloseTo(PIA * 1.08, 1);
+    // Planned to claim early at 62, but died at 60 (before claiming): 100% of PIA, no 82.5% RIB-LIM cap
+    expect(calculateSurvivorBenefit(PIA, 62, 67, 60)).toBeCloseTo(PIA, 1);
+  });
+
   it('should return 0 without a worker PIA', () => {
     expect(calculateSurvivorBenefit(0, 67, 67)).toBe(0);
   });
@@ -892,6 +901,30 @@ describe('runRetirementSimulation', () => {
       const standardWithAgedAddition = (rules.standardDeduction.single + rules.additionalStandardDeductionAged.single) * indexFactor;
       expect(row.standardDeduction).toBeGreaterThanOrEqual(standardWithAgedAddition - 1);
     });
+
+    it('should not grant unearned delayed credits when the higher-benefit spouse dies before claiming', () => {
+      const inputs = getSurvivorInputs();
+      inputs.you.targetSSClaimingAge = 70;
+      inputs.you.longevityAge = 66; // Dies in 2026 at age 66 before reaching FRA or claiming at 70
+      inputs.wife.birthDate = '1958-01-01'; // Age 68 in 2026 (past survivor FRA)
+      const row2026 = runRetirementSimulation(inputs, true).find(r => r.year === 2026)!;
+      expect(row2026.wifeSS).toBeCloseTo(annualSS(3000, row2026), 0);
+    });
+
+    it('should defer the survivor claim to FRA when the survivor is already collecting a larger own benefit at death', () => {
+      const inputs = getSurvivorInputs();
+      inputs.you.estimatedPIA = 2200;
+      inputs.you.targetSSClaimingAge = 67;
+      inputs.you.longevityAge = 70; // Dies in 2030
+      inputs.wife.birthDate = '1968-01-01'; // Age 62 in 2030, FRA 67 in 2035
+      inputs.wife.estimatedPIA = 2600;
+      inputs.wife.targetSSClaimingAge = 62; // Own benefit at 62 is 1,820/mo (> age-62 survivor 1,752.14/mo, < unreduced 2,200/mo)
+      const results = runRetirementSimulation(inputs, true);
+      const row2030 = results.find(r => r.year === 2030)!;
+      expect(row2030.wifeSS).toBeCloseTo(annualSS(calculateSSBenefit(2600, 62), row2030), 0);
+      const row2035 = results.find(r => r.year === 2035)!;
+      expect(row2035.wifeSS).toBeCloseTo(annualSS(2200, row2035), 0);
+    });
   });
 
   describe('wife predeceases husband', () => {
@@ -960,6 +993,36 @@ describe('runRetirementSimulation', () => {
         }
       });
     }
+
+    it('should step up the surviving husband to the survivor benefit when the wife had the greater benefit', () => {
+      const inputs = getWifeFirstInputs();
+      inputs.you.estimatedPIA = 1200;
+      inputs.you.targetSSClaimingAge = 67;
+      inputs.wife.estimatedPIA = 3000;
+      inputs.wife.targetSSClaimingAge = 70; // Claims in 2034 (or earns full DRCs to 70 at death in 2034)
+      const results = runRetirementSimulation(inputs, true);
+      const rowAfterDeath = results.find(r => r.year === WIFE_DEATH_YEAR)!;
+      const expectedMonthly = calculateSurvivorBenefit(3000, 70, 74, WIFE_LONGEVITY_AGE);
+      expect(rowAfterDeath.yourSS).toBeCloseTo(expectedMonthly * 12 * rowAfterDeath.cpiFactor * (rowAfterDeath.ssPaymentLevel ?? 1), 0);
+    });
+
+    it('should pay a survivor benefit to the husband on the lower-PIA wife record while he delays his own larger benefit to 70', () => {
+      const inputs = getWifeFirstInputs();
+      inputs.you.birthDate = '1964-01-01'; // Age 63 in 2027, claims own at 70 in 2034
+      inputs.you.estimatedPIA = 3200;
+      inputs.you.targetSSClaimingAge = 70;
+      inputs.wife.birthDate = '1964-01-01';
+      inputs.wife.longevityAge = 63; // Dies in 2027 before claiming
+      inputs.wife.estimatedPIA = 1500;
+      inputs.wife.targetSSClaimingAge = 67;
+      const results = runRetirementSimulation(inputs, true);
+      const row2027 = results.find(r => r.year === 2027)!;
+      const expectedSurvivorMonthly = calculateSurvivorBenefit(1500, 67, 63, 63);
+      expect(row2027.yourSS).toBeCloseTo(expectedSurvivorMonthly * 12 * row2027.cpiFactor * (row2027.ssPaymentLevel ?? 1), 0);
+      const row2034 = results.find(r => r.year === 2034)!;
+      const expectedOwnMonthly = calculateSSBenefit(3200, 70);
+      expect(row2034.yourSS).toBeCloseTo(expectedOwnMonthly * 12 * row2034.cpiFactor * (row2034.ssPaymentLevel ?? 1), 0);
+    });
   });
 
   it('should draw from Cash Assets first and grow remaining cash at the fixed income rate', () => {

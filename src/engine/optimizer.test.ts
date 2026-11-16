@@ -194,4 +194,18 @@ describe('optimizeRetirementScenario', () => {
     expect(resultWithoutSurvivor.details.survivorBenefitAnnual).toBeGreaterThan(0);
     expect(resultWithSurvivor.details.survivorBenefitAnnual).toBeGreaterThan(0);
   });
+
+  it('should compute survivorBenefitAnnual and spousalAddOnAnnual symmetrically when wife has higher PIA and predeceases husband', () => {
+    const inputs = getMockInputs();
+    inputs.you.birthDate = '1965-01-01';
+    inputs.you.longevityAge = 90;
+    inputs.you.estimatedPIA = 800;
+    inputs.wife.birthDate = '1965-01-01';
+    inputs.wife.longevityAge = 75;
+    inputs.wife.estimatedPIA = 3000;
+
+    const result = optimizeRetirementScenario(inputs, 'max_portfolio', true, null);
+    expect(result.details.spousalAddOnAnnual).toBeGreaterThan(0);
+    expect(result.details.survivorBenefitAnnual).toBeGreaterThan(0);
+  });
 });

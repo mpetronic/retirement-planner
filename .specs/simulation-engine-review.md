@@ -524,7 +524,9 @@ when she is 66) now pays $1,158.33 a month and is a test.
 
 With the default PIAs ($3,000 and $1,500) the excess is zero, so default results do not change.
 
-Known limits: only the wife can receive a spousal benefit on the husband's record, not the reverse.
+A follow-up made the calculation symmetric: the husband gets the same excess on the wife's record when
+her PIA is the larger one, and the conversion tax estimate and the IRMAA lookback estimate use the same
+amounts as the monthly loop. The lookback estimate only adds the excess once both have filed.
 
 ---
 
@@ -549,10 +551,19 @@ from 60, before her own claiming age. Each month she is now paid the larger of t
 her own benefit, the latter only once she has claimed. The IRMAA lookback estimate and the optimizer's
 `survivorBenefitAnnual` use the same logic.
 
-Known limits: a husband who dies before his claiming age is still treated as having claimed at his
-target age. She is assumed to take the survivor benefit as soon as it is available and never to switch
-strategies (for example survivor first, own at 70, beyond the monthly larger-of rule). A surviving
-husband gets no survivor benefit on the wife's record.
+A follow-up extended this in three ways:
+
+- Either spouse can be the survivor. A surviving husband is paid the larger of his own benefit and a
+  survivor benefit on the wife's record, with the same age reduction.
+- `calculateSurvivorBenefit` takes the worker's age at death. A worker who dies before claiming earns
+  delayed credits only up to the age at death (none before FRA), and the early-claim widow limit does
+  not apply because no early claim was made.
+- A survivor who is already collecting an own benefit larger than the age-reduced survivor benefit
+  defers the survivor claim to FRA instead of locking in the early reduction.
+
+Known limits: apart from that deferral, the survivor takes the survivor benefit as soon as it is
+available, and the own claiming age is not re-optimized after a death (for example reduced survivor
+benefit first, then own benefit at 70 is modeled only if 70 was already the own claiming age).
 
 ---
 

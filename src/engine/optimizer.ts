@@ -168,18 +168,25 @@ export function optimizeRetirementScenario(
         const lifetimeIRMAA = ledger.reduce((sum, r) => sum + r.combinedSurchargeAnnual, 0);
         const endingRoth = finalRow.endYourRothIRA + finalRow.endWifeRothIRA;
 
-        // Spousal add-on: the excess spousal amount paid on top of her own benefit once both have filed,
+        // Spousal add-on: the excess spousal amount paid on top of own benefit once both have filed,
         // valued in the first year where both spouses are concurrently collecting SS.
         let spousalAddOnAnnual = 0;
         if (!testInputs.isSingleFiler && testInputs.wife.targetSSClaimingAge && testInputs.you.targetSSClaimingAge) {
           const effectiveWifeSSAge = testInputs.wife.targetSSClaimingAge;
           const bothFiledAbsMonth = Math.max(yourBirthAbsMonth + yourAge * 12, wifeBirthAbsMonth + effectiveWifeSSAge * 12);
-          const excessSpousalBase = calculateExcessSpousalBenefit(
+          const wifeExcessSpousalBase = calculateExcessSpousalBenefit(
             testInputs.you.estimatedPIA || 0,
             testInputs.wife.estimatedPIA || 0,
             effectiveWifeSSAge,
             (bothFiledAbsMonth - wifeBirthAbsMonth) / 12
           ) * 12;
+          const yourExcessSpousalBase = calculateExcessSpousalBenefit(
+            testInputs.wife.estimatedPIA || 0,
+            testInputs.you.estimatedPIA || 0,
+            yourAge,
+            (bothFiledAbsMonth - yourBirthAbsMonth) / 12
+          ) * 12;
+          const excessSpousalBase = wifeExcessSpousalBase + yourExcessSpousalBase;
           if (excessSpousalBase > 0) {
             const firstConcurrentYear = Math.max(yourBirthYear + yourAge, wifeBirthYear + effectiveWifeSSAge);
             const concurrentRow = ledger.find(r => r.year >= firstConcurrentYear && r.year < Math.min(deathYear, wifeDeathYear));
@@ -189,22 +196,40 @@ export function optimizeRetirementScenario(
           }
         }
 
-        // Survivor benefit: wife's annualized SS as a survivor under the optimal plan (the larger of her
-        // own benefit and the survivor benefit reduced for her age when it starts).
+        // Survivor benefit: surviving spouse's annualized SS under the optimal plan (the larger of
+        // own benefit and the survivor benefit reduced for the survivor's age when it starts).
         let survivorBenefitAnnual = 0;
-        if (!testInputs.isSingleFiler && wifeDeathYear > deathYear) {
+        if (!testInputs.isSingleFiler && wifeDeathYear !== deathYear) {
           const effectiveWifeSSAge = testInputs.wife.targetSSClaimingAge ?? SS_FULL_RETIREMENT_AGE;
-          const survivorStartAbsMonth = Math.max(deathYear * 12, wifeBirthAbsMonth + SS_SURVIVOR_EARLIEST_AGE * 12);
-          const survivorSSAnnualBase = calculateSurvivorBenefit(
-            testInputs.you.estimatedPIA || 0,
-            yourAge,
-            (survivorStartAbsMonth - wifeBirthAbsMonth) / 12
-          ) * 12;
-          const survivorWifeSSAnnualBase = calculateSSBenefit(testInputs.wife.estimatedPIA || 0, effectiveWifeSSAge) * 12;
-          const baseSurvivorAnnual = Math.max(survivorSSAnnualBase, survivorWifeSSAnnualBase);
+          if (wifeDeathYear > deathYear) {
+            const yourDeathAge = deathYear - yourBirthYear;
+            const survivorStartAbsMonth = Math.max(deathYear * 12, wifeBirthAbsMonth + SS_SURVIVOR_EARLIEST_AGE * 12);
+            const survivorSSAnnualBase = calculateSurvivorBenefit(
+              testInputs.you.estimatedPIA || 0,
+              yourAge,
+              (survivorStartAbsMonth - wifeBirthAbsMonth) / 12,
+              yourDeathAge
+            ) * 12;
+            const survivorWifeSSAnnualBase = calculateSSBenefit(testInputs.wife.estimatedPIA || 0, effectiveWifeSSAge) * 12;
+            const baseSurvivorAnnual = Math.max(survivorSSAnnualBase, survivorWifeSSAnnualBase);
 
-          const survivorRow = ledger.find((r) => r.year >= deathYear) || finalRow;
-          survivorBenefitAnnual = baseSurvivorAnnual * survivorRow.cpiFactor * (survivorRow.ssPaymentLevel ?? 1);
+            const survivorRow = ledger.find((r) => r.year >= deathYear) || finalRow;
+            survivorBenefitAnnual = baseSurvivorAnnual * survivorRow.cpiFactor * (survivorRow.ssPaymentLevel ?? 1);
+          } else {
+            const wifeDeathAge = wifeDeathYear - wifeBirthYear;
+            const survivorStartAbsMonth = Math.max(wifeDeathYear * 12, yourBirthAbsMonth + SS_SURVIVOR_EARLIEST_AGE * 12);
+            const survivorSSAnnualBase = calculateSurvivorBenefit(
+              testInputs.wife.estimatedPIA || 0,
+              effectiveWifeSSAge,
+              (survivorStartAbsMonth - yourBirthAbsMonth) / 12,
+              wifeDeathAge
+            ) * 12;
+            const survivorYourSSAnnualBase = calculateSSBenefit(testInputs.you.estimatedPIA || 0, yourAge) * 12;
+            const baseSurvivorAnnual = Math.max(survivorSSAnnualBase, survivorYourSSAnnualBase);
+
+            const survivorRow = ledger.find((r) => r.year >= wifeDeathYear) || finalRow;
+            survivorBenefitAnnual = baseSurvivorAnnual * survivorRow.cpiFactor * (survivorRow.ssPaymentLevel ?? 1);
+          }
         }
 
         let score = 0;

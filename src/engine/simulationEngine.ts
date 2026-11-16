@@ -95,15 +95,23 @@ export function calculateExcessSpousalBenefit(
  * The worker's PIA (plus any delayed credits) is reduced for the survivor's age when the survivor
  * benefit starts: 71.5% at 60, rising linearly to 100% at FRA. When the worker claimed early, the
  * result is capped at the larger of the worker's actual benefit or 82.5% of the worker's PIA.
+ * If the worker died before claiming, no early-claiming RIB-LIM cap applies and delayed credits
+ * only accrue up to the worker's age at death.
  */
 export function calculateSurvivorBenefit(
   decedentPIA: number,
   decedentClaimingAge: number,
-  survivorAgeAtEntitlement: number
+  survivorAgeAtEntitlement: number,
+  decedentDeathAge?: number
 ): number {
   if (decedentPIA <= 0) return 0;
 
-  const decedentBenefit = calculateSSBenefit(decedentPIA, decedentClaimingAge);
+  const diedBeforeClaiming = decedentDeathAge !== undefined && decedentDeathAge < decedentClaimingAge;
+  const effectiveDecedentClaimAge = diedBeforeClaiming
+    ? Math.max(SS_FULL_RETIREMENT_AGE, decedentDeathAge)
+    : decedentClaimingAge;
+
+  const decedentBenefit = calculateSSBenefit(decedentPIA, effectiveDecedentClaimAge);
   const fullSurvivorBenefit = Math.max(decedentPIA, decedentBenefit);
 
   const entitlementAge = Math.min(SS_FULL_RETIREMENT_AGE, Math.max(SS_SURVIVOR_EARLIEST_AGE, survivorAgeAtEntitlement));
@@ -111,7 +119,7 @@ export function calculateSurvivorBenefit(
   const ageFactor = SS_SURVIVOR_EARLIEST_AGE_FACTOR + (1 - SS_SURVIVOR_EARLIEST_AGE_FACTOR) * ageProgress;
   const ageReducedBenefit = fullSurvivorBenefit * ageFactor;
 
-  if (decedentBenefit < decedentPIA) {
+  if (!diedBeforeClaiming && decedentBenefit < decedentPIA) {
     const widowLimit = Math.max(decedentBenefit, decedentPIA * SS_WIDOW_LIMIT_PIA_SHARE);
     return Math.min(ageReducedBenefit, widowLimit);
   }
@@ -624,37 +632,98 @@ export function runRetirementSimulation(
         wifeMedicareMonthIdx = (customYear - simStartYear) * 12 + (isNaN(customMonth) ? 0 : customMonth);
       }
     }
+    const yourBirthMonthIdx = (yourBirthYear - simStartYear) * 12 + yourBirthMonth;
     const wifeBirthMonthIdx = (wifeBirthYear - simStartYear) * 12 + wifeBirthMonth;
-    // The survivor benefit starts at the later of the husband's death and her earliest survivor age
-    const wifeSurvivorMonthIdx = Math.max(
-      wifeBirthMonthIdx + SS_SURVIVOR_EARLIEST_AGE * 12,
-      (DEATH_YEAR - simStartYear) * 12
-    );
-    const wifeAgeAtSurvivorEntitlement = (wifeSurvivorMonthIdx - wifeBirthMonthIdx) / 12;
+    const yourTargetSSAge = inputs.you.targetSSClaimingAge || SS_FULL_RETIREMENT_AGE;
+    const wifeTargetSSAge = inputs.wife.targetSSClaimingAge || SS_FULL_RETIREMENT_AGE;
+    const yourDeathAge = DEATH_YEAR - yourBirthYear;
+    const wifeDeathAge = WIFE_DEATH_YEAR - wifeBirthYear;
+
     // The spousal excess becomes payable once both have filed
-    const wifeAgeAtSpousalEntitlement = (Math.max(wifeSSClaimMonthIdx, yourSSClaimMonthIdx) - wifeBirthMonthIdx) / 12;
+    const bothFiledMonthIdx = Math.max(wifeSSClaimMonthIdx, yourSSClaimMonthIdx);
+    const yourAgeAtSpousalEntitlement = (bothFiledMonthIdx - yourBirthMonthIdx) / 12;
+    const wifeAgeAtSpousalEntitlement = (bothFiledMonthIdx - wifeBirthMonthIdx) / 12;
 
     const yourRmdStartAge = getRMDStartAge(yourBirthYear);
     const wifeRmdStartAge = getRMDStartAge(wifeBirthYear);
 
     // Calculate baseline SS benefits (scaled by the configured trust-fund payment level for this year)
     const ssPaymentLevel = getSSPaymentLevel(inputs.ssReductions, year);
-    const yourSSAnnualBase = calculateSSBenefit(inputs.you.estimatedPIA || 0, inputs.you.targetSSClaimingAge || 67) * 12 * cpiFactor * ssPaymentLevel;
-    const wifeSSAnnualBase = calculateSSBenefit(inputs.wife.estimatedPIA || 0, inputs.wife.targetSSClaimingAge || 67) * 12 * cpiFactor * ssPaymentLevel;
-    const excessSpousalSSAnnual = Number.isFinite(wifeAgeAtSpousalEntitlement)
+    const yourOwnMonthlyBase = calculateSSBenefit(inputs.you.estimatedPIA || 0, yourTargetSSAge);
+    const wifeOwnMonthlyBase = calculateSSBenefit(inputs.wife.estimatedPIA || 0, wifeTargetSSAge);
+    const yourSSAnnualBase = yourOwnMonthlyBase * 12 * cpiFactor * ssPaymentLevel;
+    const wifeSSAnnualBase = wifeOwnMonthlyBase * 12 * cpiFactor * ssPaymentLevel;
+
+    const yourExcessSpousalSSAnnual = (!inputs.isSingleFiler && Number.isFinite(yourAgeAtSpousalEntitlement))
+      ? calculateExcessSpousalBenefit(
+          inputs.wife.estimatedPIA || 0,
+          inputs.you.estimatedPIA || 0,
+          yourTargetSSAge,
+          yourAgeAtSpousalEntitlement
+        ) * 12 * cpiFactor * ssPaymentLevel
+      : 0;
+    const excessSpousalSSAnnual = (!inputs.isSingleFiler && Number.isFinite(wifeAgeAtSpousalEntitlement))
       ? calculateExcessSpousalBenefit(
           inputs.you.estimatedPIA || 0,
           inputs.wife.estimatedPIA || 0,
-          inputs.wife.targetSSClaimingAge || SS_FULL_RETIREMENT_AGE,
+          wifeTargetSSAge,
           wifeAgeAtSpousalEntitlement
         ) * 12 * cpiFactor * ssPaymentLevel
       : 0;
 
-    // Known limit: a husband who dies before filing is still treated as having claimed at his target age
+    // Earliest month a survivor benefit can start is the later of the spouse's death and age 60.
+    // If the survivor is already collecting their own benefit and it exceeds the early-reduced
+    // survivor benefit at that month, they defer the survivor claim until survivor FRA (67).
+    const yourEarliestSurvivorMonthIdx = Math.max(
+      yourBirthMonthIdx + SS_SURVIVOR_EARLIEST_AGE * 12,
+      (WIFE_DEATH_YEAR - simStartYear) * 12
+    );
+    const yourAgeAtEarliestSurvivor = (yourEarliestSurvivorMonthIdx - yourBirthMonthIdx) / 12;
+    const yourEarlySurvivorMonthly = calculateSurvivorBenefit(
+      inputs.wife.estimatedPIA || 0,
+      wifeTargetSSAge,
+      yourAgeAtEarliestSurvivor,
+      wifeDeathAge
+    );
+    const deferYourSurvivorToFRA =
+      yourEarliestSurvivorMonthIdx >= yourSSClaimMonthIdx &&
+      yourOwnMonthlyBase > yourEarlySurvivorMonthly &&
+      yourAgeAtEarliestSurvivor < SS_FULL_RETIREMENT_AGE;
+    const yourSurvivorMonthIdx = deferYourSurvivorToFRA
+      ? yourBirthMonthIdx + SS_FULL_RETIREMENT_AGE * 12
+      : yourEarliestSurvivorMonthIdx;
+    const yourAgeAtSurvivorEntitlement = (yourSurvivorMonthIdx - yourBirthMonthIdx) / 12;
+    const yourSurvivorSSBenefit = calculateSurvivorBenefit(
+      inputs.wife.estimatedPIA || 0,
+      wifeTargetSSAge,
+      yourAgeAtSurvivorEntitlement,
+      wifeDeathAge
+    ) * 12 * cpiFactor * ssPaymentLevel;
+
+    const wifeEarliestSurvivorMonthIdx = Math.max(
+      wifeBirthMonthIdx + SS_SURVIVOR_EARLIEST_AGE * 12,
+      (DEATH_YEAR - simStartYear) * 12
+    );
+    const wifeAgeAtEarliestSurvivor = (wifeEarliestSurvivorMonthIdx - wifeBirthMonthIdx) / 12;
+    const wifeEarlySurvivorMonthly = calculateSurvivorBenefit(
+      inputs.you.estimatedPIA || 0,
+      yourTargetSSAge,
+      wifeAgeAtEarliestSurvivor,
+      yourDeathAge
+    );
+    const deferWifeSurvivorToFRA =
+      wifeEarliestSurvivorMonthIdx >= wifeSSClaimMonthIdx &&
+      wifeOwnMonthlyBase > wifeEarlySurvivorMonthly &&
+      wifeAgeAtEarliestSurvivor < SS_FULL_RETIREMENT_AGE;
+    const wifeSurvivorMonthIdx = deferWifeSurvivorToFRA
+      ? wifeBirthMonthIdx + SS_FULL_RETIREMENT_AGE * 12
+      : wifeEarliestSurvivorMonthIdx;
+    const wifeAgeAtSurvivorEntitlement = (wifeSurvivorMonthIdx - wifeBirthMonthIdx) / 12;
     const wifeSurvivorSSBenefit = calculateSurvivorBenefit(
       inputs.you.estimatedPIA || 0,
-      inputs.you.targetSSClaimingAge || SS_FULL_RETIREMENT_AGE,
-      wifeAgeAtSurvivorEntitlement
+      yourTargetSSAge,
+      wifeAgeAtSurvivorEntitlement,
+      yourDeathAge
     ) * 12 * cpiFactor * ssPaymentLevel;
 
     // 2. RMDs calculations (based on start-of-year balances)
@@ -1061,9 +1130,20 @@ export function runRetirementSimulation(
         const totalTaxable = (yourCash + (wifeDeceased || inputs.isSingleFiler ? 0 : wifeCash)) +
           (yourTaxable + (wifeDeceased ? 0 : wifeTaxable));
 
+        const estYourSS = !youDeceased
+          ? (wifeDeceased && !inputs.isSingleFiler
+              ? Math.max(yourSSAnnualBase, yourSurvivorSSBenefit)
+              : yourSSAnnualBase + yourExcessSpousalSSAnnual)
+          : 0;
+        const estWifeSS = !wifeDeceased
+          ? (youDeceased
+              ? Math.max(wifeSSAnnualBase, wifeSurvivorSSBenefit)
+              : wifeSSAnnualBase + excessSpousalSSAnnual)
+          : 0;
+
         const estPensionExcl = calculatePensionExclusion(activeState, [
-          { age: yourAge, isAlive: !youDeceased, socialSecurityBenefit: yourSSAnnualBase, eligibleDistributions: yourRMD },
-          { age: wifeAge, isAlive: !wifeDeceased, socialSecurityBenefit: wifeSSAnnualBase, eligibleDistributions: wifeRMD },
+          { age: yourAge, isAlive: !youDeceased, socialSecurityBenefit: estYourSS, eligibleDistributions: yourRMD },
+          { age: wifeAge, isAlive: !wifeDeceased, socialSecurityBenefit: estWifeSS, eligibleDistributions: wifeRMD },
         ], cpiFactor);
 
         const estDiv = (yourTaxable + (wifeDeceased || inputs.isSingleFiler ? 0 : wifeTaxable)) * taxableDividendYield;
@@ -1071,7 +1151,7 @@ export function runRetirementSimulation(
         const estBaselineOrdinary = (taxableYourSalary + taxableWifeSalary) + (yourRMD + wifeRMD) +
           (estDiv * taxableNonQualifiedPortion) + estInterest;
         const estCapitalGains = estDiv * (1 - taxableNonQualifiedPortion);
-        const estTotalSS = (!youDeceased ? yourSSAnnualBase : 0) + (!wifeDeceased ? wifeSSAnnualBase : 0);
+        const estTotalSS = estYourSS + estWifeSS;
 
         const estAgedFilerCount = countAgedFilers(isSingle, !!inputs.isSingleFiler, yourAge, wifeAge, youDeceased);
 
@@ -1167,14 +1247,22 @@ export function runRetirementSimulation(
         const lookbackWifeAge = wifeAge - 2;
 
         let estSS = 0;
-        if (!youDeceased && lookbackYourAge >= (inputs.you.targetSSClaimingAge || 67)) estSS += yourSSAnnualBase;
+        if (!youDeceased) {
+          if (wifeDeceased && !inputs.isSingleFiler) {
+            const lookbackOwnSS = lookbackYourAge >= yourTargetSSAge ? yourSSAnnualBase : 0;
+            const lookbackSurvivorSS = lookbackYourAge >= SS_SURVIVOR_EARLIEST_AGE ? yourSurvivorSSBenefit : 0;
+            estSS += Math.max(lookbackOwnSS, lookbackSurvivorSS);
+          } else if (lookbackYourAge >= yourTargetSSAge) {
+            estSS += yourSSAnnualBase + (!inputs.isSingleFiler && lookbackWifeAge >= wifeTargetSSAge ? yourExcessSpousalSSAnnual : 0);
+          }
+        }
         if (!wifeDeceased) {
           if (youDeceased) {
-            const lookbackOwnSS = lookbackWifeAge >= (inputs.wife.targetSSClaimingAge || 67) ? wifeSSAnnualBase : 0;
+            const lookbackOwnSS = lookbackWifeAge >= wifeTargetSSAge ? wifeSSAnnualBase : 0;
             const lookbackSurvivorSS = lookbackWifeAge >= SS_SURVIVOR_EARLIEST_AGE ? wifeSurvivorSSBenefit : 0;
             estSS += Math.max(lookbackOwnSS, lookbackSurvivorSS);
-          } else if (lookbackWifeAge >= (inputs.wife.targetSSClaimingAge || 67)) {
-            estSS += wifeSSAnnualBase + excessSpousalSSAnnual;
+          } else if (lookbackWifeAge >= wifeTargetSSAge) {
+            estSS += wifeSSAnnualBase + (lookbackYourAge >= yourTargetSSAge ? excessSpousalSSAnnual : 0);
           }
         }
 
@@ -1365,8 +1453,19 @@ export function runRetirementSimulation(
       let monthlyYourSS = 0;
       let monthlyWifeSS = 0;
 
-      if (!youDeceased && (monthIdx >= yourSSClaimMonthIdx)) {
-        monthlyYourSS = yourSSAnnualBase / 12;
+      if (!youDeceased) {
+        if (wifeDeceased && !inputs.isSingleFiler) {
+          // Survivor and own benefits are claimed independently; paid the larger one entitled to
+          const ownSS = monthIdx >= yourSSClaimMonthIdx ? yourSSAnnualBase / 12 : 0;
+          const survivorSS = monthIdx >= yourSurvivorMonthIdx ? yourSurvivorSSBenefit / 12 : 0;
+          monthlyYourSS = Math.max(ownSS, survivorSS);
+        } else if (monthIdx >= yourSSClaimMonthIdx) {
+          const ownSS = yourSSAnnualBase / 12;
+          // Deemed filing: own benefit plus the excess spousal amount once the spouse has filed
+          monthlyYourSS = (!inputs.isSingleFiler && monthIdx >= wifeSSClaimMonthIdx)
+            ? ownSS + yourExcessSpousalSSAnnual / 12
+            : ownSS;
+        }
       }
       if (!wifeDeceased) {
         if (youDeceased) {
