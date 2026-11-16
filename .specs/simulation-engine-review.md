@@ -36,7 +36,7 @@ Use this table to track what has been debated and fixed.
 | 13 | Spousal benefit formula | Low-Medium | Fixed |
 | 14 | Survivor benefit 100% from age 60 | Low | Fixed |
 | 15 | SS earnings test not modeled | Low | Open |
-| 16 | Stale 2025 statutory constants | Low | Open |
+| 16 | Stale 2025 statutory constants | Low | Fixed |
 | 17 | MC sequences hard-capped at 35 years | Low-Medium | Open |
 | 18 | Bear-market rule uses look-ahead | Low-Medium | Open |
 | 19 | RMD counted when not distributed; cross-spouse QCD | Low | Open |
@@ -595,6 +595,35 @@ ideally credit them back at FRA, which SSA does).
 
 **Recommendation.** Update to 2026 and consider a `simulationStartYear`-keyed constants table so a 2027
 start does not silently use 2026 values.
+
+**Resolution.** Fixed with year-keyed data. `FederalYearRules` in `federalTaxRules.ts` gained a `payroll`
+group (401(k) limit $24,500, catch-up $8,000, enhanced catch-up $11,250, OASDI wage base $184,500, and the
+Additional Medicare Tax thresholds of $200,000 single and $250,000 joint), plus `qcdAnnualLimit` ($111,000)
+and `medicarePartDBasePremium` ($38.99), all in the 2026 entry. The engine reads them for the simulated year
+through `getFederalIndexing`. A start year after 2026 uses the latest entry at or before each year, with
+its dollar limits indexed from that entry's year by CPI, exactly like brackets and IRMAA tiers. The
+Additional Medicare thresholds are not indexed. To update for a new year, add one entry to `FED_YEAR_RULES`.
+
+The flat constants in `simulationEngine.ts` and `types/index.ts` are gone. The FICA rates are named
+constants.
+
+Medicare amounts have their own year table, `MEDICARE_STANDARD_AMOUNTS_BY_YEAR` ($202.90 Part B premium,
+$38.99 Part D premium and $283 Part B deductible for 2026), because CMS publishes them on a different schedule from the tax rules. The lookup
+`getMedicareStandardAmounts` returns a published year unscaled, estimates a later year by growing the latest
+earlier entry at the healthcare inflation rate, and returns the first entry for an earlier year. The
+engine, both healthcare dialogs, the detailed expenses dialog and the configuration PDF all use it, and the
+flat Part B, Part D and deductible constants are gone. A user-entered premium override is still a start-year amount
+that grows with healthcare inflation. Four existing tests had calibrated expectations that moved (the 401(k) cap, and
+three balances affected by the higher Part D premium). New tests cover indexing from a 2028 start and a
+later entry overriding the 2026 values.
+
+Known limits: the Additional Medicare tax is modeled as employer withholding at the single threshold for
+each employee. The joint $250,000 figure is stored in the table but the year-end settlement is not
+modeled. The 2026 values were checked on 2026-11-16 against IRS Notice 2025-67 (401(k) limits and QCD limit),
+the SSA Federal Register notice (wage base) and the CMS 2026 fact sheets (Part B premium and deductible,
+Part D base premium). Several came from secondary sources that cite the notices, not the notices
+themselves. The age-65 premiums and Part B deductible
+shown in the healthcare dialogs are for the calendar year the person turns 65.
 
 ---
 

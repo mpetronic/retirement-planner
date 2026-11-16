@@ -2121,6 +2121,7 @@ export const ParametersWorkspace: React.FC<ParametersWorkspaceProps> = ({
           targetState={inputs.jurisdiction.targetState}
           relocationYear={inputs.jurisdiction.relocationYear}
           simStartYear={simStartYear}
+          healthcareInflationRate={inputs.growthAssumptions.healthcareInflationRate}
           detailedExpenses={inputs.detailedExpenses}
           onSave={(expenses) => updateNestedState('detailedExpenses', '', expenses)}
           youHealthcare={inputs.you.healthcare}

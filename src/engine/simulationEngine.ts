@@ -1,20 +1,18 @@
-import { AppStateInputs, SimulationResultRow, LockedReturnSequence, getSimulationStartYear, getSSPaymentLevel, BASE_QCD_LIMIT, normalizeDetailedExpenses, ALL_STATES_COST_KEY, StateHealthcareConfig } from '../types';
+import { AppStateInputs, SimulationResultRow, LockedReturnSequence, getSimulationStartYear, getSSPaymentLevel, normalizeDetailedExpenses, ALL_STATES_COST_KEY, StateHealthcareConfig } from '../types';
 import {
-  BASE_MEDICARE_PART_B,
-  BASE_MEDICARE_PART_D,
+  STATUTORY_ADDITIONAL_MEDICARE_RATE,
   getIRSUniformLifetimeFactor,
   getTargetPresetInfo,
   presetIndexFactor,
 } from './taxRates';
 import { calculateFederalDeduction, countAgedFilers } from './federalDeduction';
-import { FederalIndexing, getFederalIndexing, indexedIrmaaLimit } from './federalTaxRules';
+import { FederalIndexing, getFederalIndexing, indexedIrmaaLimit, getMedicareStandardAmounts } from './federalTaxRules';
 import { calculateStateAndLocalTax, calculatePensionExclusion, getStateTaxProfile, resolveActiveJurisdiction } from './stateTaxRegistry';
 
 const TARGET_AGI_DEDUCTION_ITERATIONS = 12;
-const BASE_401K_LIMIT = 23500;
-const CATCHUP_401K_LIMIT = 7500;
-const ENHANCED_CATCHUP_401K_LIMIT = 11250;
-const OASDI_WAGE_BASE = 176100;
+// Payroll and plan limits are year-keyed in federalTaxRules.ts (payroll). Rates below are statutory.
+const OASDI_EMPLOYEE_RATE = 0.062;
+const MEDICARE_EMPLOYEE_RATE = 0.0145;
 
 // Helper to calculate Social Security benefit based on claiming age
 export function calculateSSBenefit(pia: number, claimingAge: number): number {
@@ -501,6 +499,8 @@ export function runRetirementSimulation(
 
     // Federal rules for this tax year, with their dollar limits indexed to this year's dollars
     const federal = getFederalIndexing(year, cpiFactor, simStartYear, inputs.growthAssumptions.cpiInflationRate);
+    // Employers withhold the Additional Medicare Tax per employee above the single-filer threshold, not indexed
+    const additionalMedicareWithholdingThreshold = federal.rules.payroll.additionalMedicareThreshold.single;
     
     // Growth rates by account type (Equities vs Fixed Income allocation)
     let equityRate = inputs.growthAssumptions.equityReturnRate;
@@ -762,19 +762,19 @@ export function runRetirementSimulation(
       annualYourGrossSalary = fullYearSalary * (yourWorkingMonthsThisYear / 12);
       monthlyYourGrossSalary = fullYearSalary / 12;
 
-      let your401kLimit = BASE_401K_LIMIT * cpiFactor;
+      let your401kLimit = federal.rules.payroll.elective401kLimit * federal.indexFactor;
       if (yourAge >= 60 && yourAge <= 63) {
-        your401kLimit += ENHANCED_CATCHUP_401K_LIMIT * cpiFactor;
+        your401kLimit += federal.rules.payroll.enhancedCatchUp401kLimit * federal.indexFactor;
       } else if (yourAge >= 50) {
-        your401kLimit += CATCHUP_401K_LIMIT * cpiFactor;
+        your401kLimit += federal.rules.payroll.catchUp401kLimit * federal.indexFactor;
       }
 
       annualYour401k = Math.min(annualYourGrossSalary, your401kLimit);
       monthlyYour401k = annualYour401k / yourWorkingMonthsThisYear;
 
-      const ssTax = 0.062 * Math.min(annualYourGrossSalary, OASDI_WAGE_BASE * cpiFactor);
-      const medTax = 0.0145 * annualYourGrossSalary;
-      const addMedTax = (annualYourGrossSalary > 200000 * cpiFactor) ? 0.009 * (annualYourGrossSalary - 200000 * cpiFactor) : 0;
+      const ssTax = OASDI_EMPLOYEE_RATE * Math.min(annualYourGrossSalary, federal.rules.payroll.oasdiWageBase * federal.indexFactor);
+      const medTax = MEDICARE_EMPLOYEE_RATE * annualYourGrossSalary;
+      const addMedTax = (annualYourGrossSalary > additionalMedicareWithholdingThreshold) ? STATUTORY_ADDITIONAL_MEDICARE_RATE * (annualYourGrossSalary - additionalMedicareWithholdingThreshold) : 0;
       annualYourFICA = ssTax + medTax + addMedTax;
       monthlyYourFICA = annualYourFICA / yourWorkingMonthsThisYear;
 
@@ -804,19 +804,19 @@ export function runRetirementSimulation(
       annualWifeGrossSalary = fullYearSalary * (wifeWorkingMonthsThisYear / 12);
       monthlyWifeGrossSalary = fullYearSalary / 12;
 
-      let wife401kLimit = BASE_401K_LIMIT * cpiFactor;
+      let wife401kLimit = federal.rules.payroll.elective401kLimit * federal.indexFactor;
       if (wifeAge >= 60 && wifeAge <= 63) {
-        wife401kLimit += ENHANCED_CATCHUP_401K_LIMIT * cpiFactor;
+        wife401kLimit += federal.rules.payroll.enhancedCatchUp401kLimit * federal.indexFactor;
       } else if (wifeAge >= 50) {
-        wife401kLimit += CATCHUP_401K_LIMIT * cpiFactor;
+        wife401kLimit += federal.rules.payroll.catchUp401kLimit * federal.indexFactor;
       }
 
       annualWife401k = Math.min(annualWifeGrossSalary, wife401kLimit);
       monthlyWife401k = annualWife401k / wifeWorkingMonthsThisYear;
 
-      const ssTax = 0.062 * Math.min(annualWifeGrossSalary, OASDI_WAGE_BASE * cpiFactor);
-      const medTax = 0.0145 * annualWifeGrossSalary;
-      const addMedTax = (annualWifeGrossSalary > 200000 * cpiFactor) ? 0.009 * (annualWifeGrossSalary - 200000 * cpiFactor) : 0;
+      const ssTax = OASDI_EMPLOYEE_RATE * Math.min(annualWifeGrossSalary, federal.rules.payroll.oasdiWageBase * federal.indexFactor);
+      const medTax = MEDICARE_EMPLOYEE_RATE * annualWifeGrossSalary;
+      const addMedTax = (annualWifeGrossSalary > additionalMedicareWithholdingThreshold) ? STATUTORY_ADDITIONAL_MEDICARE_RATE * (annualWifeGrossSalary - additionalMedicareWithholdingThreshold) : 0;
       annualWifeFICA = ssTax + medTax + addMedTax;
       monthlyWifeFICA = annualWifeFICA / wifeWorkingMonthsThisYear;
 
@@ -840,6 +840,8 @@ export function runRetirementSimulation(
     let yourPreMedicareOOP = 0;
     let yourMedicarePremiums = 0;
     let yourMedicareOOP = 0;
+    // Published CMS premium for this year, or the latest published one grown by healthcare inflation
+    const medicareBase = getMedicareStandardAmounts(year, inputs.growthAssumptions.healthcareInflationRate);
     if (inputs.you.healthcare) {
       const hcRecord = inputs.you.healthcare as unknown as Record<string, StateHealthcareConfig | undefined>;
       const stateHc = hcRecord[activeState]
@@ -850,9 +852,9 @@ export function runRetirementSimulation(
       yourPreMedicareOOP = ((stateHc?.pre65MedicalOOP ?? 0) + (stateHc?.pre65DentalOOP ?? 0) + (stateHc?.pre65VisionOOP ?? 0)) * healthcareFactor;
       
       const customB = inputs.you.healthcare.medicarePartBPremium;
-      const partB_current = (customB !== null && customB !== undefined) ? customB * healthcareFactor : BASE_MEDICARE_PART_B * healthcareFactor;
+      const partB_current = (customB !== null && customB !== undefined) ? customB * healthcareFactor : medicareBase.partB;
       const customD = stateHc?.medicarePartDPremium;
-      const partD_current = (customD !== null && customD !== undefined) ? customD * healthcareFactor : BASE_MEDICARE_PART_D * healthcareFactor;
+      const partD_current = (customD !== null && customD !== undefined) ? customD * healthcareFactor : medicareBase.partD;
       const suppPrem = (stateHc?.supplementPremium ?? 0) * 12 * healthcareFactor;
       const dentalPrem = (stateHc?.post65DentalPremium ?? 0) * 12 * healthcareFactor;
       const visionPrem = (stateHc?.post65VisionPremium ?? 0) * 12 * healthcareFactor;
@@ -860,7 +862,7 @@ export function runRetirementSimulation(
       yourMedicareOOP = ((stateHc?.medicarePartDDeductibleCopays ?? 0) + (stateHc?.supplementOOP ?? 0) + (stateHc?.post65HearingCare ?? 0) + (stateHc?.post65DentalOOP ?? 0) + (stateHc?.post65VisionOOP ?? 0)) * healthcareFactor;
     } else {
       yourPreMedicareAnnual = (inputs.you.preMedicareMonthlyPremium ?? 0) * 12 * healthcareFactor;
-      yourMedicarePremiums = (BASE_MEDICARE_PART_B + BASE_MEDICARE_PART_D) * 12 * healthcareFactor;
+      yourMedicarePremiums = (medicareBase.partB + medicareBase.partD) * 12;
     }
 
     let wifePreMedicareAnnual = 0;
@@ -878,9 +880,9 @@ export function runRetirementSimulation(
         wifePreMedicareOOP = ((stateHc?.pre65MedicalOOP ?? 0) + (stateHc?.pre65DentalOOP ?? 0) + (stateHc?.pre65VisionOOP ?? 0)) * healthcareFactor;
         
         const customB = inputs.wife.healthcare.medicarePartBPremium;
-        const partB_current = (customB !== null && customB !== undefined) ? customB * healthcareFactor : BASE_MEDICARE_PART_B * healthcareFactor;
+        const partB_current = (customB !== null && customB !== undefined) ? customB * healthcareFactor : medicareBase.partB;
         const customD = stateHc?.medicarePartDPremium;
-        const partD_current = (customD !== null && customD !== undefined) ? customD * healthcareFactor : BASE_MEDICARE_PART_D * healthcareFactor;
+        const partD_current = (customD !== null && customD !== undefined) ? customD * healthcareFactor : medicareBase.partD;
         const suppPrem = (stateHc?.supplementPremium ?? 0) * 12 * healthcareFactor;
         const dentalPrem = (stateHc?.post65DentalPremium ?? 0) * 12 * healthcareFactor;
         const visionPrem = (stateHc?.post65VisionPremium ?? 0) * 12 * healthcareFactor;
@@ -888,7 +890,7 @@ export function runRetirementSimulation(
         wifeMedicareOOP = ((stateHc?.medicarePartDDeductibleCopays ?? 0) + (stateHc?.supplementOOP ?? 0) + (stateHc?.post65HearingCare ?? 0) + (stateHc?.post65DentalOOP ?? 0) + (stateHc?.post65VisionOOP ?? 0)) * healthcareFactor;
       } else {
         wifePreMedicareAnnual = (inputs.wife.preMedicareMonthlyPremium ?? 0) * 12 * healthcareFactor;
-        wifeMedicarePremiums = (BASE_MEDICARE_PART_B + BASE_MEDICARE_PART_D) * 12 * healthcareFactor;
+        wifeMedicarePremiums = (medicareBase.partB + medicareBase.partD) * 12;
       }
     }
 
@@ -1336,7 +1338,7 @@ export function runRetirementSimulation(
     let annualYourInterest = 0;
     let annualWifeInterest = 0;
     let annualPreMedicarePremium = 0;
-    let annualMedicareBasePremiums = 0;
+    let annualMedicareStandardAmounts = 0;
     let annualMedicareSurcharges = 0;
     let annualPlannedPremiums = 0;
     let annualLivingExpenses = 0;
@@ -1560,7 +1562,7 @@ export function runRetirementSimulation(
         const wife70_5_MonthIdx = (wifeBirthYear + 70 - simStartYear) * 12 + wifeBirthMonth + 6;
         const isYouQCDEligible = !youDeceased && (monthIdx >= your70_5_MonthIdx);
         const isWifeQCDEligible = !wifeDeceased && !inputs.isSingleFiler && (monthIdx >= wife70_5_MonthIdx);
-        const qcdLimit = BASE_QCD_LIMIT * cpiFactor;
+        const qcdLimit = federal.rules.qcdAnnualLimit * federal.indexFactor;
 
         if (useQCD && remTithe > 0) {
           // Primary Traditional IRA QCD
@@ -1677,7 +1679,7 @@ export function runRetirementSimulation(
       const monthlyMedicare = (youEligibleForMedicare ? monthlyYourPremium : 0) + (wifeEligibleForMedicare ? monthlyWifePremium : 0);
 
       annualPreMedicarePremium += monthlyPreMed;
-      annualMedicareBasePremiums += monthlyMedicare;
+      annualMedicareStandardAmounts += monthlyMedicare;
       annualMedicareSurcharges += monthlyYourSurcharge + monthlyWifeSurcharge;
 
       // Quarterly Estimated Tax Vouchers in April (month 3), June (5), September (8), and December (11)
@@ -2281,7 +2283,7 @@ export function runRetirementSimulation(
     const qcdAmount = annualQcdAmount;
     nonQcdTithe = annualNonQcdTithe;
 
-    const totalExpenses = annualLivingExpenses + nonQcdTithe + finalTotalTax + annualMedicareBasePremiums + annualMedicareSurcharges + annualPreMedicarePremium;
+    const totalExpenses = annualLivingExpenses + nonQcdTithe + finalTotalTax + annualMedicareStandardAmounts + annualMedicareSurcharges + annualPreMedicarePremium;
     const incomeInflow = totalSS + taxableCombinedRMD + grossSalary + totalDividends;
     const deficit = Math.max(0, totalExpenses - incomeInflow);
     const netTakeHomeSalary = Math.max(0, grossSalary - annualTotal401k - annualTotalFICA - annualTotalTaxWithholding);
@@ -2290,7 +2292,7 @@ export function runRetirementSimulation(
     const plannedLivingExpenses = (plannedBaseLivingExpensesAnnual + oneTimeCosts) * cpiFactor + plannedHealthcareOOP;
     // Healthcare-inclusive spending scope: living + out-of-pocket + premiums + IRMAA (taxes excluded)
     const plannedTotalSpending = plannedLivingExpenses + plannedHealthcarePremiums;
-    const modeledTotalSpending = annualLivingExpenses + annualPreMedicarePremium + annualMedicareBasePremiums + annualMedicareSurcharges;
+    const modeledTotalSpending = annualLivingExpenses + annualPreMedicarePremium + annualMedicareStandardAmounts + annualMedicareSurcharges;
     // When expenses are logged for the year, their total is the single source of truth for actual spending
     const totalSpending = actualRec?.loggedTotalSpending ?? modeledTotalSpending;
     const hasActualSpendRecorded = Boolean(actualRec && (
@@ -2375,7 +2377,7 @@ export function runRetirementSimulation(
       totalSpending,
       healthcareOOP: annualHealthcareOOP,
       plannedHealthcareOOP,
-      medicareBasePremiums: annualMedicareBasePremiums,
+      medicareBasePremiums: annualMedicareStandardAmounts,
       preMedicareHealthcareCost: annualPreMedicarePremium,
       totalExpenses,
       incomeInflow,

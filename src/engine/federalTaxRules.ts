@@ -32,6 +32,30 @@ export interface FederalYearRules {
   additionalStandardDeductionAged: FilingStatusRules<number>;
   /** IRMAA MAGI tiers and monthly surcharges per person. The top tier limit is Infinity. */
   irmaaTiers: FilingStatusRules<IRMAATier[]>;
+  /**
+   * Payroll and retirement-plan limits, in the dollars of the rule year. Every dollar amount here is
+   * multiplied by the index factor in a later simulated year, except the Additional Medicare Tax
+   * thresholds, which are fixed by statute.
+   */
+  payroll: PayrollRules;
+  /** Qualified charitable distribution limit per person (IRC Section 408(d)(8)), indexed. */
+  qcdAnnualLimit: number;
+}
+
+export interface PayrollRules {
+  /** Elective deferral limit for a 401(k) (IRC Section 402(g)). */
+  elective401kLimit: number;
+  /** Catch-up for filers age 50 or older. */
+  catchUp401kLimit: number;
+  /** Enhanced catch-up for filers age 60 through 63 (SECURE 2.0), replacing the standard catch-up. */
+  enhancedCatchUp401kLimit: number;
+  /** Social Security (OASDI) taxable wage base. */
+  oasdiWageBase: number;
+  /**
+   * Additional Medicare Tax wage thresholds, not indexed. Employers withhold at the single figure for
+   * each employee regardless of filing status. The joint figure applies when the return is settled.
+   */
+  additionalMedicareThreshold: FilingStatusRules<number>;
 }
 
 export const FED_YEAR_RULES: Record<number, FederalYearRules> = {
@@ -90,6 +114,15 @@ export const FED_YEAR_RULES: Record<number, FederalYearRules> = {
         { tierNumber: 5, limit: Infinity, inflationIndexed: true, partBSurcharge: 487.00, partDSurcharge: 91.00 },
       ],
     },
+    // 2026 limits: IRS Notice 2025-67 (plan limits), SSA 2026 wage base, CMS 2026 Part D base premium.
+    payroll: {
+      elective401kLimit: 24500,
+      catchUp401kLimit: 8000,
+      enhancedCatchUp401kLimit: 11250,
+      oasdiWageBase: 184500,
+      additionalMedicareThreshold: { mfj: 250000, single: 200000 },
+    },
+    qcdAnnualLimit: 111000,
   },
 };
 
@@ -147,4 +180,40 @@ export function getFederalIndexing(
     rules: getFederalRules(year),
     indexFactor: federalIndexFactor(year, cpiFactor, simStartYear, cpiRate),
   };
+}
+
+/** Standard Medicare amounts per person, as published by CMS for one calendar year. */
+export interface MedicareStandardAmounts {
+  /** Part B standard monthly premium. */
+  partB: number;
+  /** Part D national base beneficiary monthly premium. */
+  partD: number;
+  /** Part B annual deductible. */
+  partBDeductible: number;
+}
+
+/**
+ * Published standard Medicare amounts by calendar year. Add one entry each year when CMS announces the
+ * next year's amounts (Part B standard premium, Part D national base beneficiary premium, Part B deductible). A year with no
+ * entry is estimated from the latest earlier entry by getMedicareStandardAmounts.
+ */
+export const MEDICARE_STANDARD_AMOUNTS_BY_YEAR: Record<number, MedicareStandardAmounts> = {
+  2026: { partB: 202.90, partD: 38.99, partBDeductible: 283 },
+};
+
+/**
+ * Standard Medicare premiums for a calendar year. A published year is returned as is. A year after the
+ * latest published one is estimated by growing that entry at the healthcare inflation rate. A year before
+ * the first published entry returns the first entry, since there is nothing earlier to scale from.
+ */
+export function getMedicareStandardAmounts(year: number, healthcareInflationRate: number): MedicareStandardAmounts {
+  const exact = MEDICARE_STANDARD_AMOUNTS_BY_YEAR[year];
+  if (exact) return exact;
+  const years = Object.keys(MEDICARE_STANDARD_AMOUNTS_BY_YEAR).map(Number).sort((a, b) => a - b);
+  const earlier = years.filter((y) => y < year);
+  if (earlier.length === 0) return MEDICARE_STANDARD_AMOUNTS_BY_YEAR[years[0]];
+  const lastKnownYear = earlier[earlier.length - 1];
+  const growth = Math.pow(1 + healthcareInflationRate, year - lastKnownYear);
+  const known = MEDICARE_STANDARD_AMOUNTS_BY_YEAR[lastKnownYear];
+  return { partB: known.partB * growth, partD: known.partD * growth, partBDeductible: known.partBDeductible * growth };
 }

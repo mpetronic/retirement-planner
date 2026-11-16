@@ -34,8 +34,11 @@ import {
   resolveExpenseCost,
   ALL_STATES_COST_KEY
 } from '../types';
-import { BASE_MEDICARE_PART_B, BASE_MEDICARE_PART_D } from '../engine/taxRates';
+import { getMedicareStandardAmounts } from '../engine/federalTaxRules';
 import { newCatalogItemId } from '../shared/utils/plannerCategories';
+
+// Used only when the parent does not pass the plan's rate
+const DEFAULT_HEALTHCARE_INFLATION_RATE = 0.05;
 
 interface DetailedExpensesDialogProps {
   isOpen: boolean;
@@ -45,6 +48,7 @@ interface DetailedExpensesDialogProps {
   detailedExpenses: DetailedExpensesState | undefined;
   onSave: (expenses: DetailedExpensesState) => void;
   simStartYear?: number;
+  healthcareInflationRate?: number;
   relocationYear?: number | null;
   youHealthcare?: HealthcareConfig;
   wifeHealthcare?: HealthcareConfig;
@@ -60,6 +64,7 @@ export const DetailedExpensesDialog: React.FC<DetailedExpensesDialogProps> = ({
   detailedExpenses,
   onSave,
   simStartYear = 2026,
+  healthcareInflationRate = DEFAULT_HEALTHCARE_INFLATION_RATE,
   relocationYear = null,
   youHealthcare,
   wifeHealthcare,
@@ -662,13 +667,14 @@ export const DetailedExpensesDialog: React.FC<DetailedExpensesDialogProps> = ({
     const wifePre65OOP = (!isSingleFiler && wifeStateHc) ? ((wifeStateHc?.pre65MedicalOOP ?? 0) + (wifeStateHc?.pre65DentalOOP ?? 0) + (wifeStateHc?.pre65VisionOOP ?? 0)) : 0;
     const totalPre65OOP = youPre65OOP + wifePre65OOP;
 
-    // Medicare Monthly & Annual
-    const youB = (youHealthcare?.medicarePartBPremium !== null && youHealthcare?.medicarePartBPremium !== undefined) ? youHealthcare.medicarePartBPremium : BASE_MEDICARE_PART_B;
-    const youD = (youStateHc?.medicarePartDPremium !== null && youStateHc?.medicarePartDPremium !== undefined) ? youStateHc.medicarePartDPremium : BASE_MEDICARE_PART_D;
+    // Medicare Monthly & Annual, in start-year dollars
+    const medicareBase = getMedicareStandardAmounts(simStartYear, healthcareInflationRate);
+    const youB = (youHealthcare?.medicarePartBPremium !== null && youHealthcare?.medicarePartBPremium !== undefined) ? youHealthcare.medicarePartBPremium : medicareBase.partB;
+    const youD = (youStateHc?.medicarePartDPremium !== null && youStateHc?.medicarePartDPremium !== undefined) ? youStateHc.medicarePartDPremium : medicareBase.partD;
     const youMedMonthly = (youHealthcare ? (youB + youD) : 0) + (youStateHc?.supplementPremium ?? 0) + (youStateHc?.post65DentalPremium ?? 0) + (youStateHc?.post65VisionPremium ?? 0);
 
-    const wifeB = (wifeHealthcare?.medicarePartBPremium !== null && wifeHealthcare?.medicarePartBPremium !== undefined) ? wifeHealthcare.medicarePartBPremium : BASE_MEDICARE_PART_B;
-    const wifeD = (wifeStateHc?.medicarePartDPremium !== null && wifeStateHc?.medicarePartDPremium !== undefined) ? wifeStateHc.medicarePartDPremium : BASE_MEDICARE_PART_D;
+    const wifeB = (wifeHealthcare?.medicarePartBPremium !== null && wifeHealthcare?.medicarePartBPremium !== undefined) ? wifeHealthcare.medicarePartBPremium : medicareBase.partB;
+    const wifeD = (wifeStateHc?.medicarePartDPremium !== null && wifeStateHc?.medicarePartDPremium !== undefined) ? wifeStateHc.medicarePartDPremium : medicareBase.partD;
     const wifeMedMonthly = (!isSingleFiler && wifeHealthcare) ? ((wifeB + wifeD) + (wifeStateHc?.supplementPremium ?? 0) + (wifeStateHc?.post65DentalPremium ?? 0) + (wifeStateHc?.post65VisionPremium ?? 0)) : 0;
 
     const totalMedicareMonthly = youMedMonthly + wifeMedMonthly;
@@ -739,7 +745,7 @@ export const DetailedExpensesDialog: React.FC<DetailedExpensesDialogProps> = ({
       totalMedicareAnnual,
       totalMedicareOOP,
     };
-  }, [youHealthcare, wifeHealthcare, isSingleFiler, activeState]);
+  }, [youHealthcare, wifeHealthcare, isSingleFiler, activeState, simStartYear, healthcareInflationRate]);
 
   const showHealthcareCategory = useMemo(() => {
     if (!activeHealthcareSummary) return false;

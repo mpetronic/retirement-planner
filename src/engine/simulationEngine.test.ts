@@ -489,7 +489,7 @@ describe('runRetirementSimulation', () => {
     const actualEndTaxable = row2040!.endYourTaxableBrokerage + row2040!.endWifeTaxableBrokerage;
     // Expected value calibrated for the monthly-compounding engine with cash buffer yield
     // and prior-year tax-funding income carried into the following tax year.
-    expect(actualEndTaxable).toBeCloseTo(669638.2, 0);
+    expect(actualEndTaxable).toBeCloseTo(663730.2, 0);
   });
 
   it('should apply pre-Medicare premiums and detailed health expenses correctly based on age, work status, and retirement', () => {
@@ -802,7 +802,7 @@ describe('runRetirementSimulation', () => {
     expect(row2026!.incomeInflow).toBeGreaterThanOrEqual(19500);
 
     const row2045MD = resultsMD.find(r => r.year === 2045);
-    expect(row2045MD!.endWifeTaxableBasis).toBeCloseTo(361632.7, 1);
+    expect(row2045MD!.endWifeTaxableBasis).toBeCloseTo(356596.5, 1);
 
     // Basis behavior must not depend on the state of residence.
     for (const stateCode of ['FL', 'TX']) {
@@ -1045,7 +1045,7 @@ describe('runRetirementSimulation', () => {
     expect(row2026).toBeDefined();
 
     // Deficit will exhaust all 50k cash first.
-    expect(row2026!.drawdownCash).toBeCloseTo(50409.35, 1);
+    expect(row2026!.drawdownCash).toBeCloseTo(50409.13, 1);
     expect(row2026!.endYourCash).toBe(0);
 
     // Remaining deficit is drawn from Taxable Brokerage.
@@ -1920,7 +1920,7 @@ describe('runRetirementSimulation fixes', () => {
     it('should contribute max pre-tax 401(k) and reduce taxable salary in pre-retirement working years', () => {
       const inputs = getMockInputs();
       inputs.simulationStartYear = 2026;
-      inputs.you.birthDate = '1965-06-15'; // Age 61 in 2026 (age 60-63 SECURE 2.0 catchup: $23,500 + $11,250 = $34,750)
+      inputs.you.birthDate = '1965-06-15'; // Age 61 in 2026 (age 60-63 SECURE 2.0 catchup: $24,500 + $11,250 = $35,750)
       inputs.you.plannedRetirementAge = 65; // working all of 2026
       inputs.you.activeSalary = 150000;
       inputs.isSingleFiler = true;
@@ -1929,7 +1929,7 @@ describe('runRetirementSimulation fixes', () => {
       const results = runRetirementSimulation(inputs);
       const row2026 = results[0];
 
-      expect(row2026.employee401kContribution).toBeCloseTo(34750, 0);
+      expect(row2026.employee401kContribution).toBeCloseTo(35750, 0);
       expect(row2026.ficaTaxesPaid).toBeGreaterThan(0);
       expect(row2026.incomeTaxWithheld).toBeGreaterThan(0);
       expect(row2026.netTakeHomeSalary).toBeGreaterThan(0);
@@ -1941,6 +1941,28 @@ describe('runRetirementSimulation fixes', () => {
 
       // Taxable income should be based on gross salary minus 401k contribution
       expect(row2026.fedAGI).toBeLessThan(150000);
+    });
+
+    it('should not index the Additional Medicare Tax threshold and should cap Social Security tax at the 2026 wage base', () => {
+      const run = (salary: number, startYear: number) => {
+        const inputs = getMockInputs();
+        inputs.simulationStartYear = startYear;
+        inputs.isSingleFiler = true;
+        inputs.you.birthDate = `${startYear - 40}-06-15`; // Under 50, so no catch-up
+        inputs.you.plannedRetirementAge = 65;
+        inputs.you.activeSalary = salary;
+        return runRetirementSimulation(inputs)[0];
+      };
+      const SS_RATE = 0.062;
+      const MEDICARE_RATE = 0.0145;
+      const ADDITIONAL_MEDICARE_RATE = 0.009;
+      const WAGE_BASE_2026 = 184500;
+      const ADDITIONAL_MEDICARE_THRESHOLD = 200000;
+
+      // Salary above both the wage base and the unindexed threshold in the 2026 start year
+      const salary = 250000;
+      const expected = SS_RATE * WAGE_BASE_2026 + MEDICARE_RATE * salary + ADDITIONAL_MEDICARE_RATE * (salary - ADDITIONAL_MEDICARE_THRESHOLD);
+      expect(run(salary, 2026).ficaTaxesPaid).toBeCloseTo(expected, 0);
     });
 
     it('should preserve cash savings buffer ($0 cash drawdown) in transition year when full-year net salary exceeds full-year expenses', () => {

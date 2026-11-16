@@ -383,8 +383,6 @@ export const DEFAULT_CHARITY_SETTINGS: CharitySettings = {
   useQCD: true,
 };
 
-export const BASE_QCD_LIMIT = 105000;
-
 export interface YearActualsRecord {
   year: number;
   

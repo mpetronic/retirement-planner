@@ -3,8 +3,8 @@
 import { getFederalRules } from './federalTaxRules';
 export type { TaxBracket, IRMAATier } from './federalTaxRules';
 
-export const BASE_MEDICARE_PART_B = 202.90;
-export const BASE_MEDICARE_PART_D = 34.50;
+/** Additional Medicare Tax rate (IRC 3101(b)(2)) on wages. Thresholds are year-keyed in federalTaxRules.ts. */
+export const STATUTORY_ADDITIONAL_MEDICARE_RATE = 0.009;
 
 /**
  * Latest-known-year federal rules, private to the static Roth target presets and defaults below, which

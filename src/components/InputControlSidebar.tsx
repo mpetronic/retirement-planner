@@ -1370,6 +1370,7 @@ export const InputControlSidebar: React.FC<InputControlSidebarProps> = ({
           targetState={inputs.jurisdiction.targetState}
           relocationYear={inputs.jurisdiction.relocationYear}
           simStartYear={simStartYear}
+          healthcareInflationRate={inputs.growthAssumptions.healthcareInflationRate}
           detailedExpenses={inputs.detailedExpenses}
           onSave={(expenses) => updateNestedState('detailedExpenses', '', expenses)}
           youHealthcare={inputs.you.healthcare}
@@ -1392,7 +1393,6 @@ export const InputControlSidebar: React.FC<InputControlSidebarProps> = ({
           currentState={inputs.jurisdiction.currentState}
           targetState={inputs.jurisdiction.targetState}
           relocationYear={inputs.jurisdiction.relocationYear}
-          startYear={simStartYear}
           onSave={(config) => updateNestedState(editingHealthcarePerson, 'healthcare', config)}
         />
       )}
