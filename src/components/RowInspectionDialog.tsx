@@ -2,7 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import { X, TrendingUp, TrendingDown, Wallet, Activity, ShieldAlert, Shield, Award } from 'lucide-react';
 import { SimulationResultRow, AppStateInputs } from '../types';
-import { getFederalRules } from '../engine/federalTaxRules';
+import { getFederalRules, indexedIrmaaLimit } from '../engine/federalTaxRules';
 import { SankeyFlowDiagram } from './SankeyFlowDiagram';
 
 interface RowInspectionDialogProps {
@@ -153,9 +153,9 @@ export const RowInspectionDialog: React.FC<RowInspectionDialogProps> = ({
   const tierMinLimit = (() => {
     if (row.surchargeTier === 0) return 0;
     const prevTier = irmaaTiers[row.surchargeTier - 1];
-    return prevTier.limit === Infinity ? Infinity : prevTier.limit * premiumYearCpi;
+    return indexedIrmaaLimit(prevTier, premiumYearCpi);
   })();
-  const tierMaxLimit = currentTier.limit === Infinity ? Infinity : currentTier.limit * premiumYearCpi;
+  const tierMaxLimit = indexedIrmaaLimit(currentTier, premiumYearCpi);
 
   return createPortal(
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm transition-all duration-300">

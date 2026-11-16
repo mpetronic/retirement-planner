@@ -39,6 +39,7 @@ import { TaxEquilibriumModal } from './TaxEquilibriumModal';
 import { optimizeRetirementScenario, OptimizationResult, OptimizationGoal } from '../engine/optimizer';
 import { 
   getTargetPresetInfo, 
+  presetIndexFactor,
   DEFAULT_FILL_TO_TARGET_VALUE, 
   CONVERSION_TARGET_PRESETS,
   FED_STANDARD_DEDUCTION_MFJ 
@@ -256,6 +257,7 @@ export const TaxableIncomeWorkspace: React.FC<TaxableIncomeWorkspaceProps> = ({
         wifeAge: r.wifeAge,
         isSingle,
         cpiFactor: r.cpiFactor,
+        federalIndexFactor: r.federalIndexFactor,
         grossNonConvAGI,
         grossTotalAGI,
         stdDeduction,
@@ -292,7 +294,7 @@ export const TaxableIncomeWorkspace: React.FC<TaxableIncomeWorkspaceProps> = ({
 
     const dataPoints = processedRows.map((r) => {
       const baseVal = r.isSingle ? singleBase : jointBase;
-      const inflatedBase = baseVal * r.cpiFactor;
+      const inflatedBase = baseVal * (preset ? presetIndexFactor(preset, r.cpiFactor, r.federalIndexFactor ?? r.cpiFactor) : r.cpiFactor);
       // If IRMAA MAGI based, translate MAGI threshold to equivalent Taxable Income ceiling:
       // Taxable Ceiling = MAGI Limit - Standard Deduction
       if (isMAGIBased) {

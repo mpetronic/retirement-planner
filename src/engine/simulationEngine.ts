@@ -4,9 +4,10 @@ import {
   BASE_MEDICARE_PART_D,
   getIRSUniformLifetimeFactor,
   getTargetPresetInfo,
+  presetIndexFactor,
 } from './taxRates';
 import { calculateFederalDeduction, countAgedFilers } from './federalDeduction';
-import { FederalIndexing, getFederalIndexing } from './federalTaxRules';
+import { FederalIndexing, getFederalIndexing, indexedIrmaaLimit } from './federalTaxRules';
 import { calculateStateAndLocalTax, calculatePensionExclusion, getStateTaxProfile, resolveActiveJurisdiction } from './stateTaxRegistry';
 
 const TARGET_AGI_DEDUCTION_ITERATIONS = 12;
@@ -1136,10 +1137,10 @@ export function runRetirementSimulation(
     let wifePartDSurcharge = 0;
     let surchargeTier = 0;
     const irmaaTiers = (isSurvivorActive || inputs.isSingleFiler) ? federal.rules.irmaaTiers.single : federal.rules.irmaaTiers.mfj;
-    // Tier limits are published for the premium year, so scale by this year's CPI (compared to year-2 MAGI)
+    // Tier limits are published for the premium year, so index them to this year (compared to year-2 MAGI)
     for (let i = irmaaTiers.length - 1; i >= 0; i--) {
       const prevTier = irmaaTiers[i - 1];
-      const prevLimit = prevTier ? (prevTier.limit === Infinity ? Infinity : prevTier.limit * federal.indexFactor) : 0;
+      const prevLimit = prevTier ? indexedIrmaaLimit(prevTier, federal.indexFactor) : 0;
       if (magiTwoYearsAgo > prevLimit) {
         surchargeTier = irmaaTiers[i].tierNumber;
         const basePartB = irmaaTiers[i].partBSurcharge * healthcareFactor;
@@ -1746,7 +1747,7 @@ export function runRetirementSimulation(
 
       let targetAGI: number;
       if (isBracketTarget && presetInfo) {
-        const targetTaxable = (isSingle ? presetInfo.singleBase : presetInfo.jointBase) * cpiFactor;
+        const targetTaxable = (isSingle ? presetInfo.singleBase : presetInfo.jointBase) * presetIndexFactor(presetInfo, cpiFactor, federal.indexFactor);
         // The deduction itself depends on AGI (senior phase-out, SALT phase-down, charity floor), so
         // iterate until the target AGI and the deduction taken at that AGI agree.
         targetAGI = targetTaxable + deductionAtAGI(currentBaselineOrdinary + currentCapitalGains);
@@ -1754,7 +1755,7 @@ export function runRetirementSimulation(
           targetAGI = targetTaxable + deductionAtAGI(targetAGI);
         }
       } else if (presetInfo) {
-        const targetMAGI = (isSingle ? presetInfo.singleBase : presetInfo.jointBase) * cpiFactor;
+        const targetMAGI = (isSingle ? presetInfo.singleBase : presetInfo.jointBase) * presetIndexFactor(presetInfo, cpiFactor, federal.indexFactor);
         targetAGI = targetMAGI;
       } else {
         targetAGI = inputs.rothConversionTargetValue * cpiFactor;

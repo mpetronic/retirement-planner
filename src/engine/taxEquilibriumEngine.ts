@@ -12,7 +12,7 @@ import {
   STATUTORY_MEDICARE_ELIGIBILITY_AGE,
 } from './taxRates';
 import { getStateTaxProfile } from './stateTaxRegistry';
-import { getFederalRules } from './federalTaxRules';
+import { getFederalRules, indexedIrmaaLimit } from './federalTaxRules';
 
 /**
  * Conversion Search Step Sizes for Coarse-to-Fine Convergence
@@ -351,8 +351,7 @@ export function calculateTaxEquilibriumSchedule(
           limitingTier = nextTierNum;
           const prevTierIndex = Math.max(0, nextTierNum - 1);
           const cpiFactor = curEval.ledgerRow?.federalIndexFactor ?? (curEval.ledgerRow?.cpiFactor || 1);
-          const baseThreshold = tiers[prevTierIndex]?.limit ?? tiers[0].limit;
-          limitingThreshold = baseThreshold * cpiFactor;
+          limitingThreshold = indexedIrmaaLimit(tiers[prevTierIndex] ?? tiers[0], cpiFactor);
           const lookbackYear = year + STATUTORY_IRMAA_LOOKBACK_YEARS;
           const formattedThreshold = new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 }).format(limitingThreshold);
           const formattedDelta = new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 }).format(deltaIRMAA);

@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useSta
 import { createPortal } from 'react-dom';
 import { SimulationResultRow, AppStateInputs, getSimulationStartYear } from '../types';
 import { TableProperties, Info, AlertTriangle, X } from 'lucide-react';
-import { getFederalIndexing, getFederalRules } from '../engine/federalTaxRules';
+import { getFederalIndexing, getFederalRules, indexedIrmaaLimit } from '../engine/federalTaxRules';
 import { calculateFedTaxWithLTCG, calculateTaxableSS } from '../engine/simulationEngine';
 import { calculateStateAndLocalTax, calculatePensionExclusion, resolveActiveJurisdiction } from '../engine/stateTaxRegistry';
 import { countAgedFilers } from '../engine/federalDeduction';
@@ -145,7 +145,7 @@ export const LookbackLedgerTable: React.FC<LookbackLedgerTableProps> = ({
       let currentTierIdx = 0;
       for (let i = tiers.length - 1; i >= 0; i--) {
         const prevTier = tiers[i - 1];
-        const prevLimit = prevTier ? (prevTier.limit === Infinity ? Infinity : prevTier.limit * cpiFactor) : 0;
+        const prevLimit = prevTier ? indexedIrmaaLimit(prevTier, cpiFactor) : 0;
         if (magi > prevLimit) {
           currentTierIdx = i;
           break;
@@ -154,10 +154,7 @@ export const LookbackLedgerTable: React.FC<LookbackLedgerTableProps> = ({
 
       if (currentTierIdx > 0) {
         const crossedTier = tiers[currentTierIdx - 1];
-        let cliffLimit = crossedTier.limit;
-        if (crossedTier.tierNumber < 4) {
-          cliffLimit = crossedTier.limit * cpiFactor;
-        }
+        const cliffLimit = indexedIrmaaLimit(crossedTier, cpiFactor);
 
         const excess = magi - cliffLimit;
         if (excess > 0 && excess <= 5000) {
@@ -866,9 +863,7 @@ export const LookbackLedgerTable: React.FC<LookbackLedgerTableProps> = ({
                           <div className="space-y-0.5">
                             {tiers.map((tier) => {
                               const isActive = tier.tierNumber === r.surchargeTier;
-                              const inflatedLimit = tier.limit === Infinity
-                                ? null
-                                : (tier.tierNumber < 4 ? tier.limit * cpiFactor : tier.limit);
+                              const inflatedLimit = tier.limit === Infinity ? null : indexedIrmaaLimit(tier, cpiFactor);
                               const monthlySurcharge = (tier.partBSurcharge + tier.partDSurcharge) * healthcareFactor;
                               return (
                                 <div

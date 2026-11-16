@@ -11,6 +11,8 @@ export interface TaxBracket {
 export interface IRMAATier {
   tierNumber: number;
   limit: number; // MAGI upper limit
+  /** False for the top cliff, whose MAGI limit is fixed by statute and not adjusted for inflation. */
+  inflationIndexed: boolean;
   partBSurcharge: number;
   partDSurcharge: number;
 }
@@ -72,24 +74,30 @@ export const FED_YEAR_RULES: Record<number, FederalYearRules> = {
     irmaaTiers: {
       // Tier 5 represents MAGI at or above $750k (MFJ) or $500k (single), so its limit is Infinity
       mfj: [
-        { tierNumber: 0, limit: 218000, partBSurcharge: 0.00, partDSurcharge: 0.00 },
-        { tierNumber: 1, limit: 274000, partBSurcharge: 81.20, partDSurcharge: 14.50 },
-        { tierNumber: 2, limit: 342000, partBSurcharge: 202.90, partDSurcharge: 37.50 },
-        { tierNumber: 3, limit: 410000, partBSurcharge: 324.60, partDSurcharge: 60.40 },
-        { tierNumber: 4, limit: 749999, partBSurcharge: 446.30, partDSurcharge: 83.30 },
-        { tierNumber: 5, limit: Infinity, partBSurcharge: 487.00, partDSurcharge: 91.00 },
+        { tierNumber: 0, limit: 218000, inflationIndexed: true, partBSurcharge: 0.00, partDSurcharge: 0.00 },
+        { tierNumber: 1, limit: 274000, inflationIndexed: true, partBSurcharge: 81.20, partDSurcharge: 14.50 },
+        { tierNumber: 2, limit: 342000, inflationIndexed: true, partBSurcharge: 202.90, partDSurcharge: 37.50 },
+        { tierNumber: 3, limit: 410000, inflationIndexed: true, partBSurcharge: 324.60, partDSurcharge: 60.40 },
+        { tierNumber: 4, limit: 749999, inflationIndexed: false, partBSurcharge: 446.30, partDSurcharge: 83.30 },
+        { tierNumber: 5, limit: Infinity, inflationIndexed: true, partBSurcharge: 487.00, partDSurcharge: 91.00 },
       ],
       single: [
-        { tierNumber: 0, limit: 109000, partBSurcharge: 0.00, partDSurcharge: 0.00 },
-        { tierNumber: 1, limit: 137000, partBSurcharge: 81.20, partDSurcharge: 14.50 },
-        { tierNumber: 2, limit: 171000, partBSurcharge: 202.90, partDSurcharge: 37.50 },
-        { tierNumber: 3, limit: 205000, partBSurcharge: 324.60, partDSurcharge: 60.40 },
-        { tierNumber: 4, limit: 499999, partBSurcharge: 446.30, partDSurcharge: 83.30 },
-        { tierNumber: 5, limit: Infinity, partBSurcharge: 487.00, partDSurcharge: 91.00 },
+        { tierNumber: 0, limit: 109000, inflationIndexed: true, partBSurcharge: 0.00, partDSurcharge: 0.00 },
+        { tierNumber: 1, limit: 137000, inflationIndexed: true, partBSurcharge: 81.20, partDSurcharge: 14.50 },
+        { tierNumber: 2, limit: 171000, inflationIndexed: true, partBSurcharge: 202.90, partDSurcharge: 37.50 },
+        { tierNumber: 3, limit: 205000, inflationIndexed: true, partBSurcharge: 324.60, partDSurcharge: 60.40 },
+        { tierNumber: 4, limit: 499999, inflationIndexed: false, partBSurcharge: 446.30, partDSurcharge: 83.30 },
+        { tierNumber: 5, limit: Infinity, inflationIndexed: true, partBSurcharge: 487.00, partDSurcharge: 91.00 },
       ],
     },
   },
 };
+
+/** IRMAA tier MAGI limit in a simulated year's dollars. The top cliff is statutory and stays fixed. */
+export function indexedIrmaaLimit(tier: IRMAATier, indexFactor: number): number {
+  if (tier.limit === Infinity || !tier.inflationIndexed) return tier.limit;
+  return tier.limit * indexFactor;
+}
 
 /** Rules in force for a tax year: the latest entry at or before it, or the latest entry when no year is given. */
 export function getFederalRules(year?: number): FederalYearRules {

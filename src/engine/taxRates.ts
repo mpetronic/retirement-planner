@@ -47,9 +47,26 @@ export const STATUTORY_MEDICARE_ELIGIBILITY_AGE = 65;
  */
 export const DEFAULT_FILL_TO_TARGET_VALUE = FED_BRACKETS_MFJ.find((b) => b.rate === 0.12)?.limit ?? 100800;
 
+/**
+ * How a preset's dollar value is carried to a simulated year: 'federal' follows the year's federal rule
+ * indexing, 'start-year' follows plan CPI from the simulation start (custom values entered in start-year
+ * dollars), and 'fixed' is not adjusted (statutory IRMAA top cliff).
+ */
+export type PresetIndexing = 'federal' | 'start-year' | 'fixed';
+
+export function presetIndexFactor(
+  preset: { indexing: PresetIndexing },
+  cpiFactor: number,
+  federalIndexFactor: number
+): number {
+  if (preset.indexing === 'fixed') return 1;
+  return preset.indexing === 'federal' ? federalIndexFactor : cpiFactor;
+}
+
 export interface ConversionTargetPreset {
   id: string;
   type: 'bracket' | 'irmaa';
+  indexing: PresetIndexing;
   rateLabel: string;
   shortLabel: string;
   description: string;
@@ -85,6 +102,7 @@ export const CONVERSION_TARGET_PRESETS: ConversionTargetPreset[] = [
     return {
       id: `bracket_${pct}`,
       type: 'bracket' as const,
+      indexing: 'federal' as const,
       rateLabel: `${pct}%`,
       shortLabel: `${pct}% ($${kStr}k)`,
       description: `Top of ${pct}% Fed Tax Bracket ($${b.limit.toLocaleString()} Taxable Income)`,
@@ -99,6 +117,7 @@ export const CONVERSION_TARGET_PRESETS: ConversionTargetPreset[] = [
   {
     id: 'irmaa_1',
     type: 'irmaa' as const,
+    indexing: 'federal' as const,
     rateLabel: 'Tier 1',
     shortLabel: `Tier 1 ($${(IRMAA_TIERS_MFJ[0].limit / 1000).toFixed(0)}k)`,
     description: `IRMAA Tier 1 Cliff ($${IRMAA_TIERS_MFJ[0].limit.toLocaleString()} MAGI)`,
@@ -110,6 +129,7 @@ export const CONVERSION_TARGET_PRESETS: ConversionTargetPreset[] = [
   {
     id: 'irmaa_2',
     type: 'irmaa' as const,
+    indexing: 'federal' as const,
     rateLabel: 'Tier 2',
     shortLabel: `Tier 2 ($${(IRMAA_TIERS_MFJ[1].limit / 1000).toFixed(0)}k)`,
     description: `IRMAA Tier 2 Cliff ($${IRMAA_TIERS_MFJ[1].limit.toLocaleString()} MAGI)`,
@@ -121,6 +141,7 @@ export const CONVERSION_TARGET_PRESETS: ConversionTargetPreset[] = [
   {
     id: 'irmaa_3',
     type: 'irmaa' as const,
+    indexing: 'federal' as const,
     rateLabel: 'Tier 3',
     shortLabel: `Tier 3 ($${(IRMAA_TIERS_MFJ[2].limit / 1000).toFixed(0)}k)`,
     description: `IRMAA Tier 3 Cliff ($${IRMAA_TIERS_MFJ[2].limit.toLocaleString()} MAGI)`,
@@ -132,6 +153,7 @@ export const CONVERSION_TARGET_PRESETS: ConversionTargetPreset[] = [
   {
     id: 'irmaa_4',
     type: 'irmaa' as const,
+    indexing: 'federal' as const,
     rateLabel: 'Tier 4',
     shortLabel: `Tier 4 ($${(IRMAA_TIERS_MFJ[3].limit / 1000).toFixed(0)}k)`,
     description: `IRMAA Tier 4 Cliff ($${IRMAA_TIERS_MFJ[3].limit.toLocaleString()} MAGI)`,
@@ -143,6 +165,7 @@ export const CONVERSION_TARGET_PRESETS: ConversionTargetPreset[] = [
   {
     id: 'irmaa_5',
     type: 'irmaa' as const,
+    indexing: 'fixed' as const,
     rateLabel: 'Tier 5',
     shortLabel: 'Tier 5 ($750k)',
     description: 'IRMAA Tier 5 Cliff ($750,000 MAGI)',
@@ -168,6 +191,7 @@ export function getTargetPresetInfo(targetValue: number | null): ConversionTarge
   return {
     id: `custom_${targetValue}`,
     type: 'irmaa',
+    indexing: 'start-year',
     rateLabel: `$${targetValue.toLocaleString()}`,
     shortLabel: `$${(targetValue / 1000).toFixed(0)}k`,
     description: `Target MAGI Limit ($${targetValue.toLocaleString()} MAGI)`,
