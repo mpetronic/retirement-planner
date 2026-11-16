@@ -1,8 +1,6 @@
 import { AppStateInputs, SimulationResultRow, LockedReturnSequence, getSimulationStartYear } from '../types';
 import { runRetirementSimulation } from './simulationEngine';
 import {
-  FED_BRACKETS_MFJ,
-  STATUTORY_STD_DEDUCTION_SINGLE_MFJ_MIDPOINT,
   STATUTORY_NIIT_RATE,
   STATUTORY_NIIT_THRESHOLD_SINGLE,
   STATUTORY_NIIT_THRESHOLD_MFJ,
@@ -34,8 +32,8 @@ export const IRMAA_CLIFF_DRAG_DETECTION_THRESHOLD = 0.30;
 /**
  * Default fallback rates and timeline parameters
  */
-export const DEFAULT_TAX_EQUILIBRIUM_FLOOR_RATE = FED_BRACKETS_MFJ[1].rate; // 12% bracket rate
-export const DEFAULT_AVERAGE_BENCHMARK_RATE = FED_BRACKETS_MFJ[2].rate; // 22% bracket rate
+export const DEFAULT_TAX_EQUILIBRIUM_FLOOR_RATE = getFederalRules().brackets.mfj[1].rate; // 12% bracket rate
+export const DEFAULT_AVERAGE_BENCHMARK_RATE = getFederalRules().brackets.mfj[2].rate; // 22% bracket rate
 export const DEFAULT_ESTIMATED_STATE_INCOME_TAX_RATE = 0.05;
 export const DEFAULT_SAFETY_RUNWAY_MONTHS = 6;
 export const MONTHS_PER_YEAR = 12;
@@ -110,8 +108,10 @@ export function calculateDynamicRMDHurdleRate(ledger: SimulationResultRow[], cur
     const annualRMD = (row.yourRMD ?? 0) + (row.wifeRMD ?? 0);
     if (annualRMD <= 0) continue;
 
-    const isSingle = row.isSingleReturn ?? (row.standardDeduction < STATUTORY_STD_DEDUCTION_SINGLE_MFJ_MIDPOINT * (row.cpiFactor || 1));
     const federalRules = getFederalRules(row.year);
+    const standardDeductionMidpoint =
+      (federalRules.standardDeduction.single + federalRules.standardDeduction.mfj) / 2;
+    const isSingle = row.isSingleReturn ?? (row.standardDeduction < standardDeductionMidpoint * (row.federalIndexFactor ?? (row.cpiFactor || 1)));
     const brackets = isSingle ? federalRules.brackets.single : federalRules.brackets.mfj;
     // Ledger values are nominal future dollars, so bracket limits must be inflated to match.
     // Capital gains and qualified dividends sit on top of ordinary income and use preferential

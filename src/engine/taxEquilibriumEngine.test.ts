@@ -5,7 +5,9 @@ import {
   DEFAULT_TAX_EQUILIBRIUM_FLOOR_RATE,
 } from './taxEquilibriumEngine';
 import { AppStateInputs, SimulationResultRow } from '../types';
-import { FED_BRACKETS_MFJ, FED_STANDARD_DEDUCTION_MFJ } from './taxRates';
+import { getFederalRules } from './federalTaxRules';
+
+const FED_RULES_2026 = getFederalRules(2026);
 
 describe('taxEquilibriumEngine', () => {
   const getMockInputs = (): AppStateInputs => ({
@@ -86,7 +88,7 @@ describe('taxEquilibriumEngine', () => {
     const TEST_RMD = 50000;
     const TEST_SS = 40000;
     const TEST_STATUTORY_MAX_SS_SHARE = 0.85;
-    const rateOf = (limitRate: number) => FED_BRACKETS_MFJ.find((b) => b.rate === limitRate)!.rate;
+    const rateOf = (limitRate: number) => FED_RULES_2026.brackets.mfj.find((b) => b.rate === limitRate)!.rate;
 
     const makeRow = (overrides: Partial<SimulationResultRow>): SimulationResultRow =>
       ({
@@ -95,7 +97,7 @@ describe('taxEquilibriumEngine', () => {
         yourSS: 0,
         wifeSS: 0,
         taxableSS: 0,
-        standardDeduction: FED_STANDARD_DEDUCTION_MFJ * TEST_CPI_FACTOR,
+        standardDeduction: FED_RULES_2026.standardDeduction.mfj * TEST_CPI_FACTOR,
         cpiFactor: TEST_CPI_FACTOR,
         taxableIncome: TEST_NOMINAL_TAXABLE_INCOME,
         capitalGainsTriggered: 0,

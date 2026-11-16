@@ -42,7 +42,7 @@ import {
   presetIndexFactor,
   DEFAULT_FILL_TO_TARGET_VALUE, 
   CONVERSION_TARGET_PRESETS,
-  FED_STANDARD_DEDUCTION_MFJ 
+  matchesBracketTargetWithDeduction
 } from '../engine/taxRates';
 import { CustomRothScenarioModal } from './CustomRothScenarioModal';
 
@@ -849,7 +849,7 @@ export const TaxableIncomeWorkspace: React.FC<TaxableIncomeWorkspaceProps> = ({
                   {CONVERSION_TARGET_PRESETS.filter((p) => p.type === 'bracket').map((p) => {
                     const isSelected =
                       activeTarget === p.targetValue ||
-                      (activeTarget !== null && activeTarget === p.jointBase + FED_STANDARD_DEDUCTION_MFJ);
+                      matchesBracketTargetWithDeduction(p, activeTarget);
                     return (
                       <button
                         key={p.id}

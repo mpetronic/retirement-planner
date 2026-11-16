@@ -7,17 +7,16 @@ export const BASE_MEDICARE_PART_B = 202.90;
 export const BASE_MEDICARE_PART_D = 34.50;
 
 /**
- * Latest-known-year federal rules, for static UI presets and defaults only. Engine calculations must
- * look rules up by tax year through getFederalIndexing so each simulated year uses its own table.
+ * Latest-known-year federal rules, private to the static Roth target presets and defaults below, which
+ * are built once at load and need a single fixed year. Nothing else exports flat federal constants:
+ * engine calculations must look rules up by tax year through getFederalIndexing.
  */
 const LATEST_FEDERAL_RULES = getFederalRules();
-export const FED_BRACKETS_MFJ = LATEST_FEDERAL_RULES.brackets.mfj;
-export const FED_BRACKETS_SINGLE = LATEST_FEDERAL_RULES.brackets.single;
-export const FED_STANDARD_DEDUCTION_MFJ = LATEST_FEDERAL_RULES.standardDeduction.mfj;
-export const FED_STANDARD_DEDUCTION_SINGLE = LATEST_FEDERAL_RULES.standardDeduction.single;
-export const IRMAA_TIERS_MFJ = LATEST_FEDERAL_RULES.irmaaTiers.mfj;
-export const IRMAA_TIERS_SINGLE = LATEST_FEDERAL_RULES.irmaaTiers.single;
-export const STATUTORY_STD_DEDUCTION_SINGLE_MFJ_MIDPOINT = (FED_STANDARD_DEDUCTION_SINGLE + FED_STANDARD_DEDUCTION_MFJ) / 2;
+const FED_BRACKETS_MFJ = LATEST_FEDERAL_RULES.brackets.mfj;
+const FED_BRACKETS_SINGLE = LATEST_FEDERAL_RULES.brackets.single;
+const FED_STANDARD_DEDUCTION_MFJ = LATEST_FEDERAL_RULES.standardDeduction.mfj;
+const IRMAA_TIERS_MFJ = LATEST_FEDERAL_RULES.irmaaTiers.mfj;
+const IRMAA_TIERS_SINGLE = LATEST_FEDERAL_RULES.irmaaTiers.single;
 
 /**
  * Net Investment Income Tax (NIIT) Statutory Constants (IRC Section 1411)
@@ -176,6 +175,14 @@ export const CONVERSION_TARGET_PRESETS: ConversionTargetPreset[] = [
   },
 ];
 
+/**
+ * True when a typed target equals a preset's bracket ceiling expressed as AGI, that is the taxable income
+ * ceiling plus the standard deduction of the latest rule year.
+ */
+export function matchesBracketTargetWithDeduction(preset: { jointBase: number }, targetValue: number | null): boolean {
+  return targetValue !== null && targetValue === preset.jointBase + FED_STANDARD_DEDUCTION_MFJ;
+}
+
 export function getTargetPresetInfo(targetValue: number | null): ConversionTargetPreset | null {
   if (targetValue === null || targetValue === undefined || targetValue <= 0) return null;
 
@@ -184,7 +191,7 @@ export function getTargetPresetInfo(targetValue: number | null): ConversionTarge
       p.targetValue === targetValue ||
       p.jointBase === targetValue ||
       Math.abs(p.jointBase - targetValue) <= 1 ||
-      p.jointBase + FED_STANDARD_DEDUCTION_MFJ === targetValue
+      matchesBracketTargetWithDeduction(p, targetValue)
   );
   if (found) return found;
 
