@@ -45,12 +45,11 @@ import {
 import { FormatSetupModal } from './FormatSetupModal';
 import { toDuplicateCandidates } from '../utils/expenseSplit';
 import { REIMBURSABLE_GROUP, REIMBURSABLE_NAME } from '../shared/utils/reimbursableExpense';
+import { getWorksheetRowClassName } from './worksheetRowStyle';
+import { isAiMatchCandidate, isUncategorized } from './worksheetRowRules';
 
 // Amounts within one cent are treated as equal when matching against existing expenses.
 const AMOUNT_MATCH_TOLERANCE = 0.01;
-
-const isUncategorized = (row: Pick<ParsedWorksheetRow, 'category' | 'lineItem'>): boolean =>
-  row.category === UNCATEGORIZED || row.lineItem === UNCATEGORIZED;
 
 export interface ImportExpensesModalProps {
   isOpen: boolean;
@@ -509,7 +508,7 @@ export const ImportExpensesModal: React.FC<ImportExpensesModalProps> = ({
 
   // Trigger LLM Smart Categorization for uncategorized items
   const handleRunAiCategorization = async () => {
-    const unmapped = parsedRows.filter(isUncategorized);
+    const unmapped = parsedRows.filter(isAiMatchCandidate);
     if (unmapped.length === 0) return;
 
     setIsAiMatching(true);
@@ -530,7 +529,7 @@ export const ImportExpensesModal: React.FC<ImportExpensesModalProps> = ({
           const existsInCatalog = match && catalogItems.some(
             c => c.groupCategory === match.category && c.name === match.lineItem
           );
-          if (match && existsInCatalog && isUncategorized(r)) {
+          if (match && existsInCatalog && isAiMatchCandidate(r)) {
             return {
               ...r,
               category: match.category,
@@ -567,7 +566,7 @@ export const ImportExpensesModal: React.FC<ImportExpensesModalProps> = ({
       if (hideDuplicates && r.isDuplicate) return false;
 
       // Filter tabs
-      if (activeFilterTab === 'UNKNOWN' && !needsCatalogItem(r)) return false;
+      if (activeFilterTab === 'UNKNOWN' && (r.isPaymentTransfer || !needsCatalogItem(r))) return false;
       if (activeFilterTab === 'DUPLICATES' && !r.isDuplicate) return false;
       if (activeFilterTab === 'PAYMENTS' && !r.isPaymentTransfer) return false;
 
@@ -599,7 +598,13 @@ export const ImportExpensesModal: React.FC<ImportExpensesModalProps> = ({
       .reduce((sum, r) => sum + r.amount, 0),
     [selectedRows]
   );
-  const unknownCount = useMemo(() => parsedRows.filter(needsCatalogItem).length, [parsedRows, needsCatalogItem]);
+  // Payments and transfers are never stored, so they never need an expense name
+  const unknownCount = useMemo(
+    () => parsedRows.filter(r => !r.isPaymentTransfer && needsCatalogItem(r)).length,
+    [parsedRows, needsCatalogItem]
+  );
+  // Rows Smart Match AI will actually process; reaches zero once the AI has done what it can
+  const aiMatchCount = useMemo(() => parsedRows.filter(isAiMatchCandidate).length, [parsedRows]);
   const selectedUncategorizedCount = useMemo(() => selectedRows.filter(isUncategorized).length, [selectedRows]);
   const duplicateCount = useMemo(() => parsedRows.filter(r => r.isDuplicate).length, [parsedRows]);
   const paymentCount = useMemo(() => parsedRows.filter(r => r.isPaymentTransfer).length, [parsedRows]);
@@ -961,14 +966,14 @@ export const ImportExpensesModal: React.FC<ImportExpensesModalProps> = ({
                   <span>Hide Duplicates</span>
                 </label>
 
-                {unknownCount > 0 && (
+                {aiMatchCount > 0 && (
                   <button
                     onClick={handleRunAiCategorization}
                     disabled={isAiMatching}
                     className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700 text-white text-xs font-semibold shadow-md shadow-indigo-600/20 transition-all hover:scale-[1.02] active:scale-[0.98] disabled:opacity-50"
                   >
                     <Sparkles className={`w-3.5 h-3.5 ${isAiMatching ? 'animate-spin' : ''}`} />
-                    <span>{isAiMatching ? 'Categorizing...' : `Smart Match AI (${unknownCount})`}</span>
+                    <span>{isAiMatching ? 'Categorizing...' : `Smart Match AI (${aiMatchCount})`}</span>
                   </button>
                 )}
               </div>
@@ -987,7 +992,7 @@ export const ImportExpensesModal: React.FC<ImportExpensesModalProps> = ({
                   <select
                     value={bulkCategory}
                     onChange={(e) => setBulkCategory(e.target.value)}
-                    className="px-2 py-1 rounded-lg border border-indigo-200 dark:border-indigo-800 bg-white dark:bg-slate-900 text-xs text-slate-900 dark:text-slate-100"
+                    className="px-2 py-1 rounded-lg border border-indigo-200 dark:border-indigo-800 bg-white dark:bg-slate-800 text-xs text-slate-900 dark:text-slate-100"
                   >
                     <option value="">-- Set Category --</option>
                     {availableCategoryGroups.map(g => (
@@ -998,7 +1003,7 @@ export const ImportExpensesModal: React.FC<ImportExpensesModalProps> = ({
                   <select
                     value={bulkLineItem}
                     onChange={(e) => setBulkLineItem(e.target.value)}
-                    className="px-2 py-1 rounded-lg border border-indigo-200 dark:border-indigo-800 bg-white dark:bg-slate-900 text-xs text-slate-900 dark:text-slate-100"
+                    className="px-2 py-1 rounded-lg border border-indigo-200 dark:border-indigo-800 bg-white dark:bg-slate-800 text-xs text-slate-900 dark:text-slate-100"
                   >
                     <option value="">-- Set Expense Name --</option>
                     {catalogItems
@@ -1011,7 +1016,7 @@ export const ImportExpensesModal: React.FC<ImportExpensesModalProps> = ({
                   <select
                     value={bulkPayer}
                     onChange={(e) => setBulkPayer(e.target.value)}
-                    className="px-2 py-1 rounded-lg border border-indigo-200 dark:border-indigo-800 bg-white dark:bg-slate-900 text-xs text-slate-900 dark:text-slate-100"
+                    className="px-2 py-1 rounded-lg border border-indigo-200 dark:border-indigo-800 bg-white dark:bg-slate-800 text-xs text-slate-900 dark:text-slate-100"
                   >
                     <option value="">-- Set Payer --</option>
                     {payerOptions.map(p => (
@@ -1059,15 +1064,7 @@ export const ImportExpensesModal: React.FC<ImportExpensesModalProps> = ({
                     return (
                       <tr
                         key={row.id}
-                        className={`transition-colors ${
-                          row.isPaymentTransfer
-                            ? 'opacity-40 bg-slate-100/30 dark:bg-slate-900/30'
-                            : row.isDuplicate
-                            ? 'bg-slate-100/50 dark:bg-slate-900/50 text-slate-500'
-                            : isRowUnknown
-                            ? 'bg-amber-50/40 dark:bg-amber-950/20 hover:bg-amber-50/70'
-                            : 'hover:bg-slate-50 dark:hover:bg-slate-800/40'
-                        }`}
+                        className={getWorksheetRowClassName(row, isRowUnknown)}
                       >
                         {/* Select Checkbox */}
                         <td className="py-2 px-3 text-center">
@@ -1160,10 +1157,10 @@ export const ImportExpensesModal: React.FC<ImportExpensesModalProps> = ({
                                   handleUpdateRowLineItem(row.id, e.target.value);
                                 }
                               }}
-                              className={`w-full py-1 px-2 text-xs rounded-lg border ${
+                              className={`w-full py-1 px-2 text-xs rounded-lg border bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-200 ${
                                 row.lineItem === UNCATEGORIZED
-                                  ? 'border-amber-400 bg-amber-50/50 dark:bg-amber-950/30 text-amber-900 dark:text-amber-200 font-semibold'
-                                  : 'border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-200'
+                                  ? 'border-amber-400'
+                                  : 'border-slate-200 dark:border-slate-700'
                               } focus:ring-1 focus:ring-indigo-500`}
                             >
                               {categoryLineItems.map(item => (
