@@ -1021,7 +1021,6 @@ function App() {
         ledger={displayActiveLedger}
         parallelLedgers={displayParallelLedgers}
         successRate={monteCarloSummary.successRate}
-        monteCarloSummary={displayMonteCarloSummary}
         inputs={activeInputs}
         activeView={activeView}
         onNavigate={handleNavigate}
