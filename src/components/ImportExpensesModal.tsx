@@ -44,6 +44,7 @@ import {
 } from '../shared/utils/merchantMatcher';
 import { FormatSetupModal } from './FormatSetupModal';
 import { toDuplicateCandidates } from '../utils/expenseSplit';
+import { REIMBURSABLE_GROUP, REIMBURSABLE_NAME } from '../shared/utils/reimbursableExpense';
 
 // Amounts within one cent are treated as equal when matching against existing expenses.
 const AMOUNT_MATCH_TOLERANCE = 0.01;
@@ -591,7 +592,13 @@ export const ImportExpensesModal: React.FC<ImportExpensesModalProps> = ({
 
   // Counts and totals
   const selectedRows = useMemo(() => parsedRows.filter(r => r.selected && !r.isPaymentTransfer), [parsedRows]);
-  const totalSpendSelected = useMemo(() => selectedRows.reduce((sum, r) => sum + r.amount, 0), [selectedRows]);
+  // Rows classified as reimbursable are imported but are not the household's own spending
+  const totalSpendSelected = useMemo(
+    () => selectedRows
+      .filter(r => !(r.category === REIMBURSABLE_GROUP && r.lineItem === REIMBURSABLE_NAME))
+      .reduce((sum, r) => sum + r.amount, 0),
+    [selectedRows]
+  );
   const unknownCount = useMemo(() => parsedRows.filter(needsCatalogItem).length, [parsedRows, needsCatalogItem]);
   const selectedUncategorizedCount = useMemo(() => selectedRows.filter(isUncategorized).length, [selectedRows]);
   const duplicateCount = useMemo(() => parsedRows.filter(r => r.isDuplicate).length, [parsedRows]);

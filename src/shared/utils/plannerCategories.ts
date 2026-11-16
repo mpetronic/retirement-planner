@@ -1,6 +1,12 @@
 import { ExpenseCategory, StorageAdapter, ActualExpense } from '../types/expenses';
 import { normalizeDetailedExpenses, resolveExpenseCost, ALL_STATES_COST_KEY, ExpenseItemDefinition, DetailedExpensesState } from '../../types';
 import { resolveActiveJurisdiction } from '../../engine/stateTaxRegistry';
+import {
+  REIMBURSABLE_CATALOG_ID,
+  REIMBURSABLE_GROUP,
+  REIMBURSABLE_NAME,
+  REIMBURSABLE_DISPLAY_NAME,
+} from './reimbursableExpense';
 
 export interface PlannerExpenseLineItem {
   id: string;
@@ -12,6 +18,8 @@ export interface PlannerExpenseLineItem {
   icon?: string;
   isCustom?: boolean;
 }
+
+const REIMBURSABLE_COLOR = '#64748b'; // slate, to read as not part of spending
 
 const GROUP_COLORS: Record<string, string> = {
   Living: '#10b981', // emerald
@@ -182,6 +190,21 @@ export function getPlannerExpenseCatalog(activeState?: string): PlannerExpenseLi
     seenIds.add('healthcare-premiums');
   }
 
+  // Built-in item for money paid on someone else's behalf; never part of the budget
+  if (!seenIds.has(REIMBURSABLE_CATALOG_ID)) {
+    lineItems.push({
+      id: REIMBURSABLE_CATALOG_ID,
+      groupCategory: REIMBURSABLE_GROUP,
+      name: REIMBURSABLE_NAME,
+      displayName: REIMBURSABLE_DISPLAY_NAME,
+      plannedMonthlyDefault: 0,
+      color: REIMBURSABLE_COLOR,
+      icon: 'Tag',
+      isCustom: false,
+    });
+    seenIds.add(REIMBURSABLE_CATALOG_ID);
+  }
+
   return lineItems;
 }
 
@@ -317,6 +340,7 @@ export function syncCustomCategoriesToPlanner(customCategories: ExpenseCategory[
   for (const cat of customCategories) {
     if (cat.id === '__household_profiles__') continue;
     if (cat.id === 'healthcare-oop' || cat.id === 'healthcare-premiums' || cat.id === 'healthcare-irmaa') continue;
+    if (cat.id === REIMBURSABLE_CATALOG_ID) continue;
 
     // Strict guard: ONLY sync items that are explicitly flagged as custom user-created categories
     if (!cat.isCustom) continue;
@@ -544,6 +568,7 @@ export async function syncPlannerCatalogToCloudStorage(
     for (const cat of existingStorageCats) {
       if (cat.id === '__household_profiles__') continue;
       if (cat.id === 'healthcare-oop' || cat.id === 'healthcare-premiums' || cat.id === 'healthcare-irmaa') continue;
+      if (cat.id === REIMBURSABLE_CATALOG_ID) continue;
 
       const parts = cat.name.includes(' - ') ? cat.name.split(' - ') : ['', cat.name];
       const group = parts[0].trim();

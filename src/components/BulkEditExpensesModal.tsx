@@ -29,6 +29,7 @@ import {
 } from '../shared/utils/plannerCategories';
 import { normalizeMerchant, batchSaveLearnedMerchantRules } from '../shared/utils/merchantMatcher';
 import { findPossibleDuplicates, POSSIBLE_DUPLICATE_DATE_WINDOW_DAYS } from '../utils/expenseSplit';
+import { isReimbursableExpense } from '../shared/utils/reimbursableExpense';
 
 export interface BulkEditExpensesModalProps {
   isOpen: boolean;
@@ -1065,6 +1066,14 @@ export const BulkEditExpensesModal: React.FC<BulkEditExpensesModalProps> = ({
                       </td>
                       <td className="px-3.5 py-2.5 font-semibold text-white whitespace-nowrap">
                         {lineItem}
+                        {isReimbursableExpense(exp) && (
+                          <span
+                            className="ml-2 inline-block px-1.5 py-0.5 rounded bg-slate-800 text-slate-400 text-[10px] font-semibold border border-slate-700"
+                            title="Paid for someone else; not counted in your spending"
+                          >
+                            Not counted
+                          </span>
+                        )}
                         {duplicateInfo && (
                           <span className="ml-2 inline-block px-1.5 py-0.5 rounded bg-amber-500/15 text-amber-300 text-[10px] font-semibold border border-amber-500/40">
                             {duplicateInfo.daysApart === 0
