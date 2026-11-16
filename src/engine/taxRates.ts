@@ -67,15 +67,15 @@ export const FED_BRACKETS_SINGLE: TaxBracket[] = [
 
 // 2026 Federal Long-Term Capital Gains Brackets (Single)
 export const FED_LTCG_BRACKETS_SINGLE: TaxBracket[] = [
-  { rate: 0.00, limit: 50200 },
-  { rate: 0.15, limit: 554000 },
+  { rate: 0.00, limit: 49450 },
+  { rate: 0.15, limit: 545500 },
   { rate: 0.20, limit: Infinity }
 ];
 
 // 2026 Federal Long-Term Capital Gains Brackets (MFJ)
 export const FED_LTCG_BRACKETS_MFJ: TaxBracket[] = [
-  { rate: 0.00, limit: 100500 },
-  { rate: 0.15, limit: 623000 },
+  { rate: 0.00, limit: 98900 },
+  { rate: 0.15, limit: 613700 },
   { rate: 0.20, limit: Infinity }
 ];
 

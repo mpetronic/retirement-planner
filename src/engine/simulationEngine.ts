@@ -1137,10 +1137,10 @@ export function runRetirementSimulation(
     let wifePartDSurcharge = 0;
     let surchargeTier = 0;
     const irmaaTiers = (isSurvivorActive || inputs.isSingleFiler) ? IRMAA_TIERS_SINGLE : IRMAA_TIERS_MFJ;
-    const lookbackCpi = (lookbackIndex >= 0) ? ledger[lookbackIndex].cpiFactor : cpiFactor;
+    // Tier limits are published for the premium year, so scale by this year's CPI (compared to year-2 MAGI)
     for (let i = irmaaTiers.length - 1; i >= 0; i--) {
       const prevTier = irmaaTiers[i - 1];
-      const prevLimit = prevTier ? (prevTier.limit === Infinity ? Infinity : prevTier.limit * lookbackCpi) : 0;
+      const prevLimit = prevTier ? (prevTier.limit === Infinity ? Infinity : prevTier.limit * cpiFactor) : 0;
       if (magiTwoYearsAgo > prevLimit) {
         surchargeTier = irmaaTiers[i].tierNumber;
         const basePartB = irmaaTiers[i].partBSurcharge * healthcareFactor;

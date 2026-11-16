@@ -145,15 +145,16 @@ export const RowInspectionDialog: React.FC<RowInspectionDialogProps> = ({
   // 4. Surcharge Cliffs & Limits
   const irmaaTiers = isSingle ? IRMAA_TIERS_SINGLE : IRMAA_TIERS_MFJ;
   const currentTier = irmaaTiers.find(t => t.tierNumber === row.surchargeTier) || irmaaTiers[0];
-  const lookbackCpi = effectivePrevRow && effectivePrevRow.cpiFactor ? effectivePrevRow.cpiFactor : row.cpiFactor;
+  // Tier limits are for the premium year, so they scale with this year's CPI (compared to t-2 MAGI)
+  const premiumYearCpi = row.cpiFactor;
   
   // Find limits for this year's surcharge tier (based on t-2 MAGI)
   const tierMinLimit = (() => {
     if (row.surchargeTier === 0) return 0;
     const prevTier = irmaaTiers[row.surchargeTier - 1];
-    return prevTier.limit === Infinity ? Infinity : prevTier.limit * lookbackCpi;
+    return prevTier.limit === Infinity ? Infinity : prevTier.limit * premiumYearCpi;
   })();
-  const tierMaxLimit = currentTier.limit === Infinity ? Infinity : currentTier.limit * lookbackCpi;
+  const tierMaxLimit = currentTier.limit === Infinity ? Infinity : currentTier.limit * premiumYearCpi;
 
   return createPortal(
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm transition-all duration-300">

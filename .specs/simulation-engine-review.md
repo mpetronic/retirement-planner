@@ -30,8 +30,8 @@ Use this table to track what has been debated and fixed.
 | 7 | TE optimizer nominal income vs un-inflated brackets | Medium-High | Fixed |
 | 8 | OBBBA 2025 federal changes not modeled | Medium | Fixed |
 | 9 | Maryland state tax errors and stale values | Medium | Fixed |
-| 10 | 2026 LTCG thresholds look overstated | Low-Medium | Open |
-| 11 | IRMAA thresholds inflated to lookback year | Low-Medium | Open |
+| 10 | 2026 LTCG thresholds look overstated | Low-Medium | Fixed |
+| 11 | IRMAA thresholds inflated to lookback year | Low-Medium | Fixed |
 | 12 | Survivor filing-status inconsistencies | Low | Open |
 | 13 | Spousal benefit formula | Low-Medium | Open |
 | 14 | Survivor benefit 100% from age 60 | Low | Open |
@@ -421,6 +421,11 @@ the 0% zone.
 
 **Recommendation.** Verify against the IRS revenue procedure and correct.
 
+**Resolution.** Fixed. Verified against Rev. Proc. 2025-32 section 4.03 in the IRS PDF: single
+$49,450 / $545,500, MFJ $98,900 / $613,700. The four limits in `FED_LTCG_BRACKETS_SINGLE` and
+`FED_LTCG_BRACKETS_MFJ` in `taxRates.ts` now use those values, and the `calculateFedTaxWithLTCG` test
+expectation was updated to match (10,550 at 15% = 1,582.50).
+
 ---
 
 ## 11. IRMAA thresholds are inflated to the lookback year, not the premium year
@@ -437,6 +442,12 @@ cliff gets pushed over a tier it would not actually cross. This slightly oversta
 makes the TE optimizer stop converting a little early at each cliff.
 
 **Recommendation.** Use `cpiFactor` (the current year) for the tier limits.
+
+**Resolution.** Fixed. `simulationEngine.ts` now scales the tier limits by the current year's `cpiFactor`
+and the `lookbackCpi` variable is gone. MAGI is still the year minus 2 value. `RowInspectionDialog.tsx`
+had the same lookback-CPI scaling and now uses the row's own `cpiFactor`, so the dialog matches the
+engine. A new test steers 2026 MAGI between the unindexed and 2028-indexed Tier 0 limits and checks the
+2028 row stays in Tier 0. It fails on the old code (Tier 1).
 
 ---
 

@@ -10,6 +10,7 @@ import {
   calculateFedTaxWithLTCG,
   getRMDStartAge,
 } from './simulationEngine';
+import { IRMAA_TIERS_MFJ } from './taxRates';
 import { SAMPLE_DEMO_PLAN } from '../shared/utils/sampleDemoPlan';
 import { DEFAULT_DETAILED_EXPENSES, DEFAULT_EXPENSE_FREQUENCIES, normalizeDetailedExpenses, DetailedExpensesState, AppStateInputs, SimulationResultRow, getSSPaymentLevel, describeSSReductions, SSReductionConfig } from '../types';
 
@@ -1091,11 +1092,12 @@ describe('runRetirementSimulation', () => {
 describe('calculateFedTaxWithLTCG', () => {
   it('should compute tax with LTCG stacked correctly', () => {
     // Single filer, taxable ordinary = 40,000, taxable LTCG = 20,000.
-    // Expected ltcgTax: 9,800 * 0.15 = 1470.
+    // 0% bracket tops out at 49,450 (Rev. Proc. 2025-32), so 60,000 - 49,450 = 10,550 is taxed at 15%.
+    // Expected ltcgTax: 10,550 * 0.15 = 1582.5.
     const res = calculateFedTaxWithLTCG(40000, 20000, true, 1);
-    expect(res.ltcgTax).toBeCloseTo(1470, 1);
+    expect(res.ltcgTax).toBeCloseTo(1582.5, 1);
     expect(res.ordinaryTax).toBe(calculateFedTax(40000, true, 1));
-    expect(res.totalTax).toBe(res.ordinaryTax + 1470);
+    expect(res.totalTax).toBe(res.ordinaryTax + 1582.5);
   });
 });
 
@@ -2348,6 +2350,29 @@ describe('runRetirementSimulation fixes', () => {
       expect(row2026?.magiTwoYearsAgo).toBe(165000);
       expect(row2026?.surchargeTier).toBeGreaterThan(0);
       expect(row2026?.combinedSurchargeAnnual).toBeGreaterThan(0);
+    });
+
+    it('should scale IRMAA tier limits by the premium year CPI, not the lookback year CPI', () => {
+      const inputs = getBaseActualsTestInputs();
+      inputs.isSingleFiler = false;
+      inputs.you.plannedRetirementAge = 80; // Keep wages flowing so lookback MAGI is steered by salary
+      inputs.you.activeSalary = 200000;
+      inputs.fileSSA44LifeChangingEvent = false; // Spouse is retired, so keep SSA-44 from stripping wages from lookback MAGI
+      const probeMAGI = runRetirementSimulation(inputs).find(r => r.year === 2026)!.magi;
+      const probeCpi = runRetirementSimulation(inputs).find(r => r.year === 2028)!.cpiFactor;
+      expect(probeCpi).toBeGreaterThan(1);
+
+      // Steer 2026 MAGI to sit above the unindexed Tier 0 limit but below that limit indexed to 2028.
+      // 2028 premiums use 2028 thresholds, so the 2028 row must stay in Tier 0.
+      const unindexedTier0Limit = IRMAA_TIERS_MFJ[0].limit;
+      const indexedTier0Limit = unindexedTier0Limit * probeCpi;
+      const targetMAGI = (unindexedTier0Limit + indexedTier0Limit) / 2;
+      inputs.you.activeSalary += targetMAGI - probeMAGI;
+
+      const row2028 = runRetirementSimulation(inputs).find(r => r.year === 2028)!;
+      expect(row2028.magiTwoYearsAgo).toBeGreaterThan(unindexedTier0Limit);
+      expect(row2028.magiTwoYearsAgo).toBeLessThan(indexedTier0Limit);
+      expect(row2028.surchargeTier).toBe(0);
     });
   });
 
