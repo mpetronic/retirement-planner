@@ -137,7 +137,8 @@ export const LookbackLedgerTable: React.FC<LookbackLedgerTableProps> = ({
       const magi = r.magi;
       
       const cpiFactor = r.federalIndexFactor ?? r.cpiFactor;
-      const isSingle = simulateSurvivor && year >= deathYear;
+      // This year's MAGI is judged two years later using this year's filing status
+      const isSingle = r.isSingleReturn ?? (simulateSurvivor && year >= deathYear);
       const irmaaRules = getFederalRules(year).irmaaTiers;
       const tiers = isSingle ? irmaaRules.single : irmaaRules.mfj;
 
@@ -338,7 +339,7 @@ export const LookbackLedgerTable: React.FC<LookbackLedgerTableProps> = ({
                     isSingle,
                     cpiFactor,
                     taxYear: r.year,
-                    agedFilerCount: countAgedFilers(isSingle, !!inputs.isSingleFiler, r.yourAge, r.wifeAge, false),
+                    agedFilerCount: countAgedFilers(isSingle, !!inputs.isSingleFiler, r.yourAge, r.wifeAge, isSingle && !inputs.isSingleFiler),
                     pensionExclusion,
                     ordinaryIncome: Math.max(0, agiWithout - (r.capitalGainsTriggered || 0)),
                     capitalGains: r.capitalGainsTriggered || 0,
@@ -843,7 +844,7 @@ export const LookbackLedgerTable: React.FC<LookbackLedgerTableProps> = ({
 
                     {/* IRMAA Tier Reference Popup */}
                     {(() => {
-                      const isSingle = simulateSurvivor && r.year >= deathYear;
+                      const isSingle = r.irmaaUsesSingleTiers ?? (simulateSurvivor && r.year >= deathYear);
                       const irmaaRules = getFederalRules(r.year).irmaaTiers;
                       const tiers = isSingle ? irmaaRules.single : irmaaRules.mfj;
                       const cpiFactor = r.federalIndexFactor ?? r.cpiFactor;

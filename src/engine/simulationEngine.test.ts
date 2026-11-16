@@ -1,7 +1,10 @@
 import { describe, it, expect } from 'vitest';
 import {
   calculateSSBenefit,
-  calculateSpousalBenefit,
+  calculateExcessSpousalBenefit,
+  calculateSurvivorBenefit,
+  SS_SURVIVOR_EARLIEST_AGE_FACTOR,
+  SS_WIDOW_LIMIT_PIA_SHARE,
   calculateTaxableSS,
   solveRothConversionForTargetAGI,
   calculateFedTax,
@@ -52,36 +55,86 @@ describe('calculateSSBenefit', () => {
   });
 });
 
-describe('calculateSpousalBenefit', () => {
-  const primaryPIA = 2000; // Base spousal benefit would be 1000 (50%)
+describe('calculateExcessSpousalBenefit', () => {
+  const primaryPIA = 2000; // With no own PIA, the full excess is 1000 (50%)
 
-  it('should return 50% of primary PIA at FRA (67)', () => {
-    const benefit = calculateSpousalBenefit(primaryPIA, 67);
-    expect(benefit).toBeCloseTo(1000, 1);
+  it('should return 50% of primary PIA at FRA (67) when the spouse has no own benefit', () => {
+    expect(calculateExcessSpousalBenefit(primaryPIA, 0, 67, 67)).toBeCloseTo(1000, 1);
   });
 
   it('should not provide delayed credits past FRA (67)', () => {
-    const benefit70 = calculateSpousalBenefit(primaryPIA, 70);
-    expect(benefit70).toBeCloseTo(1000, 1);
+    expect(calculateExcessSpousalBenefit(primaryPIA, 0, 70, 70)).toBeCloseTo(1000, 1);
   });
 
   it('should return 0 if primary PIA is 0 or negative', () => {
-    expect(calculateSpousalBenefit(0, 67)).toBe(0);
-    expect(calculateSpousalBenefit(-100, 67)).toBe(0);
+    expect(calculateExcessSpousalBenefit(0, 0, 67, 67)).toBe(0);
+    expect(calculateExcessSpousalBenefit(-100, 0, 67, 67)).toBe(0);
   });
 
   it('should apply spousal early claim reduction schedule (25/36% first 36m, 5/12% next)', () => {
-    // 3 years (36 months) early (age 64)
-    // Reduction: 36 * (25/3600) = 25% reduction
-    // Spousal benefit: 1000 * 0.75 = 750
-    const benefit64 = calculateSpousalBenefit(primaryPIA, 64);
-    expect(benefit64).toBeCloseTo(750, 1);
+    // 36 months early (age 64): 25% reduction
+    expect(calculateExcessSpousalBenefit(primaryPIA, 0, 64, 64)).toBeCloseTo(750, 1);
+    // 60 months early (age 62): 25% + 10% = 35% reduction
+    expect(calculateExcessSpousalBenefit(primaryPIA, 0, 62, 62)).toBeCloseTo(650, 1);
+  });
 
-    // 5 years (60 months) early (age 62)
-    // Reduction: 36 * (25/3600) + 24 * (5/1200) = 25% + 10% = 35% reduction
-    // Spousal benefit: 1000 * 0.65 = 650
-    const benefit62 = calculateSpousalBenefit(primaryPIA, 62);
-    expect(benefit62).toBeCloseTo(650, 1);
+  it('should reduce the excess by her age when the worker files, not when she claimed her own', () => {
+    // Own PIA 1,000 claimed at 62 (700). Worker PIA 3,000 files when she is 66.
+    // Excess = 1,500 - 1,000 = 500, reduced 12 months (8.33%) = 458.33. Total 1,158.33.
+    const own = calculateSSBenefit(1000, 62);
+    const excess = calculateExcessSpousalBenefit(3000, 1000, 62, 66);
+    expect(excess).toBeCloseTo(458.33, 1);
+    expect(own + excess).toBeCloseTo(1158.33, 1);
+  });
+
+  it('should pay no excess when her own PIA is at least half of the worker PIA', () => {
+    expect(calculateExcessSpousalBenefit(3000, 1500, 62, 62)).toBe(0);
+    expect(calculateExcessSpousalBenefit(3000, 2000, 67, 67)).toBe(0);
+  });
+
+  it('should measure the excess against her own benefit when delayed credits lift it above her PIA', () => {
+    // Own PIA 1,400 claimed at 70 = 1,736, above half of 3,000, so no excess
+    expect(calculateExcessSpousalBenefit(3000, 1400, 70, 70)).toBe(0);
+    // Own PIA 1,000 claimed at 70 = 1,240; excess = 1,500 - 1,240 = 260
+    expect(calculateExcessSpousalBenefit(3000, 1000, 70, 70)).toBeCloseTo(260, 1);
+  });
+});
+
+describe('calculateSurvivorBenefit', () => {
+  const PIA = 3000;
+
+  it('should pay 100% of the worker benefit to a survivor at FRA or older', () => {
+    expect(calculateSurvivorBenefit(PIA, 67, 67)).toBeCloseTo(3000, 1);
+    expect(calculateSurvivorBenefit(PIA, 67, 80)).toBeCloseTo(3000, 1);
+  });
+
+  it('should pay 71.5% at age 60 and scale linearly to FRA', () => {
+    expect(calculateSurvivorBenefit(PIA, 67, 60)).toBeCloseTo(PIA * SS_SURVIVOR_EARLIEST_AGE_FACTOR, 1);
+    // Halfway between 60 and 67
+    expect(calculateSurvivorBenefit(PIA, 67, 63.5)).toBeCloseTo(PIA * (SS_SURVIVOR_EARLIEST_AGE_FACTOR + 1) / 2, 1);
+    // Younger than 60 is treated as 60
+    expect(calculateSurvivorBenefit(PIA, 67, 55)).toBeCloseTo(PIA * SS_SURVIVOR_EARLIEST_AGE_FACTOR, 1);
+  });
+
+  it('should pass delayed retirement credits to the survivor', () => {
+    expect(calculateSurvivorBenefit(PIA, 70, 67)).toBeCloseTo(PIA * 1.24, 1);
+    expect(calculateSurvivorBenefit(PIA, 70, 60)).toBeCloseTo(PIA * 1.24 * SS_SURVIVOR_EARLIEST_AGE_FACTOR, 1);
+  });
+
+  it('should cap at the widow limit when the worker claimed early', () => {
+    // Worker claimed at 62 (70% of PIA): a survivor at FRA gets the 82.5% floor, not 100%
+    expect(calculateSurvivorBenefit(PIA, 62, 67)).toBeCloseTo(PIA * SS_WIDOW_LIMIT_PIA_SHARE, 1);
+    // Worker claimed at 66 (93.33%): the actual benefit is above the floor
+    expect(calculateSurvivorBenefit(PIA, 66, 67)).toBeCloseTo(calculateSSBenefit(PIA, 66), 1);
+  });
+
+  it('should not stack the age reduction on top of the widow limit', () => {
+    // Worker claimed at 62, survivor age 60: 71.5% of PIA, not 71.5% of 82.5%
+    expect(calculateSurvivorBenefit(PIA, 62, 60)).toBeCloseTo(PIA * SS_SURVIVOR_EARLIEST_AGE_FACTOR, 1);
+  });
+
+  it('should return 0 without a worker PIA', () => {
+    expect(calculateSurvivorBenefit(0, 67, 67)).toBe(0);
   });
 });
 
@@ -752,6 +805,95 @@ describe('runRetirementSimulation', () => {
     }
   });
 
+  describe('survivor Social Security and filing status', () => {
+    const HUSBAND_DEATH_YEAR = 2030; // Born 1960, longevity 70
+
+    const getSurvivorInputs = () => {
+      const inputs = getMockInputs();
+      inputs.isConfigured = true;
+      inputs.isSingleFiler = false;
+      inputs.simulateSurvivor = true;
+      inputs.you.birthDate = '1960-01-01';
+      inputs.you.longevityAge = HUSBAND_DEATH_YEAR - 1960;
+      inputs.you.estimatedPIA = 3000;
+      inputs.you.targetSSClaimingAge = 67;
+      inputs.wife.birthDate = '1964-01-01';
+      inputs.wife.longevityAge = 95;
+      inputs.wife.estimatedPIA = 1000;
+      inputs.wife.targetSSClaimingAge = 67;
+      return inputs;
+    };
+
+    const annualSS = (monthly: number, row: SimulationResultRow) => monthly * 12 * row.cpiFactor * (row.ssPaymentLevel ?? 1);
+
+    it('should reduce the survivor benefit for her age when it starts', () => {
+      const inputs = getSurvivorInputs();
+      inputs.wife.birthDate = '1968-01-01'; // Age 62 when widowed in January 2030
+      const row = runRetirementSimulation(inputs, true).find(r => r.year === HUSBAND_DEATH_YEAR)!;
+      expect(row.wifeSS).toBeCloseTo(annualSS(calculateSurvivorBenefit(3000, 67, 62), row), 0);
+      expect(row.wifeSS).toBeLessThan(annualSS(3000, row));
+    });
+
+    it('should pay the full survivor benefit when she is widowed at FRA or older', () => {
+      const inputs = getSurvivorInputs();
+      inputs.wife.birthDate = '1962-01-01'; // Age 68 when widowed
+      const row = runRetirementSimulation(inputs, true).find(r => r.year === HUSBAND_DEATH_YEAR)!;
+      expect(row.wifeSS).toBeCloseTo(annualSS(3000, row), 0);
+    });
+
+    it('should pay nothing before 60, then the age-60 survivor rate for life', () => {
+      const inputs = getSurvivorInputs();
+      inputs.wife.birthDate = '1972-01-01'; // Age 58 when widowed, 60 in 2032
+      const results = runRetirementSimulation(inputs, true);
+      expect(results.find(r => r.year === 2031)!.wifeSS).toBe(0);
+      const row2032 = results.find(r => r.year === 2032)!;
+      expect(row2032.wifeSS).toBeCloseTo(annualSS(3000 * SS_SURVIVOR_EARLIEST_AGE_FACTOR, row2032), 0);
+      // Her own benefit (PIA 1,000 at 67) never exceeds the reduced survivor benefit
+      const row2045 = results.find(r => r.year === 2045)!;
+      expect(row2045.wifeSS).toBeCloseTo(annualSS(3000 * SS_SURVIVOR_EARLIEST_AGE_FACTOR, row2045), 0);
+    });
+
+    it('should pay own benefit plus the excess spousal amount once the husband files', () => {
+      const inputs = getSurvivorInputs();
+      inputs.simulateSurvivor = false;
+      inputs.wife.targetSSClaimingAge = 62; // Claims own in 2026
+      inputs.you.targetSSClaimingAge = 70; // Files in 2030, when she is 66
+      const results = runRetirementSimulation(inputs, false);
+      const before = results.find(r => r.year === 2029)!;
+      expect(before.wifeSS).toBeCloseTo(annualSS(calculateSSBenefit(1000, 62), before), 0);
+      const after = results.find(r => r.year === 2031)!;
+      const expectedMonthly = calculateSSBenefit(1000, 62) + calculateExcessSpousalBenefit(3000, 1000, 62, 66);
+      expect(expectedMonthly).toBeCloseTo(1158.33, 1);
+      expect(after.wifeSS).toBeCloseTo(annualSS(expectedMonthly, after), 0);
+    });
+
+    it('should keep MFJ IRMAA tiers until the lookback return is a single return', () => {
+      const results = runRetirementSimulation(getSurvivorInputs(), true);
+      const row = (year: number) => results.find(r => r.year === year)!;
+      // Year of death is still a joint return
+      expect(row(HUSBAND_DEATH_YEAR).isSingleReturn).toBe(false);
+      expect(row(HUSBAND_DEATH_YEAR + 1).isSingleReturn).toBe(true);
+      // Premiums follow the year minus 2 return
+      expect(row(HUSBAND_DEATH_YEAR).irmaaUsesSingleTiers).toBe(false);
+      expect(row(HUSBAND_DEATH_YEAR + 1).irmaaUsesSingleTiers).toBe(false);
+      expect(row(HUSBAND_DEATH_YEAR + 2).irmaaUsesSingleTiers).toBe(false);
+      expect(row(HUSBAND_DEATH_YEAR + 3).irmaaUsesSingleTiers).toBe(true);
+    });
+
+    it('should use the surviving husband age for the 65+ standard deduction addition', () => {
+      const inputs = getSurvivorInputs();
+      inputs.you.longevityAge = 90;
+      inputs.wife.birthDate = '1975-01-01';
+      inputs.wife.longevityAge = 55; // Dies in 2030 at 55; the husband is 70
+      const row = runRetirementSimulation(inputs, true).find(r => r.year === 2031)!;
+      expect(row.isSingleReturn).toBe(true);
+      const rules = getFederalRules(row.year);
+      const indexFactor = row.federalIndexFactor ?? row.cpiFactor;
+      const standardWithAgedAddition = (rules.standardDeduction.single + rules.additionalStandardDeductionAged.single) * indexFactor;
+      expect(row.standardDeduction).toBeGreaterThanOrEqual(standardWithAgedAddition - 1);
+    });
+  });
+
   describe('wife predeceases husband', () => {
     const WIFE_LONGEVITY_AGE = 70; // Born 1964, so she dies in 2034 while the husband (born 1960) is 74
     const WIFE_DEATH_YEAR = 1964 + WIFE_LONGEVITY_AGE;
@@ -1186,7 +1328,8 @@ describe('runRetirementSimulation fixes', () => {
     const results = runRetirementSimulation(inputs, true);
     const row2051 = results.find(r => r.year === 2051);
     expect(row2051).toBeDefined();
-    expect(row2051!.standardDeduction).toBeCloseTo(18050, 1);
+    const rules2026 = getFederalRules(2026);
+    expect(row2051!.standardDeduction).toBeCloseTo(rules2026.standardDeduction.single + rules2026.additionalStandardDeductionAged.single, 1);
   });
 
   it('should ensure Sankey cash flow sources and uses balance perfectly across all years', () => {

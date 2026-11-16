@@ -44,26 +44,78 @@ export function calculateSSBenefit(pia: number, claimingAge: number): number {
   }
 }
 
+/** Full retirement age for retirement, spousal and survivor benefits (birth year 1960 or later for retirement, 1962 or later for survivors). */
+export const SS_FULL_RETIREMENT_AGE = 67;
+/** Earliest age a spousal benefit can start. */
+export const SS_SPOUSAL_EARLIEST_AGE = 62;
+/** A spouse's maximum benefit is this share of the worker's PIA. */
+export const SS_SPOUSAL_PIA_SHARE = 0.5;
+/** Spousal reduction: 25/36 of 1% per month for the first 36 months before FRA. */
+export const SS_SPOUSAL_REDUCTION_PER_MONTH_FIRST_TIER = 25 / 3600;
+/** Spousal reduction: 5/12 of 1% for each month beyond the first 36. */
+export const SS_SPOUSAL_REDUCTION_PER_MONTH_SECOND_TIER = 5 / 1200;
+export const SS_EARLY_REDUCTION_FIRST_TIER_MONTHS = 36;
+/** Earliest age an aged widow(er) benefit can start. */
+export const SS_SURVIVOR_EARLIEST_AGE = 60;
+/** Share of the deceased worker's benefit paid to a survivor who starts at the earliest age; rises linearly to 100% at FRA. */
+export const SS_SURVIVOR_EARLIEST_AGE_FACTOR = 0.715;
+/** Widow(er)'s limit: when the worker claimed early, the survivor gets at most the larger of the worker's benefit or this share of the worker's PIA. */
+export const SS_WIDOW_LIMIT_PIA_SHARE = 0.825;
+
 /**
- * Calculates the spousal benefit amount for the lower-earning spouse.
+ * Excess spousal benefit under deemed filing, paid on top of the spouse's own benefit.
+ * The excess is 50% of the worker's PIA minus the spouse's own PIA (or own benefit, when delayed
+ * credits make it larger), reduced for the spouse's age when the spousal benefit becomes payable,
+ * which is the later of the spouse's own claim and the worker's filing.
  */
-export function calculateSpousalBenefit(primaryPIA: number, spouseClaimingAge: number): number {
+export function calculateExcessSpousalBenefit(
+  primaryPIA: number,
+  spousePIA: number,
+  spouseClaimingAge: number,
+  spouseAgeAtEntitlement: number
+): number {
   if (primaryPIA <= 0) return 0;
 
-  const FRA = 67;
-  const baseSpousal = primaryPIA * 0.50;
+  const spouseOwnBenefit = calculateSSBenefit(Math.max(0, spousePIA), spouseClaimingAge);
+  const excessAtFRA = primaryPIA * SS_SPOUSAL_PIA_SHARE - Math.max(spousePIA, spouseOwnBenefit, 0);
+  if (excessAtFRA <= 0) return 0;
 
-  if (spouseClaimingAge >= FRA) {
-    return baseSpousal;
+  const entitlementAge = Math.max(SS_SPOUSAL_EARLIEST_AGE, spouseAgeAtEntitlement);
+  const monthsBefore = Math.max(0, Math.round((SS_FULL_RETIREMENT_AGE - entitlementAge) * 12));
+  const firstTierMonths = Math.min(monthsBefore, SS_EARLY_REDUCTION_FIRST_TIER_MONTHS);
+  const secondTierMonths = monthsBefore - firstTierMonths;
+  const reduction =
+    firstTierMonths * SS_SPOUSAL_REDUCTION_PER_MONTH_FIRST_TIER +
+    secondTierMonths * SS_SPOUSAL_REDUCTION_PER_MONTH_SECOND_TIER;
+  return excessAtFRA * (1 - reduction);
+}
+
+/**
+ * Aged widow(er) benefit on the deceased worker's record.
+ * The worker's PIA (plus any delayed credits) is reduced for the survivor's age when the survivor
+ * benefit starts: 71.5% at 60, rising linearly to 100% at FRA. When the worker claimed early, the
+ * result is capped at the larger of the worker's actual benefit or 82.5% of the worker's PIA.
+ */
+export function calculateSurvivorBenefit(
+  decedentPIA: number,
+  decedentClaimingAge: number,
+  survivorAgeAtEntitlement: number
+): number {
+  if (decedentPIA <= 0) return 0;
+
+  const decedentBenefit = calculateSSBenefit(decedentPIA, decedentClaimingAge);
+  const fullSurvivorBenefit = Math.max(decedentPIA, decedentBenefit);
+
+  const entitlementAge = Math.min(SS_FULL_RETIREMENT_AGE, Math.max(SS_SURVIVOR_EARLIEST_AGE, survivorAgeAtEntitlement));
+  const ageProgress = (entitlementAge - SS_SURVIVOR_EARLIEST_AGE) / (SS_FULL_RETIREMENT_AGE - SS_SURVIVOR_EARLIEST_AGE);
+  const ageFactor = SS_SURVIVOR_EARLIEST_AGE_FACTOR + (1 - SS_SURVIVOR_EARLIEST_AGE_FACTOR) * ageProgress;
+  const ageReducedBenefit = fullSurvivorBenefit * ageFactor;
+
+  if (decedentBenefit < decedentPIA) {
+    const widowLimit = Math.max(decedentBenefit, decedentPIA * SS_WIDOW_LIMIT_PIA_SHARE);
+    return Math.min(ageReducedBenefit, widowLimit);
   }
-
-  const claimAge = Math.max(62, spouseClaimingAge);
-  const totalMonthsBefore = (FRA - claimAge) * 12;
-  const first36 = Math.min(totalMonthsBefore, 36);
-  const additional = Math.max(0, totalMonthsBefore - 36);
-
-  const reduction = (first36 * (25 / 3600)) + (additional * (5 / 1200));
-  return baseSpousal * (1 - reduction);
+  return ageReducedBenefit;
 }
 
 // Calculate Social Security Taxability based on Provisional Income
@@ -342,7 +394,7 @@ export function applyBucketLiquidityConstraintToConversion(
   return Math.round(safeConversion * 100) / 100;
 }
 
-function parseBirthYearAndMonth(dateStr: string | undefined, defaultYear: number): { year: number; month: number } {
+export function parseBirthYearAndMonth(dateStr: string | undefined, defaultYear: number): { year: number; month: number } {
   if (!dateStr) return { year: defaultYear, month: 0 };
   const parts = dateStr.split('-');
   if (parts.length < 2) return { year: defaultYear, month: 0 };
@@ -490,7 +542,6 @@ export function runRetirementSimulation(
       break;
     }
 
-    const isSurvivorActive = youDeceased || wifeDeceased;
     // Once a spouse dies, the decedent's pre-tax balance is merged into the survivor's, so only the survivor's balance is convertible
     const isSoleSurvivorWife = youDeceased && !wifeDeceased;
     const isSoleSurvivorYou = wifeDeceased && !youDeceased;
@@ -573,7 +624,15 @@ export function runRetirementSimulation(
         wifeMedicareMonthIdx = (customYear - simStartYear) * 12 + (isNaN(customMonth) ? 0 : customMonth);
       }
     }
-    const wifeSurvivorMonthIdx = (wifeBirthYear + 60 - simStartYear) * 12 + wifeBirthMonth;
+    const wifeBirthMonthIdx = (wifeBirthYear - simStartYear) * 12 + wifeBirthMonth;
+    // The survivor benefit starts at the later of the husband's death and her earliest survivor age
+    const wifeSurvivorMonthIdx = Math.max(
+      wifeBirthMonthIdx + SS_SURVIVOR_EARLIEST_AGE * 12,
+      (DEATH_YEAR - simStartYear) * 12
+    );
+    const wifeAgeAtSurvivorEntitlement = (wifeSurvivorMonthIdx - wifeBirthMonthIdx) / 12;
+    // The spousal excess becomes payable once both have filed
+    const wifeAgeAtSpousalEntitlement = (Math.max(wifeSSClaimMonthIdx, yourSSClaimMonthIdx) - wifeBirthMonthIdx) / 12;
 
     const yourRmdStartAge = getRMDStartAge(yourBirthYear);
     const wifeRmdStartAge = getRMDStartAge(wifeBirthYear);
@@ -582,12 +641,21 @@ export function runRetirementSimulation(
     const ssPaymentLevel = getSSPaymentLevel(inputs.ssReductions, year);
     const yourSSAnnualBase = calculateSSBenefit(inputs.you.estimatedPIA || 0, inputs.you.targetSSClaimingAge || 67) * 12 * cpiFactor * ssPaymentLevel;
     const wifeSSAnnualBase = calculateSSBenefit(inputs.wife.estimatedPIA || 0, inputs.wife.targetSSClaimingAge || 67) * 12 * cpiFactor * ssPaymentLevel;
-    const spousalSSAnnualFloor = calculateSpousalBenefit(inputs.you.estimatedPIA || 0, inputs.wife.targetSSClaimingAge || 67) * 12 * cpiFactor * ssPaymentLevel;
+    const excessSpousalSSAnnual = Number.isFinite(wifeAgeAtSpousalEntitlement)
+      ? calculateExcessSpousalBenefit(
+          inputs.you.estimatedPIA || 0,
+          inputs.wife.estimatedPIA || 0,
+          inputs.wife.targetSSClaimingAge || SS_FULL_RETIREMENT_AGE,
+          wifeAgeAtSpousalEntitlement
+        ) * 12 * cpiFactor * ssPaymentLevel
+      : 0;
 
-    const survivorSSAnnualBase = calculateSSBenefit(inputs.you.estimatedPIA || 0, inputs.you.targetSSClaimingAge || 67) * 12 * cpiFactor * ssPaymentLevel;
-    const survivorWifeSSAnnualBase = calculateSSBenefit(inputs.wife.estimatedPIA || 0, inputs.wife.targetSSClaimingAge || 67) * 12 * cpiFactor * ssPaymentLevel;
-    const survivorFloor = (inputs.you.estimatedPIA || 0) * 0.825 * 12 * cpiFactor * ssPaymentLevel;
-    const wifeSurvivorSSBenefit = Math.max(survivorSSAnnualBase, survivorWifeSSAnnualBase, survivorFloor);
+    // Known limit: a husband who dies before filing is still treated as having claimed at his target age
+    const wifeSurvivorSSBenefit = calculateSurvivorBenefit(
+      inputs.you.estimatedPIA || 0,
+      inputs.you.targetSSClaimingAge || SS_FULL_RETIREMENT_AGE,
+      wifeAgeAtSurvivorEntitlement
+    ) * 12 * cpiFactor * ssPaymentLevel;
 
     // 2. RMDs calculations (based on start-of-year balances)
     let yourRMD = 0;
@@ -1005,7 +1073,7 @@ export function runRetirementSimulation(
         const estCapitalGains = estDiv * (1 - taxableNonQualifiedPortion);
         const estTotalSS = (!youDeceased ? yourSSAnnualBase : 0) + (!wifeDeceased ? wifeSSAnnualBase : 0);
 
-        const estAgedFilerCount = countAgedFilers(isSingle, !!inputs.isSingleFiler, yourAge, wifeAge, wifeDeceased);
+        const estAgedFilerCount = countAgedFilers(isSingle, !!inputs.isSingleFiler, yourAge, wifeAge, youDeceased);
 
         targetConversion = applyBucketLiquidityConstraintToConversion(
           targetConversion,
@@ -1102,9 +1170,11 @@ export function runRetirementSimulation(
         if (!youDeceased && lookbackYourAge >= (inputs.you.targetSSClaimingAge || 67)) estSS += yourSSAnnualBase;
         if (!wifeDeceased) {
           if (youDeceased) {
-            if (lookbackWifeAge >= 60) estSS += wifeSurvivorSSBenefit;
+            const lookbackOwnSS = lookbackWifeAge >= (inputs.wife.targetSSClaimingAge || 67) ? wifeSSAnnualBase : 0;
+            const lookbackSurvivorSS = lookbackWifeAge >= SS_SURVIVOR_EARLIEST_AGE ? wifeSurvivorSSBenefit : 0;
+            estSS += Math.max(lookbackOwnSS, lookbackSurvivorSS);
           } else if (lookbackWifeAge >= (inputs.wife.targetSSClaimingAge || 67)) {
-            estSS += Math.max(wifeSSAnnualBase, spousalSSAnnualFloor);
+            estSS += wifeSSAnnualBase + excessSpousalSSAnnual;
           }
         }
 
@@ -1136,7 +1206,11 @@ export function runRetirementSimulation(
     let wifePartBSurcharge = 0;
     let wifePartDSurcharge = 0;
     let surchargeTier = 0;
-    const irmaaTiers = (isSurvivorActive || inputs.isSingleFiler) ? federal.rules.irmaaTiers.single : federal.rules.irmaaTiers.mfj;
+    // SSA uses the filing status of the lookback (year minus 2) return, so MFJ tiers persist for two years after a death
+    const irmaaUsesSingleTiers = lookbackIndex >= 0
+      ? (ledger[lookbackIndex].isSingleReturn ?? !!inputs.isSingleFiler)
+      : !!inputs.isSingleFiler;
+    const irmaaTiers = irmaaUsesSingleTiers ? federal.rules.irmaaTiers.single : federal.rules.irmaaTiers.mfj;
     // Tier limits are published for the premium year, so index them to this year (compared to year-2 MAGI)
     for (let i = irmaaTiers.length - 1; i >= 0; i--) {
       const prevTier = irmaaTiers[i - 1];
@@ -1222,7 +1296,7 @@ export function runRetirementSimulation(
     const estTaxableSS = calculateTaxableSS(predictableSS, baseOtherAGI, isSingle);
     const estFedAGI = baseOrdinary + estTaxableSS + estCapGains;
 
-    const agedFilerCountYear = countAgedFilers(isSingle, !!inputs.isSingleFiler, yourAge, wifeAge, wifeDeceased);
+    const agedFilerCountYear = countAgedFilers(isSingle, !!inputs.isSingleFiler, yourAge, wifeAge, youDeceased);
 
     const estPensionExclusion = calculatePensionExclusion(activeState, [
       { age: yourAge, isAlive: !youDeceased, socialSecurityBenefit: yourSSAnnualBase, eligibleDistributions: yourRMD },
@@ -1296,16 +1370,14 @@ export function runRetirementSimulation(
       }
       if (!wifeDeceased) {
         if (youDeceased) {
-          if (monthIdx >= wifeSurvivorMonthIdx) {
-            monthlyWifeSS = wifeSurvivorSSBenefit / 12;
-          }
+          // Survivor and own benefits are claimed independently; she is paid the larger one she is entitled to
+          const ownSS = monthIdx >= wifeSSClaimMonthIdx ? wifeSSAnnualBase / 12 : 0;
+          const survivorSS = monthIdx >= wifeSurvivorMonthIdx ? wifeSurvivorSSBenefit / 12 : 0;
+          monthlyWifeSS = Math.max(ownSS, survivorSS);
         } else if (monthIdx >= wifeSSClaimMonthIdx) {
           const ownSS = wifeSSAnnualBase / 12;
-          if (monthIdx >= yourSSClaimMonthIdx) {
-            monthlyWifeSS = Math.max(ownSS, spousalSSAnnualFloor / 12);
-          } else {
-            monthlyWifeSS = ownSS;
-          }
+          // Deemed filing: own benefit plus the excess spousal amount once the husband has filed
+          monthlyWifeSS = monthIdx >= yourSSClaimMonthIdx ? ownSS + excessSpousalSSAnnual / 12 : ownSS;
         }
       }
 
@@ -1705,7 +1777,7 @@ export function runRetirementSimulation(
       const currentBaselineOrdinary = (annualYourSalary + annualWifeSalary - annualTotal401k) +
         taxableCombinedRMD + ordinaryDividendsRealized + currentInterest + currentTradDraw;
 
-      const midAgedFilerCount = countAgedFilers(isSingle, !!inputs.isSingleFiler, yourAge, wifeAge, wifeDeceased);
+      const midAgedFilerCount = countAgedFilers(isSingle, !!inputs.isSingleFiler, yourAge, wifeAge, youDeceased);
       // State tax depends on the conversion being sized, so estimate it at each candidate AGI.
       const midTotalSS = annualYourSS + annualWifeSS;
       const midPensionExclusion = calculatePensionExclusion(activeState, [
@@ -1866,7 +1938,7 @@ export function runRetirementSimulation(
     const taxableSS = calculateTaxableSS(totalSS, otherAGI, isSingle);
     const fedAGI = nonSSOrdinary + taxableSS + capitalGains;
 
-    const agedFilerCountFinal = countAgedFilers(isSingle, !!inputs.isSingleFiler, yourAge, wifeAge, wifeDeceased);
+    const agedFilerCountFinal = countAgedFilers(isSingle, !!inputs.isSingleFiler, yourAge, wifeAge, youDeceased);
 
     const pensionExclusionFinal = calculatePensionExclusion(activeState, [
       { age: yourAge, isAlive: !youDeceased, socialSecurityBenefit: annualYourSS, eligibleDistributions: taxableYourRMD + annualYourTradDraw },
@@ -2170,6 +2242,7 @@ export function runRetirementSimulation(
       fedAGI,
       standardDeduction: stdDeduction,
       isSingleReturn: isSingle,
+      irmaaUsesSingleTiers,
       taxableIncome: Math.max(0, fedAGI - stdDeduction),
       fedIncomeTax: finalFedTax,
       stateIncomeTax: finalStateTax,

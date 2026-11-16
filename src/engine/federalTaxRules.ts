@@ -70,7 +70,7 @@ export const FED_YEAR_RULES: Record<number, FederalYearRules> = {
       ],
     },
     standardDeduction: { mfj: 32200, single: 16100 },
-    additionalStandardDeductionAged: { mfj: 1650, single: 1950 },
+    additionalStandardDeductionAged: { mfj: 1650, single: 2050 },
     irmaaTiers: {
       // Tier 5 represents MAGI at or above $750k (MFJ) or $500k (single), so its limit is Infinity
       mfj: [

@@ -144,7 +144,7 @@ export const RowInspectionDialog: React.FC<RowInspectionDialogProps> = ({
 
   // 4. Surcharge Cliffs & Limits
   const irmaaRules = getFederalRules(row.year).irmaaTiers;
-  const irmaaTiers = isSingle ? irmaaRules.single : irmaaRules.mfj;
+  const irmaaTiers = (row.irmaaUsesSingleTiers ?? isSingle) ? irmaaRules.single : irmaaRules.mfj;
   const currentTier = irmaaTiers.find(t => t.tierNumber === row.surchargeTier) || irmaaTiers[0];
   // Tier limits are for the premium year, so they scale with this year's CPI (compared to t-2 MAGI)
   const premiumYearCpi = row.federalIndexFactor ?? row.cpiFactor;

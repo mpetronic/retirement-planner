@@ -587,6 +587,7 @@ export interface SimulationResultRow {
   taxableSS: number;
   taxableDividends: number;
   isSingleReturn?: boolean; // True when the year was filed as a single return
+  irmaaUsesSingleTiers?: boolean; // True when this year's IRMAA used single tiers (filing status of the year minus 2 return)
   qualifiedDividends?: number; // Portion of dividends taxed at preferential capital gains rates
   taxableInterest: number;
   cpiFactor: number;

@@ -129,8 +129,20 @@ describe('federalDeduction', () => {
     it('counts both spouses, a lone survivor and none', () => {
       expect(countAgedFilers(false, false, 70, 68, false)).toBe(2);
       expect(countAgedFilers(false, false, 70, 60, false)).toBe(1);
-      expect(countAgedFilers(true, false, 70, 68, false)).toBe(1);
       expect(countAgedFilers(true, true, 60, 68, false)).toBe(0);
+    });
+
+    it('judges a survivor return by whichever spouse survived', () => {
+      // Wife survives: her age decides
+      expect(countAgedFilers(true, false, 70, 60, true)).toBe(0);
+      expect(countAgedFilers(true, false, 60, 70, true)).toBe(1);
+      // Husband survives: his age decides
+      expect(countAgedFilers(true, false, 70, 60, false)).toBe(1);
+      expect(countAgedFilers(true, false, 60, 70, false)).toBe(0);
+    });
+
+    it('counts both spouses on the joint return for the year of a death', () => {
+      expect(countAgedFilers(false, false, 70, 68, true)).toBe(2);
     });
   });
 });

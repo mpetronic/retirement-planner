@@ -32,9 +32,9 @@ Use this table to track what has been debated and fixed.
 | 9 | Maryland state tax errors and stale values | Medium | Fixed |
 | 10 | 2026 LTCG thresholds look overstated | Low-Medium | Fixed |
 | 11 | IRMAA thresholds inflated to lookback year | Low-Medium | Fixed |
-| 12 | Survivor filing-status inconsistencies | Low | Open |
-| 13 | Spousal benefit formula | Low-Medium | Open |
-| 14 | Survivor benefit 100% from age 60 | Low | Open |
+| 12 | Survivor filing-status inconsistencies | Low | Fixed |
+| 13 | Spousal benefit formula | Low-Medium | Fixed |
+| 14 | Survivor benefit 100% from age 60 | Low | Fixed |
 | 15 | SS earnings test not modeled | Low | Open |
 | 16 | Stale 2025 statutory constants | Low | Open |
 | 17 | MC sequences hard-capped at 35 years | Low-Medium | Open |
@@ -471,6 +471,26 @@ engine. A new test steers 2026 MAGI between the unindexed and 2028-indexed Tier 
 **Recommendation.** Compute "survivor" once per year and derive age from that person; align the IRMAA
 status switch with the filing-status switch; move the additions to named constants.
 
+**Resolution.** Fixed together with #13 and #14.
+
+- IRMAA status. The recommendation (switch tiers when the filing status switches) would have compared a
+  joint MAGI from before the death against single tiers for two years. The engine now does what SSA
+  does: the tier table follows the filing status of the year minus 2 return (`isSingleReturn` on the
+  lookback ledger row), so MFJ tiers persist for the year of death and the two years after it. Each
+  ledger row records the choice as `irmaaUsesSingleTiers`, and `RowInspectionDialog.tsx` and the IRMAA
+  tier popup in `LookbackLedgerTable.tsx` read it. The cliff-warning scan in `LookbackLedgerTable.tsx`
+  now judges a year's MAGI by that year's `isSingleReturn`.
+- Aged-filer count. `countAgedFilers` takes `youDeceased` and judges a single survivor return by
+  whichever spouse survived, so a surviving husband's age is used. The joint branch counts both spouses,
+  including one who died that year, because the year-of-death return is still joint.
+- Aged addition. The amounts were already in the `FED_YEAR_RULES` table, but the 2026 single amount was
+  still $1,950. It is now $2,050 per Rev. Proc. 2025-32.
+
+Known limits: an SSA-44 filed for the death of a spouse (which would move the survivor to a more recent
+year's income and single tiers) is not modeled. A spouse who dies before turning 65 still counts by
+year-end age on the year-of-death joint return. The conversion state-tax estimate in
+`LookbackLedgerTable.tsx` still assumes the wife is the survivor when it derives filing status.
+
 ---
 
 ## 13. Spousal benefit is modeled as max(own, spousal) with the reduction based on the wife's own claiming age
@@ -492,6 +512,20 @@ for both of you and will misprice some of those combinations.
 **Recommendation.** Implement the excess-spousal formula and use the month you file as the spousal
 entitlement date.
 
+**Resolution.** Fixed. `calculateSpousalBenefit` is replaced by `calculateExcessSpousalBenefit`. Once
+both spouses have filed, the wife is paid her own reduced benefit plus the excess: 50% of the husband's
+PIA minus her own PIA, reduced by the spousal schedule for her age (to the month) at the later of her
+claim and his filing. The excess is measured against her own benefit when delayed credits lift it above
+her PIA, so a wife who claims at 70 does not get an excess on top of a benefit that already exceeds
+half his PIA. The IRMAA lookback estimate and the optimizer's `spousalAddOnAnnual` use the same
+function. The Social Security percentages, ages and monthly reduction rates are named constants
+(`SS_*`) in `simulationEngine.ts`. The review's example (PIA $1,000 claimed at 62, husband $3,000 filing
+when she is 66) now pays $1,158.33 a month and is a test.
+
+With the default PIAs ($3,000 and $1,500) the excess is zero, so default results do not change.
+
+Known limits: only the wife can receive a spousal benefit on the husband's record, not the reverse.
+
 ---
 
 ## 14. Survivor benefit is paid at 100% from age 60
@@ -503,6 +537,22 @@ claiming at 60 receives 71.5%, scaling linearly to 100% at survivor FRA (67). Th
 598 is correct.
 
 **Recommendation.** Apply the age-based survivor reduction, or at least expose a survivor claiming age.
+
+**Resolution.** Fixed with the age-based reduction and no new input. `calculateSurvivorBenefit` takes
+the husband's PIA plus any delayed credits and reduces it for the wife's age when the survivor benefit
+starts: 71.5% at 60, rising linearly to 100% at 67. When he claimed early, the result is capped at the
+larger of his actual benefit and 82.5% of his PIA; the age reduction is not stacked on top of that
+limit. The survivor benefit starts at the later of his death and her 60th birthday, as before.
+
+This also fixes a defect the review missed: the old survivor amount included her own benefit and paid it
+from 60, before her own claiming age. Each month she is now paid the larger of the survivor benefit and
+her own benefit, the latter only once she has claimed. The IRMAA lookback estimate and the optimizer's
+`survivorBenefitAnnual` use the same logic.
+
+Known limits: a husband who dies before his claiming age is still treated as having claimed at his
+target age. She is assumed to take the survivor benefit as soon as it is available and never to switch
+strategies (for example survivor first, own at 70, beyond the monthly larger-of rule). A surviving
+husband gets no survivor benefit on the wife's record.
 
 ---
 

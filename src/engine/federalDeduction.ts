@@ -21,23 +21,25 @@ import {
 import type { FederalIndexing } from './federalTaxRules';
 
 /**
- * Counts filers age 65 or older who are still alive and on the return.
- * Single filers (including survivors) are judged by the one remaining filer's age.
+ * Counts filers age 65 or older on the return.
+ * A single return is judged by the one remaining filer's age: the plan's only filer, or whichever
+ * spouse survived. A joint return counts both spouses, including one who died that year, because
+ * the year-of-death return is still joint.
  */
 export function countAgedFilers(
   isSingle: boolean,
   isSingleFilerPlan: boolean,
   yourAge: number,
   wifeAge: number,
-  wifeDeceased: boolean
+  youDeceased: boolean
 ): number {
   if (isSingle) {
-    const activeAge = isSingleFilerPlan ? yourAge : wifeAge;
+    const activeAge = isSingleFilerPlan || !youDeceased ? yourAge : wifeAge;
     return activeAge >= STATUTORY_AGED_DEDUCTION_AGE ? 1 : 0;
   }
   let count = 0;
   if (yourAge >= STATUTORY_AGED_DEDUCTION_AGE) count++;
-  if (!wifeDeceased && wifeAge >= STATUTORY_AGED_DEDUCTION_AGE) count++;
+  if (wifeAge >= STATUTORY_AGED_DEDUCTION_AGE) count++;
   return count;
 }
 
