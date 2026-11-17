@@ -343,19 +343,19 @@ export const TaxableIncomeWorkspace: React.FC<TaxableIncomeWorkspaceProps> = ({
       isDataPresent(ssData) && {
         label: 'Social Security',
         data: ssData,
-        backgroundColor: 'rgba(59, 130, 246, 0.65)', // blue-500
-        borderColor: '#3b82f6',
+        backgroundColor: 'rgba(29, 78, 216, 0.65)', // blue-700
+        borderColor: '#1d4ed8',
         borderWidth: 1,
         stack: 'gross',
         grouped: false,
         barPercentage: 0.85,
         order: 3,
       },
-      isDataPresent(salaryData) && {
-        label: 'Active Salaries',
-        data: salaryData,
-        backgroundColor: 'rgba(139, 92, 246, 0.65)', // violet-500
-        borderColor: '#8b5cf6',
+      isDataPresent(investmentData) && {
+        label: 'Dividends & Capital Gains',
+        data: investmentData,
+        backgroundColor: 'rgba(6, 182, 212, 0.65)', // cyan-500
+        borderColor: '#06b6d4',
         borderWidth: 1,
         stack: 'gross',
         grouped: false,
@@ -384,11 +384,11 @@ export const TaxableIncomeWorkspace: React.FC<TaxableIncomeWorkspaceProps> = ({
         barPercentage: 0.85,
         order: 6,
       },
-      isDataPresent(investmentData) && {
-        label: 'Dividends & Capital Gains',
-        data: investmentData,
-        backgroundColor: 'rgba(236, 72, 153, 0.65)', // pink-500
-        borderColor: '#ec4899',
+      isDataPresent(salaryData) && {
+        label: 'Active Salaries',
+        data: salaryData,
+        backgroundColor: 'rgba(139, 92, 246, 0.65)', // violet-500
+        borderColor: '#8b5cf6',
         borderWidth: 1,
         stack: 'gross',
         grouped: false,
