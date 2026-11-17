@@ -1,17 +1,25 @@
 import { describe, it, expect } from 'vitest';
 import {
   calculateSSBenefit,
-  calculateSpousalBenefit,
+  calculateExcessSpousalBenefit,
+  calculateSurvivorBenefit,
+  SS_SURVIVOR_EARLIEST_AGE_FACTOR,
+  SS_WIDOW_LIMIT_PIA_SHARE,
   calculateTaxableSS,
   solveRothConversionForTargetAGI,
   calculateFedTax,
-  calculateMDStateTax,
+  calculateStateTax,
   runRetirementSimulation,
   calculateFedTaxWithLTCG,
   getRMDStartAge,
 } from './simulationEngine';
+import { STATUTORY_NIIT_RATE, STATUTORY_NIIT_THRESHOLD_SINGLE, CAPITAL_LOSS_ORDINARY_OFFSET_LIMIT } from './taxRates';
+import { getFederalRules, FederalIndexing } from './federalTaxRules';
+
+// 2026 rules at the 2026 start year, so no indexing is applied
+const FEDERAL_2026_UNINDEXED: FederalIndexing = { rules: getFederalRules(2026), indexFactor: 1 };
 import { SAMPLE_DEMO_PLAN } from '../shared/utils/sampleDemoPlan';
-import { DEFAULT_DETAILED_EXPENSES, DEFAULT_EXPENSE_FREQUENCIES, normalizeDetailedExpenses, DetailedExpensesState, AppStateInputs, getSSPaymentLevel, describeSSReductions, SSReductionConfig } from '../types';
+import { DEFAULT_DETAILED_EXPENSES, DEFAULT_EXPENSE_FREQUENCIES, normalizeDetailedExpenses, DetailedExpensesState, AppStateInputs, SimulationResultRow, getSSPaymentLevel, describeSSReductions, SSReductionConfig } from '../types';
 
 describe('calculateSSBenefit', () => {
   const PIA = 1000;
@@ -48,36 +56,95 @@ describe('calculateSSBenefit', () => {
   });
 });
 
-describe('calculateSpousalBenefit', () => {
-  const primaryPIA = 2000; // Base spousal benefit would be 1000 (50%)
+describe('calculateExcessSpousalBenefit', () => {
+  const primaryPIA = 2000; // With no own PIA, the full excess is 1000 (50%)
 
-  it('should return 50% of primary PIA at FRA (67)', () => {
-    const benefit = calculateSpousalBenefit(primaryPIA, 67);
-    expect(benefit).toBeCloseTo(1000, 1);
+  it('should return 50% of primary PIA at FRA (67) when the spouse has no own benefit', () => {
+    expect(calculateExcessSpousalBenefit(primaryPIA, 0, 67, 67)).toBeCloseTo(1000, 1);
   });
 
   it('should not provide delayed credits past FRA (67)', () => {
-    const benefit70 = calculateSpousalBenefit(primaryPIA, 70);
-    expect(benefit70).toBeCloseTo(1000, 1);
+    expect(calculateExcessSpousalBenefit(primaryPIA, 0, 70, 70)).toBeCloseTo(1000, 1);
   });
 
   it('should return 0 if primary PIA is 0 or negative', () => {
-    expect(calculateSpousalBenefit(0, 67)).toBe(0);
-    expect(calculateSpousalBenefit(-100, 67)).toBe(0);
+    expect(calculateExcessSpousalBenefit(0, 0, 67, 67)).toBe(0);
+    expect(calculateExcessSpousalBenefit(-100, 0, 67, 67)).toBe(0);
   });
 
   it('should apply spousal early claim reduction schedule (25/36% first 36m, 5/12% next)', () => {
-    // 3 years (36 months) early (age 64)
-    // Reduction: 36 * (25/3600) = 25% reduction
-    // Spousal benefit: 1000 * 0.75 = 750
-    const benefit64 = calculateSpousalBenefit(primaryPIA, 64);
-    expect(benefit64).toBeCloseTo(750, 1);
+    // 36 months early (age 64): 25% reduction
+    expect(calculateExcessSpousalBenefit(primaryPIA, 0, 64, 64)).toBeCloseTo(750, 1);
+    // 60 months early (age 62): 25% + 10% = 35% reduction
+    expect(calculateExcessSpousalBenefit(primaryPIA, 0, 62, 62)).toBeCloseTo(650, 1);
+  });
 
-    // 5 years (60 months) early (age 62)
-    // Reduction: 36 * (25/3600) + 24 * (5/1200) = 25% + 10% = 35% reduction
-    // Spousal benefit: 1000 * 0.65 = 650
-    const benefit62 = calculateSpousalBenefit(primaryPIA, 62);
-    expect(benefit62).toBeCloseTo(650, 1);
+  it('should reduce the excess by her age when the worker files, not when she claimed her own', () => {
+    // Own PIA 1,000 claimed at 62 (700). Worker PIA 3,000 files when she is 66.
+    // Excess = 1,500 - 1,000 = 500, reduced 12 months (8.33%) = 458.33. Total 1,158.33.
+    const own = calculateSSBenefit(1000, 62);
+    const excess = calculateExcessSpousalBenefit(3000, 1000, 62, 66);
+    expect(excess).toBeCloseTo(458.33, 1);
+    expect(own + excess).toBeCloseTo(1158.33, 1);
+  });
+
+  it('should pay no excess when her own PIA is at least half of the worker PIA', () => {
+    expect(calculateExcessSpousalBenefit(3000, 1500, 62, 62)).toBe(0);
+    expect(calculateExcessSpousalBenefit(3000, 2000, 67, 67)).toBe(0);
+  });
+
+  it('should measure the excess against her own benefit when delayed credits lift it above her PIA', () => {
+    // Own PIA 1,400 claimed at 70 = 1,736, above half of 3,000, so no excess
+    expect(calculateExcessSpousalBenefit(3000, 1400, 70, 70)).toBe(0);
+    // Own PIA 1,000 claimed at 70 = 1,240; excess = 1,500 - 1,240 = 260
+    expect(calculateExcessSpousalBenefit(3000, 1000, 70, 70)).toBeCloseTo(260, 1);
+  });
+});
+
+describe('calculateSurvivorBenefit', () => {
+  const PIA = 3000;
+
+  it('should pay 100% of the worker benefit to a survivor at FRA or older', () => {
+    expect(calculateSurvivorBenefit(PIA, 67, 67)).toBeCloseTo(3000, 1);
+    expect(calculateSurvivorBenefit(PIA, 67, 80)).toBeCloseTo(3000, 1);
+  });
+
+  it('should pay 71.5% at age 60 and scale linearly to FRA', () => {
+    expect(calculateSurvivorBenefit(PIA, 67, 60)).toBeCloseTo(PIA * SS_SURVIVOR_EARLIEST_AGE_FACTOR, 1);
+    // Halfway between 60 and 67
+    expect(calculateSurvivorBenefit(PIA, 67, 63.5)).toBeCloseTo(PIA * (SS_SURVIVOR_EARLIEST_AGE_FACTOR + 1) / 2, 1);
+    // Younger than 60 is treated as 60
+    expect(calculateSurvivorBenefit(PIA, 67, 55)).toBeCloseTo(PIA * SS_SURVIVOR_EARLIEST_AGE_FACTOR, 1);
+  });
+
+  it('should pass delayed retirement credits to the survivor', () => {
+    expect(calculateSurvivorBenefit(PIA, 70, 67)).toBeCloseTo(PIA * 1.24, 1);
+    expect(calculateSurvivorBenefit(PIA, 70, 60)).toBeCloseTo(PIA * 1.24 * SS_SURVIVOR_EARLIEST_AGE_FACTOR, 1);
+  });
+
+  it('should cap at the widow limit when the worker claimed early', () => {
+    // Worker claimed at 62 (70% of PIA): a survivor at FRA gets the 82.5% floor, not 100%
+    expect(calculateSurvivorBenefit(PIA, 62, 67)).toBeCloseTo(PIA * SS_WIDOW_LIMIT_PIA_SHARE, 1);
+    // Worker claimed at 66 (93.33%): the actual benefit is above the floor
+    expect(calculateSurvivorBenefit(PIA, 66, 67)).toBeCloseTo(calculateSSBenefit(PIA, 66), 1);
+  });
+
+  it('should not stack the age reduction on top of the widow limit', () => {
+    // Worker claimed at 62, survivor age 60: 71.5% of PIA, not 71.5% of 82.5%
+    expect(calculateSurvivorBenefit(PIA, 62, 60)).toBeCloseTo(PIA * SS_SURVIVOR_EARLIEST_AGE_FACTOR, 1);
+  });
+
+  it('should base survivor benefit on PIA or death-age DRCs when the worker dies before claiming', () => {
+    // Planned to claim at 70, but died at 64 (before FRA): 100% of PIA, no unearned DRCs
+    expect(calculateSurvivorBenefit(PIA, 70, 67, 64)).toBeCloseTo(PIA, 1);
+    // Planned to claim at 70, but died at 68 (after FRA, before claiming): DRCs accrued only up to age 68 (8%)
+    expect(calculateSurvivorBenefit(PIA, 70, 67, 68)).toBeCloseTo(PIA * 1.08, 1);
+    // Planned to claim early at 62, but died at 60 (before claiming): 100% of PIA, no 82.5% RIB-LIM cap
+    expect(calculateSurvivorBenefit(PIA, 62, 67, 60)).toBeCloseTo(PIA, 1);
+  });
+
+  it('should return 0 without a worker PIA', () => {
+    expect(calculateSurvivorBenefit(0, 67, 67)).toBe(0);
   });
 });
 
@@ -134,23 +201,23 @@ describe('calculateTaxableSS', () => {
 describe('Tax calculations', () => {
   it('should calculate federal income tax correctly', () => {
     // 0 taxable income = 0 tax
-    const zeroTax = calculateFedTax(0, false, 1.0);
+    const zeroTax = calculateFedTax(0, false, FEDERAL_2026_UNINDEXED);
     expect(zeroTax).toBe(0);
 
     // MFJ with 50,000 taxable income, 1.0 CPI factor
     // 2026 brackets MFJ: 10% on first $24,800, then 12% on the rest
     // Expected: 24800 * 0.10 + (50000 - 24800) * 0.12 = 2480 + 25200 * 0.12 = 2480 + 3024 = 5504
-    const mfjTax = calculateFedTax(50000, false, 1.0);
+    const mfjTax = calculateFedTax(50000, false, FEDERAL_2026_UNINDEXED);
     expect(mfjTax).toBeCloseTo(5504, 1);
   });
 
   it('should calculate Maryland state tax correctly with standard piggyback rate', () => {
     // AGI: 60000, taxableSS: 0, isSingle: false
-    const mdTaxMFJ = calculateMDStateTax(60000, 0, false);
+    const mdTaxMFJ = calculateStateTax('MD', 60000, 0, false);
     expect(mdTaxMFJ).toBeGreaterThan(0);
 
     // AGI: 60000, taxableSS: 0, isSingle: true
-    const mdTaxSingle = calculateMDStateTax(60000, 0, true);
+    const mdTaxSingle = calculateStateTax('MD', 60000, 0, true);
     expect(mdTaxSingle).toBeGreaterThan(0);
   });
 
@@ -158,15 +225,15 @@ describe('Tax calculations', () => {
     // Montgomery County (3.20%) vs Worcester County (2.25%)
     const mocoRate = 0.0320;
     const worcesterRate = 0.0225;
-    const mocoTax = calculateMDStateTax(100000, 0, false, 1, 0, mocoRate);
-    const worcesterTax = calculateMDStateTax(100000, 0, false, 1, 0, worcesterRate);
+    const mocoTax = calculateStateTax('MD', 100000, 0, false, 1, 0, mocoRate);
+    const worcesterTax = calculateStateTax('MD', 100000, 0, false, 1, 0, worcesterRate);
 
     expect(mocoTax).toBeGreaterThan(worcesterTax);
-    // MD Taxable income for 100k MFJ:
-    // std deduction = min(max(15000, 3450), 5150) = 5150
-    // mdTaxableIncome = 100000 - 5150 = 94850
-    // State tax is identical, difference is exactly (0.0320 - 0.0225) * 94850 = 0.0095 * 94850 = 901.075
-    expect(mocoTax - worcesterTax).toBeCloseTo(94850 * (mocoRate - worcesterRate), 2);
+    // MD taxable income for 100k MFJ (no one aged 65):
+    // flat std deduction 6700 and two 3200 exemptions (AGI is under the 150k joint phase-out)
+    // mdTaxableIncome = 100000 - 6700 - 6400 = 86900
+    // State tax is identical, difference is exactly (0.0320 - 0.0225) * 86900 = 825.55
+    expect(mocoTax - worcesterTax).toBeCloseTo(86900 * (mocoRate - worcesterRate), 2);
   });
 });
 
@@ -260,16 +327,16 @@ describe('runRetirementSimulation', () => {
     expect(row2030!.stateIncomeTax).toBe(0);
   });
 
-  it('should safeguard and drop state income taxes to 0 when relocating even if targetState was erroneously stored as MD', () => {
+  it('should keep taxing the same state when the relocation target is the current state', () => {
     const inputs = getMockInputs();
     inputs.jurisdiction.relocationYear = 2026;
     inputs.jurisdiction.currentState = 'MD';
-    inputs.jurisdiction.targetState = 'MD'; // Erroneously stored as MD without intra-state county change
+    inputs.jurisdiction.targetState = 'MD';
 
     const results = runRetirementSimulation(inputs);
     const row2026 = results.find(r => r.year === 2026);
     expect(row2026).toBeDefined();
-    expect(row2026!.stateIncomeTax).toBe(0);
+    expect(row2026!.stateIncomeTax).toBeGreaterThan(0);
   });
 
   it('should correctly simulate intra-state relocation between Maryland counties and adjust local taxes', () => {
@@ -421,8 +488,9 @@ describe('runRetirementSimulation', () => {
     
     
     const actualEndTaxable = row2040!.endYourTaxableBrokerage + row2040!.endWifeTaxableBrokerage;
-    // Expected value calibrated for the monthly-compounding engine with cash buffer yield.
-    expect(actualEndTaxable).toBeCloseTo(664784, 0);
+    // Expected value calibrated for the monthly-compounding engine with cash buffer yield
+    // and prior-year tax-funding income carried into the following tax year.
+    expect(actualEndTaxable).toBeCloseTo(663383.8, 0);
   });
 
   it('should apply pre-Medicare premiums and detailed health expenses correctly based on age, work status, and retirement', () => {
@@ -708,11 +776,10 @@ describe('runRetirementSimulation', () => {
     expect(row2032!.preMedicareHealthcareCost).toBeCloseTo(5076 * hcFactor2032, 1);
   });
 
-  it('should apply 50% step-up in basis in MD and 100% in FL on death, and generate annual dividends', () => {
+  it('should step up only the decedent taxable account at death, identically in every state, and generate annual dividends', () => {
     const inputs = getMockInputs();
     inputs.isConfigured = true;
     inputs.isSingleFiler = false;
-    inputs.simulateSurvivor = true;
     inputs.you.birthDate = '1960-01-01'; // Turns 85 in 2045 (Death Year)
     inputs.wife.birthDate = '1964-01-01';
 
@@ -721,37 +788,258 @@ describe('runRetirementSimulation', () => {
     inputs.portfolio.wifeTaxableBrokerage = 500000;
     inputs.portfolio.wifeTaxableBasis = 200000;
 
-    // Yield configuration
     inputs.portfolio.taxableDividendYield = 0.02; // 2% yield
     inputs.portfolio.taxableNonQualifiedPortion = 0.30;
 
-    // MD Relocation Year is null (remain in MD)
     inputs.jurisdiction.currentState = 'MD';
     inputs.jurisdiction.targetState = 'MD';
     inputs.jurisdiction.relocationYear = null;
 
-    // Run simulation in MD
-    const resultsMD = runRetirementSimulation(inputs, true);
-    
-    // Let's verify dividends generated in 2026:
-    // Total taxable balance at start of 2026: 500k + 500k = 1,000,000.
-    // Expected dividends: 1,000,000 * 2% = 20,000.
+    const resultsMD = runRetirementSimulation(inputs);
+
+    // Total taxable balance at start of 2026: 500k + 500k = 1,000,000 at a 2% yield.
     const row2026 = resultsMD.find(r => r.year === 2026);
     expect(row2026!.incomeInflow).toBeGreaterThanOrEqual(19500);
 
-    // Expected value calibrated for the monthly-compounding engine with cash buffer yield.
     const row2045MD = resultsMD.find(r => r.year === 2045);
-    expect(row2045MD!.endWifeTaxableBasis).toBeCloseTo(367370.1, 1);
+    expect(row2045MD!.endWifeTaxableBasis).toBeCloseTo(356596.5, 1);
 
-    // Now set current and target state to FL
-    inputs.jurisdiction.currentState = 'FL';
-    inputs.jurisdiction.targetState = 'FL';
-    const resultsFL = runRetirementSimulation(inputs, true);
-    const row2045FL = resultsFL.find(r => r.year === 2045);
-    
-    // Expected values calibrated for the monthly-compounding engine with cash buffer yield.
-    expect(row2045FL!.endWifeTaxableBasis).toBeCloseTo(1284322.9, 1);
-    expect(row2045FL!.endWifeTaxableBrokerage).toBeCloseTo(1331885.1, 1);
+    // Basis behavior must not depend on the state of residence.
+    for (const stateCode of ['FL', 'TX']) {
+      inputs.jurisdiction.currentState = stateCode;
+      inputs.jurisdiction.targetState = stateCode;
+      const row2045 = runRetirementSimulation(inputs).find(r => r.year === 2045);
+      expect(row2045!.endWifeTaxableBasis).toBeLessThan(row2045!.endWifeTaxableBrokerage);
+      expect(row2045!.endWifeTaxableBasis).toBeGreaterThan(0);
+    }
+  });
+
+  describe('survivor Social Security and filing status', () => {
+    const HUSBAND_DEATH_YEAR = 2030; // Born 1960, longevity 70
+
+    const getSurvivorInputs = () => {
+      const inputs = getMockInputs();
+      inputs.isConfigured = true;
+      inputs.isSingleFiler = false;
+      inputs.you.birthDate = '1960-01-01';
+      inputs.you.longevityAge = HUSBAND_DEATH_YEAR - 1960;
+      inputs.you.estimatedPIA = 3000;
+      inputs.you.targetSSClaimingAge = 67;
+      inputs.wife.birthDate = '1964-01-01';
+      inputs.wife.longevityAge = 95;
+      inputs.wife.estimatedPIA = 1000;
+      inputs.wife.targetSSClaimingAge = 67;
+      return inputs;
+    };
+
+    const annualSS = (monthly: number, row: SimulationResultRow) => monthly * 12 * row.cpiFactor * (row.ssPaymentLevel ?? 1);
+
+    it('should reduce the survivor benefit for her age when it starts', () => {
+      const inputs = getSurvivorInputs();
+      inputs.wife.birthDate = '1968-01-01'; // Age 62 when widowed in January 2030
+      const row = runRetirementSimulation(inputs).find(r => r.year === HUSBAND_DEATH_YEAR)!;
+      expect(row.wifeSS).toBeCloseTo(annualSS(calculateSurvivorBenefit(3000, 67, 62), row), 0);
+      expect(row.wifeSS).toBeLessThan(annualSS(3000, row));
+    });
+
+    it('should pay the full survivor benefit when she is widowed at FRA or older', () => {
+      const inputs = getSurvivorInputs();
+      inputs.wife.birthDate = '1962-01-01'; // Age 68 when widowed
+      const row = runRetirementSimulation(inputs).find(r => r.year === HUSBAND_DEATH_YEAR)!;
+      expect(row.wifeSS).toBeCloseTo(annualSS(3000, row), 0);
+    });
+
+    it('should pay nothing before 60, then the age-60 survivor rate for life', () => {
+      const inputs = getSurvivorInputs();
+      inputs.wife.birthDate = '1972-01-01'; // Age 58 when widowed, 60 in 2032
+      const results = runRetirementSimulation(inputs);
+      expect(results.find(r => r.year === 2031)!.wifeSS).toBe(0);
+      const row2032 = results.find(r => r.year === 2032)!;
+      expect(row2032.wifeSS).toBeCloseTo(annualSS(3000 * SS_SURVIVOR_EARLIEST_AGE_FACTOR, row2032), 0);
+      // Her own benefit (PIA 1,000 at 67) never exceeds the reduced survivor benefit
+      const row2045 = results.find(r => r.year === 2045)!;
+      expect(row2045.wifeSS).toBeCloseTo(annualSS(3000 * SS_SURVIVOR_EARLIEST_AGE_FACTOR, row2045), 0);
+    });
+
+    it('should pay own benefit plus the excess spousal amount once the husband files', () => {
+      const inputs = getSurvivorInputs();
+      inputs.wife.targetSSClaimingAge = 62; // Claims own in 2026
+      inputs.you.targetSSClaimingAge = 70; // Files in 2030, when she is 66
+      inputs.you.longevityAge = 90; // Husband stays alive through the filing years
+      const results = runRetirementSimulation(inputs);
+      const before = results.find(r => r.year === 2029)!;
+      expect(before.wifeSS).toBeCloseTo(annualSS(calculateSSBenefit(1000, 62), before), 0);
+      const after = results.find(r => r.year === 2031)!;
+      const expectedMonthly = calculateSSBenefit(1000, 62) + calculateExcessSpousalBenefit(3000, 1000, 62, 66);
+      expect(expectedMonthly).toBeCloseTo(1158.33, 1);
+      expect(after.wifeSS).toBeCloseTo(annualSS(expectedMonthly, after), 0);
+    });
+
+    it('should file jointly through the end when both longevity ages fall in the same year', () => {
+      const inputs = getSurvivorInputs();
+      inputs.you.birthDate = '1960-01-01';
+      inputs.you.longevityAge = 80;
+      inputs.wife.birthDate = '1960-01-01';
+      inputs.wife.longevityAge = 80;
+      const results = runRetirementSimulation(inputs);
+      expect(results[results.length - 1].year).toBe(2039);
+      expect(results.every(r => r.isSingleReturn === false)).toBe(true);
+    });
+
+    it('should file as single every year for a single filer', () => {
+      const inputs = getSurvivorInputs();
+      inputs.isSingleFiler = true;
+      const results = runRetirementSimulation(inputs);
+      expect(results.length).toBeGreaterThan(0);
+      expect(results.every(r => r.isSingleReturn === true)).toBe(true);
+    });
+
+    it('should keep MFJ IRMAA tiers until the lookback return is a single return', () => {
+      const results = runRetirementSimulation(getSurvivorInputs());
+      const row = (year: number) => results.find(r => r.year === year)!;
+      // Year of death is still a joint return
+      expect(row(HUSBAND_DEATH_YEAR).isSingleReturn).toBe(false);
+      expect(row(HUSBAND_DEATH_YEAR + 1).isSingleReturn).toBe(true);
+      // Premiums follow the year minus 2 return
+      expect(row(HUSBAND_DEATH_YEAR).irmaaUsesSingleTiers).toBe(false);
+      expect(row(HUSBAND_DEATH_YEAR + 1).irmaaUsesSingleTiers).toBe(false);
+      expect(row(HUSBAND_DEATH_YEAR + 2).irmaaUsesSingleTiers).toBe(false);
+      expect(row(HUSBAND_DEATH_YEAR + 3).irmaaUsesSingleTiers).toBe(true);
+    });
+
+    it('should use the surviving husband age for the 65+ standard deduction addition', () => {
+      const inputs = getSurvivorInputs();
+      inputs.you.longevityAge = 90;
+      inputs.wife.birthDate = '1975-01-01';
+      inputs.wife.longevityAge = 55; // Dies in 2030 at 55; the husband is 70
+      const row = runRetirementSimulation(inputs).find(r => r.year === 2031)!;
+      expect(row.isSingleReturn).toBe(true);
+      const rules = getFederalRules(row.year);
+      const indexFactor = row.federalIndexFactor ?? row.cpiFactor;
+      const standardWithAgedAddition = (rules.standardDeduction.single + rules.additionalStandardDeductionAged.single) * indexFactor;
+      expect(row.standardDeduction).toBeGreaterThanOrEqual(standardWithAgedAddition - 1);
+    });
+
+    it('should not grant unearned delayed credits when the higher-benefit spouse dies before claiming', () => {
+      const inputs = getSurvivorInputs();
+      inputs.you.targetSSClaimingAge = 70;
+      inputs.you.longevityAge = 66; // Dies in 2026 at age 66 before reaching FRA or claiming at 70
+      inputs.wife.birthDate = '1958-01-01'; // Age 68 in 2026 (past survivor FRA)
+      const row2026 = runRetirementSimulation(inputs).find(r => r.year === 2026)!;
+      expect(row2026.wifeSS).toBeCloseTo(annualSS(3000, row2026), 0);
+    });
+
+    it('should defer the survivor claim to FRA when the survivor is already collecting a larger own benefit at death', () => {
+      const inputs = getSurvivorInputs();
+      inputs.you.estimatedPIA = 2200;
+      inputs.you.targetSSClaimingAge = 67;
+      inputs.you.longevityAge = 70; // Dies in 2030
+      inputs.wife.birthDate = '1968-01-01'; // Age 62 in 2030, FRA 67 in 2035
+      inputs.wife.estimatedPIA = 2600;
+      inputs.wife.targetSSClaimingAge = 62; // Own benefit at 62 is 1,820/mo (> age-62 survivor 1,752.14/mo, < unreduced 2,200/mo)
+      const results = runRetirementSimulation(inputs);
+      const row2030 = results.find(r => r.year === 2030)!;
+      expect(row2030.wifeSS).toBeCloseTo(annualSS(calculateSSBenefit(2600, 62), row2030), 0);
+      const row2035 = results.find(r => r.year === 2035)!;
+      expect(row2035.wifeSS).toBeCloseTo(annualSS(2200, row2035), 0);
+    });
+  });
+
+  describe('wife predeceases husband', () => {
+    const WIFE_LONGEVITY_AGE = 70; // Born 1964, so she dies in 2034 while the husband (born 1960) is 74
+    const WIFE_DEATH_YEAR = 1964 + WIFE_LONGEVITY_AGE;
+
+    const getWifeFirstInputs = () => {
+      const inputs = getMockInputs();
+      inputs.isConfigured = true;
+      inputs.isSingleFiler = false;
+      inputs.you.birthDate = '1960-01-01';
+      inputs.you.longevityAge = 90;
+      inputs.wife.birthDate = '1964-01-01';
+      inputs.wife.longevityAge = WIFE_LONGEVITY_AGE;
+      inputs.portfolio.yourCash = 100000;
+      inputs.portfolio.wifeCash = 50000;
+      inputs.portfolio.yourRothIRA = 100000;
+      inputs.portfolio.wifeRothIRA = 50000;
+      inputs.jurisdiction.currentState = 'MD';
+      inputs.jurisdiction.targetState = 'MD';
+      inputs.jurisdiction.relocationYear = null;
+      return inputs;
+    };
+
+    it('should merge the wife cash and Roth into the husband and zero out her balances', () => {
+      const results = runRetirementSimulation(getWifeFirstInputs());
+      const before = results.find(r => r.year === WIFE_DEATH_YEAR - 1)!;
+      const after = results.find(r => r.year === WIFE_DEATH_YEAR)!;
+
+      expect(after.endWifeCash).toBe(0);
+      expect(after.endWifeRothIRA).toBe(0);
+      expect(after.endWifePreTaxIRA).toBe(0);
+      // The husband inherits both balances instead of losing them
+      expect(after.endYourRothIRA).toBeGreaterThanOrEqual(before.endYourRothIRA + before.endWifeRothIRA);
+      expect(after.endYourCash).toBeGreaterThan(0);
+    });
+
+    for (const strategy of ['flat', 'custom', 'fill-to-target'] as const) {
+      it(`should keep converting the husband's pre-tax balance after the wife dies (${strategy})`, () => {
+        const inputs = getWifeFirstInputs();
+        inputs.rothConversionStrategy = strategy;
+        inputs.annualRothConversion = 20000;
+        inputs.rothConversionStartYear = WIFE_DEATH_YEAR + 1;
+        inputs.rothConversionEndYear = 2045;
+        inputs.rothConversionTargetValue = 600000; // AGI ceiling, set well above the survivor baseline income
+        // Enough taxable money that the liquidity constraint never caps the conversion tax
+        inputs.portfolio.yourTaxableBrokerage = 5000000;
+        inputs.portfolio.yourTaxableBasis = 5000000;
+        inputs.portfolio.yourPreTaxIRA = 400000;
+        inputs.customRothScenarios = [{
+          id: 'wife-first',
+          name: 'wife-first',
+          schedule: Object.fromEntries(Array.from({ length: 10 }, (_, i) => [WIFE_DEATH_YEAR + 1 + i, 20000])),
+          createdAt: '',
+          updatedAt: '',
+        }];
+        inputs.activeCustomScenarioId = 'wife-first';
+
+        const results = runRetirementSimulation(inputs);
+        const survivorRows = results.filter(r => r.year > WIFE_DEATH_YEAR && r.year <= WIFE_DEATH_YEAR + 5);
+        expect(survivorRows.length).toBeGreaterThan(0);
+        for (const row of survivorRows) {
+          expect(row.endWifePreTaxIRA).toBe(0);
+          expect(row.intentionalRothConversion).toBeGreaterThan(0);
+        }
+      });
+    }
+
+    it('should step up the surviving husband to the survivor benefit when the wife had the greater benefit', () => {
+      const inputs = getWifeFirstInputs();
+      inputs.you.estimatedPIA = 1200;
+      inputs.you.targetSSClaimingAge = 67;
+      inputs.wife.estimatedPIA = 3000;
+      inputs.wife.targetSSClaimingAge = 70; // Claims in 2034 (or earns full DRCs to 70 at death in 2034)
+      const results = runRetirementSimulation(inputs);
+      const rowAfterDeath = results.find(r => r.year === WIFE_DEATH_YEAR)!;
+      const expectedMonthly = calculateSurvivorBenefit(3000, 70, 74, WIFE_LONGEVITY_AGE);
+      expect(rowAfterDeath.yourSS).toBeCloseTo(expectedMonthly * 12 * rowAfterDeath.cpiFactor * (rowAfterDeath.ssPaymentLevel ?? 1), 0);
+    });
+
+    it('should pay a survivor benefit to the husband on the lower-PIA wife record while he delays his own larger benefit to 70', () => {
+      const inputs = getWifeFirstInputs();
+      inputs.you.birthDate = '1964-01-01'; // Age 63 in 2027, claims own at 70 in 2034
+      inputs.you.estimatedPIA = 3200;
+      inputs.you.targetSSClaimingAge = 70;
+      inputs.wife.birthDate = '1964-01-01';
+      inputs.wife.longevityAge = 63; // Dies in 2027 before claiming
+      inputs.wife.estimatedPIA = 1500;
+      inputs.wife.targetSSClaimingAge = 67;
+      const results = runRetirementSimulation(inputs);
+      const row2027 = results.find(r => r.year === 2027)!;
+      const expectedSurvivorMonthly = calculateSurvivorBenefit(1500, 67, 63, 63);
+      expect(row2027.yourSS).toBeCloseTo(expectedSurvivorMonthly * 12 * row2027.cpiFactor * (row2027.ssPaymentLevel ?? 1), 0);
+      const row2034 = results.find(r => r.year === 2034)!;
+      const expectedOwnMonthly = calculateSSBenefit(3200, 70);
+      expect(row2034.yourSS).toBeCloseTo(expectedOwnMonthly * 12 * row2034.cpiFactor * (row2034.ssPaymentLevel ?? 1), 0);
+    });
   });
 
   it('should draw from Cash Assets first and grow remaining cash at the fixed income rate', () => {
@@ -805,43 +1093,266 @@ describe('runRetirementSimulation', () => {
     expect(row2026!.drawdownTaxable).toBeGreaterThan(0);
   });
 
-  it('should expend cash runway and freeze equity sales during bear markets', () => {
-    const inputs = getMockInputs();
-    inputs.growthAssumptions.minCashReserveDollars = 100000;
-    inputs.isSingleFiler = true;
-    inputs.you.birthDate = '1960-01-01';
-    inputs.you.plannedRetirementAge = 60;
-    inputs.annualLivingExpenses = 50000;
+  describe('bear-market cash runway rule', () => {
+    const bearInputs = (): AppStateInputs => {
+      const inputs = getMockInputs();
+      inputs.growthAssumptions.minCashReserveDollars = 100000;
+      inputs.isSingleFiler = true;
+      inputs.you.birthDate = '1960-01-01';
+      inputs.you.plannedRetirementAge = 60;
+      inputs.annualLivingExpenses = 50000;
 
-    // Set negative equity return (bear market)
-    inputs.growthAssumptions.equityReturnRate = -0.20;
+      // Every year is a down year for equities
+      inputs.growthAssumptions.equityReturnRate = -0.20;
 
-    // Starting balances
-    inputs.portfolio.yourCash = 100000;
-    inputs.portfolio.yourTaxableBrokerage = 200000;
-    inputs.portfolio.yourTaxableBasis = 150000;
-    inputs.portfolio.yourPreTaxIRA = 0;
-    inputs.portfolio.yourRothIRA = 0;
+      // Starting balances
+      inputs.portfolio.yourCash = 100000;
+      inputs.portfolio.yourTaxableBrokerage = 400000;
+      inputs.portfolio.yourTaxableBasis = 300000;
+      inputs.portfolio.yourPreTaxIRA = 0;
+      inputs.portfolio.yourRothIRA = 0;
+      return inputs;
+    };
 
-    const results = runRetirementSimulation(inputs);
-    const row2026 = results.find(r => r.year === 2026);
-    expect(row2026).toBeDefined();
+    it('does not look ahead: the first down year still protects the cash floor and sells brokerage', () => {
+      const results = runRetirementSimulation(bearInputs());
+      const row2026 = results.find(r => r.year === 2026);
+      expect(row2026).toBeDefined();
 
-    // In a bear market, cash runway absorbs the deficit to protect equities from being sold at a loss
-    expect(row2026!.drawdownCash).toBeGreaterThan(0);
-    expect(row2026!.drawdownTaxable).toBe(0);
-    expect(row2026!.endYourCash).toBeLessThan(100000);
+      // In January 2026 the planner cannot know 2026 will end negative, so the normal rule applies
+      expect(row2026!.drawdownTaxable).toBeGreaterThan(0);
+      expect(row2026!.endYourCash).toBeGreaterThanOrEqual(100000);
+    });
+
+    it('expends cash runway and freezes equity sales in the year after an observed down year', () => {
+      const results = runRetirementSimulation(bearInputs());
+      const row2027 = results.find(r => r.year === 2027);
+      expect(row2027).toBeDefined();
+
+      // 2026 closed negative, so in 2027 cash runway absorbs the deficit to avoid selling equities at a loss
+      expect(row2027!.drawdownCash).toBeGreaterThan(0);
+      expect(row2027!.drawdownTaxable).toBe(0);
+      expect(row2027!.endYourCash).toBeLessThan(100000);
+    });
+
+    it('treats a recorded negative actual return for the year before the start as an observed down year', () => {
+      const inputs = bearInputs();
+      inputs.actualTracking = {
+        2025: { year: 2025, equityReturnRate: -0.10 },
+      };
+      const results = runRetirementSimulation(inputs);
+      const row2026 = results.find(r => r.year === 2026);
+      expect(row2026).toBeDefined();
+
+      // The 2025 loss is known on 1 Jan 2026, so the first simulation year runs under the bear-market rule
+      expect(row2026!.drawdownCash).toBeGreaterThan(0);
+      expect(row2026!.drawdownTaxable).toBe(0);
+      expect(row2026!.endYourCash).toBeLessThan(100000);
+    });
+  });
+
+  describe('Roth conversion strategy "none"', () => {
+    const noneInputs = (strategy: AppStateInputs['rothConversionStrategy']): AppStateInputs => {
+      const inputs = getMockInputs();
+      inputs.portfolio.yourPreTaxIRA = 1000000;
+      inputs.rothConversionStartYear = 2026;
+      inputs.rothConversionEndYear = 2032;
+      // Stored settings that would convert under the other strategies
+      inputs.annualRothConversion = 60000;
+      inputs.rothConversionTargetValue = 250000;
+      inputs.rothConversionStrategy = strategy;
+      return inputs;
+    };
+
+    it('performs no conversions even with a flat amount and a target value stored', () => {
+      const ledger = runRetirementSimulation(noneInputs('none'));
+      for (const row of ledger) {
+        expect(row.intentionalRothConversion ?? 0).toBe(0);
+      }
+    });
+
+    it('matches a flat strategy with a zero annual amount', () => {
+      const none = runRetirementSimulation(noneInputs('none'));
+      const zeroFlatInputs = noneInputs('flat');
+      zeroFlatInputs.annualRothConversion = 0;
+      const zeroFlat = runRetirementSimulation(zeroFlatInputs);
+
+      expect(none.map(r => r.totalPortfolioValue)).toEqual(zeroFlat.map(r => r.totalPortfolioValue));
+      expect(none.map(r => r.fedIncomeTax)).toEqual(zeroFlat.map(r => r.fedIncomeTax));
+    });
+
+    it('converts again when the strategy is switched back to flat (stored settings are preserved)', () => {
+      const flat = runRetirementSimulation(noneInputs('flat'));
+      expect(flat.some(r => (r.intentionalRothConversion ?? 0) > 0)).toBe(true);
+    });
+  });
+
+  describe('Prior-year tax-funding income carry-forward', () => {
+    const getCarryInputs = (): AppStateInputs => {
+      const inputs = getMockInputs();
+      inputs.isSingleFiler = true;
+      inputs.you.birthDate = '1960-01-01';
+      inputs.you.plannedRetirementAge = 60;
+      inputs.you.estimatedPIA = 0;
+      inputs.you.targetSSClaimingAge = null;
+      inputs.annualLivingExpenses = 120000;
+      inputs.portfolio.yourPreTaxIRA = 0;
+      inputs.portfolio.yourRothIRA = 0;
+      inputs.portfolio.yourTaxableBrokerage = 0;
+      inputs.portfolio.yourTaxableBasis = 0;
+      inputs.portfolio.yourCash = 0;
+      return inputs;
+    };
+
+    // Year-end settlement draws = cash withdrawn this year minus the in-year draws taxed this year
+    const settlementPreTaxDraw = (row: SimulationResultRow): number =>
+      row.drawdownPreTax - (row.otherTaxableIncome - (row.priorYearTaxFundingPreTaxDraw ?? 0));
+
+    const sumOfMagiComponents = (row: SimulationResultRow): number =>
+      Math.max(0, (row.yourSalary ?? 0) + (row.wifeSalary ?? 0) - (row.employee401kContribution ?? 0)) +
+      row.yourRMD + row.wifeRMD + row.otherTaxableIncome + row.intentionalRothConversion +
+      row.capitalGainsTriggered + row.taxableDividends + row.taxableInterest + row.taxableSS;
+
+    it('should tax a pre-tax IRA draw that funded the tax settlement as ordinary income in the following year', () => {
+      const inputs = getCarryInputs();
+      inputs.portfolio.yourPreTaxIRA = 3000000;
+
+      const ledger = runRetirementSimulation(inputs);
+      expect(ledger[0].priorYearTaxFundingPreTaxDraw).toBe(0);
+
+      let yearsWithCarry = 0;
+      for (let i = 1; i < 10; i++) {
+        const prev = ledger[i - 1];
+        const row = ledger[i];
+        const carriedIn = row.priorYearTaxFundingPreTaxDraw ?? 0;
+
+        // The carry-in is exactly the settlement draw taken at the end of the prior year
+        expect(carriedIn).toBeCloseTo(settlementPreTaxDraw(prev), 2);
+        // It is included in this year's taxed pre-tax draws and therefore in MAGI
+        expect(row.otherTaxableIncome).toBeGreaterThanOrEqual(carriedIn);
+        expect(row.magi).toBeCloseTo(sumOfMagiComponents(row), 0);
+        expect(row.priorYearTaxFundingGains ?? 0).toBe(0);
+        if (carriedIn > 0) yearsWithCarry++;
+      }
+      expect(yearsWithCarry).toBeGreaterThan(0);
+    });
+
+    it('should carry only the realized gain portion when the tax settlement is funded by selling brokerage', () => {
+      const inputs = getCarryInputs();
+      inputs.portfolio.yourTaxableBrokerage = 3000000;
+      inputs.portfolio.yourTaxableBasis = 600000;
+
+      const ledger = runRetirementSimulation(inputs);
+      expect(ledger[0].priorYearTaxFundingGains).toBe(0);
+
+      let yearsWithCarry = 0;
+      for (let i = 1; i < 10; i++) {
+        const prev = ledger[i - 1];
+        const row = ledger[i];
+        const carriedGains = row.priorYearTaxFundingGains ?? 0;
+        const priorSettlement = prev.fedIncomeTax + prev.stateIncomeTax -
+          (prev.incomeTaxWithheld ?? 0) - (prev.quarterlyEstimatedTaxesPaid ?? 0);
+
+        // Only the gain portion of the sale is income, so it is always less than the tax it paid
+        expect(carriedGains).toBeLessThan(Math.max(priorSettlement, 0.01));
+        expect(row.capitalGainsTriggered).toBeGreaterThanOrEqual(carriedGains);
+        expect(row.magi).toBeCloseTo(sumOfMagiComponents(row), 0);
+        expect(row.priorYearTaxFundingPreTaxDraw ?? 0).toBe(0);
+        if (carriedGains > 0) yearsWithCarry++;
+      }
+      expect(yearsWithCarry).toBeGreaterThan(0);
+    });
+
+    it('should carry no income when the tax settlement is paid from cash', () => {
+      const inputs = getCarryInputs();
+      // Joint filers with both spouses retired and no Social Security
+      inputs.isSingleFiler = false;
+      inputs.wife.birthDate = '1960-01-01';
+      inputs.wife.plannedRetirementAge = 60;
+      inputs.wife.estimatedPIA = 0;
+      inputs.wife.targetSSClaimingAge = null;
+      inputs.portfolio.wifePreTaxIRA = 0;
+      inputs.portfolio.wifeRothIRA = 0;
+      inputs.portfolio.wifeTaxableBrokerage = 0;
+      inputs.portfolio.wifeTaxableBasis = 0;
+      inputs.portfolio.wifeCash = 0;
+      inputs.growthAssumptions.minCashReserveDollars = 0;
+      inputs.portfolio.yourPreTaxIRA = 3000000;
+      inputs.portfolio.yourCash = 3000000;
+      // A year-end fill-to-target conversion creates a tax bill that the quarterly estimates did not
+      // anticipate, while living expenses and the settlement are met from cash
+      inputs.rothConversionStrategy = 'fill-to-target';
+      inputs.rothConversionTargetValue = 250000;
+
+      const ledger = runRetirementSimulation(inputs);
+
+      let yearsWithSettlementDue = 0;
+      for (let i = 0; i < 4; i++) {
+        const row = ledger[i];
+        const settlement = row.fedIncomeTax + row.stateIncomeTax -
+          (row.incomeTaxWithheld ?? 0) - (row.quarterlyEstimatedTaxesPaid ?? 0);
+        if (settlement > 0) yearsWithSettlementDue++;
+
+        expect(ledger[i + 1].priorYearTaxFundingPreTaxDraw ?? 0).toBe(0);
+        expect(ledger[i + 1].priorYearTaxFundingGains ?? 0).toBe(0);
+      }
+      expect(yearsWithSettlementDue).toBeGreaterThan(0);
+    });
+
+    it('should not carry tax-funding income out of an actual-record year', () => {
+      const inputs = getCarryInputs();
+      inputs.portfolio.yourPreTaxIRA = 3000000;
+
+      const baseline = runRetirementSimulation(inputs);
+      const firstYear = baseline[0].year;
+      // Confirm the projected run does carry income out of the first year
+      expect(baseline[1].priorYearTaxFundingPreTaxDraw ?? 0).toBeGreaterThan(0);
+
+      inputs.actualTracking = {
+        [firstYear]: { year: firstYear, endYourPreTaxIRA: 2900000 },
+      };
+      const withActual = runRetirementSimulation(inputs);
+      expect(withActual[0].isActual).toBe(true);
+      expect(withActual[1].priorYearTaxFundingPreTaxDraw).toBe(0);
+      expect(withActual[1].priorYearTaxFundingGains).toBe(0);
+    });
+  });
+  it('counts expense items flagged SALT eligible toward the itemized deduction, even with no state income tax', () => {
+    const PROPERTY_TAX_ANNUAL = 40000;
+    const buildInputs = (flagged: boolean) => {
+      const inputs = getMockInputs();
+      inputs.useDetailedExpenses = true;
+      inputs.jurisdiction.currentState = 'FL';
+      inputs.jurisdiction.targetState = 'FL';
+      inputs.jurisdiction.relocationYear = null;
+      inputs.detailedExpenses = {
+        catalog: {
+          categories: ['Home'],
+          items: [{ id: 'propTax', name: 'Property Tax', category: 'Home', defaultFrequency: 1, isSALTEligible: flagged }],
+        },
+        states: ['FL'],
+        costs: { ALL: { propTax: PROPERTY_TAX_ANNUAL } },
+        frequencies: { propTax: 1 },
+      };
+      return inputs;
+    };
+
+    const withFlag = runRetirementSimulation(buildInputs(true)).find((r) => r.year === 2026)!;
+    const withoutFlag = runRetirementSimulation(buildInputs(false)).find((r) => r.year === 2026)!;
+    expect(withFlag.standardDeduction).toBeGreaterThan(withoutFlag.standardDeduction);
+    expect(withFlag.standardDeduction).toBeGreaterThanOrEqual(PROPERTY_TAX_ANNUAL);
   });
 });
 
 describe('calculateFedTaxWithLTCG', () => {
   it('should compute tax with LTCG stacked correctly', () => {
     // Single filer, taxable ordinary = 40,000, taxable LTCG = 20,000.
-    // Expected ltcgTax: 9,800 * 0.15 = 1470.
-    const res = calculateFedTaxWithLTCG(40000, 20000, true, 1);
-    expect(res.ltcgTax).toBeCloseTo(1470, 1);
-    expect(res.ordinaryTax).toBe(calculateFedTax(40000, true, 1));
-    expect(res.totalTax).toBe(res.ordinaryTax + 1470);
+    // 0% bracket tops out at 49,450 (Rev. Proc. 2025-32), so 60,000 - 49,450 = 10,550 is taxed at 15%.
+    // Expected ltcgTax: 10,550 * 0.15 = 1582.5.
+    const res = calculateFedTaxWithLTCG(40000, 20000, true, FEDERAL_2026_UNINDEXED);
+    expect(res.ltcgTax).toBeCloseTo(1582.5, 1);
+    expect(res.ordinaryTax).toBe(calculateFedTax(40000, true, FEDERAL_2026_UNINDEXED));
+    expect(res.totalTax).toBe(res.ordinaryTax + 1582.5);
   });
 });
 
@@ -920,14 +1431,65 @@ describe('runRetirementSimulation fixes', () => {
     expect(row2026.magi).toBeCloseTo(row2026.taxableInterest, 1);
   });
 
+  it('should grow flat Roth conversions with the simulated CPI index', () => {
+    const inputs = getMockInputs();
+    inputs.rothConversionStrategy = 'flat';
+    inputs.annualRothConversion = 50000;
+    inputs.rothConversionStartYear = 2027;
+    inputs.rothConversionEndYear = 2030;
+    inputs.portfolio.yourPreTaxIRA = 2_000_000;
+    const rows = runRetirementSimulation(inputs);
+    const first = rows.find(r => r.year === 2027)!;
+    const later = rows.find(r => r.year === 2030)!;
+
+    expect(first.intentionalRothConversion).toBeGreaterThan(0);
+    expect(later.intentionalRothConversion / first.intentionalRothConversion)
+      .toBeCloseTo(later.cpiFactor! / first.cpiFactor!, 3);
+  });
+
+  it('should carry net capital losses forward and offset only the annual ordinary-income limit', () => {
+    const inputs = getMockInputs();
+    inputs.isSingleFiler = true;
+    inputs.annualLivingExpenses = 150000;
+    inputs.you.plannedRetirementAge = 55;
+    inputs.you.estimatedPIA = 0;
+    inputs.portfolio.yourCash = 0;
+    inputs.portfolio.yourPreTaxIRA = 0;
+    inputs.portfolio.yourRothIRA = 0;
+    // Underwater taxable account: basis is double the market value, so every sale realizes a loss
+    inputs.portfolio.yourTaxableBrokerage = 400000;
+    inputs.portfolio.yourTaxableBasis = 800000;
+    const rows = runRetirementSimulation(inputs);
+    const first = rows[0];
+
+    expect(first.capitalGainsTriggered).toBe(0);
+    expect(first.drawdownTaxable ?? 0).toBeGreaterThan(0);
+    expect(first.capitalLossCarryforward ?? 0).toBeGreaterThan(CAPITAL_LOSS_ORDINARY_OFFSET_LIMIT);
+    // The ordinary offset can only reduce AGI by the statutory limit
+    expect(first.fedAGI).toBeGreaterThanOrEqual(first.taxableInterest + first.taxableDividends - CAPITAL_LOSS_ORDINARY_OFFSET_LIMIT - 0.01);
+  });
+
+  it('should apply NIIT to cash interest when MAGI exceeds the statutory threshold', () => {
+    const inputs = getMockInputs();
+    inputs.isSingleFiler = true;
+    inputs.portfolio.yourCash = 10_000_000;
+    const row = runRetirementSimulation(inputs)[0];
+
+    const expectedNiit =
+      Math.min(row.taxableInterest, row.magi - STATUTORY_NIIT_THRESHOLD_SINGLE) * STATUTORY_NIIT_RATE;
+    expect(row.taxableInterest).toBeGreaterThan(STATUTORY_NIIT_THRESHOLD_SINGLE);
+    expect(expectedNiit).toBeGreaterThan(0);
+    expect(row.niitTax).toBeCloseTo(expectedNiit, 1);
+  });
+
   it('should check surviving spouse age for standard deduction age addition when single', () => {
     const inputs = getMockInputs();
     inputs.isSingleFiler = false;
-    inputs.simulateSurvivor = true;
-    const results = runRetirementSimulation(inputs, true);
+    const results = runRetirementSimulation(inputs);
     const row2051 = results.find(r => r.year === 2051);
     expect(row2051).toBeDefined();
-    expect(row2051!.standardDeduction).toBeCloseTo(18050, 1);
+    const rules2026 = getFederalRules(2026);
+    expect(row2051!.standardDeduction).toBeCloseTo(rules2026.standardDeduction.single + rules2026.additionalStandardDeductionAged.single, 1);
   });
 
   it('should ensure Sankey cash flow sources and uses balance perfectly across all years', () => {
@@ -1093,7 +1655,8 @@ describe('runRetirementSimulation fixes', () => {
       const results = runRetirementSimulation(inputs);
       expect(results[0].year).toBe(2024);
       expect(results[0].yourAge).toBe(64);
-      expect(results[results.length - 1].year).toBe(2050);
+      // The last survivor is removed in their longevity year (2050), so the final simulated year is 2049
+      expect(results[results.length - 1].year).toBe(2049);
 
       // In 2024, salary is active, no SS
       expect(results[0].yourSalary).toBeGreaterThan(0);
@@ -1119,7 +1682,8 @@ describe('runRetirementSimulation fixes', () => {
       const results = runRetirementSimulation(inputs);
       expect(results[0].year).toBe(2030);
       expect(results[0].yourAge).toBe(60);
-      expect(results[results.length - 1].year).toBe(2065);
+      // The last survivor is removed in their longevity year (2065), so the final simulated year is 2064
+      expect(results[results.length - 1].year).toBe(2064);
 
       const row2040 = results.find(r => r.year === 2040);
       expect(row2040).toBeDefined();
@@ -1149,8 +1713,7 @@ describe('runRetirementSimulation fixes', () => {
       const normalized = normalizeDetailedExpenses(undefined);
       expect(normalized.catalog).toBeDefined();
       expect(normalized.catalog.categories.length).toBeGreaterThan(0);
-      expect(normalized.costs.MD).toBeDefined();
-      expect(normalized.costs.FL).toBeDefined();
+      expect(normalized.costs).toEqual({});
     });
 
     it('should accurately calculate living expenses from dynamic custom catalog items and categories', () => {
@@ -1449,13 +2012,14 @@ describe('runRetirementSimulation fixes', () => {
 
       // Standard deduction reported on the row should be elevated due to itemized optimization ($10k SALT + $50k charity = $60k > standard deduction)
       expect(rowWithGifts.standardDeduction).toBeGreaterThan(baseStdDed);
-      expect(rowWithGifts.standardDeduction).toBeGreaterThanOrEqual(50000);
+      // The SALT portion depends on the state tax, so only the charity-driven lower bound is asserted.
+      expect(rowWithGifts.standardDeduction).toBeGreaterThanOrEqual(45000);
     });
 
     it('should contribute max pre-tax 401(k) and reduce taxable salary in pre-retirement working years', () => {
       const inputs = getMockInputs();
       inputs.simulationStartYear = 2026;
-      inputs.you.birthDate = '1965-06-15'; // Age 61 in 2026 (age 60-63 SECURE 2.0 catchup: $23,500 + $11,250 = $34,750)
+      inputs.you.birthDate = '1965-06-15'; // Age 61 in 2026 (age 60-63 SECURE 2.0 catchup: $24,500 + $11,250 = $35,750)
       inputs.you.plannedRetirementAge = 65; // working all of 2026
       inputs.you.activeSalary = 150000;
       inputs.isSingleFiler = true;
@@ -1464,7 +2028,7 @@ describe('runRetirementSimulation fixes', () => {
       const results = runRetirementSimulation(inputs);
       const row2026 = results[0];
 
-      expect(row2026.employee401kContribution).toBeCloseTo(34750, 0);
+      expect(row2026.employee401kContribution).toBeCloseTo(35750, 0);
       expect(row2026.ficaTaxesPaid).toBeGreaterThan(0);
       expect(row2026.incomeTaxWithheld).toBeGreaterThan(0);
       expect(row2026.netTakeHomeSalary).toBeGreaterThan(0);
@@ -1476,6 +2040,28 @@ describe('runRetirementSimulation fixes', () => {
 
       // Taxable income should be based on gross salary minus 401k contribution
       expect(row2026.fedAGI).toBeLessThan(150000);
+    });
+
+    it('should not index the Additional Medicare Tax threshold and should cap Social Security tax at the 2026 wage base', () => {
+      const run = (salary: number, startYear: number) => {
+        const inputs = getMockInputs();
+        inputs.simulationStartYear = startYear;
+        inputs.isSingleFiler = true;
+        inputs.you.birthDate = `${startYear - 40}-06-15`; // Under 50, so no catch-up
+        inputs.you.plannedRetirementAge = 65;
+        inputs.you.activeSalary = salary;
+        return runRetirementSimulation(inputs)[0];
+      };
+      const SS_RATE = 0.062;
+      const MEDICARE_RATE = 0.0145;
+      const ADDITIONAL_MEDICARE_RATE = 0.009;
+      const WAGE_BASE_2026 = 184500;
+      const ADDITIONAL_MEDICARE_THRESHOLD = 200000;
+
+      // Salary above both the wage base and the unindexed threshold in the 2026 start year
+      const salary = 250000;
+      const expected = SS_RATE * WAGE_BASE_2026 + MEDICARE_RATE * salary + ADDITIONAL_MEDICARE_RATE * (salary - ADDITIONAL_MEDICARE_THRESHOLD);
+      expect(run(salary, 2026).ficaTaxesPaid).toBeCloseTo(expected, 0);
     });
 
     it('should preserve cash savings buffer ($0 cash drawdown) in transition year when full-year net salary exceeds full-year expenses', () => {
@@ -2094,6 +2680,29 @@ describe('runRetirementSimulation fixes', () => {
       expect(row2026?.magiTwoYearsAgo).toBe(165000);
       expect(row2026?.surchargeTier).toBeGreaterThan(0);
       expect(row2026?.combinedSurchargeAnnual).toBeGreaterThan(0);
+    });
+
+    it('should scale IRMAA tier limits by the premium year CPI, not the lookback year CPI', () => {
+      const inputs = getBaseActualsTestInputs();
+      inputs.isSingleFiler = false;
+      inputs.you.plannedRetirementAge = 80; // Keep wages flowing so lookback MAGI is steered by salary
+      inputs.you.activeSalary = 200000;
+      inputs.fileSSA44LifeChangingEvent = false; // Spouse is retired, so keep SSA-44 from stripping wages from lookback MAGI
+      const probeMAGI = runRetirementSimulation(inputs).find(r => r.year === 2026)!.magi;
+      const probeCpi = runRetirementSimulation(inputs).find(r => r.year === 2028)!.cpiFactor;
+      expect(probeCpi).toBeGreaterThan(1);
+
+      // Steer 2026 MAGI to sit above the unindexed Tier 0 limit but below that limit indexed to 2028.
+      // 2028 premiums use 2028 thresholds, so the 2028 row must stay in Tier 0.
+      const unindexedTier0Limit = getFederalRules(2026).irmaaTiers.mfj[0].limit;
+      const indexedTier0Limit = unindexedTier0Limit * probeCpi;
+      const targetMAGI = (unindexedTier0Limit + indexedTier0Limit) / 2;
+      inputs.you.activeSalary += targetMAGI - probeMAGI;
+
+      const row2028 = runRetirementSimulation(inputs).find(r => r.year === 2028)!;
+      expect(row2028.magiTwoYearsAgo).toBeGreaterThan(unindexedTier0Limit);
+      expect(row2028.magiTwoYearsAgo).toBeLessThan(indexedTier0Limit);
+      expect(row2028.surchargeTier).toBe(0);
     });
   });
 

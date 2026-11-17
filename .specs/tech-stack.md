@@ -3,7 +3,7 @@
 ## 1. High-Level Architecture & Principles
 - **Deployment Model:** Single Page Application (SPA). All processing must run client-side to maintain zero-knowledge user privacy over highly sensitive financial and tax datasets. No external database or backend API dependencies.
 - **State Management Model:** Unidirectional data flow. Component states must remain strictly isolated from calculation mechanisms. A pure-function simulation utility must consume inputs, compute the multi-decade projection arrays, and emit an immutable output matrix block for rendering.
-- **Performance Threshold:** The simulation loop must execute in under 15 milliseconds across a 35-year data projection matrix to support fluid 60FPS UI rendering while dragging conversion sliders.
+- **Performance Threshold:** The simulation loop must execute in under 15 milliseconds across a full-lifetime data projection matrix (roughly 35 to 40 years) to support fluid 60FPS UI rendering while dragging conversion sliders.
 
 ## 2. Framework & Layout Libraries
 - **Core Framework:** React 18+ leveraging TypeScript for strict compilation safety on data schemas.
@@ -36,7 +36,7 @@ src/
 │   └── InputControlSidebar.tsx  # Primary input parameters (balances, variables, growth)
 ├── engine/
 │   ├── simulationEngine.ts      # Pure-function processing pipeline loop script
-│   └── taxRates2026.ts          # Static lookups for Federal, MD, FL, and IRMAA tiers
+│   └── taxRates.ts          # Static lookups for Federal, MD, FL, and IRMAA tiers
 ├── types/
 │   └── index.ts                 # Centralized type definitions and schema block mappings
 ├── App.tsx                      # Root state wrapper orchestration point

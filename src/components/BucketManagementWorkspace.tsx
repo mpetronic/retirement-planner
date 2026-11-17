@@ -9,6 +9,7 @@ import {
   getSimulationStartYear,
   DEFAULT_BUCKET_STRATEGY_SETTINGS,
 } from '../types';
+import { getSimulationHorizonYears } from '../engine/simulationEngine';
 import {
   calculateBucketYearState,
   generateBucketMultiYearProjection,
@@ -42,7 +43,6 @@ interface BucketManagementWorkspaceProps {
   ledger: SimulationResultRow[];
   inputs: AppStateInputs;
   onInputsChange: (newInputs: AppStateInputs) => void;
-  simulateSurvivor?: boolean;
 }
 
 export const BucketManagementWorkspace: React.FC<BucketManagementWorkspaceProps> = ({
@@ -51,12 +51,13 @@ export const BucketManagementWorkspace: React.FC<BucketManagementWorkspaceProps>
   onInputsChange,
 }) => {
   const simStartYear = getSimulationStartYear(inputs);
+  const horizonYears = getSimulationHorizonYears(inputs);
   const availableYears = useMemo(() => {
     if (ledger && ledger.length > 0) {
       return ledger.map((r) => r.year);
     }
-    return Array.from({ length: 35 }, (_, i) => simStartYear + i);
-  }, [ledger, simStartYear]);
+    return Array.from({ length: horizonYears }, (_, i) => simStartYear + i);
+  }, [ledger, simStartYear, horizonYears]);
 
   // Selected year for scrubber
   const [selectedYear, setSelectedYear] = useState<number>(availableYears[0] || simStartYear);

@@ -30,7 +30,7 @@ export const AboutDialog: React.FC<AboutDialogProps> = ({
   isOpen,
   onClose,
   title = 'Retirement Planner',
-  subtitle = 'Interactive 35-Year Tax, IRMAA & Wealth Simulator',
+  subtitle = 'Interactive Lifetime Tax, IRMAA & Wealth Simulator',
 }) => {
   const [copied, setCopied] = useState(false);
   const versionInfo = getVersionInfo();
@@ -49,7 +49,7 @@ export const AboutDialog: React.FC<AboutDialogProps> = ({
       `Branch: ${versionInfo.branch}`,
       `Working Tree: ${versionInfo.isDirty ? 'Dirty (Uncommitted Changes)' : 'Clean'}`,
       `Build Timestamp: ${versionInfo.buildTimestamp} (${versionInfo.buildIsoTime})`,
-      `Engine: 35-Year Stochastic & Deterministic Lookback Simulator`,
+      `Engine: Lifetime Stochastic & Deterministic Lookback Simulator`,
       `Timestamp: ${new Date().toISOString()}`,
     ].join('\n');
 
@@ -220,10 +220,10 @@ export const AboutDialog: React.FC<AboutDialogProps> = ({
               <div className="p-3 bg-slate-950/60 border border-slate-800 rounded-xl space-y-1">
                 <div className="flex items-center gap-1.5 text-slate-300 font-bold text-xs">
                   <Layers className="w-3.5 h-3.5 text-emerald-400" />
-                  <span>35-Year Timeline</span>
+                  <span>Lifetime Timeline</span>
                 </div>
                 <p className="text-[10px] text-slate-400 leading-relaxed">
-                  High-fidelity annual engine modeling age 65 to 100 with dynamic longevity ages.
+                  High-fidelity annual engine modeling each year from the start year through the configured longevity ages.
                 </p>
               </div>
 

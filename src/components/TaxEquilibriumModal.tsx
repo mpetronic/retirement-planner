@@ -13,7 +13,7 @@ import {
 } from 'lucide-react';
 import { AppStateInputs, LockedReturnSequence } from '../types';
 import { calculateTaxEquilibriumSchedule, TaxEquilibriumResult, YearlyTaxEquilibriumPoint } from '../engine/taxEquilibriumEngine';
-import { STATUTORY_IRMAA_LOOKBACK_YEARS } from '../engine/taxRates2026';
+import { STATUTORY_IRMAA_LOOKBACK_YEARS } from '../engine/taxRates';
 
 interface ColumnHelpHeaderProps {
   label: string;
@@ -59,7 +59,6 @@ interface TaxEquilibriumModalProps {
   isOpen: boolean;
   onClose: () => void;
   inputs: AppStateInputs;
-  simulateSurvivor: boolean;
   activeScenarioSequence?: LockedReturnSequence | null;
   onApplySchedule: (schedule: Record<number, number>, scenarioName?: string) => void;
 }
@@ -68,7 +67,6 @@ export const TaxEquilibriumModal: React.FC<TaxEquilibriumModalProps> = ({
   isOpen,
   onClose,
   inputs,
-  simulateSurvivor,
   activeScenarioSequence,
   onApplySchedule,
 }) => {
@@ -91,8 +89,8 @@ export const TaxEquilibriumModal: React.FC<TaxEquilibriumModalProps> = ({
         },
       };
     }
-    return calculateTaxEquilibriumSchedule(inputs, simulateSurvivor, activeScenarioSequence);
-  }, [isOpen, inputs, simulateSurvivor, activeScenarioSequence]);
+    return calculateTaxEquilibriumSchedule(inputs, activeScenarioSequence);
+  }, [isOpen, inputs, activeScenarioSequence]);
 
   if (!isOpen) return null;
 

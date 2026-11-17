@@ -30,9 +30,15 @@ import {
   ExpenseItemDefinition,
   HealthcareConfig,
   StateHealthcareConfig,
-  normalizeDetailedExpenses
+  normalizeDetailedExpenses,
+  resolveExpenseCost,
+  ALL_STATES_COST_KEY
 } from '../types';
-import { BASE_MEDICARE_PART_B, BASE_MEDICARE_PART_D } from '../engine/taxRates2026';
+import { getMedicareStandardAmounts } from '../engine/federalTaxRules';
+import { newCatalogItemId } from '../shared/utils/plannerCategories';
+
+// Used only when the parent does not pass the plan's rate
+const DEFAULT_HEALTHCARE_INFLATION_RATE = 0.05;
 
 interface DetailedExpensesDialogProps {
   isOpen: boolean;
@@ -42,6 +48,7 @@ interface DetailedExpensesDialogProps {
   detailedExpenses: DetailedExpensesState | undefined;
   onSave: (expenses: DetailedExpensesState) => void;
   simStartYear?: number;
+  healthcareInflationRate?: number;
   relocationYear?: number | null;
   youHealthcare?: HealthcareConfig;
   wifeHealthcare?: HealthcareConfig;
@@ -52,11 +59,12 @@ interface DetailedExpensesDialogProps {
 export const DetailedExpensesDialog: React.FC<DetailedExpensesDialogProps> = ({
   isOpen,
   onClose,
-  currentState = 'MD',
-  targetState = 'FL',
+  currentState = '',
+  targetState = '',
   detailedExpenses,
   onSave,
   simStartYear = 2026,
+  healthcareInflationRate = DEFAULT_HEALTHCARE_INFLATION_RATE,
   relocationYear = null,
   youHealthcare,
   wifeHealthcare,
@@ -73,14 +81,14 @@ export const DetailedExpensesDialog: React.FC<DetailedExpensesDialogProps> = ({
 
   const [statesList, setStatesList] = useState<string[]>(() => {
     const norm = normalizeDetailedExpenses(detailedExpenses);
-    const initial = norm.states && norm.states.length > 0 ? [...norm.states] : [currentState || 'MD', targetState || 'FL'];
+    const initial = norm.states && norm.states.length > 0 ? [...norm.states] : [currentState, targetState].filter(Boolean);
     const set = new Set<string>(initial);
     if (currentState) set.add(currentState);
     if (targetState) set.add(targetState);
     return Array.from(set);
   });
 
-  const [activeState, setActiveState] = useState<string>(() => currentState || 'MD');
+  const [activeState, setActiveState] = useState<string>(() => currentState);
 
   const [costs, setCosts] = useState<{ [stateCode: string]: Record<string, number> }>(() => {
     const norm = normalizeDetailedExpenses(detailedExpenses);
@@ -97,13 +105,13 @@ export const DetailedExpensesDialog: React.FC<DetailedExpensesDialogProps> = ({
     if (isOpen) {
       const norm = normalizeDetailedExpenses(detailedExpenses);
       setCatalog(norm.catalog);
-      const sList = norm.states && norm.states.length > 0 ? [...norm.states] : [currentState || 'MD', targetState || 'FL'];
+      const sList = norm.states && norm.states.length > 0 ? [...norm.states] : [currentState, targetState].filter(Boolean);
       const set = new Set<string>(sList);
       if (currentState) set.add(currentState);
       if (targetState) set.add(targetState);
       const finalStates = Array.from(set);
       setStatesList(finalStates);
-      setActiveState(currentState || finalStates[0] || 'MD');
+      setActiveState(currentState || finalStates[0] || '');
       setCosts(norm.costs);
       setFrequencies(norm.frequencies);
       setActiveTab('expenses');
@@ -124,9 +132,10 @@ export const DetailedExpensesDialog: React.FC<DetailedExpensesDialogProps> = ({
   const [itemFrequency, setItemFrequency] = useState<number>(12);
   const [itemDueMonths, setItemDueMonths] = useState<number[]>([]);
   const [itemIsOneTime, setItemIsOneTime] = useState<boolean>(false);
+  const [itemIsSALTEligible, setItemIsSALTEligible] = useState<boolean>(false);
   const [itemTargetYear, setItemTargetYear] = useState<number | string>(simStartYear);
   const [itemScopeMode, setItemScopeMode] = useState<'ALL' | 'SPECIFIC'>('ALL');
-  const [itemSelectedStates, setItemSelectedStates] = useState<string[]>([currentState || 'MD']);
+  const [itemSelectedStates, setItemSelectedStates] = useState<string[]>([currentState]);
   const [itemBaseCost, setItemBaseCost] = useState<number>(0);
   const [itemCostsByState, setItemCostsByState] = useState<Record<string, number>>({});
   const [itemError, setItemError] = useState<string | null>(null);
@@ -148,8 +157,8 @@ export const DetailedExpensesDialog: React.FC<DetailedExpensesDialogProps> = ({
 
   // Copy State Costs Modal state
   const [copyCostsModalOpen, setCopyCostsModalOpen] = useState(false);
-  const [copySourceState, setCopySourceState] = useState(currentState || 'MD');
-  const [copyTargetState, setCopyTargetState] = useState(targetState || 'FL');
+  const [copySourceState, setCopySourceState] = useState(currentState);
+  const [copyTargetState, setCopyTargetState] = useState(targetState);
 
   // Helper currency formatter
   const formatCurrency = (val: number) => {
@@ -239,6 +248,7 @@ export const DetailedExpensesDialog: React.FC<DetailedExpensesDialogProps> = ({
       setItemDescription(item.description || '');
       setItemFrequency(isOneTime ? 1 : (frequencies[item.id] ?? item.defaultFrequency ?? 12));
       setItemDueMonths(item.dueMonths ? [...item.dueMonths] : []);
+      setItemIsSALTEligible(!!item.isSALTEligible);
       setItemTargetYear(item.targetYear ?? simStartYear);
       
       const appStates = item.applicableStates || ['ALL'];
@@ -250,12 +260,12 @@ export const DetailedExpensesDialog: React.FC<DetailedExpensesDialogProps> = ({
         setItemSelectedStates([...appStates]);
       }
 
-      const activeCost = costs[activeState]?.[item.id] ?? costs['ALL']?.[item.id] ?? costs['MD']?.[item.id] ?? 0;
+      const activeCost = resolveExpenseCost(costs, activeState, item.id);
       setItemBaseCost(activeCost);
 
       const stateMap: Record<string, number> = {};
       statesList.forEach((st) => {
-        stateMap[st] = costs[st]?.[item.id] ?? costs['ALL']?.[item.id] ?? activeCost;
+        stateMap[st] = costs[st]?.[item.id] ?? costs[ALL_STATES_COST_KEY]?.[item.id] ?? activeCost;
       });
       setItemCostsByState(stateMap);
     } else {
@@ -270,6 +280,7 @@ export const DetailedExpensesDialog: React.FC<DetailedExpensesDialogProps> = ({
       setItemIsOneTime(isOneTime);
       setItemFrequency(isOneTime ? 1 : 12);
       setItemDueMonths([]);
+      setItemIsSALTEligible(false);
       setItemTargetYear(defaultYear ?? simStartYear);
       setItemScopeMode('ALL');
       setItemSelectedStates(statesList.length > 0 ? [...statesList] : [activeState]);
@@ -314,7 +325,7 @@ export const DetailedExpensesDialog: React.FC<DetailedExpensesDialogProps> = ({
       ? ['ALL'] 
       : (itemSelectedStates.length > 0 ? itemSelectedStates : [activeState]);
 
-    const itemId = editingItem ? editingItem.id : `item_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
+    const itemId = editingItem ? editingItem.id : newCatalogItemId();
     const finalFrequency = itemIsOneTime ? 1 : itemFrequency;
     const finalTargetYear = itemIsOneTime ? Number(itemTargetYear) : undefined;
 
@@ -332,6 +343,7 @@ export const DetailedExpensesDialog: React.FC<DetailedExpensesDialogProps> = ({
                 defaultFrequency: finalFrequency,
                 dueMonths: (finalFrequency < 12 || itemIsOneTime) && itemDueMonths.length > 0 ? itemDueMonths : undefined,
                 isOneTime: itemIsOneTime,
+                isSALTEligible: !itemIsOneTime && itemIsSALTEligible ? true : undefined,
                 targetYear: finalTargetYear,
                 applicableStates: finalApplicableStates
               }
@@ -352,6 +364,7 @@ export const DetailedExpensesDialog: React.FC<DetailedExpensesDialogProps> = ({
         defaultFrequency: finalFrequency,
         dueMonths: (finalFrequency < 12 || itemIsOneTime) && itemDueMonths.length > 0 ? itemDueMonths : undefined,
         isOneTime: itemIsOneTime,
+        isSALTEligible: !itemIsOneTime && itemIsSALTEligible ? true : undefined,
         targetYear: finalTargetYear,
         applicableStates: finalApplicableStates
       };
@@ -516,9 +529,7 @@ export const DetailedExpensesDialog: React.FC<DetailedExpensesDialogProps> = ({
       catalog,
       states: statesList,
       costs,
-      frequencies,
-      MD: costs.MD || costs['MD'] || {},
-      FL: costs.FL || costs['FL'] || {}
+      frequencies
     };
     onSave(updatedState);
     onClose();
@@ -607,6 +618,14 @@ export const DetailedExpensesDialog: React.FC<DetailedExpensesDialogProps> = ({
   }, [visibleOneTimeItems, simStartYear]);
 
   // Active state totals calculation
+  const activeStateHasNoCosts = useMemo(() => {
+    if (!activeState) return false;
+    const hasEntered = (stateCode: string) => Object.values(costs[stateCode] || {}).some((value) => value > 0);
+    const hasAllStatesCosts = hasEntered(ALL_STATES_COST_KEY);
+    const otherStateHasCosts = statesList.some((st) => st !== activeState && hasEntered(st));
+    return !hasEntered(activeState) && !hasAllStatesCosts && otherStateHasCosts;
+  }, [costs, activeState, statesList]);
+
   const activeStateTotals = useMemo(() => {
     const costMap = costs[activeState] || {};
     let recurringAnnual = 0;
@@ -648,13 +667,14 @@ export const DetailedExpensesDialog: React.FC<DetailedExpensesDialogProps> = ({
     const wifePre65OOP = (!isSingleFiler && wifeStateHc) ? ((wifeStateHc?.pre65MedicalOOP ?? 0) + (wifeStateHc?.pre65DentalOOP ?? 0) + (wifeStateHc?.pre65VisionOOP ?? 0)) : 0;
     const totalPre65OOP = youPre65OOP + wifePre65OOP;
 
-    // Medicare Monthly & Annual
-    const youB = (youHealthcare?.medicarePartBPremium !== null && youHealthcare?.medicarePartBPremium !== undefined) ? youHealthcare.medicarePartBPremium : BASE_MEDICARE_PART_B;
-    const youD = (youStateHc?.medicarePartDPremium !== null && youStateHc?.medicarePartDPremium !== undefined) ? youStateHc.medicarePartDPremium : BASE_MEDICARE_PART_D;
+    // Medicare Monthly & Annual, in start-year dollars
+    const medicareBase = getMedicareStandardAmounts(simStartYear, healthcareInflationRate);
+    const youB = (youHealthcare?.medicarePartBPremium !== null && youHealthcare?.medicarePartBPremium !== undefined) ? youHealthcare.medicarePartBPremium : medicareBase.partB;
+    const youD = (youStateHc?.medicarePartDPremium !== null && youStateHc?.medicarePartDPremium !== undefined) ? youStateHc.medicarePartDPremium : medicareBase.partD;
     const youMedMonthly = (youHealthcare ? (youB + youD) : 0) + (youStateHc?.supplementPremium ?? 0) + (youStateHc?.post65DentalPremium ?? 0) + (youStateHc?.post65VisionPremium ?? 0);
 
-    const wifeB = (wifeHealthcare?.medicarePartBPremium !== null && wifeHealthcare?.medicarePartBPremium !== undefined) ? wifeHealthcare.medicarePartBPremium : BASE_MEDICARE_PART_B;
-    const wifeD = (wifeStateHc?.medicarePartDPremium !== null && wifeStateHc?.medicarePartDPremium !== undefined) ? wifeStateHc.medicarePartDPremium : BASE_MEDICARE_PART_D;
+    const wifeB = (wifeHealthcare?.medicarePartBPremium !== null && wifeHealthcare?.medicarePartBPremium !== undefined) ? wifeHealthcare.medicarePartBPremium : medicareBase.partB;
+    const wifeD = (wifeStateHc?.medicarePartDPremium !== null && wifeStateHc?.medicarePartDPremium !== undefined) ? wifeStateHc.medicarePartDPremium : medicareBase.partD;
     const wifeMedMonthly = (!isSingleFiler && wifeHealthcare) ? ((wifeB + wifeD) + (wifeStateHc?.supplementPremium ?? 0) + (wifeStateHc?.post65DentalPremium ?? 0) + (wifeStateHc?.post65VisionPremium ?? 0)) : 0;
 
     const totalMedicareMonthly = youMedMonthly + wifeMedMonthly;
@@ -725,7 +745,7 @@ export const DetailedExpensesDialog: React.FC<DetailedExpensesDialogProps> = ({
       totalMedicareAnnual,
       totalMedicareOOP,
     };
-  }, [youHealthcare, wifeHealthcare, isSingleFiler, activeState]);
+  }, [youHealthcare, wifeHealthcare, isSingleFiler, activeState, simStartYear, healthcareInflationRate]);
 
   const showHealthcareCategory = useMemo(() => {
     if (!activeHealthcareSummary) return false;
@@ -868,6 +888,15 @@ export const DetailedExpensesDialog: React.FC<DetailedExpensesDialogProps> = ({
                 </div>
               </div>
 
+              {activeStateHasNoCosts && (
+                <div className="flex items-center gap-2 px-3 py-2 rounded-lg border border-amber-500/30 bg-amber-500/10 text-xs text-amber-200">
+                  <span>
+                    No costs are set for {activeState}, so its expenses count as $0 until you enter them.
+                    Use Copy Costs to start from another state.
+                  </span>
+                </div>
+              )}
+
               {/* Filters Bar */}
               <div className="flex flex-wrap items-center justify-between gap-3 px-1 text-xs">
                 <div className="flex items-center gap-2 flex-1 max-w-sm">
@@ -889,7 +918,7 @@ export const DetailedExpensesDialog: React.FC<DetailedExpensesDialogProps> = ({
                     <select
                       value={selectedCategoryFilter}
                       onChange={(e) => setSelectedCategoryFilter(e.target.value)}
-                      className="bg-slate-950/60 border border-slate-800 rounded-lg px-2.5 py-1.5 text-xs text-slate-300 focus:outline-none focus:border-emerald-500/50 cursor-pointer"
+                      className="bg-slate-950 border border-slate-800 rounded-lg px-2.5 py-1.5 text-xs text-slate-300 focus:outline-none focus:border-emerald-500/50 cursor-pointer"
                     >
                       <option value="ALL">All Categories</option>
                       {activeHealthcareSummary && (
@@ -1004,6 +1033,11 @@ export const DetailedExpensesDialog: React.FC<DetailedExpensesDialogProps> = ({
                                         <span className="text-[9px] font-semibold text-cyan-300 bg-cyan-950/70 px-1.5 py-0.5 rounded border border-cyan-500/30 flex items-center gap-0.5" title="Scheduled due month(s)">
                                           <Calendar className="w-2.5 h-2.5" />
                                           {item.dueMonths.map(m => ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'][m - 1]).join(', ')}
+                                        </span>
+                                      )}
+                                      {item.isSALTEligible && (
+                                        <span className="text-[9px] font-semibold text-emerald-300 bg-emerald-950/70 px-1.5 py-0.5 rounded border border-emerald-500/30" title="Counts toward the federal SALT itemized deduction">
+                                          SALT
                                         </span>
                                       )}
                                       {hasDifferingStateCosts && (
@@ -1387,7 +1421,7 @@ export const DetailedExpensesDialog: React.FC<DetailedExpensesDialogProps> = ({
                           onClick={() => {
                             if (window.confirm(`Remove state ${st} from plan?`)) {
                               setStatesList(prev => prev.filter(s => s !== st));
-                              if (activeState === st) setActiveState(currentState || 'MD');
+                              if (activeState === st) setActiveState(currentState);
                             }
                           }}
                           className="p-1 text-slate-500 hover:text-red-400 rounded transition-colors cursor-pointer"
@@ -1685,6 +1719,23 @@ export const DetailedExpensesDialog: React.FC<DetailedExpensesDialogProps> = ({
                     })}
                   </div>
                 </div>
+              )}
+
+              {!itemIsOneTime && (
+                <label className="flex items-start gap-2 p-3 bg-slate-950 rounded-lg border border-slate-800 cursor-pointer text-slate-200">
+                  <input
+                    type="checkbox"
+                    checked={itemIsSALTEligible}
+                    onChange={(e) => setItemIsSALTEligible(e.target.checked)}
+                    className="mt-0.5 text-emerald-500 focus:ring-0"
+                  />
+                  <span>
+                    <span className="block font-semibold text-xs">Counts toward SALT deduction (e.g. property tax)</span>
+                    <span className="block text-[10px] text-slate-400">
+                      Adds this item to state and local taxes when the planner decides between the standard and itemized federal deduction.
+                    </span>
+                  </span>
+                </label>
               )}
 
               {/* State Scope Selector */}

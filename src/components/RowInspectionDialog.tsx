@@ -1,8 +1,8 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import { X, TrendingUp, TrendingDown, Wallet, Activity, ShieldAlert, Shield, Award } from 'lucide-react';
-import { SimulationResultRow, AppStateInputs } from '../types';
-import { IRMAA_TIERS_SINGLE, IRMAA_TIERS_MFJ } from '../engine/taxRates2026';
+import { SimulationResultRow, AppStateInputs, DEFAULT_YOUR_LONGEVITY_AGE } from '../types';
+import { getFederalRules, indexedIrmaaLimit } from '../engine/federalTaxRules';
 import { SankeyFlowDiagram } from './SankeyFlowDiagram';
 
 interface RowInspectionDialogProps {
@@ -11,8 +11,6 @@ interface RowInspectionDialogProps {
   row: SimulationResultRow | null;
   prevRow: SimulationResultRow | null;
   inputs: AppStateInputs;
-  simulateSurvivor: boolean;
-  deathYear: number;
   ledger: SimulationResultRow[];
   onSelectRow: (row: SimulationResultRow) => void;
 }
@@ -23,16 +21,19 @@ export const RowInspectionDialog: React.FC<RowInspectionDialogProps> = ({
   row,
   prevRow,
   inputs,
-  simulateSurvivor,
-  deathYear,
   ledger,
   onSelectRow
 }) => {
   const [activeTab, setActiveTab] = useState<'income' | 'expenses' | 'assets' | 'irmaa' | 'flow'>('flow'); // Default to 'flow' for beautiful high-level starting visual!
 
   // Ages and Filer Status
-  const isSingle = simulateSurvivor && row ? row.year >= deathYear : false;
-  const isSurvivorYear = simulateSurvivor && row ? row.year >= deathYear : false;
+  const isSingle = row ? row.isSingleReturn : false;
+  const isSurvivorYear = !inputs.isSingleFiler && isSingle;
+  // The survivor is whichever spouse has not reached their longevity age in this row
+  const survivorIsWife = !!row && row.yourAge >= (inputs.you.longevityAge ?? DEFAULT_YOUR_LONGEVITY_AGE);
+  const survivorLabel = row
+    ? (survivorIsWife ? `${inputs.wife.name || 'Spouse'} (Survivor, Age ${row.wifeAge})` : `${inputs.you.name || 'You'} (Survivor, Age ${row.yourAge})`)
+    : '';
 
   const currentIndex = row ? ledger.findIndex(r => r.year === row.year) : -1;
   const handlePrev = useCallback(() => {
@@ -143,17 +144,19 @@ export const RowInspectionDialog: React.FC<RowInspectionDialogProps> = ({
   const cashInterest = row.taxableInterest;
 
   // 4. Surcharge Cliffs & Limits
-  const irmaaTiers = isSingle ? IRMAA_TIERS_SINGLE : IRMAA_TIERS_MFJ;
+  const irmaaRules = getFederalRules(row.year).irmaaTiers;
+  const irmaaTiers = (row.irmaaUsesSingleTiers ?? isSingle) ? irmaaRules.single : irmaaRules.mfj;
   const currentTier = irmaaTiers.find(t => t.tierNumber === row.surchargeTier) || irmaaTiers[0];
-  const lookbackCpi = effectivePrevRow && effectivePrevRow.cpiFactor ? effectivePrevRow.cpiFactor : row.cpiFactor;
+  // Tier limits are for the premium year, so they scale with this year's CPI (compared to t-2 MAGI)
+  const premiumYearCpi = row.federalIndexFactor ?? row.cpiFactor;
   
   // Find limits for this year's surcharge tier (based on t-2 MAGI)
   const tierMinLimit = (() => {
     if (row.surchargeTier === 0) return 0;
     const prevTier = irmaaTiers[row.surchargeTier - 1];
-    return prevTier.limit === Infinity ? Infinity : prevTier.limit * lookbackCpi;
+    return indexedIrmaaLimit(prevTier, premiumYearCpi);
   })();
-  const tierMaxLimit = currentTier.limit === Infinity ? Infinity : currentTier.limit * lookbackCpi;
+  const tierMaxLimit = indexedIrmaaLimit(currentTier, premiumYearCpi);
 
   return createPortal(
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm transition-all duration-300">
@@ -167,7 +170,7 @@ export const RowInspectionDialog: React.FC<RowInspectionDialogProps> = ({
               Detailed Year {row.year} Financial Inspector
             </h3>
             <p className="text-xs text-slate-400 mt-1 flex flex-wrap gap-x-2 gap-y-1">
-              <span>{inputs.isSingleFiler ? 'Single Filer' : isSurvivorYear ? `${inputs.wife.name || 'Spouse'} (Survivor, Age ${row.wifeAge})` : `${inputs.you.name || 'You'} (Age ${row.yourAge}) & ${inputs.wife.name || 'Spouse'} (Age ${row.wifeAge})`}</span>
+              <span>{inputs.isSingleFiler ? 'Single Filer' : isSurvivorYear ? survivorLabel : `${inputs.you.name || 'You'} (Age ${row.yourAge}) & ${inputs.wife.name || 'Spouse'} (Age ${row.wifeAge})`}</span>
               <span className="text-slate-600">|</span>
               <span>CPI Factor: <span className="font-mono">{row.cpiFactor.toFixed(3)}</span></span>
             </p>
@@ -309,6 +312,12 @@ export const RowInspectionDialog: React.FC<RowInspectionDialogProps> = ({
                       <span className="text-slate-400">Extra Pre-Tax Drawdowns:</span>
                       <span className="font-mono text-slate-200">{formatCurrency(pretaxDrawdown)}</span>
                     </div>
+                    {(row.priorYearTaxFundingPreTaxDraw ?? 0) > 0 && (
+                      <div className="flex justify-between items-center pl-4 text-xs">
+                        <span className="text-slate-500">of which drawn to pay last year's taxes:</span>
+                        <span className="font-mono text-slate-400">{formatCurrency(row.priorYearTaxFundingPreTaxDraw ?? 0)}</span>
+                      </div>
+                    )}
                     <div className="flex justify-between items-center">
                       <span className="text-slate-400">Roth Conversions:</span>
                       <span className="font-mono text-slate-200">{formatCurrency(rothConv)}</span>
@@ -317,6 +326,12 @@ export const RowInspectionDialog: React.FC<RowInspectionDialogProps> = ({
                       <span className="text-slate-400">Realized Capital Gains:</span>
                       <span className="font-mono text-slate-200">{formatCurrency(capitalGains)}</span>
                     </div>
+                    {(row.priorYearTaxFundingGains ?? 0) > 0 && (
+                      <div className="flex justify-between items-center pl-4 text-xs">
+                        <span className="text-slate-500">of which realized to pay last year's taxes:</span>
+                        <span className="font-mono text-slate-400">{formatCurrency(row.priorYearTaxFundingGains ?? 0)}</span>
+                      </div>
+                    )}
                     <div className="flex justify-between items-center">
                       <span className="text-slate-400">Dividends Yield:</span>
                       <span className="font-mono text-slate-200">{formatCurrency(row.taxableDividends)}</span>

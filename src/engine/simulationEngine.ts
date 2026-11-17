@@ -1,26 +1,23 @@
-import { AppStateInputs, SimulationResultRow, LockedReturnSequence, getSimulationStartYear, getSSPaymentLevel, BASE_QCD_LIMIT, normalizeDetailedExpenses, StateHealthcareConfig } from '../types';
+import { AppStateInputs, SimulationResultRow, LockedReturnSequence, getSimulationStartYear, getSSPaymentLevel, normalizeDetailedExpenses, DEFAULT_YOUR_BIRTH_YEAR, DEFAULT_WIFE_BIRTH_YEAR, DEFAULT_YOUR_LONGEVITY_AGE, DEFAULT_WIFE_LONGEVITY_AGE, ALL_STATES_COST_KEY, StateHealthcareConfig } from '../types';
 import {
-  BASE_MEDICARE_PART_B,
-  BASE_MEDICARE_PART_D,
-  FED_BRACKETS_MFJ,
-  FED_BRACKETS_SINGLE,
-  FED_STANDARD_DEDUCTION_MFJ,
-  FED_STANDARD_DEDUCTION_SINGLE,
-  IRMAA_TIERS_MFJ,
-  IRMAA_TIERS_SINGLE,
+  STATUTORY_ADDITIONAL_MEDICARE_RATE,
+  STATUTORY_NIIT_RATE,
+  CAPITAL_LOSS_ORDINARY_OFFSET_LIMIT,
+  STATUTORY_NIIT_THRESHOLD_SINGLE,
+  STATUTORY_NIIT_THRESHOLD_MFJ,
   getIRSUniformLifetimeFactor,
-  MD_PIGGYBACK_RATE,
-  FED_LTCG_BRACKETS_SINGLE,
-  FED_LTCG_BRACKETS_MFJ,
-  MD_PENSION_EXCLUSION_BASE_CAP,
   getTargetPresetInfo,
-} from './taxRates2026';
-import { getEffectiveLocalTaxRate, calculateStateAndLocalTax, getStateTaxProfile } from './stateTaxRegistry';
+  presetIndexFactor,
+} from './taxRates';
+import { calculateFederalDeduction, countAgedFilers } from './federalDeduction';
+import { splitRothConversion } from './rothConversionSplit';
+import { FederalIndexing, getFederalIndexing, indexedIrmaaLimit, getMedicareStandardAmounts } from './federalTaxRules';
+import { calculateStateAndLocalTax, calculatePensionExclusion, getStateTaxProfile, resolveActiveJurisdiction } from './stateTaxRegistry';
 
-const BASE_401K_LIMIT = 23500;
-const CATCHUP_401K_LIMIT = 7500;
-const ENHANCED_CATCHUP_401K_LIMIT = 11250;
-const OASDI_WAGE_BASE = 176100;
+const TARGET_AGI_DEDUCTION_ITERATIONS = 12;
+// Payroll and plan limits are year-keyed in federalTaxRules.ts (payroll). Rates below are statutory.
+const OASDI_EMPLOYEE_RATE = 0.062;
+const MEDICARE_EMPLOYEE_RATE = 0.0145;
 
 // Helper to calculate Social Security benefit based on claiming age
 export function calculateSSBenefit(pia: number, claimingAge: number): number {
@@ -50,26 +47,86 @@ export function calculateSSBenefit(pia: number, claimingAge: number): number {
   }
 }
 
+/** Full retirement age for retirement, spousal and survivor benefits (birth year 1960 or later for retirement, 1962 or later for survivors). */
+export const SS_FULL_RETIREMENT_AGE = 67;
+/** Earliest age a spousal benefit can start. */
+export const SS_SPOUSAL_EARLIEST_AGE = 62;
+/** A spouse's maximum benefit is this share of the worker's PIA. */
+export const SS_SPOUSAL_PIA_SHARE = 0.5;
+/** Spousal reduction: 25/36 of 1% per month for the first 36 months before FRA. */
+export const SS_SPOUSAL_REDUCTION_PER_MONTH_FIRST_TIER = 25 / 3600;
+/** Spousal reduction: 5/12 of 1% for each month beyond the first 36. */
+export const SS_SPOUSAL_REDUCTION_PER_MONTH_SECOND_TIER = 5 / 1200;
+export const SS_EARLY_REDUCTION_FIRST_TIER_MONTHS = 36;
+/** Earliest age an aged widow(er) benefit can start. */
+export const SS_SURVIVOR_EARLIEST_AGE = 60;
+/** Share of the deceased worker's benefit paid to a survivor who starts at the earliest age; rises linearly to 100% at FRA. */
+export const SS_SURVIVOR_EARLIEST_AGE_FACTOR = 0.715;
+/** Widow(er)'s limit: when the worker claimed early, the survivor gets at most the larger of the worker's benefit or this share of the worker's PIA. */
+export const SS_WIDOW_LIMIT_PIA_SHARE = 0.825;
+
 /**
- * Calculates the spousal benefit amount for the lower-earning spouse.
+ * Excess spousal benefit under deemed filing, paid on top of the spouse's own benefit.
+ * The excess is 50% of the worker's PIA minus the spouse's own PIA (or own benefit, when delayed
+ * credits make it larger), reduced for the spouse's age when the spousal benefit becomes payable,
+ * which is the later of the spouse's own claim and the worker's filing.
  */
-export function calculateSpousalBenefit(primaryPIA: number, spouseClaimingAge: number): number {
+export function calculateExcessSpousalBenefit(
+  primaryPIA: number,
+  spousePIA: number,
+  spouseClaimingAge: number,
+  spouseAgeAtEntitlement: number
+): number {
   if (primaryPIA <= 0) return 0;
 
-  const FRA = 67;
-  const baseSpousal = primaryPIA * 0.50;
+  const spouseOwnBenefit = calculateSSBenefit(Math.max(0, spousePIA), spouseClaimingAge);
+  const excessAtFRA = primaryPIA * SS_SPOUSAL_PIA_SHARE - Math.max(spousePIA, spouseOwnBenefit, 0);
+  if (excessAtFRA <= 0) return 0;
 
-  if (spouseClaimingAge >= FRA) {
-    return baseSpousal;
+  const entitlementAge = Math.max(SS_SPOUSAL_EARLIEST_AGE, spouseAgeAtEntitlement);
+  const monthsBefore = Math.max(0, Math.round((SS_FULL_RETIREMENT_AGE - entitlementAge) * 12));
+  const firstTierMonths = Math.min(monthsBefore, SS_EARLY_REDUCTION_FIRST_TIER_MONTHS);
+  const secondTierMonths = monthsBefore - firstTierMonths;
+  const reduction =
+    firstTierMonths * SS_SPOUSAL_REDUCTION_PER_MONTH_FIRST_TIER +
+    secondTierMonths * SS_SPOUSAL_REDUCTION_PER_MONTH_SECOND_TIER;
+  return excessAtFRA * (1 - reduction);
+}
+
+/**
+ * Aged widow(er) benefit on the deceased worker's record.
+ * The worker's PIA (plus any delayed credits) is reduced for the survivor's age when the survivor
+ * benefit starts: 71.5% at 60, rising linearly to 100% at FRA. When the worker claimed early, the
+ * result is capped at the larger of the worker's actual benefit or 82.5% of the worker's PIA.
+ * If the worker died before claiming, no early-claiming RIB-LIM cap applies and delayed credits
+ * only accrue up to the worker's age at death.
+ */
+export function calculateSurvivorBenefit(
+  decedentPIA: number,
+  decedentClaimingAge: number,
+  survivorAgeAtEntitlement: number,
+  decedentDeathAge?: number
+): number {
+  if (decedentPIA <= 0) return 0;
+
+  const diedBeforeClaiming = decedentDeathAge !== undefined && decedentDeathAge < decedentClaimingAge;
+  const effectiveDecedentClaimAge = diedBeforeClaiming
+    ? Math.max(SS_FULL_RETIREMENT_AGE, decedentDeathAge)
+    : decedentClaimingAge;
+
+  const decedentBenefit = calculateSSBenefit(decedentPIA, effectiveDecedentClaimAge);
+  const fullSurvivorBenefit = Math.max(decedentPIA, decedentBenefit);
+
+  const entitlementAge = Math.min(SS_FULL_RETIREMENT_AGE, Math.max(SS_SURVIVOR_EARLIEST_AGE, survivorAgeAtEntitlement));
+  const ageProgress = (entitlementAge - SS_SURVIVOR_EARLIEST_AGE) / (SS_FULL_RETIREMENT_AGE - SS_SURVIVOR_EARLIEST_AGE);
+  const ageFactor = SS_SURVIVOR_EARLIEST_AGE_FACTOR + (1 - SS_SURVIVOR_EARLIEST_AGE_FACTOR) * ageProgress;
+  const ageReducedBenefit = fullSurvivorBenefit * ageFactor;
+
+  if (!diedBeforeClaiming && decedentBenefit < decedentPIA) {
+    const widowLimit = Math.max(decedentBenefit, decedentPIA * SS_WIDOW_LIMIT_PIA_SHARE);
+    return Math.min(ageReducedBenefit, widowLimit);
   }
-
-  const claimAge = Math.max(62, spouseClaimingAge);
-  const totalMonthsBefore = (FRA - claimAge) * 12;
-  const first36 = Math.min(totalMonthsBefore, 36);
-  const additional = Math.max(0, totalMonthsBefore - 36);
-
-  const reduction = (first36 * (25 / 3600)) + (additional * (5 / 1200));
-  return baseSpousal * (1 - reduction);
+  return ageReducedBenefit;
 }
 
 // Calculate Social Security Taxability based on Provisional Income
@@ -150,17 +207,17 @@ export function solveRothConversionForTargetAGI(
 export function calculateFedTax(
   taxableIncome: number,
   isSingle: boolean,
-  cpiFactor: number
+  federal: FederalIndexing
 ): number {
   if (taxableIncome <= 0) return 0;
   
-  const brackets = isSingle ? FED_BRACKETS_SINGLE : FED_BRACKETS_MFJ;
+  const brackets = isSingle ? federal.rules.brackets.single : federal.rules.brackets.mfj;
   let tax = 0;
   let previousLimit = 0;
   
   for (let i = 0; i < brackets.length; i++) {
     const bracket = brackets[i];
-    const inflatedLimit = bracket.limit === Infinity ? Infinity : bracket.limit * cpiFactor;
+    const inflatedLimit = bracket.limit === Infinity ? Infinity : bracket.limit * federal.indexFactor;
     
     if (taxableIncome > inflatedLimit) {
       tax += (inflatedLimit - previousLimit) * bracket.rate;
@@ -179,9 +236,9 @@ export function calculateFedTaxWithLTCG(
   taxableOrdinaryIncome: number,
   taxableCapitalGains: number,
   isSingle: boolean,
-  cpiFactor: number
+  federal: FederalIndexing
 ): { ordinaryTax: number; ltcgTax: number; totalTax: number } {
-  const ordinaryTax = calculateFedTax(taxableOrdinaryIncome, isSingle, cpiFactor);
+  const ordinaryTax = calculateFedTax(taxableOrdinaryIncome, isSingle, federal);
 
   if (taxableCapitalGains <= 0) {
     return {
@@ -191,10 +248,11 @@ export function calculateFedTaxWithLTCG(
     };
   }
 
-  const ltcgBrackets = isSingle ? FED_LTCG_BRACKETS_SINGLE : FED_LTCG_BRACKETS_MFJ;
-  
-  const limit0 = ltcgBrackets[0].limit * cpiFactor;
-  const limit15 = ltcgBrackets[1].limit * cpiFactor;
+  const ltcgBrackets = isSingle ? federal.rules.ltcgBrackets.single : federal.rules.ltcgBrackets.mfj;
+  const [, midBracket, topBracket] = ltcgBrackets;
+
+  const limit0 = ltcgBrackets[0].limit * federal.indexFactor;
+  const limit15 = midBracket.limit * federal.indexFactor;
 
   const totalTaxable = taxableOrdinaryIncome + taxableCapitalGains;
 
@@ -205,7 +263,7 @@ export function calculateFedTaxWithLTCG(
   const ltcg20Start = Math.max(taxableOrdinaryIncome, limit15);
   const ltcg20 = Math.max(0, totalTaxable - ltcg20Start);
 
-  const ltcgTax = (ltcg15 * 0.15) + (ltcg20 * 0.20);
+  const ltcgTax = (ltcg15 * midBracket.rate) + (ltcg20 * topBracket.rate);
   
   return {
     ordinaryTax,
@@ -220,23 +278,24 @@ export function getRMDStartAge(birthYear: number): number {
   return 75;
 }
 
-// Helper to compute Maryland State Tax (delegates to universal state tax registry)
-export function calculateMDStateTax(
+// Helper to compute state and local income tax (delegates to the universal state tax registry)
+export function calculateStateTax(
+  stateCode: string,
   fedAGI: number,
   taxableSS: number,
   isSingle: boolean,
   cpiFactor: number = 1,
-  mdPensionExclusion: number = 0,
-  effectiveLocalRate: number = MD_PIGGYBACK_RATE
+  pensionExclusion: number = 0,
+  effectiveLocalRate?: number
 ): number {
   return calculateStateAndLocalTax(
-    'MD',
+    stateCode,
     {
       fedAGI,
       taxableSS,
       isSingle,
       cpiFactor,
-      pensionExclusion: mdPensionExclusion,
+      pensionExclusion,
     },
     effectiveLocalRate
   ).totalTax;
@@ -258,21 +317,17 @@ export function applyBucketLiquidityConstraintToConversion(
   totalSS: number,
   isSingle: boolean,
   cpiFactor: number,
-  standardDeductionTotal: number,
+  deductionContext: { year: number; agedFilerCount: number; propertyTax: number; federal: FederalIndexing },
   nonQcdTithe: number,
-  isStateFLOrActiveState: boolean | string,
-  mdPensionExclusion: number = 0,
-  effectiveLocalRate: number = MD_PIGGYBACK_RATE
+  activeState: string,
+  pensionExclusion: number = 0,
+  effectiveLocalRate?: number
 ): number {
   if (targetConversion <= 0) return 0;
 
   // Available capacity in taxable accounts above the living expense reserve floor
   const taxCapacity = Math.max(0, totalTaxableAssets - reserveFloor);
   if (taxCapacity <= 0) return 0;
-
-  const activeState = typeof isStateFLOrActiveState === 'string'
-    ? isStateFLOrActiveState
-    : (isStateFLOrActiveState ? 'FL' : 'MD');
 
   const computeTax = (conv: number): number => {
     const ordinary = baselineOrdinary + conv;
@@ -287,7 +342,9 @@ export function applyBucketLiquidityConstraintToConversion(
         taxableSS,
         isSingle,
         cpiFactor,
-        pensionExclusion: mdPensionExclusion,
+        taxYear: deductionContext.year,
+        agedFilerCount: deductionContext.agedFilerCount,
+        pensionExclusion,
         ordinaryIncome: ordinary,
         capitalGains,
         retirementDistributions: conv,
@@ -296,17 +353,23 @@ export function applyBucketLiquidityConstraintToConversion(
     );
     const stateTax = stateTaxResult.totalTax;
 
-    const saltCap = 10000 * cpiFactor;
-    const saltDeduction = Math.min(saltCap, stateTax);
-    const itemizedDeduction = saltDeduction + nonQcdTithe;
-    const stdDeduction = Math.max(standardDeductionTotal, itemizedDeduction);
+    const { totalDeduction: stdDeduction } = calculateFederalDeduction({
+      year: deductionContext.year,
+      isSingle,
+      federal: deductionContext.federal,
+      agedFilerCount: deductionContext.agedFilerCount,
+      fedAGI,
+      stateIncomeTax: stateTax,
+      propertyTax: deductionContext.propertyTax,
+      nonQcdTithe,
+    });
 
     const taxableOrdinary = Math.max(0, fedAGI - capitalGains - stdDeduction);
-    const { totalTax: fedBaseTax } = calculateFedTaxWithLTCG(taxableOrdinary, capitalGains, isSingle, cpiFactor);
+    const { totalTax: fedBaseTax } = calculateFedTaxWithLTCG(taxableOrdinary, capitalGains, isSingle, deductionContext.federal);
 
-    const niitThreshold = isSingle ? 200000 : 250000;
+    const niitThreshold = isSingle ? STATUTORY_NIIT_THRESHOLD_SINGLE : STATUTORY_NIIT_THRESHOLD_MFJ;
     const excessMAGI = Math.max(0, fedAGI - niitThreshold);
-    const niitTax = Math.min(capitalGains, excessMAGI) * 0.038;
+    const niitTax = Math.min(capitalGains, excessMAGI) * STATUTORY_NIIT_RATE;
 
     return fedBaseTax + niitTax + stateTax;
   };
@@ -342,7 +405,7 @@ export function applyBucketLiquidityConstraintToConversion(
   return Math.round(safeConversion * 100) / 100;
 }
 
-function parseBirthYearAndMonth(dateStr: string | undefined, defaultYear: number): { year: number; month: number } {
+export function parseBirthYearAndMonth(dateStr: string | undefined, defaultYear: number): { year: number; month: number } {
   if (!dateStr) return { year: defaultYear, month: 0 };
   const parts = dateStr.split('-');
   if (parts.length < 2) return { year: defaultYear, month: 0 };
@@ -352,9 +415,28 @@ function parseBirthYearAndMonth(dateStr: string | undefined, defaultYear: number
 }
 
 // Full multi-decade simulation runner
+/**
+ * Last calendar year the simulation runs: the year before the last survivor's longevity year (the
+ * later of the two spouses' longevity years, or only yours for a single filer), because each person
+ * is removed in their longevity year. Never earlier than the simulation start year.
+ */
+export function getSimulationEndYear(inputs: AppStateInputs): number {
+  const { year: yourBirthYear } = parseBirthYearAndMonth(inputs.you.birthDate, DEFAULT_YOUR_BIRTH_YEAR);
+  const { year: wifeBirthYear } = parseBirthYearAndMonth(inputs.wife.birthDate, DEFAULT_WIFE_BIRTH_YEAR);
+  const yourDeathYear = yourBirthYear + (inputs.you.longevityAge ?? DEFAULT_YOUR_LONGEVITY_AGE);
+  const wifeDeathYear = inputs.isSingleFiler ? 0 : (wifeBirthYear + (inputs.wife.longevityAge ?? DEFAULT_WIFE_LONGEVITY_AGE));
+  // Each spouse is removed in their longevity year, so the last simulated year is the one before the last death
+  const lastDeathYear = inputs.isSingleFiler ? yourDeathYear : Math.max(yourDeathYear, wifeDeathYear);
+  return Math.max(getSimulationStartYear(inputs), lastDeathYear - 1);
+}
+
+/** Number of annual steps in the simulation, from the start year through the last survivor's longevity year. */
+export function getSimulationHorizonYears(inputs: AppStateInputs): number {
+  return getSimulationEndYear(inputs) - getSimulationStartYear(inputs) + 1;
+}
+
 export function runRetirementSimulation(
   inputs: AppStateInputs,
-  simulateSurvivor: boolean = false,
   activeSequence?: LockedReturnSequence | null
 ): SimulationResultRow[] {
   if (!inputs.isConfigured) {
@@ -380,26 +462,48 @@ export function runRetirementSimulation(
   const taxableNonQualifiedPortion = inputs.portfolio.taxableNonQualifiedPortion !== undefined && inputs.portfolio.taxableNonQualifiedPortion !== null ? inputs.portfolio.taxableNonQualifiedPortion : 0.30;
   
   // Actuarial death year definition for survivor mode:
-  const { year: yourBirthYear, month: yourBirthMonth } = parseBirthYearAndMonth(inputs.you.birthDate, 1960);
-  const { year: wifeBirthYear, month: wifeBirthMonth } = parseBirthYearAndMonth(inputs.wife.birthDate, 1964);
-  const DEATH_YEAR = yourBirthYear + (inputs.you.longevityAge ?? 85);
-  const WIFE_DEATH_YEAR = inputs.isSingleFiler ? 0 : (wifeBirthYear + (inputs.wife.longevityAge ?? 95));
+  const { year: yourBirthYear, month: yourBirthMonth } = parseBirthYearAndMonth(inputs.you.birthDate, DEFAULT_YOUR_BIRTH_YEAR);
+  const { year: wifeBirthYear, month: wifeBirthMonth } = parseBirthYearAndMonth(inputs.wife.birthDate, DEFAULT_WIFE_BIRTH_YEAR);
+  const DEATH_YEAR = yourBirthYear + (inputs.you.longevityAge ?? DEFAULT_YOUR_LONGEVITY_AGE);
+  const WIFE_DEATH_YEAR = inputs.isSingleFiler ? 0 : (wifeBirthYear + (inputs.wife.longevityAge ?? DEFAULT_WIFE_LONGEVITY_AGE));
 
   const simStartYear = getSimulationStartYear(inputs);
   const startYear = inputs.rothConversionStartYear !== undefined ? inputs.rothConversionStartYear : (simStartYear + 1);
   const endYear = inputs.rothConversionEndYear !== undefined ? inputs.rothConversionEndYear : (simStartYear + 8);
 
   // The simulation runs until the last survivor passes away
-  const endSimulationYear = Math.max(simStartYear, inputs.isSingleFiler ? DEATH_YEAR : Math.max(DEATH_YEAR, WIFE_DEATH_YEAR));
+  const endSimulationYear = getSimulationEndYear(inputs);
 
   // Check if a stochastic sequence of returns is active
   const activeSeq = activeSequence;
 
   let cpiFactor = 1.0;
+  // CPI index in the first year a flat Roth conversion runs; later amounts grow with the simulated CPI path
+  let flatConversionBaseCpiFactor: number | null = null;
   let healthcareFactor = 1.0;
   let priorMonthlyTithe = 0;
   let isTitheInitialized = false;
   let titheReserveBank = 0;
+
+  // Prior-year tax-funding income carried into the next tax year. When the year-end tax settlement is
+  // paid by selling brokerage or drawing from a pre-tax IRA, that sale/draw is itself taxable. The
+  // settlement is a next-year (April) event, so the income is recognized on the following year's return.
+  // Signed: a negative value is a net loss realized while funding last year's tax settlement
+  let carriedTaxFundingGains = 0;
+  // Net capital losses not yet used against gains or the annual ordinary-income offset
+  let capitalLossCarryforward = 0;
+  let carriedYourTaxFundingDraw = 0;
+  let carriedWifeTaxFundingDraw = 0;
+
+  // The bear-market drawdown rule keys on the most recent return the planner could actually observe:
+  // last year's equity return. Using the current year's return would be look-ahead, because in January
+  // nobody knows the year will end negative. Seeded from a recorded actual for the year before the
+  // simulation starts when one exists; otherwise the first year has no observable loss behind it.
+  const preStartActualRec = inputs.actualTracking?.[simStartYear - 1];
+  let priorYearEquityRate: number | null =
+    preStartActualRec?.equityReturnRate !== undefined && preStartActualRec?.equityReturnRate !== null
+      ? preStartActualRec.equityReturnRate
+      : null;
 
   // Let's run year-by-year from simStartYear to endSimulationYear
   for (let year = simStartYear; year <= endSimulationYear; year++) {
@@ -431,6 +535,11 @@ export function runRetirementSimulation(
       }
       healthcareFactor *= (1 + annualHcInflation);
     }
+
+    // Federal rules for this tax year, with their dollar limits indexed to this year's dollars
+    const federal = getFederalIndexing(year, cpiFactor, simStartYear, inputs.growthAssumptions.cpiInflationRate);
+    // Employers withhold the Additional Medicare Tax per employee above the single-filer threshold, not indexed
+    const additionalMedicareWithholdingThreshold = federal.rules.payroll.additionalMedicareThreshold.single;
     
     // Growth rates by account type (Equities vs Fixed Income allocation)
     let equityRate = inputs.growthAssumptions.equityReturnRate;
@@ -448,6 +557,9 @@ export function runRetirementSimulation(
       bondRate = activeSeq.fixedIncomeReturns[yearsElapsed] !== undefined ? activeSeq.fixedIncomeReturns[yearsElapsed] : bondRate;
     }
 
+    // Bear-market regime for this year's drawdown decisions, based on last year's observed equity return
+    const isBearMarket = priorYearEquityRate !== null && priorYearEquityRate < 0;
+
     const preTaxEquityPortion = inputs.growthAssumptions.preTaxEquityPortion ?? 0.50;
     const taxableEquityPortion = inputs.growthAssumptions.taxableEquityPortion ?? 0.60;
     const rothEquityPortion = inputs.growthAssumptions.rothEquityPortion ?? 1.00;
@@ -464,39 +576,26 @@ export function runRetirementSimulation(
     const monthlyCashRate = Math.pow(1 + cashRate, 1 / 12) - 1;
 
     // State determination
-    const isRelocated = inputs.jurisdiction.relocationYear !== null && year >= inputs.jurisdiction.relocationYear;
-    const isIntraStateRelocation = Boolean(
-      inputs.jurisdiction.targetState === inputs.jurisdiction.currentState &&
-      inputs.jurisdiction.targetCounty &&
-      inputs.jurisdiction.targetCounty !== inputs.jurisdiction.currentCounty
-    );
+    const {
+      state: activeState,
+      county: activeCounty,
+      effectiveLocalRate,
+    } = resolveActiveJurisdiction(inputs.jurisdiction, year);
 
-    const resolvedTargetState = isIntraStateRelocation
-      ? inputs.jurisdiction.targetState
-      : (inputs.jurisdiction.targetState && inputs.jurisdiction.targetState !== inputs.jurisdiction.currentState)
-        ? inputs.jurisdiction.targetState
-        : (inputs.jurisdiction.currentState === 'MD' ? 'FL' : 'MD');
 
-    const activeState = isRelocated
-      ? resolvedTargetState
-      : inputs.jurisdiction.currentState;
-
-    const activeCounty = isRelocated ? inputs.jurisdiction.targetCounty : inputs.jurisdiction.currentCounty;
-    const activeCustomRate = isRelocated ? inputs.jurisdiction.targetLocalTaxRate : inputs.jurisdiction.currentLocalTaxRate;
-    const effectiveLocalRate = getEffectiveLocalTaxRate(activeState, activeCounty, activeCustomRate);
-
-    const isStateFL = activeState === 'FL';
-
-    const youDeceased = simulateSurvivor && (year >= DEATH_YEAR);
-    const wifeDeceased = inputs.isSingleFiler || (simulateSurvivor && (year >= WIFE_DEATH_YEAR));
+    // Survivor behavior follows from the longevity ages: each spouse is removed at their own death year
+    const youDeceased = year >= DEATH_YEAR;
+    const wifeDeceased = inputs.isSingleFiler || year >= WIFE_DEATH_YEAR;
     const firstDeathYear = Math.min(DEATH_YEAR, WIFE_DEATH_YEAR);
-    const isSingle = (simulateSurvivor && (year > (inputs.isSingleFiler ? DEATH_YEAR : firstDeathYear))) || inputs.isSingleFiler;
+    const isSingle = inputs.isSingleFiler || year > firstDeathYear;
 
-    if (simulateSurvivor && youDeceased && wifeDeceased) {
+    if (youDeceased && wifeDeceased) {
       break;
     }
 
-    const isSurvivorActive = youDeceased || wifeDeceased;
+    // Once a spouse dies, the decedent's pre-tax balance is merged into the survivor's, so only the survivor's balance is convertible
+    const isSoleSurvivorWife = youDeceased && !wifeDeceased;
+    const isSoleSurvivorYou = wifeDeceased && !youDeceased;
 
     // Spousal transition on primary death
     if (youDeceased && year === DEATH_YEAR && !inputs.isSingleFiler && !wifeDeceased) {
@@ -505,11 +604,8 @@ export function runRetirementSimulation(
       wifeRoth += yourRoth;
       yourRoth = 0;
 
-      if (isStateFL) {
-        wifeBasis = wifeTaxable + yourTaxable;
-      } else {
-        wifeBasis += yourTaxable;
-      }
+      // IRC 1014: the decedent's account is stepped up to market value; the survivor's own basis is unchanged
+      wifeBasis += yourTaxable;
       wifeTaxable += yourTaxable;
       yourTaxable = 0;
       yourBasis = 0;
@@ -523,19 +619,16 @@ export function runRetirementSimulation(
       yourPreTax += wifePreTax;
       wifePreTax = 0;
       yourRoth += wifeRoth;
-      yourRoth = 0;
+      wifeRoth = 0;
 
-      if (isStateFL) {
-        yourBasis = yourTaxable + wifeTaxable;
-      } else {
-        yourBasis += wifeTaxable;
-      }
+      // IRC 1014: the decedent's account is stepped up to market value; the survivor's own basis is unchanged
+      yourBasis += wifeTaxable;
       yourTaxable += wifeTaxable;
       wifeTaxable = 0;
       wifeBasis = 0;
 
       yourCash += wifeCash;
-      yourCash = 0;
+      wifeCash = 0;
     }
 
     // Standard spouse ages for year
@@ -582,21 +675,99 @@ export function runRetirementSimulation(
         wifeMedicareMonthIdx = (customYear - simStartYear) * 12 + (isNaN(customMonth) ? 0 : customMonth);
       }
     }
-    const wifeSurvivorMonthIdx = (wifeBirthYear + 60 - simStartYear) * 12 + wifeBirthMonth;
+    const yourBirthMonthIdx = (yourBirthYear - simStartYear) * 12 + yourBirthMonth;
+    const wifeBirthMonthIdx = (wifeBirthYear - simStartYear) * 12 + wifeBirthMonth;
+    const yourTargetSSAge = inputs.you.targetSSClaimingAge || SS_FULL_RETIREMENT_AGE;
+    const wifeTargetSSAge = inputs.wife.targetSSClaimingAge || SS_FULL_RETIREMENT_AGE;
+    const yourDeathAge = DEATH_YEAR - yourBirthYear;
+    const wifeDeathAge = WIFE_DEATH_YEAR - wifeBirthYear;
+
+    // The spousal excess becomes payable once both have filed
+    const bothFiledMonthIdx = Math.max(wifeSSClaimMonthIdx, yourSSClaimMonthIdx);
+    const yourAgeAtSpousalEntitlement = (bothFiledMonthIdx - yourBirthMonthIdx) / 12;
+    const wifeAgeAtSpousalEntitlement = (bothFiledMonthIdx - wifeBirthMonthIdx) / 12;
 
     const yourRmdStartAge = getRMDStartAge(yourBirthYear);
     const wifeRmdStartAge = getRMDStartAge(wifeBirthYear);
 
     // Calculate baseline SS benefits (scaled by the configured trust-fund payment level for this year)
     const ssPaymentLevel = getSSPaymentLevel(inputs.ssReductions, year);
-    const yourSSAnnualBase = calculateSSBenefit(inputs.you.estimatedPIA || 0, inputs.you.targetSSClaimingAge || 67) * 12 * cpiFactor * ssPaymentLevel;
-    const wifeSSAnnualBase = calculateSSBenefit(inputs.wife.estimatedPIA || 0, inputs.wife.targetSSClaimingAge || 67) * 12 * cpiFactor * ssPaymentLevel;
-    const spousalSSAnnualFloor = calculateSpousalBenefit(inputs.you.estimatedPIA || 0, inputs.wife.targetSSClaimingAge || 67) * 12 * cpiFactor * ssPaymentLevel;
+    const yourOwnMonthlyBase = calculateSSBenefit(inputs.you.estimatedPIA || 0, yourTargetSSAge);
+    const wifeOwnMonthlyBase = calculateSSBenefit(inputs.wife.estimatedPIA || 0, wifeTargetSSAge);
+    const yourSSAnnualBase = yourOwnMonthlyBase * 12 * cpiFactor * ssPaymentLevel;
+    const wifeSSAnnualBase = wifeOwnMonthlyBase * 12 * cpiFactor * ssPaymentLevel;
 
-    const survivorSSAnnualBase = calculateSSBenefit(inputs.you.estimatedPIA || 0, inputs.you.targetSSClaimingAge || 67) * 12 * cpiFactor * ssPaymentLevel;
-    const survivorWifeSSAnnualBase = calculateSSBenefit(inputs.wife.estimatedPIA || 0, inputs.wife.targetSSClaimingAge || 67) * 12 * cpiFactor * ssPaymentLevel;
-    const survivorFloor = (inputs.you.estimatedPIA || 0) * 0.825 * 12 * cpiFactor * ssPaymentLevel;
-    const wifeSurvivorSSBenefit = Math.max(survivorSSAnnualBase, survivorWifeSSAnnualBase, survivorFloor);
+    const yourExcessSpousalSSAnnual = (!inputs.isSingleFiler && Number.isFinite(yourAgeAtSpousalEntitlement))
+      ? calculateExcessSpousalBenefit(
+          inputs.wife.estimatedPIA || 0,
+          inputs.you.estimatedPIA || 0,
+          yourTargetSSAge,
+          yourAgeAtSpousalEntitlement
+        ) * 12 * cpiFactor * ssPaymentLevel
+      : 0;
+    const excessSpousalSSAnnual = (!inputs.isSingleFiler && Number.isFinite(wifeAgeAtSpousalEntitlement))
+      ? calculateExcessSpousalBenefit(
+          inputs.you.estimatedPIA || 0,
+          inputs.wife.estimatedPIA || 0,
+          wifeTargetSSAge,
+          wifeAgeAtSpousalEntitlement
+        ) * 12 * cpiFactor * ssPaymentLevel
+      : 0;
+
+    // Earliest month a survivor benefit can start is the later of the spouse's death and age 60.
+    // If the survivor is already collecting their own benefit and it exceeds the early-reduced
+    // survivor benefit at that month, they defer the survivor claim until survivor FRA (67).
+    const yourEarliestSurvivorMonthIdx = Math.max(
+      yourBirthMonthIdx + SS_SURVIVOR_EARLIEST_AGE * 12,
+      (WIFE_DEATH_YEAR - simStartYear) * 12
+    );
+    const yourAgeAtEarliestSurvivor = (yourEarliestSurvivorMonthIdx - yourBirthMonthIdx) / 12;
+    const yourEarlySurvivorMonthly = calculateSurvivorBenefit(
+      inputs.wife.estimatedPIA || 0,
+      wifeTargetSSAge,
+      yourAgeAtEarliestSurvivor,
+      wifeDeathAge
+    );
+    const deferYourSurvivorToFRA =
+      yourEarliestSurvivorMonthIdx >= yourSSClaimMonthIdx &&
+      yourOwnMonthlyBase > yourEarlySurvivorMonthly &&
+      yourAgeAtEarliestSurvivor < SS_FULL_RETIREMENT_AGE;
+    const yourSurvivorMonthIdx = deferYourSurvivorToFRA
+      ? yourBirthMonthIdx + SS_FULL_RETIREMENT_AGE * 12
+      : yourEarliestSurvivorMonthIdx;
+    const yourAgeAtSurvivorEntitlement = (yourSurvivorMonthIdx - yourBirthMonthIdx) / 12;
+    const yourSurvivorSSBenefit = calculateSurvivorBenefit(
+      inputs.wife.estimatedPIA || 0,
+      wifeTargetSSAge,
+      yourAgeAtSurvivorEntitlement,
+      wifeDeathAge
+    ) * 12 * cpiFactor * ssPaymentLevel;
+
+    const wifeEarliestSurvivorMonthIdx = Math.max(
+      wifeBirthMonthIdx + SS_SURVIVOR_EARLIEST_AGE * 12,
+      (DEATH_YEAR - simStartYear) * 12
+    );
+    const wifeAgeAtEarliestSurvivor = (wifeEarliestSurvivorMonthIdx - wifeBirthMonthIdx) / 12;
+    const wifeEarlySurvivorMonthly = calculateSurvivorBenefit(
+      inputs.you.estimatedPIA || 0,
+      yourTargetSSAge,
+      wifeAgeAtEarliestSurvivor,
+      yourDeathAge
+    );
+    const deferWifeSurvivorToFRA =
+      wifeEarliestSurvivorMonthIdx >= wifeSSClaimMonthIdx &&
+      wifeOwnMonthlyBase > wifeEarlySurvivorMonthly &&
+      wifeAgeAtEarliestSurvivor < SS_FULL_RETIREMENT_AGE;
+    const wifeSurvivorMonthIdx = deferWifeSurvivorToFRA
+      ? wifeBirthMonthIdx + SS_FULL_RETIREMENT_AGE * 12
+      : wifeEarliestSurvivorMonthIdx;
+    const wifeAgeAtSurvivorEntitlement = (wifeSurvivorMonthIdx - wifeBirthMonthIdx) / 12;
+    const wifeSurvivorSSBenefit = calculateSurvivorBenefit(
+      inputs.you.estimatedPIA || 0,
+      yourTargetSSAge,
+      wifeAgeAtSurvivorEntitlement,
+      yourDeathAge
+    ) * 12 * cpiFactor * ssPaymentLevel;
 
     // 2. RMDs calculations (based on start-of-year balances)
     let yourRMD = 0;
@@ -634,19 +805,19 @@ export function runRetirementSimulation(
       annualYourGrossSalary = fullYearSalary * (yourWorkingMonthsThisYear / 12);
       monthlyYourGrossSalary = fullYearSalary / 12;
 
-      let your401kLimit = BASE_401K_LIMIT * cpiFactor;
+      let your401kLimit = federal.rules.payroll.elective401kLimit * federal.indexFactor;
       if (yourAge >= 60 && yourAge <= 63) {
-        your401kLimit += ENHANCED_CATCHUP_401K_LIMIT * cpiFactor;
+        your401kLimit += federal.rules.payroll.enhancedCatchUp401kLimit * federal.indexFactor;
       } else if (yourAge >= 50) {
-        your401kLimit += CATCHUP_401K_LIMIT * cpiFactor;
+        your401kLimit += federal.rules.payroll.catchUp401kLimit * federal.indexFactor;
       }
 
       annualYour401k = Math.min(annualYourGrossSalary, your401kLimit);
       monthlyYour401k = annualYour401k / yourWorkingMonthsThisYear;
 
-      const ssTax = 0.062 * Math.min(annualYourGrossSalary, OASDI_WAGE_BASE * cpiFactor);
-      const medTax = 0.0145 * annualYourGrossSalary;
-      const addMedTax = (annualYourGrossSalary > 200000 * cpiFactor) ? 0.009 * (annualYourGrossSalary - 200000 * cpiFactor) : 0;
+      const ssTax = OASDI_EMPLOYEE_RATE * Math.min(annualYourGrossSalary, federal.rules.payroll.oasdiWageBase * federal.indexFactor);
+      const medTax = MEDICARE_EMPLOYEE_RATE * annualYourGrossSalary;
+      const addMedTax = (annualYourGrossSalary > additionalMedicareWithholdingThreshold) ? STATUTORY_ADDITIONAL_MEDICARE_RATE * (annualYourGrossSalary - additionalMedicareWithholdingThreshold) : 0;
       annualYourFICA = ssTax + medTax + addMedTax;
       monthlyYourFICA = annualYourFICA / yourWorkingMonthsThisYear;
 
@@ -676,19 +847,19 @@ export function runRetirementSimulation(
       annualWifeGrossSalary = fullYearSalary * (wifeWorkingMonthsThisYear / 12);
       monthlyWifeGrossSalary = fullYearSalary / 12;
 
-      let wife401kLimit = BASE_401K_LIMIT * cpiFactor;
+      let wife401kLimit = federal.rules.payroll.elective401kLimit * federal.indexFactor;
       if (wifeAge >= 60 && wifeAge <= 63) {
-        wife401kLimit += ENHANCED_CATCHUP_401K_LIMIT * cpiFactor;
+        wife401kLimit += federal.rules.payroll.enhancedCatchUp401kLimit * federal.indexFactor;
       } else if (wifeAge >= 50) {
-        wife401kLimit += CATCHUP_401K_LIMIT * cpiFactor;
+        wife401kLimit += federal.rules.payroll.catchUp401kLimit * federal.indexFactor;
       }
 
       annualWife401k = Math.min(annualWifeGrossSalary, wife401kLimit);
       monthlyWife401k = annualWife401k / wifeWorkingMonthsThisYear;
 
-      const ssTax = 0.062 * Math.min(annualWifeGrossSalary, OASDI_WAGE_BASE * cpiFactor);
-      const medTax = 0.0145 * annualWifeGrossSalary;
-      const addMedTax = (annualWifeGrossSalary > 200000 * cpiFactor) ? 0.009 * (annualWifeGrossSalary - 200000 * cpiFactor) : 0;
+      const ssTax = OASDI_EMPLOYEE_RATE * Math.min(annualWifeGrossSalary, federal.rules.payroll.oasdiWageBase * federal.indexFactor);
+      const medTax = MEDICARE_EMPLOYEE_RATE * annualWifeGrossSalary;
+      const addMedTax = (annualWifeGrossSalary > additionalMedicareWithholdingThreshold) ? STATUTORY_ADDITIONAL_MEDICARE_RATE * (annualWifeGrossSalary - additionalMedicareWithholdingThreshold) : 0;
       annualWifeFICA = ssTax + medTax + addMedTax;
       monthlyWifeFICA = annualWifeFICA / wifeWorkingMonthsThisYear;
 
@@ -712,6 +883,8 @@ export function runRetirementSimulation(
     let yourPreMedicareOOP = 0;
     let yourMedicarePremiums = 0;
     let yourMedicareOOP = 0;
+    // Published CMS premium for this year, or the latest published one grown by healthcare inflation
+    const medicareBase = getMedicareStandardAmounts(year, inputs.growthAssumptions.healthcareInflationRate);
     if (inputs.you.healthcare) {
       const hcRecord = inputs.you.healthcare as unknown as Record<string, StateHealthcareConfig | undefined>;
       const stateHc = hcRecord[activeState]
@@ -722,9 +895,9 @@ export function runRetirementSimulation(
       yourPreMedicareOOP = ((stateHc?.pre65MedicalOOP ?? 0) + (stateHc?.pre65DentalOOP ?? 0) + (stateHc?.pre65VisionOOP ?? 0)) * healthcareFactor;
       
       const customB = inputs.you.healthcare.medicarePartBPremium;
-      const partB_current = (customB !== null && customB !== undefined) ? customB * healthcareFactor : BASE_MEDICARE_PART_B * healthcareFactor;
+      const partB_current = (customB !== null && customB !== undefined) ? customB * healthcareFactor : medicareBase.partB;
       const customD = stateHc?.medicarePartDPremium;
-      const partD_current = (customD !== null && customD !== undefined) ? customD * healthcareFactor : BASE_MEDICARE_PART_D * healthcareFactor;
+      const partD_current = (customD !== null && customD !== undefined) ? customD * healthcareFactor : medicareBase.partD;
       const suppPrem = (stateHc?.supplementPremium ?? 0) * 12 * healthcareFactor;
       const dentalPrem = (stateHc?.post65DentalPremium ?? 0) * 12 * healthcareFactor;
       const visionPrem = (stateHc?.post65VisionPremium ?? 0) * 12 * healthcareFactor;
@@ -732,7 +905,7 @@ export function runRetirementSimulation(
       yourMedicareOOP = ((stateHc?.medicarePartDDeductibleCopays ?? 0) + (stateHc?.supplementOOP ?? 0) + (stateHc?.post65HearingCare ?? 0) + (stateHc?.post65DentalOOP ?? 0) + (stateHc?.post65VisionOOP ?? 0)) * healthcareFactor;
     } else {
       yourPreMedicareAnnual = (inputs.you.preMedicareMonthlyPremium ?? 0) * 12 * healthcareFactor;
-      yourMedicarePremiums = (BASE_MEDICARE_PART_B + BASE_MEDICARE_PART_D) * 12 * healthcareFactor;
+      yourMedicarePremiums = (medicareBase.partB + medicareBase.partD) * 12;
     }
 
     let wifePreMedicareAnnual = 0;
@@ -750,9 +923,9 @@ export function runRetirementSimulation(
         wifePreMedicareOOP = ((stateHc?.pre65MedicalOOP ?? 0) + (stateHc?.pre65DentalOOP ?? 0) + (stateHc?.pre65VisionOOP ?? 0)) * healthcareFactor;
         
         const customB = inputs.wife.healthcare.medicarePartBPremium;
-        const partB_current = (customB !== null && customB !== undefined) ? customB * healthcareFactor : BASE_MEDICARE_PART_B * healthcareFactor;
+        const partB_current = (customB !== null && customB !== undefined) ? customB * healthcareFactor : medicareBase.partB;
         const customD = stateHc?.medicarePartDPremium;
-        const partD_current = (customD !== null && customD !== undefined) ? customD * healthcareFactor : BASE_MEDICARE_PART_D * healthcareFactor;
+        const partD_current = (customD !== null && customD !== undefined) ? customD * healthcareFactor : medicareBase.partD;
         const suppPrem = (stateHc?.supplementPremium ?? 0) * 12 * healthcareFactor;
         const dentalPrem = (stateHc?.post65DentalPremium ?? 0) * 12 * healthcareFactor;
         const visionPrem = (stateHc?.post65VisionPremium ?? 0) * 12 * healthcareFactor;
@@ -760,7 +933,7 @@ export function runRetirementSimulation(
         wifeMedicareOOP = ((stateHc?.medicarePartDDeductibleCopays ?? 0) + (stateHc?.supplementOOP ?? 0) + (stateHc?.post65HearingCare ?? 0) + (stateHc?.post65DentalOOP ?? 0) + (stateHc?.post65VisionOOP ?? 0)) * healthcareFactor;
       } else {
         wifePreMedicareAnnual = (inputs.wife.preMedicareMonthlyPremium ?? 0) * 12 * healthcareFactor;
-        wifeMedicarePremiums = (BASE_MEDICARE_PART_B + BASE_MEDICARE_PART_D) * 12 * healthcareFactor;
+        wifeMedicarePremiums = (medicareBase.partB + medicareBase.partD) * 12;
       }
     }
 
@@ -836,13 +1009,14 @@ export function runRetirementSimulation(
 
     let plannedBaseLivingExpensesAnnual = inputs.annualLivingExpenses ?? 100000;
     let oneTimeCosts = 0;
+    let saltEligiblePropertyTaxToday = 0;
     const monthlyLivingExpensesBase = new Array(12).fill(0);
 
     if (inputs.useDetailedExpenses && inputs.detailedExpenses) {
       const de = normalizeDetailedExpenses(inputs.detailedExpenses);
       const items = de.catalog?.items ?? [];
       const stateCosts = de.costs?.[activeState];
-      const allCosts = de.costs?.['ALL'];
+      const allCosts = de.costs?.[ALL_STATES_COST_KEY];
       const defaultStateCosts = de.costs?.[inputs.jurisdiction.currentState];
       const freqs = de.frequencies || {};
 
@@ -871,6 +1045,7 @@ export function runRetirementSimulation(
           const freq = freqs[item.id] ?? item.defaultFrequency ?? 12;
           const annualItemCost = cost * freq;
           detailedRecurringAnnual += annualItemCost;
+          if (item.isSALTEligible) saltEligiblePropertyTaxToday += annualItemCost;
 
           if (freq === 12) {
             for (let m = 0; m < 12; m++) {
@@ -902,6 +1077,8 @@ export function runRetirementSimulation(
         monthlyLivingExpensesBase[m] = monthlyPortion;
       }
     }
+
+    const saltEligiblePropertyTaxNominal = saltEligiblePropertyTaxToday * cpiFactor;
 
     let baseLivingExpensesAnnual = plannedBaseLivingExpensesAnnual;
     if (actualRec) {
@@ -956,8 +1133,12 @@ export function runRetirementSimulation(
     let rothConversionShortfall: number | undefined = undefined;
     let nonQcdTithe = 0;
 
+    // 0. No Roth conversions: leave targetConversion at zero regardless of any stored flat or target settings
+    if (inputs.rothConversionStrategy === 'none') {
+      targetConversion = 0;
+    }
     // 1. Custom Roth Conversion Schedule
-    if (inputs.rothConversionStrategy === 'custom') {
+    else if (inputs.rothConversionStrategy === 'custom') {
       const activeCustomScenario = inputs.customRothScenarios?.find(
         (s) => s.id === inputs.activeCustomScenarioId
       ) || inputs.customRothScenarios?.[0];
@@ -969,12 +1150,17 @@ export function runRetirementSimulation(
     } 
     // 2. Flat Roth Conversion (pre-determined annual conversion executed on Jan 1)
     else if (inputs.rothConversionStrategy === 'flat' && year >= startYear && year <= endYear) {
-      const conversionInflationFactor = Math.pow(1 + inputs.growthAssumptions.cpiInflationRate, year - startYear);
+      if (flatConversionBaseCpiFactor === null) flatConversionBaseCpiFactor = cpiFactor;
+      const conversionInflationFactor = cpiFactor / flatConversionBaseCpiFactor;
       targetConversion = inputs.annualRothConversion * conversionInflationFactor;
     }
 
     if (targetConversion > 0) {
-      const totalAvailablePreTax = isSurvivorActive || youDeceased ? wifePreTax : (yourPreTax + (wifeDeceased ? 0 : wifePreTax));
+      // An RMD cannot be converted and must come out of its owner's own IRA, so each spouse's
+      // convertible amount is their balance minus their own statutory RMD.
+      const yourConvertibleLimit = youDeceased ? 0 : Math.max(0, yourPreTax - yourRMD);
+      const wifeConvertibleLimit = wifeDeceased ? 0 : Math.max(0, wifePreTax - wifeRMD);
+      const totalAvailablePreTax = isSoleSurvivorWife ? wifeConvertibleLimit : isSoleSurvivorYou ? yourConvertibleLimit : (yourConvertibleLimit + wifeConvertibleLimit);
 
       if (inputs.rothConversionStrategy === 'custom') {
         if (targetConversion > totalAvailablePreTax + 0.01) {
@@ -994,30 +1180,30 @@ export function runRetirementSimulation(
         const totalTaxable = (yourCash + (wifeDeceased || inputs.isSingleFiler ? 0 : wifeCash)) +
           (yourTaxable + (wifeDeceased ? 0 : wifeTaxable));
 
-        const capExcl = MD_PENSION_EXCLUSION_BASE_CAP * cpiFactor;
-        const exclusionCapJohn = Math.max(0, capExcl - yourSSAnnualBase);
-        const exclusionCapWife = Math.max(0, capExcl - wifeSSAnnualBase);
-        const exclJohn = (!youDeceased && yourAge >= 65) ? Math.min(yourRMD, exclusionCapJohn) : 0;
-        const exclWife = (!wifeDeceased && wifeAge >= 65) ? Math.min(wifeRMD, exclusionCapWife) : 0;
-        const estMdPensionExcl = exclJohn + exclWife;
+        const estYourSS = !youDeceased
+          ? (wifeDeceased && !inputs.isSingleFiler
+              ? Math.max(yourSSAnnualBase, yourSurvivorSSBenefit)
+              : yourSSAnnualBase + yourExcessSpousalSSAnnual)
+          : 0;
+        const estWifeSS = !wifeDeceased
+          ? (youDeceased
+              ? Math.max(wifeSSAnnualBase, wifeSurvivorSSBenefit)
+              : wifeSSAnnualBase + excessSpousalSSAnnual)
+          : 0;
+
+        const estPensionExcl = calculatePensionExclusion(activeState, [
+          { age: yourAge, isAlive: !youDeceased, socialSecurityBenefit: estYourSS, eligibleDistributions: yourRMD },
+          { age: wifeAge, isAlive: !wifeDeceased, socialSecurityBenefit: estWifeSS, eligibleDistributions: wifeRMD },
+        ], cpiFactor);
 
         const estDiv = (yourTaxable + (wifeDeceased || inputs.isSingleFiler ? 0 : wifeTaxable)) * taxableDividendYield;
         const estInterest = (yourCash + (wifeDeceased || inputs.isSingleFiler ? 0 : wifeCash)) * cashRate;
         const estBaselineOrdinary = (taxableYourSalary + taxableWifeSalary) + (yourRMD + wifeRMD) +
           (estDiv * taxableNonQualifiedPortion) + estInterest;
         const estCapitalGains = estDiv * (1 - taxableNonQualifiedPortion);
-        const estTotalSS = (!youDeceased ? yourSSAnnualBase : 0) + (!wifeDeceased ? wifeSSAnnualBase : 0);
+        const estTotalSS = estYourSS + estWifeSS;
 
-        const stdDeductionBase = isSingle ? FED_STANDARD_DEDUCTION_SINGLE * cpiFactor : FED_STANDARD_DEDUCTION_MFJ * cpiFactor;
-        let ageAddition = 0;
-        if (isSingle) {
-          const activeSurvivorAge = inputs.isSingleFiler ? yourAge : wifeAge;
-          if (activeSurvivorAge >= 65) ageAddition += 1950 * cpiFactor;
-        } else {
-          if (yourAge >= 65) ageAddition += 1650 * cpiFactor;
-          if (!wifeDeceased && wifeAge >= 65) ageAddition += 1650 * cpiFactor;
-        }
-        const estStdDeductionTotal = stdDeductionBase + ageAddition;
+        const estAgedFilerCount = countAgedFilers(isSingle, !!inputs.isSingleFiler, yourAge, wifeAge, youDeceased);
 
         targetConversion = applyBucketLiquidityConstraintToConversion(
           targetConversion,
@@ -1028,46 +1214,37 @@ export function runRetirementSimulation(
           estTotalSS,
           isSingle,
           cpiFactor,
-          estStdDeductionTotal,
+          { year, agedFilerCount: estAgedFilerCount, propertyTax: saltEligiblePropertyTaxNominal, federal },
           nonQcdTithe,
           activeState,
-          estMdPensionExcl,
+          estPensionExcl,
           effectiveLocalRate
         );
       }
 
       if (targetConversion > 0) {
-        if (isSurvivorActive || youDeceased) {
-          wifeConverted = Math.min(targetConversion, wifePreTax);
+        if (isSoleSurvivorWife) {
+          wifeConverted = Math.min(targetConversion, wifeConvertibleLimit);
           wifePreTax -= wifeConverted;
           wifeRoth += wifeConverted;
+        } else if (isSoleSurvivorYou) {
+          yourConverted = Math.min(targetConversion, yourConvertibleLimit);
+          yourPreTax -= yourConverted;
+          yourRoth += yourConverted;
         } else {
-          const halfTarget = targetConversion / 2;
-          const husbandDrawn = Math.min(halfTarget, yourPreTax);
-          yourConverted += husbandDrawn;
-          yourPreTax -= husbandDrawn;
-          yourRoth += husbandDrawn;
-
-          const wifeDrawn = Math.min(halfTarget, wifePreTax);
-          wifeConverted += wifeDrawn;
-          wifePreTax -= wifeDrawn;
-          wifeRoth += wifeDrawn;
-
-          const totalDrawn = husbandDrawn + wifeDrawn;
-          const remainder = targetConversion - totalDrawn;
-          if (remainder > 0.01) {
-            if (yourPreTax > 0) {
-              const extra = Math.min(remainder, yourPreTax);
-              yourConverted += extra;
-              yourPreTax -= extra;
-              yourRoth += extra;
-            } else if (wifePreTax > 0) {
-              const extra = Math.min(remainder, wifePreTax);
-              wifeConverted += extra;
-              wifePreTax -= extra;
-              wifeRoth += extra;
-            }
-          }
+          const split = splitRothConversion(
+            targetConversion,
+            yourConvertibleLimit,
+            wifeConvertibleLimit,
+            inputs.rothConversionSourceMode,
+            inputs.rothConversionYourSharePercent
+          );
+          yourConverted = split.your;
+          yourPreTax -= split.your;
+          yourRoth += split.your;
+          wifeConverted = split.wife;
+          wifePreTax -= split.wife;
+          wifeRoth += split.wife;
         }
         combinedRothConversion = yourConverted + wifeConverted;
       }
@@ -1107,12 +1284,22 @@ export function runRetirementSimulation(
         const lookbackWifeAge = wifeAge - 2;
 
         let estSS = 0;
-        if (!youDeceased && lookbackYourAge >= (inputs.you.targetSSClaimingAge || 67)) estSS += yourSSAnnualBase;
+        if (!youDeceased) {
+          if (wifeDeceased && !inputs.isSingleFiler) {
+            const lookbackOwnSS = lookbackYourAge >= yourTargetSSAge ? yourSSAnnualBase : 0;
+            const lookbackSurvivorSS = lookbackYourAge >= SS_SURVIVOR_EARLIEST_AGE ? yourSurvivorSSBenefit : 0;
+            estSS += Math.max(lookbackOwnSS, lookbackSurvivorSS);
+          } else if (lookbackYourAge >= yourTargetSSAge) {
+            estSS += yourSSAnnualBase + (!inputs.isSingleFiler && lookbackWifeAge >= wifeTargetSSAge ? yourExcessSpousalSSAnnual : 0);
+          }
+        }
         if (!wifeDeceased) {
           if (youDeceased) {
-            if (lookbackWifeAge >= 60) estSS += wifeSurvivorSSBenefit;
-          } else if (lookbackWifeAge >= (inputs.wife.targetSSClaimingAge || 67)) {
-            estSS += Math.max(wifeSSAnnualBase, spousalSSAnnualFloor);
+            const lookbackOwnSS = lookbackWifeAge >= wifeTargetSSAge ? wifeSSAnnualBase : 0;
+            const lookbackSurvivorSS = lookbackWifeAge >= SS_SURVIVOR_EARLIEST_AGE ? wifeSurvivorSSBenefit : 0;
+            estSS += Math.max(lookbackOwnSS, lookbackSurvivorSS);
+          } else if (lookbackWifeAge >= wifeTargetSSAge) {
+            estSS += wifeSSAnnualBase + (lookbackYourAge >= yourTargetSSAge ? excessSpousalSSAnnual : 0);
           }
         }
 
@@ -1144,11 +1331,15 @@ export function runRetirementSimulation(
     let wifePartBSurcharge = 0;
     let wifePartDSurcharge = 0;
     let surchargeTier = 0;
-    const irmaaTiers = (isSurvivorActive || inputs.isSingleFiler) ? IRMAA_TIERS_SINGLE : IRMAA_TIERS_MFJ;
-    const lookbackCpi = (lookbackIndex >= 0) ? ledger[lookbackIndex].cpiFactor : cpiFactor;
+    // SSA uses the filing status of the lookback (year minus 2) return, so MFJ tiers persist for two years after a death
+    const irmaaUsesSingleTiers = lookbackIndex >= 0
+      ? (ledger[lookbackIndex].isSingleReturn ?? !!inputs.isSingleFiler)
+      : !!inputs.isSingleFiler;
+    const irmaaTiers = irmaaUsesSingleTiers ? federal.rules.irmaaTiers.single : federal.rules.irmaaTiers.mfj;
+    // Tier limits are published for the premium year, so index them to this year (compared to year-2 MAGI)
     for (let i = irmaaTiers.length - 1; i >= 0; i--) {
       const prevTier = irmaaTiers[i - 1];
-      const prevLimit = prevTier ? (prevTier.limit === Infinity ? Infinity : prevTier.limit * lookbackCpi) : 0;
+      const prevLimit = prevTier ? indexedIrmaaLimit(prevTier, federal.indexFactor) : 0;
       if (magiTwoYearsAgo > prevLimit) {
         surchargeTier = irmaaTiers[i].tierNumber;
         const basePartB = irmaaTiers[i].partBSurcharge * healthcareFactor;
@@ -1182,7 +1373,7 @@ export function runRetirementSimulation(
     let annualYourInterest = 0;
     let annualWifeInterest = 0;
     let annualPreMedicarePremium = 0;
-    let annualMedicareBasePremiums = 0;
+    let annualMedicareStandardAmounts = 0;
     let annualMedicareSurcharges = 0;
     let annualPlannedPremiums = 0;
     let annualLivingExpenses = 0;
@@ -1191,9 +1382,30 @@ export function runRetirementSimulation(
     let annualDrawdownTaxable = 0;
     let annualDrawdownPreTax = 0;
     let annualDrawdownRoth = 0;
-    let annualYourTradDraw = 0;
-    let annualWifeTradDraw = 0;
+    // Taxable-income accumulators start from the income created by funding last year's tax settlement
+    const priorYearTaxFundingGains = Math.max(0, carriedTaxFundingGains);
+    const priorYearTaxFundingPreTaxDraw = carriedYourTaxFundingDraw + carriedWifeTaxFundingDraw;
+    let annualYourTradDraw = carriedYourTaxFundingDraw;
+    let annualWifeTradDraw = carriedWifeTaxFundingDraw;
+    // Realized gains and losses net against each other and against the carried-forward loss, so
+    // annualCapitalGainsTriggered is never negative; any unused loss stays in annualNetCapitalLoss.
     let annualCapitalGainsTriggered = 0;
+    let annualNetCapitalLoss = capitalLossCarryforward;
+    const realizeCapitalGain = (gain: number) => {
+      if (gain >= 0) {
+        const absorbed = Math.min(annualNetCapitalLoss, gain);
+        annualNetCapitalLoss -= absorbed;
+        annualCapitalGainsTriggered += gain - absorbed;
+      } else {
+        const offsetAgainstGains = Math.min(annualCapitalGainsTriggered, -gain);
+        annualCapitalGainsTriggered -= offsetAgainstGains;
+        annualNetCapitalLoss += -gain - offsetAgainstGains;
+      }
+    };
+    realizeCapitalGain(carriedTaxFundingGains);
+    carriedTaxFundingGains = 0;
+    carriedYourTaxFundingDraw = 0;
+    carriedWifeTaxFundingDraw = 0;
 
     let annualPreTaxGrowth = 0;
     let annualRothGrowth = 0;
@@ -1205,6 +1417,9 @@ export function runRetirementSimulation(
     let annualQcdAmount = 0;
     let yourAnnualQCD = 0;
     let wifeAnnualQCD = 0;
+    // Cash actually distributed to satisfy each spouse's own RMD (excludes that spouse's QCDs)
+    let annualYourRmdDraw = 0;
+    let annualWifeRmdDraw = 0;
     let annualNonQcdTithe = 0;
 
     // Pre-compute baseline predictable tax and quarterly estimated tax vouchers
@@ -1224,23 +1439,12 @@ export function runRetirementSimulation(
     const estTaxableSS = calculateTaxableSS(predictableSS, baseOtherAGI, isSingle);
     const estFedAGI = baseOrdinary + estTaxableSS + estCapGains;
 
-    const stdDeductionBaseYear = isSingle ? FED_STANDARD_DEDUCTION_SINGLE * cpiFactor : FED_STANDARD_DEDUCTION_MFJ * cpiFactor;
-    let ageAdditionYear = 0;
-    if (isSingle) {
-      const activeSurvivorAge = inputs.isSingleFiler ? yourAge : wifeAge;
-      if (activeSurvivorAge >= 65) ageAdditionYear += 1950 * cpiFactor;
-    } else {
-      if (yourAge >= 65) ageAdditionYear += 1650 * cpiFactor;
-      if (!wifeDeceased && wifeAge >= 65) ageAdditionYear += 1650 * cpiFactor;
-    }
-    const standardDeductionTotalYear = stdDeductionBaseYear + ageAdditionYear;
+    const agedFilerCountYear = countAgedFilers(isSingle, !!inputs.isSingleFiler, yourAge, wifeAge, youDeceased);
 
-    const capExclYear = MD_PENSION_EXCLUSION_BASE_CAP * cpiFactor;
-    const exclCapJohn = Math.max(0, capExclYear - yourSSAnnualBase);
-    const exclCapWife = Math.max(0, capExclYear - wifeSSAnnualBase);
-    const exclJohnYear = (!youDeceased && yourAge >= 65) ? Math.min(yourRMD, exclCapJohn) : 0;
-    const exclWifeYear = (!wifeDeceased && wifeAge >= 65) ? Math.min(wifeRMD, exclCapWife) : 0;
-    const estMdPensionExclusion = exclJohnYear + exclWifeYear;
+    const estPensionExclusion = calculatePensionExclusion(activeState, [
+      { age: yourAge, isAlive: !youDeceased, socialSecurityBenefit: yourSSAnnualBase, eligibleDistributions: yourRMD },
+      { age: wifeAge, isAlive: !wifeDeceased, socialSecurityBenefit: wifeSSAnnualBase, eligibleDistributions: wifeRMD },
+    ], cpiFactor);
 
     const estStateTaxResult = calculateStateAndLocalTax(
       activeState,
@@ -1249,7 +1453,9 @@ export function runRetirementSimulation(
         taxableSS: estTaxableSS,
         isSingle,
         cpiFactor,
-        pensionExclusion: estMdPensionExclusion,
+        taxYear: year,
+        agedFilerCount: agedFilerCountYear,
+        pensionExclusion: estPensionExclusion,
         ordinaryIncome: Math.max(0, estFedAGI - estCapGains),
         capitalGains: estCapGains,
         retirementDistributions: yourRMD + wifeRMD,
@@ -1257,13 +1463,19 @@ export function runRetirementSimulation(
       effectiveLocalRate
     );
     const estStateTax = estStateTaxResult.totalTax;
-    const activeProfileEst = getStateTaxProfile(activeState);
-    const saltCapYear = (activeProfileEst?.hasIncomeTax || effectiveLocalRate > 0) ? 10000 * cpiFactor : 0;
-    const estItemized = Math.min(saltCapYear, estStateTax);
-    const estDeduction = Math.max(standardDeductionTotalYear, estItemized);
+    const { totalDeduction: estDeduction } = calculateFederalDeduction({
+      year,
+      isSingle,
+      federal,
+      agedFilerCount: agedFilerCountYear,
+      fedAGI: estFedAGI,
+      stateIncomeTax: estStateTax,
+      propertyTax: saltEligiblePropertyTaxNominal,
+      nonQcdTithe: 0,
+    });
 
     const estTaxableOrdinary = Math.max(0, estFedAGI - estCapGains - estDeduction);
-    const { totalTax: estFedBaseTax } = calculateFedTaxWithLTCG(estTaxableOrdinary, estCapGains, isSingle, cpiFactor);
+    const { totalTax: estFedBaseTax } = calculateFedTaxWithLTCG(estTaxableOrdinary, estCapGains, isSingle, federal);
     const expectedAnnualTax = estFedBaseTax + estStateTax;
 
     const expectedNetTaxDue = Math.max(0, expectedAnnualTax - annualTotalTaxWithholding);
@@ -1296,21 +1508,30 @@ export function runRetirementSimulation(
       let monthlyYourSS = 0;
       let monthlyWifeSS = 0;
 
-      if (!youDeceased && (monthIdx >= yourSSClaimMonthIdx)) {
-        monthlyYourSS = yourSSAnnualBase / 12;
+      if (!youDeceased) {
+        if (wifeDeceased && !inputs.isSingleFiler) {
+          // Survivor and own benefits are claimed independently; paid the larger one entitled to
+          const ownSS = monthIdx >= yourSSClaimMonthIdx ? yourSSAnnualBase / 12 : 0;
+          const survivorSS = monthIdx >= yourSurvivorMonthIdx ? yourSurvivorSSBenefit / 12 : 0;
+          monthlyYourSS = Math.max(ownSS, survivorSS);
+        } else if (monthIdx >= yourSSClaimMonthIdx) {
+          const ownSS = yourSSAnnualBase / 12;
+          // Deemed filing: own benefit plus the excess spousal amount once the spouse has filed
+          monthlyYourSS = (!inputs.isSingleFiler && monthIdx >= wifeSSClaimMonthIdx)
+            ? ownSS + yourExcessSpousalSSAnnual / 12
+            : ownSS;
+        }
       }
       if (!wifeDeceased) {
         if (youDeceased) {
-          if (monthIdx >= wifeSurvivorMonthIdx) {
-            monthlyWifeSS = wifeSurvivorSSBenefit / 12;
-          }
+          // Survivor and own benefits are claimed independently; she is paid the larger one she is entitled to
+          const ownSS = monthIdx >= wifeSSClaimMonthIdx ? wifeSSAnnualBase / 12 : 0;
+          const survivorSS = monthIdx >= wifeSurvivorMonthIdx ? wifeSurvivorSSBenefit / 12 : 0;
+          monthlyWifeSS = Math.max(ownSS, survivorSS);
         } else if (monthIdx >= wifeSSClaimMonthIdx) {
           const ownSS = wifeSSAnnualBase / 12;
-          if (monthIdx >= yourSSClaimMonthIdx) {
-            monthlyWifeSS = Math.max(ownSS, spousalSSAnnualFloor / 12);
-          } else {
-            monthlyWifeSS = ownSS;
-          }
+          // Deemed filing: own benefit plus the excess spousal amount once the husband has filed
+          monthlyWifeSS = monthIdx >= yourSSClaimMonthIdx ? ownSS + excessSpousalSSAnnual / 12 : ownSS;
         }
       }
 
@@ -1339,8 +1560,9 @@ export function runRetirementSimulation(
         const currentPortfolio = totalTaxable + totalPreTax + totalRoth + totalCash;
 
         // Portfolio expected annual return rate (weighted across accounts)
+        // Growth rates are total returns; dividends are a payout from that return, not additional to it
         const expectedAnnualReturnRate = currentPortfolio > 0
-          ? ((totalTaxable * (taxableGrowthRate + taxableDividendYield)) +
+          ? ((totalTaxable * taxableGrowthRate) +
              (totalPreTax * preTaxGrowthRate) +
              (totalRoth * rothGrowthRate) +
              (totalCash * cashRate)) / currentPortfolio
@@ -1394,7 +1616,7 @@ export function runRetirementSimulation(
         const wife70_5_MonthIdx = (wifeBirthYear + 70 - simStartYear) * 12 + wifeBirthMonth + 6;
         const isYouQCDEligible = !youDeceased && (monthIdx >= your70_5_MonthIdx);
         const isWifeQCDEligible = !wifeDeceased && !inputs.isSingleFiler && (monthIdx >= wife70_5_MonthIdx);
-        const qcdLimit = BASE_QCD_LIMIT * cpiFactor;
+        const qcdLimit = federal.rules.qcdAnnualLimit * federal.indexFactor;
 
         if (useQCD && remTithe > 0) {
           // Primary Traditional IRA QCD
@@ -1419,21 +1641,23 @@ export function runRetirementSimulation(
       annualQcdAmount += monthlyQcd;
       annualNonQcdTithe += monthlyNonQcd;
 
-      // Pro-rated monthly RMD distributions (cash distribution is reduced by any QCD offsetting)
+      // Pro-rated monthly RMD distributions. Each spouse's RMD is satisfied only by their own QCDs
+      // and their own cash draws, so the cash due is the RMD accrued to date less what that spouse
+      // has already given by QCD or already drawn. This carries uneven QCDs forward correctly.
       let monthlyYourRmdDraw = 0;
       let monthlyWifeRmdDraw = 0;
+      const rmdYearFractionDue = (month + 1) / 12;
       if (yourRMD > 0 && yourPreTax > 0) {
-        const targetMonthlyRMD = yourRMD / 12;
-        const cashRmdDraw = Math.max(0, targetMonthlyRMD - monthlyQcd);
+        const cashRmdDraw = Math.max(0, yourRMD * rmdYearFractionDue - yourAnnualQCD - annualYourRmdDraw);
         monthlyYourRmdDraw = Math.min(cashRmdDraw, yourPreTax);
         yourPreTax -= monthlyYourRmdDraw;
+        annualYourRmdDraw += monthlyYourRmdDraw;
       }
       if (wifeRMD > 0 && wifePreTax > 0) {
-        const targetMonthlyRMD = wifeRMD / 12;
-        const spouseQcdOffset = monthlyQcd > 0 ? Math.max(0, monthlyQcd - (yourRMD / 12)) : 0;
-        const cashRmdDraw = Math.max(0, targetMonthlyRMD - spouseQcdOffset);
+        const cashRmdDraw = Math.max(0, wifeRMD * rmdYearFractionDue - wifeAnnualQCD - annualWifeRmdDraw);
         monthlyWifeRmdDraw = Math.min(cashRmdDraw, wifePreTax);
         wifePreTax -= monthlyWifeRmdDraw;
+        annualWifeRmdDraw += monthlyWifeRmdDraw;
       }
 
       // Base expenses
@@ -1511,7 +1735,7 @@ export function runRetirementSimulation(
       const monthlyMedicare = (youEligibleForMedicare ? monthlyYourPremium : 0) + (wifeEligibleForMedicare ? monthlyWifePremium : 0);
 
       annualPreMedicarePremium += monthlyPreMed;
-      annualMedicareBasePremiums += monthlyMedicare;
+      annualMedicareStandardAmounts += monthlyMedicare;
       annualMedicareSurcharges += monthlyYourSurcharge + monthlyWifeSurcharge;
 
       // Quarterly Estimated Tax Vouchers in April (month 3), June (5), September (8), and December (11)
@@ -1538,9 +1762,8 @@ export function runRetirementSimulation(
         }
 
         // Step 1: Draw from pre-existing Cash savings
-        // In bear markets (negative equity return), freeze equity sales from brokerage and allow cash
-        // runway to deplete to absorb living deficits. In up markets, protect the minCashReserveTarget floor.
-        const isBearMarket = equityRate < 0;
+        // In bear markets (prior year's equity return was negative), freeze equity sales from brokerage and
+        // allow cash runway to deplete to absorb living deficits. Otherwise, protect the minCashReserveTarget floor.
         if (deficit > 0) {
           const currentTotalCash = (youDeceased ? 0 : yourCash) + (wifeDeceased || inputs.isSingleFiler ? 0 : wifeCash);
           const availableCashForDraw = isBearMarket ? currentTotalCash : Math.max(0, currentTotalCash - minCashReserveTarget);
@@ -1567,7 +1790,7 @@ export function runRetirementSimulation(
           if (!youDeceased && yourTaxable > 0) {
             const draw = Math.min(deficit, yourTaxable);
             const basisRatio = yourTaxable > 0 ? (yourBasis / yourTaxable) : 0;
-            annualCapitalGainsTriggered += Math.max(0, draw * (1 - basisRatio));
+            realizeCapitalGain(draw * (1 - basisRatio));
             annualDrawdownTaxable += draw;
             deficit -= draw;
             yourTaxable -= draw;
@@ -1576,7 +1799,7 @@ export function runRetirementSimulation(
           if (deficit > 0 && wifeTaxable > 0) {
             const draw = Math.min(deficit, wifeTaxable);
             const basisRatio = wifeTaxable > 0 ? (wifeBasis / wifeTaxable) : 0;
-            annualCapitalGainsTriggered += Math.max(0, draw * (1 - basisRatio));
+            realizeCapitalGain(draw * (1 - basisRatio));
             annualDrawdownTaxable += draw;
             deficit -= draw;
             wifeTaxable -= draw;
@@ -1691,9 +1914,11 @@ export function runRetirementSimulation(
     // Post-Compounding Year-End Settlement (Month 11 true-up)
     // ---------------------------------------------------------
 
-    // Under IRS rules, QCDs satisfy statutory RMDs dollar-for-dollar
-    const taxableYourRMD = Math.max(0, yourRMD - yourAnnualQCD);
-    const taxableWifeRMD = Math.max(0, wifeRMD - wifeAnnualQCD);
+    // Taxable RMD income is the cash actually distributed. QCDs satisfy the RMD dollar-for-dollar and
+    // never reach taxable income, and an account that ran dry mid-year cannot be taxed on money it
+    // never paid out.
+    const taxableYourRMD = annualYourRmdDraw;
+    const taxableWifeRMD = annualWifeRmdDraw;
     const taxableCombinedRMD = taxableYourRMD + taxableWifeRMD;
 
     // 1. Fill-to-Target Roth Conversion (executed with full hindsight of realized income/gains)
@@ -1710,27 +1935,57 @@ export function runRetirementSimulation(
       const currentBaselineOrdinary = (annualYourSalary + annualWifeSalary - annualTotal401k) +
         taxableCombinedRMD + ordinaryDividendsRealized + currentInterest + currentTradDraw;
 
-      const stdDeductionBase = isSingle ? FED_STANDARD_DEDUCTION_SINGLE * cpiFactor : FED_STANDARD_DEDUCTION_MFJ * cpiFactor;
-      let ageAddition = 0;
-      if (isSingle) {
-        const activeSurvivorAge = inputs.isSingleFiler ? yourAge : wifeAge;
-        if (activeSurvivorAge >= 65) ageAddition += 1950 * cpiFactor;
-      } else {
-        if (yourAge >= 65) ageAddition += 1650 * cpiFactor;
-        if (!wifeDeceased && wifeAge >= 65) ageAddition += 1650 * cpiFactor;
-      }
-      const currentStdDeduction = stdDeductionBase + ageAddition;
-      const activeProfileMid = getStateTaxProfile(activeState);
-      const saltCap = (activeProfileMid?.hasIncomeTax || effectiveLocalRate > 0) ? 10000 * cpiFactor : 0;
-      const estimatedItemized = saltCap + annualNonQcdTithe;
-      const effectiveDeduction = Math.max(currentStdDeduction, estimatedItemized);
+      const midAgedFilerCount = countAgedFilers(isSingle, !!inputs.isSingleFiler, yourAge, wifeAge, youDeceased);
+      // State tax depends on the conversion being sized, so estimate it at each candidate AGI.
+      const midTotalSS = annualYourSS + annualWifeSS;
+      const midPensionExclusion = calculatePensionExclusion(activeState, [
+        { age: yourAge, isAlive: !youDeceased, socialSecurityBenefit: annualYourSS, eligibleDistributions: taxableYourRMD + annualYourTradDraw },
+        { age: wifeAge, isAlive: !wifeDeceased, socialSecurityBenefit: annualWifeSS, eligibleDistributions: taxableWifeRMD + annualWifeTradDraw },
+      ], cpiFactor);
+      const deductionAtAGI = (agi: number): number => {
+        let taxableSSAtAGI = 0;
+        for (let i = 0; i < TARGET_AGI_DEDUCTION_ITERATIONS; i++) {
+          taxableSSAtAGI = calculateTaxableSS(midTotalSS, Math.max(0, agi - taxableSSAtAGI), isSingle);
+        }
+        const midStateTax = calculateStateAndLocalTax(
+          activeState,
+          {
+            fedAGI: agi,
+            taxableSS: taxableSSAtAGI,
+            isSingle,
+            cpiFactor,
+            taxYear: year,
+            agedFilerCount: midAgedFilerCount,
+            pensionExclusion: midPensionExclusion,
+            ordinaryIncome: Math.max(0, agi - currentCapitalGains),
+            capitalGains: currentCapitalGains,
+            retirementDistributions: Math.max(0, agi - taxableSSAtAGI - currentCapitalGains),
+          },
+          effectiveLocalRate
+        ).totalTax;
+        return calculateFederalDeduction({
+          year,
+          isSingle,
+          federal,
+          agedFilerCount: midAgedFilerCount,
+          fedAGI: agi,
+          stateIncomeTax: midStateTax,
+          propertyTax: saltEligiblePropertyTaxNominal,
+          nonQcdTithe: annualNonQcdTithe,
+        }).totalDeduction;
+      };
 
       let targetAGI: number;
       if (isBracketTarget && presetInfo) {
-        const targetTaxable = (isSingle ? presetInfo.singleBase : presetInfo.jointBase) * cpiFactor;
-        targetAGI = targetTaxable + effectiveDeduction;
+        const targetTaxable = (isSingle ? presetInfo.singleBase : presetInfo.jointBase) * presetIndexFactor(presetInfo, cpiFactor, federal.indexFactor);
+        // The deduction itself depends on AGI (senior phase-out, SALT phase-down, charity floor), so
+        // iterate until the target AGI and the deduction taken at that AGI agree.
+        targetAGI = targetTaxable + deductionAtAGI(currentBaselineOrdinary + currentCapitalGains);
+        for (let iter = 0; iter < TARGET_AGI_DEDUCTION_ITERATIONS; iter++) {
+          targetAGI = targetTaxable + deductionAtAGI(targetAGI);
+        }
       } else if (presetInfo) {
-        const targetMAGI = (isSingle ? presetInfo.singleBase : presetInfo.jointBase) * cpiFactor;
+        const targetMAGI = (isSingle ? presetInfo.singleBase : presetInfo.jointBase) * presetIndexFactor(presetInfo, cpiFactor, federal.indexFactor);
         targetAGI = targetMAGI;
       } else {
         targetAGI = inputs.rothConversionTargetValue * cpiFactor;
@@ -1751,12 +2006,10 @@ export function runRetirementSimulation(
         const totalTaxable = (yourCash + (wifeDeceased || inputs.isSingleFiler ? 0 : wifeCash)) +
           (yourTaxable + (wifeDeceased ? 0 : wifeTaxable));
 
-        const capExcl = MD_PENSION_EXCLUSION_BASE_CAP * cpiFactor;
-        const exclusionCapJohn = Math.max(0, capExcl - annualYourSS);
-        const exclusionCapWife = Math.max(0, capExcl - annualWifeSS);
-        const exclJohn = (!youDeceased && yourAge >= 65) ? Math.min(taxableYourRMD + annualYourTradDraw, exclusionCapJohn) : 0;
-        const exclWife = (!wifeDeceased && wifeAge >= 65) ? Math.min(taxableWifeRMD + annualWifeTradDraw, exclusionCapWife) : 0;
-        const estMdPensionExcl = exclJohn + exclWife;
+        const estPensionExcl = calculatePensionExclusion(activeState, [
+          { age: yourAge, isAlive: !youDeceased, socialSecurityBenefit: annualYourSS, eligibleDistributions: taxableYourRMD + annualYourTradDraw },
+          { age: wifeAge, isAlive: !wifeDeceased, socialSecurityBenefit: annualWifeSS, eligibleDistributions: taxableWifeRMD + annualWifeTradDraw },
+        ], cpiFactor);
 
         targetConversion = applyBucketLiquidityConstraintToConversion(
           targetConversion,
@@ -1767,16 +2020,16 @@ export function runRetirementSimulation(
           annualYourSS + annualWifeSS,
           isSingle,
           cpiFactor,
-          effectiveDeduction,
+          { year, agedFilerCount: midAgedFilerCount, propertyTax: saltEligiblePropertyTaxNominal, federal },
           annualNonQcdTithe,
           activeState,
-          estMdPensionExcl,
+          estPensionExcl,
           effectiveLocalRate
         );
       }
 
       if (targetConversion > 0) {
-        const totalAvailablePreTax = isSurvivorActive || youDeceased ? wifePreTax : (yourPreTax + (wifeDeceased ? 0 : wifePreTax));
+        const totalAvailablePreTax = isSoleSurvivorWife ? wifePreTax : isSoleSurvivorYou ? yourPreTax : (yourPreTax + (wifeDeceased ? 0 : wifePreTax));
         if (targetConversion > totalAvailablePreTax + 0.01) {
           isRothConversionCapped = true;
           rothConversionShortfall = Math.max(0, targetConversion - totalAvailablePreTax);
@@ -1785,37 +2038,29 @@ export function runRetirementSimulation(
           isRothConversionCapped = false;
         }
 
-        if (isSurvivorActive || youDeceased) {
+        if (isSoleSurvivorWife) {
           wifeConverted = Math.min(targetConversion, wifePreTax);
           wifePreTax -= wifeConverted;
           wifeRoth += wifeConverted;
+        } else if (isSoleSurvivorYou) {
+          yourConverted = Math.min(targetConversion, yourPreTax);
+          yourPreTax -= yourConverted;
+          yourRoth += yourConverted;
         } else {
-          const halfTarget = targetConversion / 2;
-          const husbandDrawn = Math.min(halfTarget, yourPreTax);
-          yourConverted += husbandDrawn;
-          yourPreTax -= husbandDrawn;
-          yourRoth += husbandDrawn;
-
-          const wifeDrawn = Math.min(halfTarget, wifePreTax);
-          wifeConverted += wifeDrawn;
-          wifePreTax -= wifeDrawn;
-          wifeRoth += wifeDrawn;
-
-          const totalDrawn = husbandDrawn + wifeDrawn;
-          const remainder = targetConversion - totalDrawn;
-          if (remainder > 0.01) {
-            if (yourPreTax > 0) {
-              const extra = Math.min(remainder, yourPreTax);
-              yourConverted += extra;
-              yourPreTax -= extra;
-              yourRoth += extra;
-            } else if (wifePreTax > 0) {
-              const extra = Math.min(remainder, wifePreTax);
-              wifeConverted += extra;
-              wifePreTax -= extra;
-              wifeRoth += extra;
-            }
-          }
+          // The year's RMDs were already drawn monthly, so the remaining balances are fully convertible.
+          const split = splitRothConversion(
+            targetConversion,
+            youDeceased ? 0 : yourPreTax,
+            wifeDeceased ? 0 : wifePreTax,
+            inputs.rothConversionSourceMode,
+            inputs.rothConversionYourSharePercent
+          );
+          yourConverted += split.your;
+          yourPreTax -= split.your;
+          yourRoth += split.your;
+          wifeConverted += split.wife;
+          wifePreTax -= split.wife;
+          wifeRoth += split.wife;
         }
       }
       combinedRothConversion = yourConverted + wifeConverted;
@@ -1833,29 +2078,22 @@ export function runRetirementSimulation(
     const qualifiedDividends = totalDividends * (1 - taxableNonQualifiedPortion);
     const totalCashInterest = annualYourInterest + annualWifeInterest;
 
-    const nonSSOrdinary = taxableSalary + rmd + rothConv + ordinaryDividends + totalCashInterest + tradDraw;
+    // A net capital loss offsets a limited amount of ordinary income; the rest carries forward
+    const capitalLossOrdinaryOffset = Math.min(annualNetCapitalLoss, CAPITAL_LOSS_ORDINARY_OFFSET_LIMIT);
+    capitalLossCarryforward = annualNetCapitalLoss - capitalLossOrdinaryOffset;
+
+    const nonSSOrdinary = taxableSalary + rmd + rothConv + ordinaryDividends + totalCashInterest + tradDraw - capitalLossOrdinaryOffset;
     const capitalGains = annualCapitalGainsTriggered + qualifiedDividends;
     const otherAGI = nonSSOrdinary + capitalGains;
     const taxableSS = calculateTaxableSS(totalSS, otherAGI, isSingle);
     const fedAGI = nonSSOrdinary + taxableSS + capitalGains;
 
-    const stdDeductionBaseFinal = isSingle ? FED_STANDARD_DEDUCTION_SINGLE * cpiFactor : FED_STANDARD_DEDUCTION_MFJ * cpiFactor;
-    let ageAdditionFinal = 0;
-    if (isSingle) {
-      const activeSurvivorAge = inputs.isSingleFiler ? yourAge : wifeAge;
-      if (activeSurvivorAge >= 65) ageAdditionFinal += 1950 * cpiFactor;
-    } else {
-      if (yourAge >= 65) ageAdditionFinal += 1650 * cpiFactor;
-      if (!wifeDeceased && wifeAge >= 65) ageAdditionFinal += 1650 * cpiFactor;
-    }
-    const standardDeductionTotalFinal = stdDeductionBaseFinal + ageAdditionFinal;
+    const agedFilerCountFinal = countAgedFilers(isSingle, !!inputs.isSingleFiler, yourAge, wifeAge, youDeceased);
 
-    const capExclFinal = MD_PENSION_EXCLUSION_BASE_CAP * cpiFactor;
-    const exclusionCapJohnFinal = Math.max(0, capExclFinal - annualYourSS);
-    const exclusionCapWifeFinal = Math.max(0, capExclFinal - annualWifeSS);
-    const exclJohnFinal = (!youDeceased && yourAge >= 65) ? Math.min(taxableYourRMD + annualYourTradDraw, exclusionCapJohnFinal) : 0;
-    const exclWifeFinal = (!wifeDeceased && wifeAge >= 65) ? Math.min(taxableWifeRMD + annualWifeTradDraw, exclusionCapWifeFinal) : 0;
-    const mdPensionExclusion = exclJohnFinal + exclWifeFinal;
+    const pensionExclusionFinal = calculatePensionExclusion(activeState, [
+      { age: yourAge, isAlive: !youDeceased, socialSecurityBenefit: annualYourSS, eligibleDistributions: taxableYourRMD + annualYourTradDraw },
+      { age: wifeAge, isAlive: !wifeDeceased, socialSecurityBenefit: annualWifeSS, eligibleDistributions: taxableWifeRMD + annualWifeTradDraw },
+    ], cpiFactor);
 
     const stateTaxResult = calculateStateAndLocalTax(
       activeState,
@@ -1864,7 +2102,9 @@ export function runRetirementSimulation(
         taxableSS,
         isSingle,
         cpiFactor,
-        pensionExclusion: mdPensionExclusion,
+        taxYear: year,
+        agedFilerCount: agedFilerCountFinal,
+        pensionExclusion: pensionExclusionFinal,
         ordinaryIncome: Math.max(0, fedAGI - capitalGains),
         capitalGains,
         retirementDistributions: taxableYourRMD + taxableWifeRMD + annualYourTradDraw + annualWifeTradDraw + combinedRothConversion,
@@ -1873,20 +2113,27 @@ export function runRetirementSimulation(
     );
     const stateIncomeTax = stateTaxResult.totalTax;
 
-    const saltCapFinal = 10000 * cpiFactor;
-    const saltDeduction = Math.min(saltCapFinal, stateIncomeTax);
-    const itemizedDeduction = saltDeduction + annualNonQcdTithe;
-    const stdDeduction = Math.max(standardDeductionTotalFinal, itemizedDeduction);
+    const { totalDeduction: stdDeduction } = calculateFederalDeduction({
+      year,
+      isSingle,
+      federal,
+      agedFilerCount: agedFilerCountFinal,
+      fedAGI,
+      stateIncomeTax,
+      propertyTax: saltEligiblePropertyTaxNominal,
+      nonQcdTithe: annualNonQcdTithe,
+    });
 
     const taxableOrdinary = Math.max(0, fedAGI - capitalGains - stdDeduction);
-    const { totalTax: fedBaseTax } = calculateFedTaxWithLTCG(taxableOrdinary, capitalGains, isSingle, cpiFactor);
+    const { totalTax: fedBaseTax } = calculateFedTaxWithLTCG(taxableOrdinary, capitalGains, isSingle, federal);
     let fedIncomeTax = fedBaseTax;
 
-    const niitThreshold = isSingle ? 200000 : 250000;
+    const niitThreshold = isSingle ? STATUTORY_NIIT_THRESHOLD_SINGLE : STATUTORY_NIIT_THRESHOLD_MFJ;
     const excessMAGI = Math.max(0, fedAGI - niitThreshold);
-    const netInvestmentIncome = annualCapitalGainsTriggered + totalDividends;
+    // Net investment income includes taxable interest (cash), not just gains and dividends
+    const netInvestmentIncome = annualCapitalGainsTriggered + totalDividends + totalCashInterest;
     const niitBase = Math.min(netInvestmentIncome, excessMAGI);
-    const niitTax = niitBase * 0.038;
+    const niitTax = niitBase * STATUTORY_NIIT_RATE;
     fedIncomeTax += niitTax;
 
     const totalTaxBill = fedIncomeTax + stateIncomeTax;
@@ -1903,9 +2150,8 @@ export function runRetirementSimulation(
         annualCashBuffer -= draw;
         deficit -= draw;
       }
-      // Step 1: Cash savings (in bear markets, pay from cash first; in up markets, protect minCashReserveTarget floor)
+      // Step 1: Cash savings (in bear markets per last year's return, pay from cash first; otherwise protect minCashReserveTarget floor)
       if (deficit > 0) {
-        const isBearMarket = equityRate < 0;
         const currentTotalCash = (youDeceased ? 0 : yourCash) + (wifeDeceased || inputs.isSingleFiler ? 0 : wifeCash);
         const availableCashForDraw = isBearMarket ? currentTotalCash : Math.max(0, currentTotalCash - minCashReserveTarget);
         if (availableCashForDraw > 0) {
@@ -1924,12 +2170,12 @@ export function runRetirementSimulation(
           }
         }
       }
-      // Step 2: Brokerage
+      // Step 2: Brokerage (realized gains are taxed next year as prior-year tax-funding income)
       if (deficit > 0) {
         if (!youDeceased && yourTaxable > 0) {
           const draw = Math.min(deficit, yourTaxable);
           const basisRatio = yourTaxable > 0 ? (yourBasis / yourTaxable) : 0;
-          annualCapitalGainsTriggered += Math.max(0, draw * (1 - basisRatio));
+          carriedTaxFundingGains += draw * (1 - basisRatio);
           annualDrawdownTaxable += draw;
           deficit -= draw;
           yourTaxable -= draw;
@@ -1938,25 +2184,25 @@ export function runRetirementSimulation(
         if (deficit > 0 && wifeTaxable > 0) {
           const draw = Math.min(deficit, wifeTaxable);
           const basisRatio = wifeTaxable > 0 ? (wifeBasis / wifeTaxable) : 0;
-          annualCapitalGainsTriggered += Math.max(0, draw * (1 - basisRatio));
+          carriedTaxFundingGains += draw * (1 - basisRatio);
           annualDrawdownTaxable += draw;
           deficit -= draw;
           wifeTaxable -= draw;
           wifeBasis -= draw * basisRatio;
         }
       }
-      // Step 3: Discretionary Pre-Tax
+      // Step 3: Discretionary Pre-Tax (draws are taxed next year as prior-year tax-funding income)
       if (deficit > 0) {
         if (!youDeceased && yourPreTax > 0) {
           const draw = Math.min(deficit, yourPreTax);
-          annualYourTradDraw += draw;
+          carriedYourTaxFundingDraw += draw;
           annualDrawdownPreTax += draw;
           deficit -= draw;
           yourPreTax -= draw;
         }
         if (deficit > 0 && !wifeDeceased && wifePreTax > 0) {
           const draw = Math.min(deficit, wifePreTax);
-          annualWifeTradDraw += draw;
+          carriedWifeTaxFundingDraw += draw;
           annualDrawdownPreTax += draw;
           deficit -= draw;
           wifePreTax -= draw;
@@ -1995,6 +2241,14 @@ export function runRetirementSimulation(
     } else if (netTaxSettlement < 0) {
       // Overpayment refund credited to buffer
       annualCashBuffer += (-netTaxSettlement);
+    }
+
+    // An actual-record year is reconciled to real balances and real tax below, so its simulated
+    // settlement funding never happened and must not create taxable income next year.
+    if (actualRec) {
+      carriedTaxFundingGains = 0;
+      carriedYourTaxFundingDraw = 0;
+      carriedWifeTaxFundingDraw = 0;
     }
 
     // 4. Sweep remaining unspent annual surplus into Taxable Brokerage
@@ -2078,7 +2332,7 @@ export function runRetirementSimulation(
     const qcdAmount = annualQcdAmount;
     nonQcdTithe = annualNonQcdTithe;
 
-    const totalExpenses = annualLivingExpenses + nonQcdTithe + finalTotalTax + annualMedicareBasePremiums + annualMedicareSurcharges + annualPreMedicarePremium;
+    const totalExpenses = annualLivingExpenses + nonQcdTithe + finalTotalTax + annualMedicareStandardAmounts + annualMedicareSurcharges + annualPreMedicarePremium;
     const incomeInflow = totalSS + taxableCombinedRMD + grossSalary + totalDividends;
     const deficit = Math.max(0, totalExpenses - incomeInflow);
     const netTakeHomeSalary = Math.max(0, grossSalary - annualTotal401k - annualTotalFICA - annualTotalTaxWithholding);
@@ -2087,7 +2341,7 @@ export function runRetirementSimulation(
     const plannedLivingExpenses = (plannedBaseLivingExpensesAnnual + oneTimeCosts) * cpiFactor + plannedHealthcareOOP;
     // Healthcare-inclusive spending scope: living + out-of-pocket + premiums + IRMAA (taxes excluded)
     const plannedTotalSpending = plannedLivingExpenses + plannedHealthcarePremiums;
-    const modeledTotalSpending = annualLivingExpenses + annualPreMedicarePremium + annualMedicareBasePremiums + annualMedicareSurcharges;
+    const modeledTotalSpending = annualLivingExpenses + annualPreMedicarePremium + annualMedicareStandardAmounts + annualMedicareSurcharges;
     // When expenses are logged for the year, their total is the single source of truth for actual spending
     const totalSpending = actualRec?.loggedTotalSpending ?? modeledTotalSpending;
     const hasActualSpendRecorded = Boolean(actualRec && (
@@ -2131,10 +2385,15 @@ export function runRetirementSimulation(
       requestedCustomRothConversion: requestedCustomAmount,
       isRothConversionCapped,
       rothConversionShortfall,
-      otherTaxableIncome: drawdownPreTax,
+      otherTaxableIncome: annualYourTradDraw + annualWifeTradDraw,
+      priorYearTaxFundingGains,
+      capitalLossCarryforward,
+      priorYearTaxFundingPreTaxDraw,
       magi,
       fedAGI,
       standardDeduction: stdDeduction,
+      isSingleReturn: isSingle,
+      irmaaUsesSingleTiers,
       taxableIncome: Math.max(0, fedAGI - stdDeduction),
       fedIncomeTax: finalFedTax,
       stateIncomeTax: finalStateTax,
@@ -2142,8 +2401,10 @@ export function runRetirementSimulation(
       niitTax,
       taxableSS,
       taxableDividends: totalDividends,
+      qualifiedDividends,
       taxableInterest: totalCashInterest,
       cpiFactor,
+      federalIndexFactor: federal.indexFactor,
       ssPaymentLevel,
       activeState,
       activeCounty,
@@ -2166,7 +2427,7 @@ export function runRetirementSimulation(
       totalSpending,
       healthcareOOP: annualHealthcareOOP,
       plannedHealthcareOOP,
-      medicareBasePremiums: annualMedicareBasePremiums,
+      medicareBasePremiums: annualMedicareStandardAmounts,
       preMedicareHealthcareCost: annualPreMedicarePremium,
       totalExpenses,
       incomeInflow,
@@ -2199,7 +2460,10 @@ export function runRetirementSimulation(
       guardrailLowerLimit: lowerGuardrailLimit,
       permittedSpendingBonus,
     });
+
+    // This year's return becomes next year's observable bear-market signal
+    priorYearEquityRate = equityRate;
   }
-  
+
   return ledger;
 }

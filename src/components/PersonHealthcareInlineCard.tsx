@@ -2,6 +2,7 @@ import React, { useState, useMemo, useEffect } from 'react';
 import { HeartPulse, Heart, Shield, Sparkles, Calendar, CalendarCheck } from 'lucide-react';
 import { HealthcareConfig, StateHealthcareConfig } from '../types';
 import { getStateTaxProfile } from '../engine/stateTaxRegistry';
+import { getMedicareStandardAmounts } from '../engine/federalTaxRules';
 import { NumericInput } from './NumericInput';
 
 interface PersonHealthcareInlineCardProps {
@@ -21,9 +22,6 @@ interface PersonHealthcareInlineCardProps {
   onChange: (config: HealthcareConfig) => void;
 }
 
-const MEDICARE_PART_B_2026 = 202.90;
-const MEDICARE_PART_D_2026 = 34.50;
-const MEDICARE_PART_B_DEDUCTIBLE_2026 = 283;
 
 export const PersonHealthcareInlineCard: React.FC<PersonHealthcareInlineCardProps> = ({
   personKey,
@@ -57,19 +55,18 @@ export const PersonHealthcareInlineCard: React.FC<PersonHealthcareInlineCardProp
 
   const age65Year = birthYear + 65;
   const currentAge = startYear - birthYear;
-  const yearsTo65 = Math.max(0, age65Year - startYear);
 
   const projectedPartB = useMemo(() => {
-    return MEDICARE_PART_B_2026 * Math.pow(1 + healthcareInflationRate, yearsTo65);
-  }, [healthcareInflationRate, yearsTo65]);
+    return getMedicareStandardAmounts(age65Year, healthcareInflationRate).partB;
+  }, [healthcareInflationRate, age65Year]);
 
   const projectedPartD = useMemo(() => {
-    return MEDICARE_PART_D_2026 * Math.pow(1 + healthcareInflationRate, yearsTo65);
-  }, [healthcareInflationRate, yearsTo65]);
+    return getMedicareStandardAmounts(age65Year, healthcareInflationRate).partD;
+  }, [healthcareInflationRate, age65Year]);
 
   const projectedPartBDeductible = useMemo(() => {
-    return MEDICARE_PART_B_DEDUCTIBLE_2026 * Math.pow(1 + healthcareInflationRate, yearsTo65);
-  }, [healthcareInflationRate, yearsTo65]);
+    return getMedicareStandardAmounts(age65Year, healthcareInflationRate).partBDeductible;
+  }, [healthcareInflationRate, age65Year]);
 
   const suggestedRetirementDate = useMemo(() => {
     const retireAge = plannedRetirementAge ?? 65;

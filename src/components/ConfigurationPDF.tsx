@@ -1,7 +1,9 @@
 import React from 'react';
 import { Document, Page, Text, View, StyleSheet } from '@react-pdf/renderer';
-import { AppStateInputs, StateHealthcareConfig, normalizeDetailedExpenses, getSimulationStartYear, describeSSReductions } from '../types';
+import { AppStateInputs, StateHealthcareConfig, normalizeDetailedExpenses, getSimulationStartYear, describeSSReductions, DEFAULT_YOUR_LONGEVITY_AGE, DEFAULT_WIFE_LONGEVITY_AGE } from '../types';
 import { getStateTaxProfile } from '../engine/stateTaxRegistry';
+import { describeRothConversionSource, getRothConversionSourceNames } from '../engine/rothConversionSplit';
+import { getMedicareStandardAmounts, MedicareStandardAmounts } from '../engine/federalTaxRules';
 
 // Create stylesheet for PDF formatting
 const styles = StyleSheet.create({
@@ -149,10 +151,6 @@ const styles = StyleSheet.create({
   }
 });
 
-// Standard Medicare Part B and Part D baseline monthly rates
-const BASE_MEDICARE_PART_B_RATE = 202.90;
-const BASE_MEDICARE_PART_D_RATE = 34.50;
-
 const getPersonStateHc = (
   person: AppStateInputs['you'] | AppStateInputs['wife'],
   stateKey: string
@@ -187,19 +185,20 @@ const getPersonPre65HealthcareAnnual = (
  */
 const getPersonPost65HealthcareAnnual = (
   person: AppStateInputs['you'] | AppStateInputs['wife'],
-  stateKey: string
+  stateKey: string,
+  medicareBase: MedicareStandardAmounts
 ): number => {
   if (person.healthcare) {
     const stateHc = getPersonStateHc(person, stateKey);
     const customB = person.healthcare.medicarePartBPremium;
-    const partB = (customB !== null && customB !== undefined) ? customB : BASE_MEDICARE_PART_B_RATE;
+    const partB = (customB !== null && customB !== undefined) ? customB : medicareBase.partB;
     const customD = stateHc?.medicarePartDPremium;
-    const partD = (customD !== null && customD !== undefined) ? customD : BASE_MEDICARE_PART_D_RATE;
+    const partD = (customD !== null && customD !== undefined) ? customD : medicareBase.partD;
     const monthlyPrem = partB + partD + (stateHc?.supplementPremium ?? 0) + (stateHc?.post65DentalPremium ?? 0) + (stateHc?.post65VisionPremium ?? 0);
     const annualOOP = (stateHc?.medicarePartDDeductibleCopays ?? 0) + (stateHc?.supplementOOP ?? 0) + (stateHc?.post65HearingCare ?? 0) + (stateHc?.post65DentalOOP ?? 0) + (stateHc?.post65VisionOOP ?? 0);
     return monthlyPrem * 12 + annualOOP;
   }
-  return (BASE_MEDICARE_PART_B_RATE + BASE_MEDICARE_PART_D_RATE) * 12;
+  return (medicareBase.partB + medicareBase.partD) * 12;
 };
 
 interface PDFProps {
@@ -281,18 +280,19 @@ export const ConfigurationPDF: React.FC<PDFProps> = ({ inputs }) => {
 
   const hasDetailedHealthcare = !!(inputs.you.healthcare || (!inputs.isSingleFiler && inputs.wife.healthcare));
   const simStartYear = getSimulationStartYear(inputs);
+  const medicareBase = getMedicareStandardAmounts(simStartYear, inputs.growthAssumptions.healthcareInflationRate);
 
   // Calculate Primary annual healthcare totals for stateA and stateB
   const youPre65_A = getPersonPre65HealthcareAnnual(inputs.you, stateA);
-  const youPost65_A = getPersonPost65HealthcareAnnual(inputs.you, stateA);
+  const youPost65_A = getPersonPost65HealthcareAnnual(inputs.you, stateA, medicareBase);
   const youPre65_B = getPersonPre65HealthcareAnnual(inputs.you, stateB);
-  const youPost65_B = getPersonPost65HealthcareAnnual(inputs.you, stateB);
+  const youPost65_B = getPersonPost65HealthcareAnnual(inputs.you, stateB, medicareBase);
 
   // Calculate Spouse annual healthcare totals for stateA and stateB
   const wifePre65_A = inputs.isSingleFiler ? 0 : getPersonPre65HealthcareAnnual(inputs.wife, stateA);
-  const wifePost65_A = inputs.isSingleFiler ? 0 : getPersonPost65HealthcareAnnual(inputs.wife, stateA);
+  const wifePost65_A = inputs.isSingleFiler ? 0 : getPersonPost65HealthcareAnnual(inputs.wife, stateA, medicareBase);
   const wifePre65_B = inputs.isSingleFiler ? 0 : getPersonPre65HealthcareAnnual(inputs.wife, stateB);
-  const wifePost65_B = inputs.isSingleFiler ? 0 : getPersonPost65HealthcareAnnual(inputs.wife, stateB);
+  const wifePost65_B = inputs.isSingleFiler ? 0 : getPersonPost65HealthcareAnnual(inputs.wife, stateB, medicareBase);
 
   // Combine household annual healthcare totals per state
   const totalPre65_A = youPre65_A + wifePre65_A;
@@ -421,7 +421,7 @@ export const ConfigurationPDF: React.FC<PDFProps> = ({ inputs }) => {
                 </View>
                 <View style={styles.row}>
                   <Text style={styles.rowLabel}>Projected Longevity Age:</Text>
-                  <Text style={styles.rowValue}>{inputs.you.longevityAge ?? 85} yrs</Text>
+                  <Text style={styles.rowValue}>{inputs.you.longevityAge ?? DEFAULT_YOUR_LONGEVITY_AGE} yrs</Text>
                 </View>
                 <View style={styles.row}>
                   <Text style={styles.rowLabel}>Active Work Annual Salary:</Text>
@@ -465,7 +465,7 @@ export const ConfigurationPDF: React.FC<PDFProps> = ({ inputs }) => {
                     </View>
                     <View style={styles.row}>
                       <Text style={styles.rowLabel}>Projected Longevity Age:</Text>
-                      <Text style={styles.rowValue}>{inputs.wife.longevityAge ?? 95} yrs</Text>
+                      <Text style={styles.rowValue}>{inputs.wife.longevityAge ?? DEFAULT_WIFE_LONGEVITY_AGE} yrs</Text>
                     </View>
                     <View style={styles.row}>
                       <Text style={styles.rowLabel}>Active Work Annual Salary:</Text>
@@ -676,9 +676,9 @@ export const ConfigurationPDF: React.FC<PDFProps> = ({ inputs }) => {
               </Text>
             </View>
             <View style={styles.row}>
-              <Text style={styles.rowLabel}>Regime Switching & Drift:</Text>
+              <Text style={styles.rowLabel}>Return Model:</Text>
               <Text style={styles.rowValue}>
-                {inputs.monteCarloSettings.enableRegimeSwitching !== false ? 'Enabled (Markov 2-State + Reversion)' : 'Disabled (Random Walk)'}
+                {inputs.monteCarloSettings.mode === 'historical' ? 'Historical Bootstrap (re-centered to CMA)' : 'Parametric (independent annual normal draws)'}
               </Text>
             </View>
             <View style={styles.row}>
@@ -769,10 +769,16 @@ export const ConfigurationPDF: React.FC<PDFProps> = ({ inputs }) => {
                 <View style={styles.row}>
                   <Text style={styles.rowLabel}>Strategy Selected:</Text>
                   <Text style={styles.rowValue}>
-                    {inputs.rothConversionStrategy === 'flat' ? 'Flat Annual Conversions' : 'Fill-To-Target Bracket'}
+                    {inputs.rothConversionStrategy === 'none'
+                      ? 'None (No Roth Conversions)'
+                      : inputs.rothConversionStrategy === 'flat'
+                        ? 'Flat Annual Conversions'
+                        : inputs.rothConversionStrategy === 'custom'
+                          ? 'Custom Schedule'
+                          : 'Fill-To-Target Bracket'}
                   </Text>
                 </View>
-                {inputs.rothConversionStrategy === 'flat' ? (
+                {inputs.rothConversionStrategy === 'none' || inputs.rothConversionStrategy === 'custom' ? null : inputs.rothConversionStrategy === 'flat' ? (
                   <View style={styles.row}>
                     <Text style={styles.rowLabel}>Annual Conversion Value:</Text>
                     <Text style={styles.rowValue}>{formatCurrency(inputs.annualRothConversion)}/yr</Text>
@@ -787,6 +793,14 @@ export const ConfigurationPDF: React.FC<PDFProps> = ({ inputs }) => {
                   <Text style={styles.rowLabel}>Start Year / End Year:</Text>
                   <Text style={styles.rowValue}>{inputs.rothConversionStartYear ?? simStartYear} / {inputs.rothConversionEndYear ?? (simStartYear + 9)}</Text>
                 </View>
+                {inputs.rothConversionStrategy !== 'none' && !inputs.isSingleFiler && (
+                  <View style={styles.row}>
+                    <Text style={styles.rowLabel}>Conversion Source:</Text>
+                    <Text style={styles.rowValue}>
+                      {describeRothConversionSource(inputs.rothConversionSourceMode, inputs.rothConversionYourSharePercent, getRothConversionSourceNames(inputs.you.name, inputs.wife?.name))}
+                    </Text>
+                  </View>
+                )}
               </View>
             </View>
 
@@ -973,7 +987,7 @@ export const ConfigurationPDF: React.FC<PDFProps> = ({ inputs }) => {
               )}
               <View style={[styles.row, { borderBottomWidth: 0 }]}>
                 <Text style={styles.rowLabel}>Medicare Base Premiums (B+D):</Text>
-                <Text style={styles.rowValue}>Default Base Rates ({formatCurrency(BASE_MEDICARE_PART_B_RATE + BASE_MEDICARE_PART_D_RATE)}/mo per person)</Text>
+                <Text style={styles.rowValue}>Default Base Rates ({formatCurrency(medicareBase.partB + medicareBase.partD)}/mo per person)</Text>
               </View>
             </View>
           )}

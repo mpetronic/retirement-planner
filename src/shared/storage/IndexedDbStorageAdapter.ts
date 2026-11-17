@@ -382,6 +382,24 @@ export class IndexedDbStorageAdapter implements StorageAdapter {
     });
   }
 
+  async deleteExpensesBatch(items: Array<{ id: string; date: string }>): Promise<void> {
+    if (items.length === 0) return;
+    const db = await this.getDB();
+    return new Promise<void>((resolve, reject) => {
+      const tx = db.transaction(STORE_EXPENSES, 'readwrite');
+      const store = tx.objectStore(STORE_EXPENSES);
+
+      // Resolve only once the transaction commits so callers see durable results.
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => reject(tx.error);
+      tx.onabort = () => reject(tx.error);
+
+      for (const item of items) {
+        store.delete(item.id);
+      }
+    });
+  }
+
   async clearAllExpenses(): Promise<void> {
     const db = await this.getDB();
     return new Promise<void>((resolve, reject) => {

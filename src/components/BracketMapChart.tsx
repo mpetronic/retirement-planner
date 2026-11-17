@@ -9,7 +9,7 @@ import {
   LegendItem,
   ChartEvent,
 } from 'chart.js';
-import { SimulationResultRow, AppStateInputs } from '../types';
+import { SimulationResultRow, AppStateInputs, DEFAULT_YOUR_LONGEVITY_AGE, DEFAULT_WIFE_LONGEVITY_AGE } from '../types';
 import { TrendingUp, Check, Maximize2, Minimize2, ArrowUpDown, Layers } from 'lucide-react';
 
 ChartJS.register(...registerables);
@@ -17,7 +17,6 @@ ChartJS.register(...registerables);
 interface BracketMapChartProps {
   ledger: SimulationResultRow[];
   inputs: AppStateInputs;
-  simulateSurvivor?: boolean;
 }
 
 export const BracketMapChart: React.FC<BracketMapChartProps> = ({
@@ -281,8 +280,8 @@ export const BracketMapChart: React.FC<BracketMapChartProps> = ({
 
     const datasets = rawDatasets.filter(Boolean) as ChartData<'bar' | 'line'>['datasets'];
 
-    const primaryLongevity = inputs.you.longevityAge ?? 85;
-    const spouseLongevity = inputs.wife?.longevityAge ?? 95;
+    const primaryLongevity = inputs.you.longevityAge ?? DEFAULT_YOUR_LONGEVITY_AGE;
+    const spouseLongevity = inputs.wife?.longevityAge ?? DEFAULT_WIFE_LONGEVITY_AGE;
 
     const labels = ledger.map((r) => {
       const isSingle = inputs.isSingleFiler || !r.wifeAge || r.wifeAge === 0;

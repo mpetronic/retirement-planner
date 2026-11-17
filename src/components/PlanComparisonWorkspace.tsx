@@ -1,6 +1,7 @@
 import React, { useState, useMemo } from 'react';
-import { AppStateInputs, SavedPlan, SimulationResultRow, LockedReturnSequence, getSimulationStartYear, describeSSReductions } from '../types';
+import { AppStateInputs, SavedPlan, SimulationResultRow, LockedReturnSequence, getSimulationStartYear, describeSSReductions, DEFAULT_YOUR_LONGEVITY_AGE, DEFAULT_WIFE_LONGEVITY_AGE } from '../types';
 import { runRetirementSimulation } from '../engine/simulationEngine';
+import { describeRothConversionSource, getRothConversionSourceNames } from '../engine/rothConversionSplit';
 import { 
   Plus, 
   Trash2, 
@@ -28,7 +29,6 @@ interface PlanComparisonWorkspaceProps {
   onLoadPlan: (inputs: AppStateInputs) => void;
   savedPlans: SavedPlan[];
   onSavePlans: (plans: SavedPlan[] | ((prev: SavedPlan[]) => SavedPlan[])) => void;
-  simulateSurvivor: boolean;
   useTodayDollars: boolean;
   selectedPlanAId: string;
   setSelectedPlanAId: (id: string) => void;
@@ -44,7 +44,6 @@ export const PlanComparisonWorkspace: React.FC<PlanComparisonWorkspaceProps> = (
   onLoadPlan,
   savedPlans,
   onSavePlans,
-  simulateSurvivor,
   useTodayDollars,
   selectedPlanAId,
   setSelectedPlanAId,
@@ -76,8 +75,8 @@ export const PlanComparisonWorkspace: React.FC<PlanComparisonWorkspaceProps> = (
     // Fallback if ledger is not provided
     const yourBirthYear = inputs.you.birthDate ? parseInt(inputs.you.birthDate.split('-')[0], 10) : 1960;
     const wifeBirthYear = inputs.wife.birthDate ? parseInt(inputs.wife.birthDate.split('-')[0], 10) : 1964;
-    const deathYear = yourBirthYear + (inputs.you.longevityAge ?? 85);
-    const wifeDeathYear = inputs.isSingleFiler ? 0 : (wifeBirthYear + (inputs.wife.longevityAge ?? 95));
+    const deathYear = yourBirthYear + (inputs.you.longevityAge ?? DEFAULT_YOUR_LONGEVITY_AGE);
+    const wifeDeathYear = inputs.isSingleFiler ? 0 : (wifeBirthYear + (inputs.wife.longevityAge ?? DEFAULT_WIFE_LONGEVITY_AGE));
     const endYr = Math.max(simStartYear, inputs.isSingleFiler ? deathYear : Math.max(deathYear, wifeDeathYear));
     const endAge = endYr - yourBirthYear;
     return {
@@ -130,11 +129,16 @@ export const PlanComparisonWorkspace: React.FC<PlanComparisonWorkspaceProps> = (
         (pPort.wifeCash || 0)
       ));
 
-    const rothStrategyText = pInputs.rothConversionStrategy === 'fill-to-target'
+    const rothStrategyBaseText = pInputs.rothConversionStrategy === 'none'
+      ? `No Conversion ($0/yr)`
+      : pInputs.rothConversionStrategy === 'fill-to-target'
       ? `Fill-to-Target Bracket (${formatCurrency(pInputs.rothConversionTargetValue ?? 0)})`
       : pInputs.annualRothConversion > 0
         ? `Flat Annual Conversion (${formatCurrency(pInputs.annualRothConversion)}/yr)`
         : `No Conversion ($0/yr)`;
+    const rothStrategyText = pInputs.rothConversionStrategy === 'none' || pInputs.isSingleFiler
+      ? rothStrategyBaseText
+      : `${rothStrategyBaseText}, source: ${describeRothConversionSource(pInputs.rothConversionSourceMode, pInputs.rothConversionYourSharePercent, getRothConversionSourceNames(pInputs.you.name, pInputs.wife?.name))}`;
 
     const relocationText = pJuris.relocationYear
       ? `Relocating from ${pJuris.currentState} to ${pJuris.targetState} in ${pJuris.relocationYear}`
@@ -337,7 +341,6 @@ export const PlanComparisonWorkspace: React.FC<PlanComparisonWorkspaceProps> = (
       name,
       inputs: {
         ...JSON.parse(JSON.stringify(inputs)),
-        simulateSurvivor,
       },
       createdAt: new Date().toLocaleDateString('en-US', {
         month: 'short',
@@ -485,10 +488,9 @@ export const PlanComparisonWorkspace: React.FC<PlanComparisonWorkspaceProps> = (
     name: 'Current Active Plan',
     inputs: {
       ...inputs,
-      simulateSurvivor,
     },
     createdAt: 'Active Workspace',
-  }), [inputs, simulateSurvivor]);
+  }), [inputs]);
 
   // Resolve Plan A and Plan B (defaulting Plan A to current active plan if unset)
   const effectivePlanAId = selectedPlanAId || 'current';
@@ -532,13 +534,10 @@ export const PlanComparisonWorkspace: React.FC<PlanComparisonWorkspaceProps> = (
       isSingleFiler: inputs.isSingleFiler,
       simulationStartYear: inputs.simulationStartYear,
     };
-    const simSurvivorA = (planA.inputs as { simulateSurvivor?: boolean })?.simulateSurvivor !== undefined 
-      ? (planA.inputs as { simulateSurvivor?: boolean }).simulateSurvivor!
-      : simulateSurvivor;
-    const rawResult = runRetirementSimulation(inputsA, simSurvivorA, activeSequence).filter((r) => r.year <= globalEndingYear);
+    const rawResult = runRetirementSimulation(inputsA, activeSequence).filter((r) => r.year <= globalEndingYear);
     if (!useTodayDollars) return rawResult;
     return rawResult.map((r) => discountRow(r));
-  }, [planA, simulateSurvivor, useTodayDollars, inputs, globalEndingYear, activeSequence, ledger]);
+  }, [planA, useTodayDollars, inputs, globalEndingYear, activeSequence, ledger]);
 
   const simResultB = useMemo(() => {
     if (!planB) return null;
@@ -552,13 +551,10 @@ export const PlanComparisonWorkspace: React.FC<PlanComparisonWorkspaceProps> = (
       isSingleFiler: inputs.isSingleFiler,
       simulationStartYear: inputs.simulationStartYear,
     };
-    const simSurvivorB = (planB.inputs as { simulateSurvivor?: boolean })?.simulateSurvivor !== undefined 
-      ? (planB.inputs as { simulateSurvivor?: boolean }).simulateSurvivor!
-      : simulateSurvivor;
-    const rawResult = runRetirementSimulation(inputsB, simSurvivorB, activeSequence).filter((r) => r.year <= globalEndingYear);
+    const rawResult = runRetirementSimulation(inputsB, activeSequence).filter((r) => r.year <= globalEndingYear);
     if (!useTodayDollars) return rawResult;
     return rawResult.map((r) => discountRow(r));
-  }, [planB, simulateSurvivor, useTodayDollars, inputs, globalEndingYear, activeSequence, ledger]);
+  }, [planB, useTodayDollars, inputs, globalEndingYear, activeSequence, ledger]);
 
   // Sum lifetime stats
   const statsA = useMemo(() => simResultA ? calculateLifetimeMetrics(simResultA) : null, [simResultA]);
@@ -619,7 +615,7 @@ export const PlanComparisonWorkspace: React.FC<PlanComparisonWorkspaceProps> = (
       },
       {
         id: 'endingEstate',
-        name: `Ending Net Estate (Age ${endingAge})`,
+        name: `Ending Portfolio (Age ${endingAge})`,
         desc: `Final terminal value of combined accounts in year ${globalEndingYear} after all years of growth, taxes, and drawdowns under ${globalScenario ? globalScenario.toUpperCase() : 'active'} return assumptions.`,
         valA: statsA.endingEstate,
         valB: statsB.endingEstate,
@@ -870,7 +866,9 @@ export const PlanComparisonWorkspace: React.FC<PlanComparisonWorkspaceProps> = (
                   const isB = selectedPlanBId === plan.id;
                   
                   // Compute details
-                  const rothSummaryBadge = plan.inputs.rothConversionStrategy === 'fill-to-target'
+                  const rothSummaryBadge = plan.inputs.rothConversionStrategy === 'none'
+                    ? `Roth Conv: None ($0)`
+                    : plan.inputs.rothConversionStrategy === 'fill-to-target'
                     ? `Roth Conv: Fill (${formatCurrency(plan.inputs.rothConversionTargetValue ?? 0)})`
                     : plan.inputs.annualRothConversion > 0
                       ? `Roth Conv: Flat (${formatCurrency(plan.inputs.annualRothConversion)})`

@@ -1,9 +1,17 @@
-import { AppStateInputs, LockedReturnSequence } from '../types';
-import { runRetirementSimulation, calculateSSBenefit, calculateSpousalBenefit } from './simulationEngine';
-import { CONVERSION_TARGET_PRESETS } from './taxRates2026';
+import { AppStateInputs, LockedReturnSequence, RothConversionStrategy, DEFAULT_YOUR_BIRTH_YEAR, DEFAULT_WIFE_BIRTH_YEAR, DEFAULT_YOUR_LONGEVITY_AGE, DEFAULT_WIFE_LONGEVITY_AGE } from '../types';
+import {
+  runRetirementSimulation,
+  calculateSSBenefit,
+  calculateExcessSpousalBenefit,
+  calculateSurvivorBenefit,
+  parseBirthYearAndMonth,
+  SS_FULL_RETIREMENT_AGE,
+  SS_SURVIVOR_EARLIEST_AGE,
+} from './simulationEngine';
+import { CONVERSION_TARGET_PRESETS } from './taxRates';
 
 export interface OptimizationResult {
-  bestStrategy: 'flat' | 'fill-to-target' | 'custom';
+  bestStrategy: RothConversionStrategy;
   bestAnnualRothConversion: number;
   bestTargetValue: number | null;
   bestYourSSAge: number;
@@ -19,10 +27,14 @@ export interface OptimizationResult {
   };
 }
 
+/** Step and ceiling for the flat Roth conversion amounts the optimizer evaluates. */
+const FLAT_CONVERSION_STEP = 10000;
+const MAX_FLAT_CONVERSION = 400000;
+
 export type OptimizationGoal = 'min_taxes' | 'max_portfolio' | 'min_surcharges' | 'max_roth';
 
 interface RothCandidate {
-  strategy: 'flat' | 'fill-to-target' | 'custom';
+  strategy: RothConversionStrategy;
   annualConversion: number;
   targetValue: number | null;
 }
@@ -37,7 +49,6 @@ interface RothCandidate {
 export function optimizeRetirementScenario(
   inputs: AppStateInputs,
   goalInput: OptimizationGoal | string,
-  simulateSurvivor: boolean,
   overrideSequence?: LockedReturnSequence | null
 ): OptimizationResult {
   // Normalize goal string defensively (handling hyphens or underscores)
@@ -45,9 +56,7 @@ export function optimizeRetirementScenario(
 
   if (!inputs.isConfigured) {
     return {
-      bestStrategy: inputs.rothConversionStrategy === 'fill-to-target'
-        ? 'fill-to-target'
-        : (inputs.rothConversionStrategy === 'custom' ? 'custom' : 'flat'),
+      bestStrategy: inputs.rothConversionStrategy,
       bestAnnualRothConversion: inputs.annualRothConversion,
       bestTargetValue: inputs.rothConversionTargetValue,
       bestYourSSAge: inputs.you.targetSSClaimingAge ?? 67,
@@ -76,15 +85,15 @@ export function optimizeRetirementScenario(
     return fallback;
   };
   
-  const yourBirthYear = parseBirthYear(inputs.you.birthDate, 1960);
-  const deathYear = yourBirthYear + (inputs.you.longevityAge ?? 85);
-  const wifeBirthYear = parseBirthYear(inputs.wife.birthDate, 1962);
-  const wifeDeathYear = wifeBirthYear + (inputs.wife.longevityAge ?? 85);
+  const yourBirthYear = parseBirthYear(inputs.you.birthDate, DEFAULT_YOUR_BIRTH_YEAR);
+  const deathYear = yourBirthYear + (inputs.you.longevityAge ?? DEFAULT_YOUR_LONGEVITY_AGE);
+  const wifeBirthYear = parseBirthYear(inputs.wife.birthDate, DEFAULT_WIFE_BIRTH_YEAR);
+  const wifeDeathYear = wifeBirthYear + (inputs.wife.longevityAge ?? DEFAULT_WIFE_LONGEVITY_AGE);
+  // Absolute month counts, used to find the wife's age when a spousal or survivor benefit starts
+  const yourBirthAbsMonth = yourBirthYear * 12 + parseBirthYearAndMonth(inputs.you.birthDate, yourBirthYear).month;
+  const wifeBirthAbsMonth = wifeBirthYear * 12 + parseBirthYearAndMonth(inputs.wife.birthDate, wifeBirthYear).month;
 
-  let bestStrategy: 'flat' | 'fill-to-target' | 'custom' =
-    inputs.rothConversionStrategy === 'fill-to-target'
-      ? 'fill-to-target'
-      : (inputs.rothConversionStrategy === 'custom' ? 'custom' : 'flat');
+  let bestStrategy: RothConversionStrategy = inputs.rothConversionStrategy;
   let bestAnnualRothConversion = inputs.annualRothConversion;
   let bestTargetValue = inputs.rothConversionTargetValue;
   let bestYourSSAge = inputs.you.targetSSClaimingAge ?? 67;
@@ -98,8 +107,11 @@ export function optimizeRetirementScenario(
   // Build comprehensive list of candidate Roth strategies to evaluate
   const rothCandidates: RothCandidate[] = [];
 
-  // Flat conversion candidates: $0 through $400k in $10k increments (41 candidates)
-  for (let amt = 0; amt <= 400000; amt += 10000) {
+  // No-conversion candidate. A flat conversion of $0 is identical, so it is reported as 'none' for clarity.
+  rothCandidates.push({ strategy: 'none', annualConversion: 0, targetValue: null });
+
+  // Flat conversion candidates: $10k through $400k in $10k increments (40 candidates)
+  for (let amt = FLAT_CONVERSION_STEP; amt <= MAX_FLAT_CONVERSION; amt += FLAT_CONVERSION_STEP) {
     rothCandidates.push({ strategy: 'flat', annualConversion: amt, targetValue: null });
   }
 
@@ -145,7 +157,7 @@ export function optimizeRetirementScenario(
           },
         };
 
-        const ledger = runRetirementSimulation(testInputs, simulateSurvivor, overrideSequence);
+        const ledger = runRetirementSimulation(testInputs, overrideSequence);
         if (ledger.length === 0) continue;
 
         // Compute metrics
@@ -155,33 +167,68 @@ export function optimizeRetirementScenario(
         const lifetimeIRMAA = ledger.reduce((sum, r) => sum + r.combinedSurchargeAnnual, 0);
         const endingRoth = finalRow.endYourRothIRA + finalRow.endWifeRothIRA;
 
-        // Spousal add-on: find the first year where both spouses are concurrently collecting SS
-        // and measure how much the spousal floor boosted her above her own earned benefit.
+        // Spousal add-on: the excess spousal amount paid on top of own benefit once both have filed,
+        // valued in the first year where both spouses are concurrently collecting SS.
         let spousalAddOnAnnual = 0;
         if (!testInputs.isSingleFiler && testInputs.wife.targetSSClaimingAge && testInputs.you.targetSSClaimingAge) {
           const effectiveWifeSSAge = testInputs.wife.targetSSClaimingAge;
-          const ownWifeSSBase = calculateSSBenefit(testInputs.wife.estimatedPIA || 0, effectiveWifeSSAge) * 12;
-          const spousalFloorBase = calculateSpousalBenefit(testInputs.you.estimatedPIA || 0, effectiveWifeSSAge) * 12;
-          if (spousalFloorBase > ownWifeSSBase) {
+          const bothFiledAbsMonth = Math.max(yourBirthAbsMonth + yourAge * 12, wifeBirthAbsMonth + effectiveWifeSSAge * 12);
+          const wifeExcessSpousalBase = calculateExcessSpousalBenefit(
+            testInputs.you.estimatedPIA || 0,
+            testInputs.wife.estimatedPIA || 0,
+            effectiveWifeSSAge,
+            (bothFiledAbsMonth - wifeBirthAbsMonth) / 12
+          ) * 12;
+          const yourExcessSpousalBase = calculateExcessSpousalBenefit(
+            testInputs.wife.estimatedPIA || 0,
+            testInputs.you.estimatedPIA || 0,
+            yourAge,
+            (bothFiledAbsMonth - yourBirthAbsMonth) / 12
+          ) * 12;
+          const excessSpousalBase = wifeExcessSpousalBase + yourExcessSpousalBase;
+          if (excessSpousalBase > 0) {
             const firstConcurrentYear = Math.max(yourBirthYear + yourAge, wifeBirthYear + effectiveWifeSSAge);
             const concurrentRow = ledger.find(r => r.year >= firstConcurrentYear && r.year < Math.min(deathYear, wifeDeathYear));
             if (concurrentRow) {
-              spousalAddOnAnnual = (spousalFloorBase - ownWifeSSBase) * concurrentRow.cpiFactor * (concurrentRow.ssPaymentLevel ?? 1);
+              spousalAddOnAnnual = excessSpousalBase * concurrentRow.cpiFactor * (concurrentRow.ssPaymentLevel ?? 1);
             }
           }
         }
 
-        // Survivor benefit: wife's annualized SS in first survivor year under the optimal plan.
+        // Survivor benefit: surviving spouse's annualized SS under the optimal plan (the larger of
+        // own benefit and the survivor benefit reduced for the survivor's age when it starts).
         let survivorBenefitAnnual = 0;
-        if (!testInputs.isSingleFiler && wifeDeathYear > deathYear) {
-          const effectiveWifeSSAge = testInputs.wife.targetSSClaimingAge ?? 67;
-          const survivorSSAnnualBase = calculateSSBenefit(testInputs.you.estimatedPIA || 0, yourAge) * 12;
-          const survivorWifeSSAnnualBase = calculateSSBenefit(testInputs.wife.estimatedPIA || 0, effectiveWifeSSAge) * 12;
-          const survivorFloorBase = (testInputs.you.estimatedPIA || 0) * 0.825 * 12;
-          const baseSurvivorAnnual = Math.max(survivorSSAnnualBase, survivorWifeSSAnnualBase, survivorFloorBase);
+        if (!testInputs.isSingleFiler && wifeDeathYear !== deathYear) {
+          const effectiveWifeSSAge = testInputs.wife.targetSSClaimingAge ?? SS_FULL_RETIREMENT_AGE;
+          if (wifeDeathYear > deathYear) {
+            const yourDeathAge = deathYear - yourBirthYear;
+            const survivorStartAbsMonth = Math.max(deathYear * 12, wifeBirthAbsMonth + SS_SURVIVOR_EARLIEST_AGE * 12);
+            const survivorSSAnnualBase = calculateSurvivorBenefit(
+              testInputs.you.estimatedPIA || 0,
+              yourAge,
+              (survivorStartAbsMonth - wifeBirthAbsMonth) / 12,
+              yourDeathAge
+            ) * 12;
+            const survivorWifeSSAnnualBase = calculateSSBenefit(testInputs.wife.estimatedPIA || 0, effectiveWifeSSAge) * 12;
+            const baseSurvivorAnnual = Math.max(survivorSSAnnualBase, survivorWifeSSAnnualBase);
 
-          const survivorRow = ledger.find((r) => r.year >= deathYear) || finalRow;
-          survivorBenefitAnnual = baseSurvivorAnnual * survivorRow.cpiFactor * (survivorRow.ssPaymentLevel ?? 1);
+            const survivorRow = ledger.find((r) => r.year >= deathYear) || finalRow;
+            survivorBenefitAnnual = baseSurvivorAnnual * survivorRow.cpiFactor * (survivorRow.ssPaymentLevel ?? 1);
+          } else {
+            const wifeDeathAge = wifeDeathYear - wifeBirthYear;
+            const survivorStartAbsMonth = Math.max(wifeDeathYear * 12, yourBirthAbsMonth + SS_SURVIVOR_EARLIEST_AGE * 12);
+            const survivorSSAnnualBase = calculateSurvivorBenefit(
+              testInputs.wife.estimatedPIA || 0,
+              effectiveWifeSSAge,
+              (survivorStartAbsMonth - yourBirthAbsMonth) / 12,
+              wifeDeathAge
+            ) * 12;
+            const survivorYourSSAnnualBase = calculateSSBenefit(testInputs.you.estimatedPIA || 0, yourAge) * 12;
+            const baseSurvivorAnnual = Math.max(survivorSSAnnualBase, survivorYourSSAnnualBase);
+
+            const survivorRow = ledger.find((r) => r.year >= wifeDeathYear) || finalRow;
+            survivorBenefitAnnual = baseSurvivorAnnual * survivorRow.cpiFactor * (survivorRow.ssPaymentLevel ?? 1);
+          }
         }
 
         let score = 0;
@@ -247,7 +294,8 @@ export function optimizeRetirementScenario(
   }
 
   return {
-    bestStrategy,
+    // A flat conversion of $0 is the same as no conversions, so report it as 'none'
+    bestStrategy: bestStrategy === 'flat' && bestAnnualRothConversion === 0 ? 'none' : bestStrategy,
     bestAnnualRothConversion,
     bestTargetValue,
     bestYourSSAge,

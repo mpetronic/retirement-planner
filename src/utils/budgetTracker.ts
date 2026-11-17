@@ -1,3 +1,5 @@
+import { isReimbursableExpense } from '../shared/utils/reimbursableExpense';
+
 export const MONTHS_PER_YEAR = 12;
 export const MONTH_LABELS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
@@ -119,7 +121,7 @@ export interface LoggedSpendingSource {
 }
 
 export interface LoggedSpendingSummary {
-  /** Every logged expense for the year, healthcare included. Single source of truth for actual spending. */
+  /** Every logged expense for the year, healthcare included and reimbursable entries excluded. Single source of truth for actual spending. */
   total: number;
   /** Non-healthcare spending by category group. */
   livingByCategory: Record<string, number>;
@@ -136,6 +138,8 @@ export interface LoggedSpendingSummary {
 export const summarizeLoggedSpending = (expenses: LoggedSpendingSource[]): LoggedSpendingSummary => {
   const summary: LoggedSpendingSummary = { total: 0, livingByCategory: {}, living: 0, healthcareOOP: 0, premiums: 0, irmaa: 0 };
   for (const exp of expenses) {
+    // Money paid for someone else is not the household's spending
+    if (isReimbursableExpense(exp)) continue;
     const catLower = (exp.categoryName || `${exp.category} ${exp.name}`).toLowerCase();
     const idLower = (exp.catalogId || exp.categoryId || '').toLowerCase();
     summary.total += exp.amount;

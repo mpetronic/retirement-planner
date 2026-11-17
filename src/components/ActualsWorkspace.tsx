@@ -8,6 +8,7 @@ import {
   getSimulationStartYear,
   DEFAULT_EXPENSE_CATEGORIES,
   normalizeDetailedExpenses,
+  ALL_STATES_COST_KEY,
 } from '../types';
 import {
   ClipboardCheck,
@@ -47,9 +48,17 @@ import {
 } from 'lucide-react';
 import { getStorageAdapter, fetchAllExpensesForExport } from '../shared/storage';
 import { ActualExpense } from '../shared/types/expenses';
+import { getExpenseLineItemIdentity } from '../utils/expenseLineItem';
+import {
+  REIMBURSABLE_CATALOG_ID,
+  REIMBURSABLE_GROUP,
+  REIMBURSABLE_NAME,
+  isReimbursableExpense,
+  excludeReimbursable,
+} from '../shared/utils/reimbursableExpense';
 import { AuthService } from '../shared/auth/AuthService';
 import { isLocalhostEnvironment } from '../shared/utils/appMode';
-import { syncCustomCategoriesToPlanner, savePlannerExpenseLineItem } from '../shared/utils/plannerCategories';
+import { syncCustomCategoriesToPlanner } from '../shared/utils/plannerCategories';
 import { downloadExpensesSpreadsheet } from '../utils/expensesExcelExport';
 import { ActiveViewType } from './SidebarNavigation';
 import { RangeSlider } from './RangeSlider';
@@ -85,6 +94,9 @@ const getItemMonthlySchedule = (item: CatalogItem, cost: number, freq: number): 
   }
   return schedule;
 };
+
+/** Row id of the single living-expenses row shown when detailed expenses are off. */
+const GENERAL_LIVING_LINE_ITEM_ID = 'general-living';
 
 type ComparisonSortField = 'name' | 'planned' | 'actual' | 'variance' | 'usage' | 'payers' | 'logs';
 
@@ -149,6 +161,8 @@ export const ActualsWorkspace: React.FC<ActualsWorkspaceProps> = ({
   // Live Logged Actual Expenses from Storage Adapter
   const [loggedExpenses, setLoggedExpenses] = useState<ActualExpense[]>([]);
   const [allYearLoggedExpenses, setAllYearLoggedExpenses] = useState<ActualExpense[]>([]);
+  // Money paid for others. Kept apart from the lists above so no spending total can include it.
+  const [allYearReimbursableExpenses, setAllYearReimbursableExpenses] = useState<ActualExpense[]>([]);
   const [isLoadingExpenses, setIsLoadingExpenses] = useState<boolean>(false);
   const [selectedMonthFilter, setSelectedMonthFilter] = useState<number | null>(null);
   const [expensesDisplayMode, setExpensesDisplayMode] = useState<'table' | 'tracker' | 'none'>('table');
@@ -213,11 +227,13 @@ export const ActualsWorkspace: React.FC<ActualsWorkspaceProps> = ({
     setIsLoadingExpenses(true);
     try {
       const adapter = getStorageAdapter();
-      const [allExps, cats] = await Promise.all([
+      const [allStoredExps, cats] = await Promise.all([
         adapter.getExpenses(selectedYear),
         adapter.getCategories().catch(() => []),
       ]);
+      const allExps = excludeReimbursable(allStoredExps);
       setAllYearLoggedExpenses(allExps);
+      setAllYearReimbursableExpenses(allStoredExps.filter(isReimbursableExpense));
       const filtered = selectedMonthFilter
         ? allExps.filter((exp) => {
             if (!exp.date) return false;
@@ -231,20 +247,8 @@ export const ActualsWorkspace: React.FC<ActualsWorkspaceProps> = ({
       if (cats && cats.length > 0) {
         syncCustomCategoriesToPlanner(cats);
       }
-
-      // 2. Also register any line items from logged transactions if missing from catalog
-      for (const exp of allExps) {
-        const group = exp.category || (exp.categoryName && exp.categoryName.includes(' - ') ? exp.categoryName.split(' - ')[0].trim() : 'Living');
-        const name = exp.name || (exp.categoryName && exp.categoryName.includes(' - ') ? exp.categoryName.split(' - ').slice(1).join(' - ').trim() : exp.categoryName || 'Expense');
-        if (group === 'Healthcare') continue;
-
-        savePlannerExpenseLineItem({
-          id: exp.catalogId || exp.categoryId,
-          name,
-          groupCategory: group,
-          plannedMonthlyDefault: 0,
-        });
-      }
+      // Logged expenses never add catalog items: one whose id is not in the catalog is listed as an
+      // unbudgeted row, and new catalog items are only created by an explicit user action.
     } catch (err) {
       console.error('Failed to load logged actual expenses:', err);
     } finally {
@@ -288,9 +292,7 @@ export const ActualsWorkspace: React.FC<ActualsWorkspaceProps> = ({
 
     for (const exp of loggedExpenses) {
       totalSpend += exp.amount;
-      const group = exp.category || (exp.categoryName && exp.categoryName.includes(' - ') ? exp.categoryName.split(' - ')[0].trim() : exp.categoryName || 'Uncategorized');
-      const itemName = exp.name || (exp.categoryName && exp.categoryName.includes(' - ') ? exp.categoryName.split(' - ').slice(1).join(' - ').trim() : exp.categoryName || 'Expense');
-      const keyId = exp.catalogId || exp.categoryId || `cat_${group}_${itemName}`;
+      const { group, itemName, key: keyId } = getExpenseLineItemIdentity(exp);
 
       byCategory[group] = (byCategory[group] || 0) + exp.amount;
       if (exp.categoryName) {
@@ -329,23 +331,32 @@ export const ActualsWorkspace: React.FC<ActualsWorkspaceProps> = ({
     }
   };
 
-  // Active line item expenses matching the selected category/line item
+  // Expenses belonging to the selected row. Uses the same key as the per-row counts, so the
+  // breakdown lists exactly the entries the row's log count refers to.
   const matchesSelectedLineItem = useCallback((e: ActualExpense) => {
     if (!selectedLineItemForBreakdown) return false;
-    const targetId = selectedLineItemForBreakdown.id;
-    const targetNameLower = selectedLineItemForBreakdown.name.toLowerCase();
-    if ((e.catalogId && e.catalogId === targetId) || (e.categoryId && e.categoryId === targetId)) return true;
-    if (e.name && e.name.toLowerCase() === targetNameLower) return true;
-    const catLower = (e.categoryName || '').toLowerCase();
-    if (catLower === targetNameLower) return true;
-    if (catLower.endsWith(` - ${targetNameLower}`)) return true;
-    if (catLower.endsWith(targetNameLower)) return true;
-    return false;
+    // With detailed expenses off, the single general row stands for every logged expense
+    if (selectedLineItemForBreakdown.id === GENERAL_LIVING_LINE_ITEM_ID) return true;
+    return getExpenseLineItemIdentity(e).key === selectedLineItemForBreakdown.id;
   }, [selectedLineItemForBreakdown]);
 
+  // Reimbursable entries for the selected year/month. Shown on their own row, outside every total.
+  const reimbursableExpenses = useMemo(() => {
+    if (!selectedMonthFilter) return allYearReimbursableExpenses;
+    return allYearReimbursableExpenses.filter(
+      (exp) => exp.date && parseInt(exp.date.split('-')[1], 10) === selectedMonthFilter
+    );
+  }, [allYearReimbursableExpenses, selectedMonthFilter]);
+  const reimbursableTotal = useMemo(
+    () => reimbursableExpenses.reduce((sum, exp) => sum + exp.amount, 0),
+    [reimbursableExpenses]
+  );
+
+  const isReimbursableBreakdown = selectedLineItemForBreakdown?.id === REIMBURSABLE_CATALOG_ID;
+
   const activeLineItemExpenses = useMemo(
-    () => loggedExpenses.filter(matchesSelectedLineItem),
-    [loggedExpenses, matchesSelectedLineItem]
+    () => (isReimbursableBreakdown ? reimbursableExpenses : loggedExpenses).filter(matchesSelectedLineItem),
+    [isReimbursableBreakdown, reimbursableExpenses, loggedExpenses, matchesSelectedLineItem]
   );
 
   // Unique payers for the active line item breakdown
@@ -367,7 +378,7 @@ export const ActualsWorkspace: React.FC<ActualsWorkspaceProps> = ({
     if (!selectedLineItemForBreakdown) return null;
 
     const monthlyActual: number[] = Array(MONTHS_PER_YEAR).fill(0);
-    allYearLoggedExpenses.filter(matchesSelectedLineItem).forEach((exp) => {
+    (isReimbursableBreakdown ? allYearReimbursableExpenses : allYearLoggedExpenses).filter(matchesSelectedLineItem).forEach((exp) => {
       if (!exp.date) return;
       const m = parseInt(exp.date.split('-')[1], 10);
       if (m >= 1 && m <= MONTHS_PER_YEAR) {
@@ -396,7 +407,7 @@ export const ActualsWorkspace: React.FC<ActualsWorkspaceProps> = ({
     }
 
     return { monthlyActual, monthlyBudget };
-  }, [selectedLineItemForBreakdown, allYearLoggedExpenses, matchesSelectedLineItem, inputs.useDetailedExpenses, inputs.detailedExpenses, inputs.jurisdiction, selectedYear, selectedMonthFilter]);
+  }, [selectedLineItemForBreakdown, allYearLoggedExpenses, allYearReimbursableExpenses, isReimbursableBreakdown, matchesSelectedLineItem, inputs.useDetailedExpenses, inputs.detailedExpenses, inputs.jurisdiction, selectedYear, selectedMonthFilter]);
 
   // Filtered and sorted expenses for the breakdown modal
   const filteredAndSortedLineItemExpenses = useMemo(() => {
@@ -688,7 +699,7 @@ export const ActualsWorkspace: React.FC<ActualsWorkspaceProps> = ({
       const variance = plannedAmount - actualAmount;
       const percentUsed = plannedAmount > 0 ? (actualAmount / plannedAmount) * 100 : actualAmount > 0 ? 999 : 0;
       items.push({
-        id: 'general-living',
+        id: GENERAL_LIVING_LINE_ITEM_ID,
         name: 'General Living Expenses',
         group: 'Living',
         plannedAnnual: plannedAmount,
@@ -1053,7 +1064,7 @@ export const ActualsWorkspace: React.FC<ActualsWorkspaceProps> = ({
         : inputs.jurisdiction.currentState;
       const norm = normalizeDetailedExpenses(inputs.detailedExpenses);
       const stateCosts = norm.costs[activeState] || {};
-      const allCosts = norm.costs['ALL'] || {};
+      const allCosts = norm.costs[ALL_STATES_COST_KEY] || {};
       const defaultStateCosts = norm.costs[inputs.jurisdiction.currentState] || {};
       const freqs = norm.frequencies;
       const sum = norm.catalog.items
@@ -2124,6 +2135,42 @@ export const ActualsWorkspace: React.FC<ActualsWorkspaceProps> = ({
                     </table>
                   </div>
                 )}
+              </div>
+            )}
+
+            {/* Reimbursable entries: listed for reference, never part of the totals above */}
+            {reimbursableExpenses.length > 0 && (
+              <div className="flex flex-wrap items-center justify-between gap-2 px-3.5 py-2.5 rounded-xl bg-slate-900/60 border border-slate-800 text-xs">
+                <div className="flex items-center gap-2 min-w-0">
+                  <span className="font-semibold text-slate-200">{REIMBURSABLE_GROUP} - {REIMBURSABLE_NAME}</span>
+                  <span className="px-1.5 py-0.5 rounded bg-slate-800 text-slate-400 text-[10px] font-semibold border border-slate-700">
+                    Not counted in spending
+                  </span>
+                </div>
+                <div className="flex items-center gap-3">
+                  <span className="font-mono font-semibold text-slate-300">{formatCurrency(reimbursableTotal)}</span>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSelectedLineItemForBreakdown({
+                        id: REIMBURSABLE_CATALOG_ID,
+                        name: REIMBURSABLE_NAME,
+                        group: REIMBURSABLE_GROUP,
+                        plannedAnnual: 0,
+                        actualAnnual: reimbursableTotal,
+                      });
+                      setBreakdownFilterText('');
+                      setBreakdownPayerFilter('ALL');
+                      setBreakdownSortField('date');
+                      setBreakdownSortDirection('desc');
+                      setEditingExpenseId(null);
+                    }}
+                    className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-semibold bg-slate-800/60 hover:bg-slate-800 text-slate-300 border border-slate-700 cursor-pointer"
+                  >
+                    <span>{reimbursableExpenses.length} {reimbursableExpenses.length === 1 ? 'log' : 'logs'}</span>
+                    <ExternalLink className="w-3 h-3" />
+                  </button>
+                </div>
               </div>
             )}
 

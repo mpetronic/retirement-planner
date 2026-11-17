@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom';
 import { X, Check, HelpCircle, Shield, Heart, Calendar, CalendarCheck } from 'lucide-react';
 import { HealthcareConfig, StateHealthcareConfig } from '../types';
 import { getStateTaxProfile } from '../engine/stateTaxRegistry';
+import { getMedicareStandardAmounts } from '../engine/federalTaxRules';
 
 interface HealthcareConfigDialogProps {
   isOpen: boolean;
@@ -14,13 +15,9 @@ interface HealthcareConfigDialogProps {
   currentState: string;
   targetState?: string | null;
   relocationYear?: number | null;
-  startYear?: number;
   onSave: (config: HealthcareConfig) => void;
 }
 
-const MEDICARE_PART_B_2026 = 202.90;
-const MEDICARE_PART_D_2026 = 34.50;
-const MEDICARE_PART_B_DEDUCTIBLE_2026 = 283;
 
 export const HealthcareConfigDialog: React.FC<HealthcareConfigDialogProps> = ({
   isOpen,
@@ -32,7 +29,6 @@ export const HealthcareConfigDialog: React.FC<HealthcareConfigDialogProps> = ({
   currentState,
   targetState = null,
   relocationYear = null,
-  startYear = 2026,
   onSave,
 }) => {
   const hasRelocation = relocationYear !== null && Boolean(targetState) && targetState !== currentState;
@@ -57,19 +53,18 @@ export const HealthcareConfigDialog: React.FC<HealthcareConfigDialogProps> = ({
   }, [birthDate]);
 
   const age65Year = birthYear + 65;
-  const yearsTo65 = Math.max(0, age65Year - startYear);
 
   const projectedPartB = useMemo(() => {
-    return MEDICARE_PART_B_2026 * Math.pow(1 + healthcareInflationRate, yearsTo65);
-  }, [healthcareInflationRate, yearsTo65]);
+    return getMedicareStandardAmounts(age65Year, healthcareInflationRate).partB;
+  }, [healthcareInflationRate, age65Year]);
 
   const projectedPartD = useMemo(() => {
-    return MEDICARE_PART_D_2026 * Math.pow(1 + healthcareInflationRate, yearsTo65);
-  }, [healthcareInflationRate, yearsTo65]);
+    return getMedicareStandardAmounts(age65Year, healthcareInflationRate).partD;
+  }, [healthcareInflationRate, age65Year]);
 
   const projectedPartBDeductible = useMemo(() => {
-    return MEDICARE_PART_B_DEDUCTIBLE_2026 * Math.pow(1 + healthcareInflationRate, yearsTo65);
-  }, [healthcareInflationRate, yearsTo65]);
+    return getMedicareStandardAmounts(age65Year, healthcareInflationRate).partBDeductible;
+  }, [healthcareInflationRate, age65Year]);
 
   // Initial State Helpers
   const createDefaultStateConfig = (): StateHealthcareConfig => ({
@@ -586,7 +581,7 @@ export const HealthcareConfigDialog: React.FC<HealthcareConfigDialogProps> = ({
                   <div className="relative group inline-block">
                     <HelpCircle className="w-3.5 h-3.5 text-slate-500 hover:text-slate-300 transition-colors cursor-pointer" />
                     <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 hidden group-hover:block w-64 bg-slate-950 text-slate-200 text-[10px] p-2.5 rounded-lg border border-slate-800 shadow-xl z-50 leading-normal pointer-events-none normal-case font-medium">
-                      Enter the base Part B monthly premium at age 65. If left blank, it will automatically default to the projected premium based on baseline {formatCurrency(MEDICARE_PART_B_2026)}/mo and your healthcare inflation rate.
+                      Enter the base Part B monthly premium at age 65. If left blank, it will automatically default to the projected premium based on the latest published CMS Part B premium and your healthcare inflation rate.
                     </div>
                   </div>
                 </div>

@@ -15,6 +15,7 @@ import {
   MinusSquare,
   AlertTriangle,
   Trash2,
+  Copy,
 } from 'lucide-react';
 import { getStorageAdapter } from '../shared/storage';
 import { ActualExpense, LearnedMerchantRule } from '../shared/types/expenses';
@@ -23,9 +24,12 @@ import {
   getPlannerCategories,
   savePlannerExpenseLineItem,
   resolveExpenseCategoryAndLineItem,
+  findCatalogItem,
   PlannerExpenseLineItem,
 } from '../shared/utils/plannerCategories';
 import { normalizeMerchant, batchSaveLearnedMerchantRules } from '../shared/utils/merchantMatcher';
+import { findPossibleDuplicates, POSSIBLE_DUPLICATE_DATE_WINDOW_DAYS } from '../utils/expenseSplit';
+import { isReimbursableExpense } from '../shared/utils/reimbursableExpense';
 
 export interface BulkEditExpensesModalProps {
   isOpen: boolean;
@@ -87,6 +91,7 @@ export const BulkEditExpensesModal: React.FC<BulkEditExpensesModalProps> = ({
   const [filterText, setFilterText] = useState<string>('');
   const [filterMonth, setFilterMonth] = useState<number | 'ALL'>('ALL');
   const [filterPayer, setFilterPayer] = useState<string>('ALL');
+  const [filterDuplicatesOnly, setFilterDuplicatesOnly] = useState<boolean>(false);
 
   // Sorting state
   const [sortField, setSortField] = useState<'date' | 'amount' | 'category' | 'lineItem' | 'payer'>('date');
@@ -121,7 +126,6 @@ export const BulkEditExpensesModal: React.FC<BulkEditExpensesModalProps> = ({
   // Delete confirmation & Execution state
   const [showDeleteConfirmModal, setShowDeleteConfirmModal] = useState<boolean>(false);
   const [isDeleting, setIsDeleting] = useState<boolean>(false);
-  const [deleteProgress, setDeleteProgress] = useState<{ current: number; total: number }>({ current: 0, total: 0 });
 
   // Load catalog definitions
   const refreshCatalog = useCallback(() => {
@@ -233,9 +237,16 @@ export const BulkEditExpensesModal: React.FC<BulkEditExpensesModalProps> = ({
     return Array.from(set).sort();
   }, [effectiveCatalogItems, effectiveTargetCategory]);
 
+  // Possible duplicates among the loaded expenses (same amount, dates within the window)
+  const possibleDuplicates = useMemo(() => findPossibleDuplicates(expenses), [expenses]);
+
   // Reactive filtering pipeline
   const filteredExpenses = useMemo(() => {
     return expenses.filter((exp) => {
+      if (filterDuplicatesOnly && !possibleDuplicates.byExpenseId.has(exp.expenseId)) {
+        return false;
+      }
+
       const { category, lineItem } = resolveExpenseCategoryAndLineItem(exp, effectiveCatalogItems);
 
       // Category filter
@@ -281,12 +292,21 @@ export const BulkEditExpensesModal: React.FC<BulkEditExpensesModalProps> = ({
 
       return true;
     });
-  }, [expenses, filterCategory, filterLineItem, filterMonth, filterPayer, filterText, effectiveCatalogItems]);
+  }, [expenses, filterCategory, filterLineItem, filterMonth, filterPayer, filterText, effectiveCatalogItems, filterDuplicatesOnly, possibleDuplicates]);
 
   // Sorted expenses
   const sortedExpenses = useMemo(() => {
     const list = [...filteredExpenses];
     list.sort((a, b) => {
+      // In the duplicates view, members of a group stay together; the column sort orders rows within a group
+      if (filterDuplicatesOnly) {
+        const groupA = possibleDuplicates.byExpenseId.get(a.expenseId);
+        const groupB = possibleDuplicates.byExpenseId.get(b.expenseId);
+        if (groupA && groupB && groupA.groupId !== groupB.groupId) {
+          return groupB.groupFirstDate.localeCompare(groupA.groupFirstDate) || groupA.groupId - groupB.groupId;
+        }
+      }
+
       let comparison = 0;
       const parsedA = resolveExpenseCategoryAndLineItem(a, effectiveCatalogItems);
       const parsedB = resolveExpenseCategoryAndLineItem(b, effectiveCatalogItems);
@@ -308,7 +328,7 @@ export const BulkEditExpensesModal: React.FC<BulkEditExpensesModalProps> = ({
       return sortDirection === 'asc' ? comparison : -comparison;
     });
     return list;
-  }, [filteredExpenses, sortField, sortDirection, effectiveCatalogItems]);
+  }, [filteredExpenses, sortField, sortDirection, effectiveCatalogItems, filterDuplicatesOnly, possibleDuplicates]);
 
   // Selection metrics
   const selectedExpenses = useMemo(() => {
@@ -380,6 +400,13 @@ export const BulkEditExpensesModal: React.FC<BulkEditExpensesModalProps> = ({
     setFilterText('');
     setFilterMonth('ALL');
     setFilterPayer('ALL');
+    setFilterDuplicatesOnly(false);
+  };
+
+  // Select the suggested extra copy in each duplicate group that is currently shown
+  const handleSelectDuplicateExtras = () => {
+    const shownIds = new Set(sortedExpenses.map((e) => e.expenseId));
+    setSelectedIds(new Set(possibleDuplicates.extraExpenseIds.filter((id) => shownIds.has(id))));
   };
 
   const hasActiveFilters =
@@ -387,7 +414,8 @@ export const BulkEditExpensesModal: React.FC<BulkEditExpensesModalProps> = ({
     filterLineItem !== 'ALL' ||
     filterText.trim() !== '' ||
     filterMonth !== 'ALL' ||
-    filterPayer !== 'ALL';
+    filterPayer !== 'ALL' ||
+    filterDuplicatesOnly;
 
   // Determine effective target category & line item
   const resolvedTargetCategory = isCustomCategory ? customCategoryInput.trim() : targetCategory.trim();
@@ -415,6 +443,28 @@ export const BulkEditExpensesModal: React.FC<BulkEditExpensesModalProps> = ({
     targetNotes,
   ]);
 
+  // Category and expense name combinations this edit would produce that are not in the catalog yet.
+  // They are listed in the confirmation step, so applying the edit is the approval to create them.
+  const newCatalogItemsToCreate = useMemo(() => {
+    if (!updateCategoryEnabled && !updateLineItemEnabled) return [];
+    const missing = new Map<string, { category: string; lineItem: string }>();
+    for (const exp of selectedExpenses) {
+      const current = resolveExpenseCategoryAndLineItem(exp, effectiveCatalogItems);
+      const category = updateCategoryEnabled ? resolvedTargetCategory : current.category;
+      const lineItem = updateLineItemEnabled ? resolvedTargetLineItem : current.lineItem;
+      if (!category || !lineItem || findCatalogItem(effectiveCatalogItems, category, lineItem)) continue;
+      missing.set(`${category.toLowerCase()}|${lineItem.toLowerCase()}`, { category, lineItem });
+    }
+    return Array.from(missing.values());
+  }, [
+    selectedExpenses,
+    effectiveCatalogItems,
+    updateCategoryEnabled,
+    updateLineItemEnabled,
+    resolvedTargetCategory,
+    resolvedTargetLineItem,
+  ]);
+
   // Execute the bulk update
   const handleExecuteBulkUpdate = async () => {
     if (!canApplyBulkUpdate) return;
@@ -429,12 +479,14 @@ export const BulkEditExpensesModal: React.FC<BulkEditExpensesModalProps> = ({
       const finalCategory = resolvedTargetCategory;
       const finalLineItem = resolvedTargetLineItem;
 
-      // Register new line item in catalog once if modified
-      if (updateCategoryEnabled || updateLineItemEnabled) {
-        savePlannerExpenseLineItem({
-          name: finalLineItem,
-          groupCategory: finalCategory,
-        });
+      // Create the catalog items the confirmation step listed, so every row is saved with a real catalog id
+      const createdCatalogIds = new Map<string, string>();
+      for (const { category, lineItem } of newCatalogItemsToCreate) {
+        const created = savePlannerExpenseLineItem({ name: lineItem, groupCategory: category });
+        if (!created) {
+          throw new Error(`Could not create catalog item "${category} - ${lineItem}". No expenses were changed.`);
+        }
+        createdCatalogIds.set(`${category.toLowerCase()}|${lineItem.toLowerCase()}`, created.id);
       }
 
       // Prepare batch updates and merchant rules
@@ -458,10 +510,14 @@ export const BulkEditExpensesModal: React.FC<BulkEditExpensesModalProps> = ({
           }
         }
 
-        const matchingCatalog = effectiveCatalogItems.find(
-          c => c.groupCategory.toLowerCase() === itemCategory.toLowerCase() && c.name.toLowerCase() === itemLineItem.toLowerCase()
-        );
-        const canonicalCatalogId = matchingCatalog ? matchingCatalog.id : `cat_${itemCategory.toLowerCase().replace(/[^a-z0-9]/g, '_')}_${itemLineItem.toLowerCase().replace(/[^a-z0-9]/g, '_')}`;
+        // A notes-only edit leaves the row's catalog id alone; otherwise it must resolve to a catalog item
+        const canonicalCatalogId = updateCategoryEnabled || updateLineItemEnabled
+          ? (findCatalogItem(effectiveCatalogItems, itemCategory, itemLineItem)?.id ??
+              createdCatalogIds.get(`${itemCategory.toLowerCase()}|${itemLineItem.toLowerCase()}`))
+          : (exp.catalogId || exp.categoryId);
+        if (!canonicalCatalogId) {
+          throw new Error(`No catalog item for "${itemCategory} - ${itemLineItem}". No expenses were changed.`);
+        }
 
         updatesBatch.push({
           id: exp.expenseId,
@@ -540,17 +596,17 @@ export const BulkEditExpensesModal: React.FC<BulkEditExpensesModalProps> = ({
     if (selectedExpenses.length === 0) return;
 
     setIsDeleting(true);
-    setDeleteProgress({ current: 0, total: selectedExpenses.length });
     setFeedbackMessage(null);
 
     try {
       const adapter = getStorageAdapter();
-      let processed = 0;
-
-      for (const exp of selectedExpenses) {
-        await adapter.deleteExpense(exp.expenseId);
-        processed++;
-        setDeleteProgress({ current: processed, total: selectedExpenses.length });
+      if (adapter.deleteExpensesBatch) {
+        // One transaction (and one cloud request per chunk) instead of one per record
+        await adapter.deleteExpensesBatch(selectedExpenses.map((exp) => ({ id: exp.expenseId, date: exp.date })));
+      } else {
+        for (const exp of selectedExpenses) {
+          await adapter.deleteExpense(exp.expenseId);
+        }
       }
 
       setSelectedIds(new Set());
@@ -742,6 +798,23 @@ export const BulkEditExpensesModal: React.FC<BulkEditExpensesModalProps> = ({
               </div>
             )}
 
+            {/* Possible Duplicates Filter */}
+            <button
+              type="button"
+              onClick={() => setFilterDuplicatesOnly((prev) => !prev)}
+              disabled={possibleDuplicates.byExpenseId.size === 0 && !filterDuplicatesOnly}
+              title={`Entries with the same amount dated within ${POSSIBLE_DUPLICATE_DATE_WINDOW_DAYS} days of each other`}
+              className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-semibold border transition-colors cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed ${
+                filterDuplicatesOnly
+                  ? 'bg-amber-500/20 text-amber-200 border-amber-500/50'
+                  : 'bg-slate-900 text-slate-300 border-slate-700 hover:border-amber-500/50 hover:text-amber-200'
+              }`}
+            >
+              <Copy className="w-3.5 h-3.5" />
+              <span>Possible duplicates</span>
+              <span className="font-mono">({possibleDuplicates.byExpenseId.size})</span>
+            </button>
+
             {/* Clear Filters Button */}
             {hasActiveFilters && (
               <button
@@ -801,6 +874,17 @@ export const BulkEditExpensesModal: React.FC<BulkEditExpensesModalProps> = ({
               Showing <strong className="text-white font-mono">{sortedExpenses.length}</strong> of{' '}
               <strong className="text-slate-300 font-mono">{expenses.length}</strong>
             </span>
+
+            {filterDuplicatesOnly && (
+              <button
+                type="button"
+                onClick={handleSelectDuplicateExtras}
+                title="Selects every copy except the earliest-created one in each same-day group, and the later-created copy of a two-entry near-date pair. Larger near-date groups are left for you to select."
+                className="px-2 py-0.5 rounded-lg bg-amber-500/15 hover:bg-amber-500/25 text-amber-200 font-semibold border border-amber-500/40 text-[11px] cursor-pointer"
+              >
+                Select extras
+              </button>
+            )}
 
             {selectedIds.size > 0 && (
               <span className="px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 font-semibold border border-emerald-500/30 font-mono text-[11px]">
@@ -954,6 +1038,7 @@ export const BulkEditExpensesModal: React.FC<BulkEditExpensesModalProps> = ({
                 {sortedExpenses.map((exp) => {
                   const isSelected = selectedIds.has(exp.expenseId);
                   const { category, lineItem } = resolveExpenseCategoryAndLineItem(exp, effectiveCatalogItems);
+                  const duplicateInfo = possibleDuplicates.byExpenseId.get(exp.expenseId);
 
                   return (
                     <tr
@@ -978,7 +1063,24 @@ export const BulkEditExpensesModal: React.FC<BulkEditExpensesModalProps> = ({
                           {category}
                         </span>
                       </td>
-                      <td className="px-3.5 py-2.5 font-semibold text-white whitespace-nowrap">{lineItem}</td>
+                      <td className="px-3.5 py-2.5 font-semibold text-white whitespace-nowrap">
+                        {lineItem}
+                        {isReimbursableExpense(exp) && (
+                          <span
+                            className="ml-2 inline-block px-1.5 py-0.5 rounded bg-slate-800 text-slate-400 text-[10px] font-semibold border border-slate-700"
+                            title="Paid for someone else; not counted in your spending"
+                          >
+                            Not counted
+                          </span>
+                        )}
+                        {duplicateInfo && (
+                          <span className="ml-2 inline-block px-1.5 py-0.5 rounded bg-amber-500/15 text-amber-300 text-[10px] font-semibold border border-amber-500/40">
+                            {duplicateInfo.daysApart === 0
+                              ? 'Possible duplicate'
+                              : `Possible duplicate (${duplicateInfo.daysApart} ${duplicateInfo.daysApart === 1 ? 'day' : 'days'} apart)`}
+                          </span>
+                        )}
+                      </td>
                       <td className="px-3.5 py-2.5 text-slate-300 max-w-xs truncate">
                         {exp.notes ? (
                           <span className="text-amber-200/90">{exp.notes}</span>
@@ -1345,6 +1447,24 @@ export const BulkEditExpensesModal: React.FC<BulkEditExpensesModalProps> = ({
                 </div>
               )}
 
+              {newCatalogItemsToCreate.length > 0 && (
+                <div className="pt-1.5 border-t border-slate-800 space-y-1">
+                  <div className="flex items-center gap-1.5 font-semibold text-amber-300">
+                    <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
+                    <span>
+                      {newCatalogItemsToCreate.length === 1
+                        ? 'This will add 1 new item to your expense catalog ($0 budget):'
+                        : `This will add ${newCatalogItemsToCreate.length} new items to your expense catalog ($0 budget):`}
+                    </span>
+                  </div>
+                  <ul className="pl-5 list-disc text-amber-200/90 font-mono">
+                    {newCatalogItemsToCreate.map(({ category, lineItem }) => (
+                      <li key={`${category}|${lineItem}`}>{category} - {lineItem}</li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+
               {updateNotesEnabled && (
                 <div className="flex items-center justify-between">
                   <span className="text-slate-400">Note / Memo:</span>
@@ -1489,26 +1609,6 @@ export const BulkEditExpensesModal: React.FC<BulkEditExpensesModalProps> = ({
                 )}
               </div>
             </div>
-
-            {/* Progress indicator during delete */}
-            {isDeleting && (
-              <div className="space-y-1.5">
-                <div className="flex justify-between text-xs text-slate-400 font-mono">
-                  <span>Deleting records...</span>
-                  <span>
-                    {deleteProgress.current} / {deleteProgress.total}
-                  </span>
-                </div>
-                <div className="w-full bg-slate-800 rounded-full h-2 overflow-hidden">
-                  <div
-                    className="h-full bg-rose-500 rounded-full transition-all duration-150"
-                    style={{
-                      width: `${deleteProgress.total > 0 ? (deleteProgress.current / deleteProgress.total) * 100 : 0}%`,
-                    }}
-                  />
-                </div>
-              </div>
-            )}
 
             {/* Modal Actions */}
             <div className="flex items-center justify-end gap-2.5 pt-2">

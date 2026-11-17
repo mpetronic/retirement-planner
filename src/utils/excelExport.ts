@@ -1,5 +1,5 @@
 import * as XLSX from 'xlsx';
-import { AppStateInputs, SimulationResultRow, normalizeDetailedExpenses, getSimulationStartYear } from '../types';
+import { AppStateInputs, SimulationResultRow, normalizeDetailedExpenses, getSimulationStartYear, DEFAULT_YOUR_LONGEVITY_AGE, DEFAULT_WIFE_LONGEVITY_AGE } from '../types';
 
 export const generateExcelWorkbook = (ledger: SimulationResultRow[], inputs: AppStateInputs): XLSX.WorkBook => {
   const wb = XLSX.utils.book_new();
@@ -31,7 +31,7 @@ export const generateExcelWorkbook = (ledger: SimulationResultRow[], inputs: App
     ["Primary Birth Date", inputs.you.birthDate],
     ["Primary Planned Retirement Age", inputs.you.plannedRetirementAge ?? 67],
     ["Primary Planned Retirement Month", inputs.you.plannedRetirementMonth ?? 1],
-    ["Primary Projected Longevity Age", inputs.you.longevityAge ?? 95],
+    ["Primary Projected Longevity Age", inputs.you.longevityAge ?? DEFAULT_YOUR_LONGEVITY_AGE],
     ["Primary Active Work Salary", inputs.you.activeSalary ?? 0],
     ["Primary Target SS Claiming Age", inputs.you.targetSSClaimingAge ?? 67],
     ["Primary Estimated SS Benefit (PIA / monthly)", inputs.you.estimatedPIA ?? 0],
@@ -45,7 +45,7 @@ export const generateExcelWorkbook = (ledger: SimulationResultRow[], inputs: App
       ["Spouse Birth Date", inputs.wife.birthDate],
       ["Planned Retirement Age", inputs.wife.plannedRetirementAge ?? 67],
       ["Planned Retirement Month", inputs.wife.plannedRetirementMonth ?? 1],
-      ["Projected Longevity Age", inputs.wife.longevityAge ?? 95],
+      ["Projected Longevity Age", inputs.wife.longevityAge ?? DEFAULT_WIFE_LONGEVITY_AGE],
       ["Active Work Salary", inputs.wife.activeSalary ?? 0],
       ["Target SS Claiming Age", inputs.wife.targetSSClaimingAge ?? 67],
       ["Estimated SS Benefit (PIA / monthly)", inputs.wife.estimatedPIA ?? 0],
@@ -88,7 +88,7 @@ export const generateExcelWorkbook = (ledger: SimulationResultRow[], inputs: App
     ["Asset Class Correlation", inputs.monteCarloSettings.correlation ?? 0.15],
     ["Randomizer Seed", inputs.monteCarloSettings.seed ?? "N/A (Standard Random)"],
     ["CPI Inflation Modeling", inputs.monteCarloSettings.randomizeCPI !== false ? "Randomized (Historical)" : `Constant (${(((inputs.monteCarloSettings.constantCPIRate ?? inputs.growthAssumptions.cpiInflationRate) * 100)).toFixed(2)}%)`],
-    ["Regime Switching & Mean Reversion", inputs.monteCarloSettings.enableRegimeSwitching !== false ? "Enabled (Markov 2-State + Mean Reversion)" : "Disabled (i.i.d. Random Walk)"],
+    ["Return Model", inputs.monteCarloSettings.mode === 'historical' ? "Historical Bootstrap (real 1970-2025 years, re-centered to CMA)" : "Parametric (independent annual normal draws, CMA-faithful)"],
     ["Historical Sampling Strategy", (inputs.monteCarloSettings.historicalSamplingStrategy ?? 'hybrid').toUpperCase()],
     ["Historical Mean Calibration", inputs.monteCarloSettings.calibrateHistoricalMeans !== false ? "Calibrated (Aligned to Baseline)" : "Raw History (12.3% Stock)"],
     ["Historical Fat-Tail Modeling", inputs.monteCarloSettings.enableHistoricalStudentT ? "Student-t (df=5 Fat Tails)" : "Standard (Empirical History)"],
@@ -100,7 +100,7 @@ export const generateExcelWorkbook = (ledger: SimulationResultRow[], inputs: App
     ["Relocation Year Target", inputs.jurisdiction.relocationYear ?? "N/A"],
     [],
     ["ROTH CONVERSION STRATEGY"],
-    ["Strategy Category", inputs.rothConversionStrategy],
+    ["Strategy Category", inputs.rothConversionStrategy === 'none' ? "none (no Roth conversions)" : inputs.rothConversionStrategy],
     ["Annual Flat Conversion Amount", inputs.annualRothConversion ?? 0],
     ["Target MAGI Limit (Fill-To-Target)", inputs.rothConversionTargetValue ?? 0],
     ["Strategy Active Start Year", inputs.rothConversionStartYear ?? simStartYear],
@@ -187,6 +187,9 @@ export const generateExcelWorkbook = (ledger: SimulationResultRow[], inputs: App
     "RMD Distributed": Math.round(row.yourRMD + row.wifeRMD),
     "Roth Conversion Added": Math.round(row.intentionalRothConversion),
     "Capital Gains Triggered": Math.round(row.capitalGainsTriggered),
+    "Pre-Tax Draws Taxed": Math.round(row.otherTaxableIncome),
+    "Prior-Year Tax-Funding Gains": Math.round(row.priorYearTaxFundingGains ?? 0),
+    "Prior-Year Tax-Funding Pre-Tax Draw": Math.round(row.priorYearTaxFundingPreTaxDraw ?? 0),
     "Base Living Expenses": Math.round(row.livingExpenses),
     "Guardrail Upper Limit": Math.round(row.guardrailUpperLimit ?? 0),
     "Guardrail Lower Limit": Math.round(row.guardrailLowerLimit ?? 0),

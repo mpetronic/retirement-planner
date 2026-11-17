@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useDeferredValue, useRef, useCallback, lazy, Suspense } from 'react';
+import { useState, useEffect, useMemo, useDeferredValue, useRef, lazy, Suspense } from 'react';
 import {
   AppStateInputs,
   LockedReturnSequence,
@@ -9,10 +9,11 @@ import {
   DEFAULT_GUARDRAIL_SETTINGS,
   DEFAULT_BUCKET_STRATEGY_SETTINGS,
   CustomRothScenario,
+  RothConversionStrategy,
   normalizeDetailedExpenses,
   getSimulationStartYear,
 } from './types';
-import { runRetirementSimulation } from './engine/simulationEngine';
+import { runRetirementSimulation, getSimulationHorizonYears } from './engine/simulationEngine';
 import {
   runMonteCarloSimulation,
   computeRepresentativeSequences,
@@ -21,7 +22,7 @@ import {
   mulberry32,
   MonteCarloSummary,
 } from './engine/monteCarloEngine';
-import { DEFAULT_FILL_TO_TARGET_VALUE } from './engine/taxRates2026';
+import { DEFAULT_FILL_TO_TARGET_VALUE } from './engine/taxRates';
 import { DashboardLayout } from './components/DashboardLayout';
 import { ActiveViewType } from './components/SidebarNavigation';
 import { useActiveView } from './hooks/useActiveView';
@@ -44,6 +45,7 @@ import { NotFoundPage } from './components/NotFoundPage';
 import { AuthService } from './shared/auth/AuthService';
 import { getStorageAdapter, PlanSyncService } from './shared/storage';
 import { syncPlannerCatalogToCloudStorage, syncCustomCategoriesToPlanner } from './shared/utils/plannerCategories';
+import { resolveActiveJurisdiction, needsSubJurisdiction } from './engine/stateTaxRegistry';
 import { SAMPLE_DEMO_PLAN } from './shared/utils/sampleDemoPlan';
 import { isLocalhostEnvironment, resolveAppMode } from './shared/utils/appMode';
 
@@ -127,7 +129,6 @@ const DEFAULT_INPUTS: AppStateInputs = {
     seed: null,
     randomizeCPI: true,
     constantCPIRate: null,
-    enableRegimeSwitching: true,
     historicalSamplingStrategy: 'hybrid',
     calibrateHistoricalMeans: true,
     enableHistoricalStudentT: false,
@@ -318,7 +319,14 @@ function App() {
   const [inputs, setInputs] = useLocalStorage<AppStateInputs>('retirement_planner_inputs', DEFAULT_INPUTS);
   const [demoInputs, setDemoInputs] = useState<AppStateInputs>(() => JSON.parse(JSON.stringify(SAMPLE_DEMO_PLAN)));
   const [activeView, setActiveView] = useActiveView('overview');
-  const [simulateSurvivor, setSimulateSurvivor] = useLocalStorage<boolean>('retirement_planner_survivor', false);
+  // The survivor toggle no longer exists; clear its persisted value from older versions
+  useEffect(() => {
+    try {
+      window.localStorage.removeItem('retirement_planner_survivor');
+    } catch {
+      // Storage may be unavailable; nothing to clean up
+    }
+  }, []);
   const [savedPlans, setSavedPlans] = useLocalStorage<SavedPlan[]>('retirement_planner_saved_plans', []);
   const [useTodayDollars, setUseTodayDollars] = useLocalStorage<boolean>('retirement_planner_use_today_dollars', false);
   const [showDocumentation, setShowDocumentation] = useState<boolean>(false);
@@ -442,9 +450,13 @@ function App() {
       return;
     }
     if (!isDemoMode && !isLocalhostEnvironment() && isAuthenticated && inputs.isConfigured) {
-      PlanSyncService.scheduleAutoSave({ ...inputs, simulateSurvivor }, savedPlans);
+      PlanSyncService.scheduleAutoSave(inputs, savedPlans);
     }
-  }, [inputs, savedPlans, isAuthenticated, simulateSurvivor, isDemoMode]);
+  }, [inputs, savedPlans, isAuthenticated, isDemoMode]);
+
+  const activeStateCode = activeInputs.jurisdiction
+    ? resolveActiveJurisdiction(activeInputs.jurisdiction, new Date().getFullYear()).state
+    : '';
 
   // Automatically sync planner line items & profile names to cloud DynamoDB / local IndexedDB when authenticated or on localhost
   useEffect(() => {
@@ -455,13 +467,7 @@ function App() {
         spouseName: activeInputs.wife?.name || 'Spouse',
         isSingleFiler: Boolean(activeInputs.isSingleFiler),
       };
-      const currentYear = new Date().getFullYear();
-      const relocYear = activeInputs.jurisdiction?.relocationYear;
-      const activeState = (relocYear !== null && relocYear !== undefined && currentYear >= Number(relocYear))
-        ? (activeInputs.jurisdiction?.targetState || activeInputs.jurisdiction?.currentState || 'MD')
-        : (activeInputs.jurisdiction?.currentState || 'MD');
-
-      syncPlannerCatalogToCloudStorage(activeInputs.detailedExpenses, adapter, profileNames, activeState).catch((err) => {
+      syncPlannerCatalogToCloudStorage(activeInputs.detailedExpenses, adapter, profileNames, activeStateCode).catch((err) => {
         console.warn('Failed to background sync catalog to storage:', err);
       });
     }
@@ -470,9 +476,7 @@ function App() {
     activeInputs.you?.name,
     activeInputs.wife?.name,
     activeInputs.isSingleFiler,
-    activeInputs.jurisdiction?.currentState,
-    activeInputs.jurisdiction?.targetState,
-    activeInputs.jurisdiction?.relocationYear,
+    activeStateCode,
     isAuthenticated,
     isDemoMode,
   ]);
@@ -522,20 +526,7 @@ function App() {
     }
   };
 
-  // Dedicated handler to keep simulateSurvivor state and inputs.simulateSurvivor synchronized
-  const handleSetSimulateSurvivor = useCallback(
-    (val: boolean) => {
-      setSimulateSurvivor(val);
-      if (isDemoMode) {
-        setDemoInputs((prev) => ({ ...prev, simulateSurvivor: val }));
-      } else {
-        setInputs((prev) => ({ ...prev, simulateSurvivor: val }));
-      }
-    },
-    [setSimulateSurvivor, setInputs, isDemoMode]
-  );
-
-  // Synchronize inputs without clobbering active simulateSurvivor state on incremental edits
+  // Synchronize inputs on incremental edits
   const handleInputsChange = (newInputs: AppStateInputs | ((prev: AppStateInputs) => AppStateInputs)) => {
     if (isDemoMode) {
       if (typeof newInputs === 'function') {
@@ -561,9 +552,6 @@ function App() {
 
   // Full plan loader for restoring plans from Plan Comparison
   const handleLoadPlan = (loadedInputs: AppStateInputs) => {
-    if (typeof loadedInputs.simulateSurvivor === 'boolean') {
-      handleSetSimulateSurvivor(loadedInputs.simulateSurvivor);
-    }
     handleInputsChange(loadedInputs);
   };
 
@@ -629,9 +617,8 @@ function App() {
 
   // Defer heavy mathematical calculations to maintain 60+ FPS UI responsiveness during slider drag/typing
   const deferredInputs = useDeferredValue(activeInputs);
-  const deferredSimulateSurvivor = useDeferredValue(simulateSurvivor);
   const [isSimulatingMC, setIsSimulatingMC] = useState(false);
-  const isSimulating = activeInputs !== deferredInputs || simulateSurvivor !== deferredSimulateSurvivor || isSimulatingMC;
+  const isSimulating = activeInputs !== deferredInputs || isSimulatingMC;
 
   // Global persisted scenario for all worksheets
   const [globalScenario, setGlobalScenario] = useLocalStorage<'flat' | 'p10' | 'p50' | 'p90'>(
@@ -656,6 +643,9 @@ function App() {
     document.documentElement.style.fontSize = `${globalFontSize}px`;
   }, [globalFontSize]);
 
+  // Number of simulated years, so generated return sequences always cover the full horizon.
+  const horizonYears = useMemo(() => getSimulationHorizonYears(deferredInputs), [deferredInputs]);
+
   // 1. Generate 1,000 return sequences once, keyed ONLY on deferred volatility/correlation/seed/cpi.
   const returnSequences = useMemo(() => {
     const trials = deferredInputs.monteCarloSettings?.trials || 1000;
@@ -675,7 +665,6 @@ function App() {
       deferredInputs.monteCarloSettings?.constantCPIRate != null
         ? deferredInputs.monteCarloSettings.constantCPIRate
         : deferredInputs.growthAssumptions.cpiInflationRate;
-    const enableRegimeSwitching = deferredInputs.monteCarloSettings?.enableRegimeSwitching !== false;
     const historicalStrategy = deferredInputs.monteCarloSettings?.historicalSamplingStrategy ?? 'hybrid';
     const calibrateHistoricalMeans = deferredInputs.monteCarloSettings?.calibrateHistoricalMeans !== false;
     const enableHistoricalStudentT = deferredInputs.monteCarloSettings?.enableHistoricalStudentT === true;
@@ -699,7 +688,8 @@ function App() {
             equityMean,
             bondMean,
             targetCpi,
-            enableHistoricalStudentT
+            enableHistoricalStudentT,
+            horizonYears
           )
         );
       } else {
@@ -714,8 +704,8 @@ function App() {
             rand,
             isCpiRandomized,
             constantCpi,
-            enableRegimeSwitching,
-            targetCpi
+            targetCpi,
+            horizonYears
           )
         );
       }
@@ -734,10 +724,10 @@ function App() {
     deferredInputs.monteCarloSettings.nonce,
     deferredInputs.monteCarloSettings.randomizeCPI,
     deferredInputs.monteCarloSettings.constantCPIRate,
-    deferredInputs.monteCarloSettings.enableRegimeSwitching,
     deferredInputs.monteCarloSettings.historicalSamplingStrategy,
     deferredInputs.monteCarloSettings.calibrateHistoricalMeans,
     deferredInputs.monteCarloSettings.enableHistoricalStudentT,
+    horizonYears,
   ]);
 
   // 2. Compute representative market return sequences (P10, P50, P90) instantaneously (<0.1ms).
@@ -748,28 +738,28 @@ function App() {
   // 3. Compute parallel ledgers for flat expected returns and the representative percentiles (~2ms total).
   const parallelLedgers = useMemo(() => {
     return {
-      flat: runRetirementSimulation(deferredInputs, deferredSimulateSurvivor, null),
-      p10: runRetirementSimulation(deferredInputs, deferredSimulateSurvivor, representativeSequences.worst),
-      p50: runRetirementSimulation(deferredInputs, deferredSimulateSurvivor, representativeSequences.median),
-      p90: runRetirementSimulation(deferredInputs, deferredSimulateSurvivor, representativeSequences.best),
+      flat: runRetirementSimulation(deferredInputs, null),
+      p10: runRetirementSimulation(deferredInputs, representativeSequences.worst),
+      p50: runRetirementSimulation(deferredInputs, representativeSequences.median),
+      p90: runRetirementSimulation(deferredInputs, representativeSequences.best),
     };
-  }, [deferredInputs, deferredSimulateSurvivor, representativeSequences]);
+  }, [deferredInputs, representativeSequences]);
 
   // 4. Asynchronously compute the 1,000-trial Monte Carlo batch simulation with debounce to keep UI interactions 100% fluid.
   const [monteCarloSummary, setMonteCarloSummary] = useState<MonteCarloSummary>(() => {
-    return runMonteCarloSimulation(inputs, simulateSurvivor, returnSequences);
+    return runMonteCarloSimulation(inputs, returnSequences);
   });
 
   useEffect(() => {
     setIsSimulatingMC(true);
     const timer = setTimeout(() => {
-      const summary = runMonteCarloSimulation(deferredInputs, deferredSimulateSurvivor, returnSequences);
+      const summary = runMonteCarloSimulation(deferredInputs, returnSequences);
       setMonteCarloSummary(summary);
       setIsSimulatingMC(false);
     }, 150);
 
     return () => clearTimeout(timer);
-  }, [deferredInputs, deferredSimulateSurvivor, returnSequences]);
+  }, [deferredInputs, returnSequences]);
 
   // Active return sequence for optimizer/matrix sweeps depending on global scenario
   const activeSequence = useMemo(() => {
@@ -851,7 +841,7 @@ function App() {
     targetValue: number | null,
     yourAge: number,
     wifeAge: number,
-    strategy?: 'flat' | 'fill-to-target' | 'custom'
+    strategy?: RothConversionStrategy
   ) => {
     const finalStrategy = strategy || activeInputs.rothConversionStrategy;
     const finalTargetValue = targetValue !== null ? targetValue : activeInputs.rothConversionTargetValue;
@@ -870,7 +860,7 @@ function App() {
   };
 
   // Handle changing conversion strategy while preserving last selected target values and active scenario IDs
-  const handleUpdateStrategy = (strategy: 'flat' | 'fill-to-target' | 'custom') => {
+  const handleUpdateStrategy = (strategy: RothConversionStrategy) => {
     handleInputsChange((prev) => {
       let targetValue = prev.rothConversionTargetValue;
       if (strategy === 'fill-to-target' && !targetValue) {
@@ -1047,8 +1037,6 @@ function App() {
             inputs={activeInputs}
             onChange={handleInputsChange}
             onReset={() => handleInputsChange(DEFAULT_INPUTS)}
-            simulateSurvivor={simulateSurvivor}
-            setSimulateSurvivor={handleSetSimulateSurvivor}
             ledger={displayActiveLedger}
             globalScenario={globalScenario}
             savedPlans={savedPlans}
@@ -1061,7 +1049,6 @@ function App() {
           <BracketMapChart
             ledger={displayActiveLedger}
             inputs={activeInputs}
-            simulateSurvivor={simulateSurvivor}
           />
         )}
 
@@ -1070,7 +1057,6 @@ function App() {
           <TaxableIncomeWorkspace
             ledger={displayActiveLedger}
             inputs={activeInputs}
-            simulateSurvivor={simulateSurvivor}
             activeScenarioSequence={activeSequence}
             onApplyOptimization={handleApplyOptimization}
             onUpdateStrategy={handleUpdateStrategy}
@@ -1089,7 +1075,6 @@ function App() {
           <LookbackLedgerTable
             ledger={displayActiveLedger}
             inputs={activeInputs}
-            simulateSurvivor={simulateSurvivor}
             onNavigateToActuals={() => {
               setActiveView('actuals');
             }}
@@ -1101,7 +1086,6 @@ function App() {
           <MonteCarloWorkspace
             inputs={activeInputs}
             onChangeInputs={handleInputsChange}
-            simulateSurvivor={simulateSurvivor}
             summary={displayMonteCarloSummary}
             globalScenario={globalScenario}
             useTodayDollars={useTodayDollars}
@@ -1117,7 +1101,6 @@ function App() {
             onLoadPlan={handleLoadPlan}
             savedPlans={savedPlans}
             onSavePlans={setSavedPlans}
-            simulateSurvivor={simulateSurvivor}
             useTodayDollars={useTodayDollars}
             selectedPlanAId={selectedPlanAId}
             setSelectedPlanAId={setSelectedPlanAId}
@@ -1168,7 +1151,6 @@ function App() {
             ledger={displayActiveLedger}
             inputs={activeInputs}
             onInputsChange={handleInputsChange}
-            simulateSurvivor={simulateSurvivor}
           />
         )}
 
@@ -1209,11 +1191,17 @@ function App() {
         onClose={() => setShowCloudModal(false)}
       />
 
-      {/* Legacy Plan Maryland County Selection Modal */}
-      {Boolean(activeInputs.isConfigured && activeInputs.jurisdiction?.currentState === 'MD' && !activeInputs.jurisdiction?.currentCounty) && (
+      {/* Legacy plan local-jurisdiction (county) selection modal */}
+      {Boolean(activeInputs.isConfigured && needsSubJurisdiction(activeInputs.jurisdiction?.currentState, activeInputs.jurisdiction?.currentCounty)) && (
         <LegacyCountyModal
           isOpen={true}
-          needsTargetCounty={Boolean(activeInputs.jurisdiction?.targetState === 'MD' && !activeInputs.jurisdiction?.targetCounty && activeInputs.jurisdiction?.relocationYear !== null)}
+          currentState={activeInputs.jurisdiction.currentState}
+          targetState={
+            activeInputs.jurisdiction.relocationYear !== null &&
+            needsSubJurisdiction(activeInputs.jurisdiction.targetState, activeInputs.jurisdiction.targetCounty)
+              ? activeInputs.jurisdiction.targetState
+              : undefined
+          }
           onConfirm={handleLegacyCountyConfirm}
         />
       )}

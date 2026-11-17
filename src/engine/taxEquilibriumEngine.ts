@@ -1,11 +1,6 @@
 import { AppStateInputs, SimulationResultRow, LockedReturnSequence, getSimulationStartYear } from '../types';
 import { runRetirementSimulation } from './simulationEngine';
 import {
-  FED_BRACKETS_MFJ,
-  FED_BRACKETS_SINGLE,
-  IRMAA_TIERS_MFJ,
-  IRMAA_TIERS_SINGLE,
-  STATUTORY_STD_DEDUCTION_SINGLE_MFJ_MIDPOINT,
   STATUTORY_NIIT_RATE,
   STATUTORY_NIIT_THRESHOLD_SINGLE,
   STATUTORY_NIIT_THRESHOLD_MFJ,
@@ -13,8 +8,9 @@ import {
   STATUTORY_SS_TORPEDO_MULTIPLIER,
   STATUTORY_IRMAA_LOOKBACK_YEARS,
   STATUTORY_MEDICARE_ELIGIBILITY_AGE,
-} from './taxRates2026';
+} from './taxRates';
 import { getStateTaxProfile } from './stateTaxRegistry';
+import { getFederalRules, indexedIrmaaLimit } from './federalTaxRules';
 
 /**
  * Conversion Search Step Sizes for Coarse-to-Fine Convergence
@@ -36,8 +32,8 @@ export const IRMAA_CLIFF_DRAG_DETECTION_THRESHOLD = 0.30;
 /**
  * Default fallback rates and timeline parameters
  */
-export const DEFAULT_TAX_EQUILIBRIUM_FLOOR_RATE = FED_BRACKETS_MFJ[1].rate; // 12% bracket rate
-export const DEFAULT_AVERAGE_BENCHMARK_RATE = FED_BRACKETS_MFJ[2].rate; // 22% bracket rate
+export const DEFAULT_TAX_EQUILIBRIUM_FLOOR_RATE = getFederalRules().brackets.mfj[1].rate; // 12% bracket rate
+export const DEFAULT_AVERAGE_BENCHMARK_RATE = getFederalRules().brackets.mfj[2].rate; // 22% bracket rate
 export const DEFAULT_ESTIMATED_STATE_INCOME_TAX_RATE = 0.05;
 export const DEFAULT_SAFETY_RUNWAY_MONTHS = 6;
 export const MONTHS_PER_YEAR = 12;
@@ -112,14 +108,20 @@ export function calculateDynamicRMDHurdleRate(ledger: SimulationResultRow[], cur
     const annualRMD = (row.yourRMD ?? 0) + (row.wifeRMD ?? 0);
     if (annualRMD <= 0) continue;
 
-    const isSingle = row.standardDeduction < STATUTORY_STD_DEDUCTION_SINGLE_MFJ_MIDPOINT * (row.cpiFactor || 1);
-    const brackets = isSingle ? FED_BRACKETS_SINGLE : FED_BRACKETS_MFJ;
-    const taxableIncome = row.taxableIncome || 0;
+    const federalRules = getFederalRules(row.year);
+    const isSingle = row.isSingleReturn;
+    const brackets = isSingle ? federalRules.brackets.single : federalRules.brackets.mfj;
+    // Ledger values are nominal future dollars, so bracket limits must be inflated to match.
+    // Capital gains and qualified dividends sit on top of ordinary income and use preferential
+    // rates, so they are excluded from the base used to find the ordinary marginal bracket.
+    const cpiFactor = row.federalIndexFactor ?? (row.cpiFactor || 1);
+    const preferentialIncome = (row.capitalGainsTriggered ?? 0) + (row.qualifiedDividends ?? 0);
+    const ordinaryTaxableIncome = Math.max(0, (row.taxableIncome || 0) - preferentialIncome);
 
     // Find marginal federal bracket for top ordinary dollar
     let fedRate = brackets[0].rate;
     for (const b of brackets) {
-      if (taxableIncome <= b.limit) {
+      if (ordinaryTaxableIncome <= b.limit * cpiFactor) {
         fedRate = b.rate;
         break;
       }
@@ -131,9 +133,14 @@ export function calculateDynamicRMDHurdleRate(ledger: SimulationResultRow[], cur
     // multiplying the federal marginal tax rate by 1.85!
     const totalSS = (row.yourSS ?? 0) + (row.wifeSS ?? 0);
     const taxableSS = row.taxableSS ?? 0;
+    // Only the part of the RMD that lands inside the SS phase-in zone triggers the torpedo; each
+    // extra ordinary dollar there makes STATUTORY_MAX_TAXABLE_SS_PORTION of a dollar of SS taxable.
     let ssMultiplier = 1.0;
-    if (totalSS > 0 && taxableSS < STATUTORY_MAX_TAXABLE_SS_PORTION * totalSS) {
-      ssMultiplier = STATUTORY_SS_TORPEDO_MULTIPLIER;
+    if (totalSS > 0) {
+      const remainingTaxableSS = Math.max(0, STATUTORY_MAX_TAXABLE_SS_PORTION * totalSS - taxableSS);
+      const phaseInHeadroom = remainingTaxableSS / STATUTORY_MAX_TAXABLE_SS_PORTION;
+      const torpedoShare = Math.min(1, phaseInHeadroom / annualRMD);
+      ssMultiplier = 1 + (STATUTORY_SS_TORPEDO_MULTIPLIER - 1) * torpedoShare;
     }
 
     const effectiveFedRate = fedRate * ssMultiplier;
@@ -142,7 +149,7 @@ export function calculateDynamicRMDHurdleRate(ledger: SimulationResultRow[], cur
 
     // NIIT drag (3.8% if MAGI exceeds statutory limits and investment income is present)
     const niitThreshold = isSingle ? STATUTORY_NIIT_THRESHOLD_SINGLE : STATUTORY_NIIT_THRESHOLD_MFJ;
-    const niitRate = (row.magi > niitThreshold && (row.taxableDividends > 0 || row.capitalGainsTriggered > 0)) ? STATUTORY_NIIT_RATE : 0;
+    const niitRate = (row.magi > niitThreshold && (row.taxableDividends > 0 || (row.taxableInterest ?? 0) > 0 || row.capitalGainsTriggered > 0)) ? STATUTORY_NIIT_RATE : 0;
 
     const totalMarginalRate = effectiveFedRate + stateRate + niitRate;
 
@@ -160,7 +167,6 @@ export function calculateDynamicRMDHurdleRate(ledger: SimulationResultRow[], cur
  */
 function evaluatePlanTaxCostForYear(
   baseInputs: AppStateInputs,
-  simulateSurvivor: boolean,
   activeSequence: LockedReturnSequence | null | undefined,
   activeSchedule: Record<number, number>,
   targetYear: number
@@ -187,7 +193,7 @@ function evaluatePlanTaxCostForYear(
     activeCustomScenarioId: customScenario.id,
   };
 
-  const ledger = runRetirementSimulation(testInputs, simulateSurvivor, activeSequence);
+  const ledger = runRetirementSimulation(testInputs, activeSequence);
   const ledgerRow = ledger.find((r) => r.year === targetYear);
   const irmaaRow = ledger.find((r) => r.year === targetYear + STATUTORY_IRMAA_LOOKBACK_YEARS);
 
@@ -210,7 +216,6 @@ function evaluatePlanTaxCostForYear(
  */
 export function calculateTaxEquilibriumSchedule(
   inputs: AppStateInputs,
-  simulateSurvivor: boolean = false,
   overrideSequence?: LockedReturnSequence | null
 ): TaxEquilibriumResult {
   const simStartYear = getSimulationStartYear(inputs);
@@ -227,7 +232,7 @@ export function calculateTaxEquilibriumSchedule(
     baselineSchedule[y] = 0;
   }
 
-  const baselineEval = evaluatePlanTaxCostForYear(inputs, simulateSurvivor, overrideSequence, baselineSchedule, startYear);
+  const baselineEval = evaluatePlanTaxCostForYear(inputs, overrideSequence, baselineSchedule, startYear);
   const baselineLedger = baselineEval.ledger;
 
   const baselineLifetimeTaxes = baselineLedger.reduce((sum, r) => sum + r.totalIncomeTax + (r.niitTax || 0) + (r.combinedSurchargeAnnual || 0), 0);
@@ -254,7 +259,7 @@ export function calculateTaxEquilibriumSchedule(
     };
   }
 
-  const currentState = inputs.jurisdiction?.currentState || 'MD';
+  const currentState = inputs.jurisdiction.currentState;
   const solvedSchedule: Record<number, number> = {};
   const yearlyDetails: YearlyTaxEquilibriumPoint[] = [];
   let totalBenchmarkSum = 0;
@@ -266,7 +271,7 @@ export function calculateTaxEquilibriumSchedule(
     solvedSchedule[year] = 0;
 
     // Evaluate dynamic RMD hurdle rate based on current cumulative plan
-    const currentRun = evaluatePlanTaxCostForYear(inputs, simulateSurvivor, overrideSequence, solvedSchedule, year);
+    const currentRun = evaluatePlanTaxCostForYear(inputs, overrideSequence, solvedSchedule, year);
     const dynamicHurdleRate = calculateDynamicRMDHurdleRate(currentRun.ledger, currentState);
     totalBenchmarkSum += dynamicHurdleRate;
     benchmarkCount++;
@@ -310,7 +315,7 @@ export function calculateTaxEquilibriumSchedule(
 
         // Test next increment
         solvedSchedule[year] = nextConversion;
-        const nextEval = evaluatePlanTaxCostForYear(inputs, simulateSurvivor, overrideSequence, solvedSchedule, year);
+        const nextEval = evaluatePlanTaxCostForYear(inputs, overrideSequence, solvedSchedule, year);
         
         // Check liquidity / cash reserve constraint
         // If conversion tax draws liquid reserves below floor or creates a cash deficit
@@ -325,7 +330,7 @@ export function calculateTaxEquilibriumSchedule(
 
         // Compute marginal rate on this step
         solvedSchedule[year] = currentOptimalConversion;
-        const curEval = evaluatePlanTaxCostForYear(inputs, simulateSurvivor, overrideSequence, solvedSchedule, year);
+        const curEval = evaluatePlanTaxCostForYear(inputs, overrideSequence, solvedSchedule, year);
         const incrementalCost = nextEval.totalDrag - curEval.totalDrag;
         const marginalRate = incrementalCost / step;
 
@@ -333,16 +338,16 @@ export function calculateTaxEquilibriumSchedule(
         const deltaIRMAA = nextEval.lookbackIRMAA - curEval.lookbackIRMAA;
         if (deltaIRMAA > 0 && deltaIRMAA / step > IRMAA_CLIFF_DRAG_DETECTION_THRESHOLD) {
           limitingFactor = 'IRMAA Cliff Boundary';
-          const isSingle = (simulateSurvivor || inputs.isSingleFiler);
-          const tiers = isSingle ? IRMAA_TIERS_SINGLE : IRMAA_TIERS_MFJ;
+          const isSingle = curEval.irmaaRow?.irmaaUsesSingleTiers ?? inputs.isSingleFiler;
+          const irmaaRules = getFederalRules(year).irmaaTiers;
+          const tiers = isSingle ? irmaaRules.single : irmaaRules.mfj;
           const nextTierNum = nextEval.irmaaRow?.surchargeTier && nextEval.irmaaRow.surchargeTier > 0 
             ? nextEval.irmaaRow.surchargeTier 
             : 1;
           limitingTier = nextTierNum;
           const prevTierIndex = Math.max(0, nextTierNum - 1);
-          const cpiFactor = curEval.ledgerRow?.cpiFactor || 1;
-          const baseThreshold = tiers[prevTierIndex]?.limit ?? tiers[0].limit;
-          limitingThreshold = baseThreshold * cpiFactor;
+          const cpiFactor = curEval.ledgerRow?.federalIndexFactor ?? (curEval.ledgerRow?.cpiFactor || 1);
+          limitingThreshold = indexedIrmaaLimit(tiers[prevTierIndex] ?? tiers[0], cpiFactor);
           const lookbackYear = year + STATUTORY_IRMAA_LOOKBACK_YEARS;
           const formattedThreshold = new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 }).format(limitingThreshold);
           const formattedDelta = new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 }).format(deltaIRMAA);
@@ -376,7 +381,7 @@ export function calculateTaxEquilibriumSchedule(
 
     // Capture finalized optimal amount for this year
     solvedSchedule[year] = currentOptimalConversion;
-    const finalYearEval = evaluatePlanTaxCostForYear(inputs, simulateSurvivor, overrideSequence, solvedSchedule, year);
+    const finalYearEval = evaluatePlanTaxCostForYear(inputs, overrideSequence, solvedSchedule, year);
     const finalRow = finalYearEval.ledgerRow;
 
     const baseOrdinary = (finalRow?.yourSalary ?? 0) + (finalRow?.wifeSalary ?? 0) +
@@ -403,7 +408,7 @@ export function calculateTaxEquilibriumSchedule(
   }
 
   // 3. Final Simulation with the Full Solved TE Schedule
-  const optimizedEval = evaluatePlanTaxCostForYear(inputs, simulateSurvivor, overrideSequence, solvedSchedule, startYear);
+  const optimizedEval = evaluatePlanTaxCostForYear(inputs, overrideSequence, solvedSchedule, startYear);
   const optimizedLedger = optimizedEval.ledger;
 
   const optimizedLifetimeTaxes = optimizedLedger.reduce((sum, r) => sum + r.totalIncomeTax + (r.niitTax || 0) + (r.combinedSurchargeAnnual || 0), 0);

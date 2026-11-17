@@ -16,8 +16,12 @@ import {
   HISTORICAL_STOCK_MEAN,
   HISTORICAL_BOND_MEAN,
   HISTORICAL_CPI_MEAN,
+  HISTORICAL_STOCK_VOLATILITY,
+  HISTORICAL_BOND_VOLATILITY,
+  geometricToArithmeticMean,
+  MONTE_CARLO_SEQUENCE_YEARS,
 } from './monteCarloEngine';
-import { runRetirementSimulation } from './simulationEngine';
+import { runRetirementSimulation, getSimulationHorizonYears } from './simulationEngine';
 import { AppStateInputs } from '../types';
 
 describe('mulberry32 seedable PRNG', () => {
@@ -205,8 +209,11 @@ describe('runMonteCarloSimulation', () => {
     expect(summary.successRate).toBeLessThanOrEqual(1.0);
 
     expect(summary.percentiles).toBeInstanceOf(Array);
-    expect(summary.percentiles.length).toBe(35);
+    // The last survivor is removed in their longevity year: wife born 1968 + 95 = 2063, so 2026 through 2062.
+    expect(getSimulationHorizonYears(inputs)).toBe(37);
+    expect(summary.percentiles.length).toBe(37);
     expect(summary.percentiles[0].year).toBe(2026);
+    expect(summary.percentiles[36].year).toBe(2062);
 
     // Verify representative paths
     expect(summary.representativeSequences.worst).toBeDefined();
@@ -218,6 +225,36 @@ describe('runMonteCarloSimulation', () => {
     const lastYearPercentiles = summary.percentiles[lastYearIndex];
     expect(lastYearPercentiles.p10).toBeLessThanOrEqual(lastYearPercentiles.p50);
     expect(lastYearPercentiles.p50).toBeLessThanOrEqual(lastYearPercentiles.p90);
+  });
+
+  it('should size sequences and percentiles to a horizon longer than the default length', () => {
+    const inputs = getMockInputs();
+    inputs.wife.longevityAge = 105; // 1968 + 105 = 2073, so 2026 through 2072 is 47 simulated years
+    const horizon = getSimulationHorizonYears(inputs);
+    expect(horizon).toBe(47);
+    expect(horizon).toBeGreaterThan(MONTE_CARLO_SEQUENCE_YEARS);
+
+    const summary = runMonteCarloSimulation(inputs);
+    expect(summary.percentiles.length).toBe(horizon);
+    expect(summary.representativeSequences.median.equityReturns.length).toBe(horizon);
+  });
+
+  it('should fill a historical block longer than the dataset by wrapping', () => {
+    const years = HISTORICAL_RETURNS.length + 10;
+    const seq = generateHistoricalSequence(true, 0, mulberry32(1), false, 0.025, false, undefined, undefined, undefined, false, years);
+    expect(seq.equityReturns.length).toBe(years);
+    expect(seq.equityReturns[HISTORICAL_RETURNS.length]).toBeCloseTo(
+      Math.min(EQUITY_RETURN_MAX, Math.max(EQUITY_RETURN_MIN, HISTORICAL_RETURNS[0].stock))
+    );
+  });
+
+  it('should end the percentile table on the year before the last survivor longevity year', () => {
+    const inputs = getMockInputs();
+    const summary = runMonteCarloSimulation(inputs);
+    const last = summary.percentiles[summary.percentiles.length - 1];
+    expect(summary.percentiles.length).toBe(getSimulationHorizonYears(inputs));
+    expect(last.year).toBe(2062);
+    expect(last.p50).toBeGreaterThan(0);
   });
 
   it('should support deterministic seed reproducibility and trial IDs', () => {
@@ -549,32 +586,66 @@ describe('Constant vs Randomized CPI Simulation', () => {
 
     const summary = runMonteCarloSimulation(inputs);
     expect(summary.trialsRun).toBe(20);
-    expect(summary.percentiles.length).toBe(35);
+    expect(summary.percentiles.length).toBe(getSimulationHorizonYears(inputs));
   });
 
-  it('should generate cyclical sequences with Markov regime switching and mean reversion', () => {
-    // Generate synthetic sequences with regime switching enabled
+  it('should generate independent annual sequences with mean and volatility matching the inputs', () => {
     const rand = mulberry32(101);
-    const sequenceWithRegimes = generateSyntheticSequence(0.07, 0.15, 0.04, 0.05, 0.15, rand, true, null, true);
+    const equityMean = 0.07;
+    const equityVol = 0.15;
+    const returns: number[] = [];
+    for (let t = 0; t < 400; t++) {
+      returns.push(...generateSyntheticSequence(equityMean, equityVol, 0.04, 0.05, 0.15, rand, true, null).equityReturns);
+    }
+    const mean = returns.reduce((a, b) => a + b, 0) / returns.length;
+    const sd = Math.sqrt(returns.reduce((a, b) => a + (b - mean) * (b - mean), 0) / returns.length);
 
-    expect(sequenceWithRegimes.equityReturns.length).toBe(35);
-    expect(sequenceWithRegimes.fixedIncomeReturns.length).toBe(35);
-
-    // Compute average return across the 35-year sequence
-    const avgReturn = sequenceWithRegimes.equityReturns.reduce((acc, v) => acc + v, 0) / 35;
-
-    // Verify mean return remains grounded near the target mean
-    expect(avgReturn).toBeGreaterThan(0.01);
-    expect(avgReturn).toBeLessThan(0.15);
-
-    // Verify sequence contains both positive and negative returns
-    const hasNegative = sequenceWithRegimes.equityReturns.some(r => r < 0);
-    const hasPositive = sequenceWithRegimes.equityReturns.some(r => r > 0);
-    expect(hasNegative).toBe(true);
-    expect(hasPositive).toBe(true);
+    // Arithmetic mean is the geometric target plus volatility drag; volatility is the entered input.
+    expect(mean).toBeCloseTo(geometricToArithmeticMean(equityMean, equityVol), 2);
+    expect(sd).toBeGreaterThan(equityVol * 0.95);
+    expect(sd).toBeLessThan(equityVol * 1.05);
   });
 
-  it('should run full Monte Carlo simulation with enableRegimeSwitching toggle enabled and disabled', () => {
+  it('should not heal a deep drawdown: expected return after a loss matches the unconditional mean', () => {
+    const rand = mulberry32(2026);
+    let afterLossSum = 0;
+    let afterLossCount = 0;
+    let allSum = 0;
+    let allCount = 0;
+    for (let t = 0; t < 1500; t++) {
+      const r = generateSyntheticSequence(0.07, 0.16, 0.04, 0.05, 0.15, rand, false, 0.025).equityReturns;
+      for (let i = 1; i < r.length; i++) {
+        allSum += r[i];
+        allCount++;
+        if (r[i - 1] < -0.10) {
+          afterLossSum += r[i];
+          afterLossCount++;
+        }
+      }
+    }
+    expect(afterLossCount).toBeGreaterThan(1000);
+    // No rebound effect: the mean after a >10% loss is within 1 point of the overall mean.
+    expect(Math.abs(afterLossSum / afterLossCount - allSum / allCount)).toBeLessThan(0.01);
+  });
+
+  it('should keep the median 30-year compound growth near the entered geometric CAGR', () => {
+    const rand = mulberry32(4242);
+    const target = 0.07;
+    const years = 30;
+    const terminal: number[] = [];
+    for (let t = 0; t < 2000; t++) {
+      const r = generateSyntheticSequence(target, 0.16, 0.04, 0.05, 0.15, rand, false, 0.025).equityReturns;
+      let wealth = 1;
+      for (let i = 0; i < years; i++) wealth *= 1 + r[i];
+      terminal.push(wealth);
+    }
+    terminal.sort((a, b) => a - b);
+    const medianCagr = Math.pow(terminal[Math.floor(terminal.length / 2)], 1 / years) - 1;
+    expect(medianCagr).toBeGreaterThan(target - 0.006);
+    expect(medianCagr).toBeLessThan(target + 0.006);
+  });
+
+  it('should ignore the legacy enableRegimeSwitching field when loading older saved plans', () => {
     const baseInputs: AppStateInputs = {
       you: {
         birthDate: '1960-06-15',
@@ -624,28 +695,26 @@ describe('Constant vs Randomized CPI Simulation', () => {
         trials: 50,
         seed: 42,
         randomizeCPI: true,
-        enableRegimeSwitching: true,
+        enableRegimeSwitching: true, // Legacy field from older saved plans: must have no effect
       },
       isConfigured: true,
       isSingleFiler: false,
     };
 
-    // Run with regime switching enabled
-    const summaryRegimes = runMonteCarloSimulation(baseInputs);
-    expect(summaryRegimes.trialsRun).toBe(50);
-    expect(summaryRegimes.successRate).toBeGreaterThan(0);
+    const summaryLegacyOn = runMonteCarloSimulation(baseInputs);
+    expect(summaryLegacyOn.trialsRun).toBe(50);
+    expect(summaryLegacyOn.successRate).toBeGreaterThan(0);
 
-    // Run with regime switching disabled (pure i.i.d.)
-    const inputsNoRegimes: AppStateInputs = {
+    const inputsLegacyOff: AppStateInputs = {
       ...baseInputs,
       monteCarloSettings: {
         ...baseInputs.monteCarloSettings,
         enableRegimeSwitching: false,
       },
     };
-    const summaryNoRegimes = runMonteCarloSimulation(inputsNoRegimes);
-    expect(summaryNoRegimes.trialsRun).toBe(50);
-    expect(summaryNoRegimes.successRate).toBeGreaterThan(0);
+    const summaryLegacyOff = runMonteCarloSimulation(inputsLegacyOff);
+    expect(summaryLegacyOff.successRate).toBe(summaryLegacyOn.successRate);
+    expect(summaryLegacyOff.percentiles).toEqual(summaryLegacyOn.percentiles);
   });
 
   it('should support configurable historical sampling strategies (block, random, hybrid)', () => {
@@ -831,7 +900,6 @@ describe('Constant vs Randomized CPI Simulation', () => {
         trials: 50,
         seed: 777,
         randomizeCPI: true,
-        enableRegimeSwitching: true,
       },
       isConfigured: true,
       isSingleFiler: false,
@@ -873,7 +941,7 @@ describe('Constant vs Randomized CPI Simulation', () => {
       let count = 0;
 
       for (let t = 0; t < trials; t++) {
-        const seq = generateSyntheticSequence(0.068, 0.16, 0.046, 0.055, 0.15, rand, true, null, true, targetCpi);
+        const seq = generateSyntheticSequence(0.068, 0.16, 0.046, 0.055, 0.15, rand, true, null, targetCpi);
         for (const cpi of (seq.inflationRates || [])) {
           totalCpi += cpi;
           count++;
@@ -905,7 +973,7 @@ describe('Constant vs Randomized CPI Simulation', () => {
 
       for (let t = 0; t < trials; t++) {
         // Without regime switching to directly measure normal distribution mean
-        const seq = generateSyntheticSequence(targetGeometric, vol, 0.04, 0.05, 0.15, rand, false, 0.025, false, 0.025);
+        const seq = generateSyntheticSequence(targetGeometric, vol, 0.04, 0.05, 0.15, rand, false, 0.025, 0.025);
         for (const ret of seq.equityReturns) {
           totalAnnualEquity += ret;
           count++;
@@ -916,6 +984,46 @@ describe('Constant vs Randomized CPI Simulation', () => {
       // Realized arithmetic mean should be near 8.28% (elevated above 7.0% by ~1.28% volatility drag)
       expect(realizedArithmeticMean).toBeGreaterThan(0.078);
       expect(realizedArithmeticMean).toBeLessThan(0.088);
+    });
+  });
+
+  describe('Historical bootstrap geometric calibration', () => {
+    it('centers the bootstrap on the arithmetic mean that matches the configured geometric CAGR', () => {
+      const rand = mulberry32(31337);
+      const targetEquity = 0.07;
+      const years = 30;
+      const terminal: number[] = [];
+      for (let t = 0; t < 2000; t++) {
+        const r = generateHistoricalSequence(false, undefined, rand, false, 0.025, true, targetEquity, 0.04, 0.025).equityReturns;
+        let wealth = 1;
+        for (let i = 0; i < years; i++) wealth *= 1 + r[i];
+        terminal.push(wealth);
+      }
+      terminal.sort((a, b) => a - b);
+      const medianCagr = Math.pow(terminal[Math.floor(terminal.length / 2)], 1 / years) - 1;
+      // Before the fix this landed about 1.3 points below target because the arithmetic mean was set to the CAGR.
+      expect(medianCagr).toBeGreaterThan(targetEquity - 0.012);
+      expect(medianCagr).toBeLessThan(targetEquity + 0.012);
+    });
+
+    it('produces comparable median growth in historical and parametric modes', () => {
+      const randH = mulberry32(5);
+      const randS = mulberry32(6);
+      const years = 30;
+      const median = (gen: () => number[]) => {
+        const terminal: number[] = [];
+        for (let t = 0; t < 2000; t++) {
+          const r = gen();
+          let wealth = 1;
+          for (let i = 0; i < years; i++) wealth *= 1 + r[i];
+          terminal.push(wealth);
+        }
+        terminal.sort((a, b) => a - b);
+        return Math.pow(terminal[Math.floor(terminal.length / 2)], 1 / years) - 1;
+      };
+      const hist = median(() => generateHistoricalSequence(false, undefined, randH, false, 0.025, true, 0.07, 0.04, 0.025).equityReturns);
+      const synth = median(() => generateSyntheticSequence(0.07, HISTORICAL_STOCK_VOLATILITY, 0.04, 0.05, 0.15, randS, false, 0.025).equityReturns);
+      expect(Math.abs(hist - synth)).toBeLessThan(0.01);
     });
   });
 
@@ -1006,7 +1114,7 @@ describe('Constant vs Randomized CPI Simulation', () => {
       const summary = runMonteCarloSimulation(baseInputs);
       expect(summary.trialsRun).toBe(50);
       expect(summary.successRate).toBeGreaterThanOrEqual(0);
-      expect(summary.percentiles.length).toBe(35);
+      expect(summary.percentiles.length).toBe(getSimulationHorizonYears(baseInputs));
     });
   });
 
@@ -1075,8 +1183,8 @@ describe('Constant vs Randomized CPI Simulation', () => {
       // Each year in the continuous block must correspond to the exact same calendar year's historical vector
       for (let i = 0; i < 10; i++) {
         const orig = HISTORICAL_RETURNS[startIdx + i];
-        const expectedStock = orig.stock + (targetEquity - HISTORICAL_STOCK_MEAN);
-        const expectedBond = orig.bond + (targetBond - HISTORICAL_BOND_MEAN);
+        const expectedStock = orig.stock + (geometricToArithmeticMean(targetEquity, HISTORICAL_STOCK_VOLATILITY) - HISTORICAL_STOCK_MEAN);
+        const expectedBond = orig.bond + (geometricToArithmeticMean(targetBond, HISTORICAL_BOND_VOLATILITY) - HISTORICAL_BOND_MEAN);
         const expectedCpi = orig.inflation + (targetCpi - HISTORICAL_CPI_MEAN);
 
         expect(seq.equityReturns[i]).toBeCloseTo(expectedStock, 5);
@@ -1136,7 +1244,7 @@ describe('Constant vs Randomized CPI Simulation', () => {
         },
       };
 
-      const rows = runRetirementSimulation(mockInputs, false, seq);
+      const rows = runRetirementSimulation(mockInputs, seq);
 
       // Verify year-by-year that row.cpiFactor exactly matches cumulative compound product of activeSeq.inflationRates
       let cumulativeProduct = 1.0;

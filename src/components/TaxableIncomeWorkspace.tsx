@@ -14,8 +14,14 @@ import {
   AppStateInputs,
   LockedReturnSequence,
   CustomRothScenario,
+  RothConversionStrategy,
+  RothConversionSourceMode,
   getSimulationStartYear,
+  DEFAULT_YOUR_LONGEVITY_AGE,
+  DEFAULT_WIFE_LONGEVITY_AGE
 } from '../types';
+import { getSimulationHorizonYears } from '../engine/simulationEngine';
+import { DEFAULT_ROTH_SOURCE_YOUR_PERCENT, getRothConversionSourceNames } from '../engine/rothConversionSplit';
 import { RangeSlider } from './RangeSlider';
 import { 
   Calculator,
@@ -38,10 +44,11 @@ import { TaxEquilibriumModal } from './TaxEquilibriumModal';
 import { optimizeRetirementScenario, OptimizationResult, OptimizationGoal } from '../engine/optimizer';
 import { 
   getTargetPresetInfo, 
+  presetIndexFactor,
   DEFAULT_FILL_TO_TARGET_VALUE, 
   CONVERSION_TARGET_PRESETS,
-  FED_STANDARD_DEDUCTION_MFJ 
-} from '../engine/taxRates2026';
+  matchesBracketTargetWithDeduction
+} from '../engine/taxRates';
 import { CustomRothScenarioModal } from './CustomRothScenarioModal';
 
 ChartJS.register(...registerables);
@@ -89,16 +96,15 @@ const ColumnHelpHeader: React.FC<ColumnHelpHeaderProps> = ({
 interface TaxableIncomeWorkspaceProps {
   ledger: SimulationResultRow[];
   inputs: AppStateInputs;
-  simulateSurvivor: boolean;
   activeScenarioSequence: LockedReturnSequence | null;
   onApplyOptimization: (
     annualConversion: number,
     targetValue: number | null,
     yourAge: number,
     wifeAge: number,
-    strategy?: 'flat' | 'fill-to-target' | 'custom'
+    strategy?: RothConversionStrategy
   ) => void;
-  onUpdateStrategy: (strategy: 'flat' | 'fill-to-target' | 'custom') => void;
+  onUpdateStrategy: (strategy: RothConversionStrategy) => void;
   onUpdateTargetValue: (val: number | null) => void;
   onSaveCustomScenario?: (scenario: CustomRothScenario, applyImmediately?: boolean) => void;
   onDeleteCustomScenario?: (scenarioId: string) => void;
@@ -111,7 +117,6 @@ interface TaxableIncomeWorkspaceProps {
 export const TaxableIncomeWorkspace: React.FC<TaxableIncomeWorkspaceProps> = ({
   ledger,
   inputs,
-  simulateSurvivor,
   activeScenarioSequence,
   onApplyOptimization,
   onUpdateStrategy,
@@ -136,7 +141,11 @@ export const TaxableIncomeWorkspace: React.FC<TaxableIncomeWorkspaceProps> = ({
   }, [inputs.rothConversionStrategy, customScenarios, inputs.activeCustomScenarioId]);
 
   // Selected benchmark state (only active and defaults in fill-to-target mode)
+  const sourceMode: RothConversionSourceMode = inputs.rothConversionSourceMode ?? 'percent';
+  const yourSharePercent = inputs.rothConversionYourSharePercent ?? DEFAULT_ROTH_SOURCE_YOUR_PERCENT;
+  const sourceNames = getRothConversionSourceNames(inputs.you.name, inputs.wife?.name);
   const isFillToTarget = inputs.rothConversionStrategy === 'fill-to-target';
+  const isNoConversion = inputs.rothConversionStrategy === 'none';
   const activeTarget = useMemo(() => {
     if (!isFillToTarget) return null;
     return inputs.rothConversionTargetValue || selectedQuickFill || DEFAULT_FILL_TO_TARGET_VALUE;
@@ -202,8 +211,8 @@ export const TaxableIncomeWorkspace: React.FC<TaxableIncomeWorkspaceProps> = ({
       wifeAge = yr - wifeBirthYear || (63 + delta);
     }
 
-    const primaryLongevity = inputs.you.longevityAge ?? 85;
-    const spouseLongevity = inputs.wife?.longevityAge ?? 95;
+    const primaryLongevity = inputs.you.longevityAge ?? DEFAULT_YOUR_LONGEVITY_AGE;
+    const spouseLongevity = inputs.wife?.longevityAge ?? DEFAULT_WIFE_LONGEVITY_AGE;
     const primaryAgeStr = yourAge >= primaryLongevity ? '-' : String(yourAge);
     const spouseAgeStr = wifeAge >= spouseLongevity ? '-' : String(wifeAge);
 
@@ -214,22 +223,12 @@ export const TaxableIncomeWorkspace: React.FC<TaxableIncomeWorkspaceProps> = ({
     return `${yr} (${primaryAgeStr}/${spouseAgeStr})`;
   };
 
-  // Parse birth year for survivor status checks
-  const yourBirthYear = useMemo(() => {
-    const dateStr = inputs.you.birthDate;
-    if (!dateStr) return 1960;
-    const match = dateStr.match(/^(\d{4})/);
-    return match ? parseInt(match[1], 10) : 1960;
-  }, [inputs.you.birthDate]);
-
-  const deathYear = yourBirthYear + (inputs.you.longevityAge ?? 85);
-
   // Compute non-conversion taxable income breakdown for each year
   // Net Taxable Base = max(0, Non-Conversion AGI - Standard Deduction)
   // Components scaled proportionally so total stacked base equals Net Non-Conversion Taxable Income
   const processedRows = useMemo(() => {
     return ledger.map((r) => {
-      const isSingle = simulateSurvivor && r.year >= deathYear;
+      const isSingle = r.isSingleReturn;
       const rothConv = r.intentionalRothConversion || 0;
       
       // Gross income components (before standard deduction)
@@ -238,7 +237,7 @@ export const TaxableIncomeWorkspace: React.FC<TaxableIncomeWorkspaceProps> = ({
       const employee401k = r.employee401kContribution || 0;
       const taxableSalary = Math.max(0, grossSalary - employee401k);
       const forcedRMDs = (r.yourRMD || 0) + (r.wifeRMD || 0);
-      const preTaxDraws = r.drawdownPreTax || 0;
+      const preTaxDraws = r.otherTaxableIncome || 0;
       const investmentIncome = (r.taxableDividends || 0) + (r.taxableInterest || 0) + (r.capitalGainsTriggered || 0);
       const otherIncome = r.otherTaxableIncome || 0;
 
@@ -254,6 +253,7 @@ export const TaxableIncomeWorkspace: React.FC<TaxableIncomeWorkspaceProps> = ({
         wifeAge: r.wifeAge,
         isSingle,
         cpiFactor: r.cpiFactor,
+        federalIndexFactor: r.federalIndexFactor,
         grossNonConvAGI,
         grossTotalAGI,
         stdDeduction,
@@ -273,7 +273,7 @@ export const TaxableIncomeWorkspace: React.FC<TaxableIncomeWorkspaceProps> = ({
         rothConversionShortfall: r.rothConversionShortfall,
       };
     });
-  }, [ledger, simulateSurvivor, deathYear]);
+  }, [ledger]);
 
   // Compute dynamic benchmark line data points (indexed to Taxable Income threshold)
   const benchmarkLineData = useMemo(() => {
@@ -290,7 +290,7 @@ export const TaxableIncomeWorkspace: React.FC<TaxableIncomeWorkspaceProps> = ({
 
     const dataPoints = processedRows.map((r) => {
       const baseVal = r.isSingle ? singleBase : jointBase;
-      const inflatedBase = baseVal * r.cpiFactor;
+      const inflatedBase = baseVal * (preset ? presetIndexFactor(preset, r.cpiFactor, r.federalIndexFactor ?? r.cpiFactor) : r.cpiFactor);
       // If IRMAA MAGI based, translate MAGI threshold to equivalent Taxable Income ceiling:
       // Taxable Ceiling = MAGI Limit - Standard Deduction
       if (isMAGIBased) {
@@ -343,19 +343,19 @@ export const TaxableIncomeWorkspace: React.FC<TaxableIncomeWorkspaceProps> = ({
       isDataPresent(ssData) && {
         label: 'Social Security',
         data: ssData,
-        backgroundColor: 'rgba(59, 130, 246, 0.65)', // blue-500
-        borderColor: '#3b82f6',
+        backgroundColor: 'rgba(29, 78, 216, 0.65)', // blue-700
+        borderColor: '#1d4ed8',
         borderWidth: 1,
         stack: 'gross',
         grouped: false,
         barPercentage: 0.85,
         order: 3,
       },
-      isDataPresent(salaryData) && {
-        label: 'Active Salaries',
-        data: salaryData,
-        backgroundColor: 'rgba(139, 92, 246, 0.65)', // violet-500
-        borderColor: '#8b5cf6',
+      isDataPresent(investmentData) && {
+        label: 'Dividends & Capital Gains',
+        data: investmentData,
+        backgroundColor: 'rgba(6, 182, 212, 0.65)', // cyan-500
+        borderColor: '#06b6d4',
         borderWidth: 1,
         stack: 'gross',
         grouped: false,
@@ -384,11 +384,11 @@ export const TaxableIncomeWorkspace: React.FC<TaxableIncomeWorkspaceProps> = ({
         barPercentage: 0.85,
         order: 6,
       },
-      isDataPresent(investmentData) && {
-        label: 'Dividends & Capital Gains',
-        data: investmentData,
-        backgroundColor: 'rgba(236, 72, 153, 0.65)', // pink-500
-        borderColor: '#ec4899',
+      isDataPresent(salaryData) && {
+        label: 'Active Salaries',
+        data: salaryData,
+        backgroundColor: 'rgba(139, 92, 246, 0.65)', // violet-500
+        borderColor: '#8b5cf6',
         borderWidth: 1,
         stack: 'gross',
         grouped: false,
@@ -424,8 +424,8 @@ export const TaxableIncomeWorkspace: React.FC<TaxableIncomeWorkspaceProps> = ({
 
     const datasets = rawDatasets.filter(Boolean) as ChartData<'bar' | 'line'>['datasets'];
 
-    const primaryLongevity = inputs.you.longevityAge ?? 85;
-    const spouseLongevity = inputs.wife?.longevityAge ?? 95;
+    const primaryLongevity = inputs.you.longevityAge ?? DEFAULT_YOUR_LONGEVITY_AGE;
+    const spouseLongevity = inputs.wife?.longevityAge ?? DEFAULT_WIFE_LONGEVITY_AGE;
 
     const labels = processedRows.map((r) => {
       const isSingle = inputs.isSingleFiler || !r.wifeAge || r.wifeAge === 0;
@@ -523,8 +523,8 @@ export const TaxableIncomeWorkspace: React.FC<TaxableIncomeWorkspaceProps> = ({
               if (!items.length) return '';
               const idx = items[0].dataIndex;
               const r = processedRows[idx];
-              const primaryLongevity = inputs.you.longevityAge ?? 85;
-              const spouseLongevity = inputs.wife?.longevityAge ?? 95;
+              const primaryLongevity = inputs.you.longevityAge ?? DEFAULT_YOUR_LONGEVITY_AGE;
+              const spouseLongevity = inputs.wife?.longevityAge ?? DEFAULT_WIFE_LONGEVITY_AGE;
               const primaryAgeStr = r.yourAge >= primaryLongevity ? '-' : String(r.yourAge);
               const spouseAgeStr = r.wifeAge >= spouseLongevity ? '-' : String(r.wifeAge);
               if (inputs.isSingleFiler || !r.wifeAge || r.wifeAge === 0) {
@@ -643,7 +643,6 @@ export const TaxableIncomeWorkspace: React.FC<TaxableIncomeWorkspaceProps> = ({
         const result = optimizeRetirementScenario(
           inputs,
           goal,
-          simulateSurvivor,
           activeScenarioSequence
         );
         setOptimizationResult(result);
@@ -750,10 +749,28 @@ export const TaxableIncomeWorkspace: React.FC<TaxableIncomeWorkspaceProps> = ({
               >
                 Custom Schedule
               </button>
+              <button
+                type="button"
+                onClick={() => {
+                  onUpdateStrategy('none');
+                }}
+                className={`text-[10px] px-2.5 py-1 rounded-lg font-bold transition-all cursor-pointer ${
+                  isNoConversion
+                    ? 'bg-slate-300 text-slate-950 shadow'
+                    : 'text-slate-400 hover:text-slate-200'
+                }`}
+                title="Disable all Roth conversions"
+              >
+                None
+              </button>
             </div>
 
             {/* Conversion Window Controls */}
-            <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-xl bg-slate-950 border border-slate-800 text-[11px] font-mono text-slate-300">
+            <div
+              className={`flex items-center gap-1.5 px-2.5 py-1 rounded-xl bg-slate-950 border border-slate-800 text-[11px] font-mono text-slate-300 ${isNoConversion ? 'opacity-40 pointer-events-none' : ''}`}
+              aria-disabled={isNoConversion}
+              title={isNoConversion ? 'Conversion window is not used while Roth conversions are set to None' : undefined}
+            >
               <span className="text-[10px] font-sans text-slate-400">Window:</span>
               <select
                 value={inputs.rothConversionStartYear !== undefined ? inputs.rothConversionStartYear : (simStartYear + 1)}
@@ -765,6 +782,7 @@ export const TaxableIncomeWorkspace: React.FC<TaxableIncomeWorkspaceProps> = ({
                 }}
                 className="bg-slate-900 border border-slate-800 rounded px-1 py-0.5 text-[11px] text-emerald-400 font-bold font-mono focus:outline-none cursor-pointer"
                 title="Roth Conversion Start Year"
+                disabled={isNoConversion}
               >
                 {Array.from({ length: 25 }, (_, i) => simStartYear + i).map((yr) => (
                   <option key={yr} value={yr}>
@@ -783,14 +801,65 @@ export const TaxableIncomeWorkspace: React.FC<TaxableIncomeWorkspaceProps> = ({
                 }}
                 className="bg-slate-900 border border-slate-800 rounded px-1 py-0.5 text-[11px] text-emerald-400 font-bold font-mono focus:outline-none cursor-pointer"
                 title="Roth Conversion End Year"
+                disabled={isNoConversion}
               >
-                {Array.from({ length: 35 }, (_, i) => simStartYear + i).map((yr) => (
+                {Array.from({ length: getSimulationHorizonYears(inputs) }, (_, i) => simStartYear + i).map((yr) => (
                   <option key={yr} value={yr}>
                     {formatYearOption(yr)}
                   </option>
                 ))}
               </select>
             </div>
+
+            {/* Conversion Source Controls: which spouse's IRA funds each conversion */}
+            {!inputs.isSingleFiler && (
+              <div
+                className={`flex items-center gap-1.5 px-2.5 py-1 rounded-xl bg-slate-950 border border-slate-800 text-[11px] font-mono text-slate-300 ${isNoConversion ? 'opacity-40 pointer-events-none' : ''}`}
+                aria-disabled={isNoConversion}
+                title={isNoConversion
+                  ? 'Conversion source is not used while Roth conversions are set to None'
+                  : 'Choose which spouse\'s traditional IRA funds Roth conversions. If one IRA runs out (after reserving its RMD), the rest comes from the other.'}
+              >
+                <span className="text-[10px] font-sans text-slate-400">Source:</span>
+                <select
+                  value={sourceMode}
+                  onChange={(e) => {
+                    if (onInputsChange) {
+                      onInputsChange({ ...inputs, rothConversionSourceMode: e.target.value as RothConversionSourceMode });
+                    }
+                  }}
+                  className="bg-slate-900 border border-slate-800 rounded px-1 py-0.5 text-[11px] text-emerald-400 font-bold font-sans focus:outline-none cursor-pointer"
+                  title="Roth Conversion Source"
+                  disabled={isNoConversion}
+                >
+                  <option value="percent">Percent split</option>
+                  <option value="you-first">{sourceNames.you}, then {sourceNames.wife}</option>
+                  <option value="wife-first">{sourceNames.wife}, then {sourceNames.you}</option>
+                </select>
+                {sourceMode === 'percent' && (
+                  <>
+                    <input
+                      type="number"
+                      min={0}
+                      max={100}
+                      step={5}
+                      value={yourSharePercent}
+                      onChange={(e) => {
+                        const raw = Number(e.target.value);
+                        if (!Number.isFinite(raw) || !onInputsChange) return;
+                        onInputsChange({ ...inputs, rothConversionYourSharePercent: Math.min(100, Math.max(0, raw)) });
+                      }}
+                      className="w-12 bg-slate-900 border border-slate-800 rounded px-1 py-0.5 text-[11px] text-emerald-400 font-bold font-mono focus:outline-none"
+                      title={`Percent of each conversion taken from ${sourceNames.you}'s IRA`}
+                      disabled={isNoConversion}
+                    />
+                    <span className="text-[10px] font-sans text-slate-400">
+                      % {sourceNames.you} / {100 - yourSharePercent}% {sourceNames.wife}
+                    </span>
+                  </>
+                )}
+              </div>
+            )}
 
             <button
               type="button"
@@ -825,7 +894,7 @@ export const TaxableIncomeWorkspace: React.FC<TaxableIncomeWorkspaceProps> = ({
                   {CONVERSION_TARGET_PRESETS.filter((p) => p.type === 'bracket').map((p) => {
                     const isSelected =
                       activeTarget === p.targetValue ||
-                      (activeTarget !== null && activeTarget === p.jointBase + FED_STANDARD_DEDUCTION_MFJ);
+                      matchesBracketTargetWithDeduction(p, activeTarget);
                     return (
                       <button
                         key={p.id}
@@ -875,6 +944,15 @@ export const TaxableIncomeWorkspace: React.FC<TaxableIncomeWorkspaceProps> = ({
                 </span>
               )}
             </>
+          ) : isNoConversion ? (
+            <div className="flex flex-wrap items-center gap-3 w-full">
+              <span className="text-[10px] font-bold text-slate-400 uppercase font-mono tracking-wider">
+                No Roth Conversions:
+              </span>
+              <span className="text-[11px] text-slate-400">
+                Conversions are disabled. Pre-tax balances grow and are drawn only through spending and required minimum distributions. Choose another mode to model conversions.
+              </span>
+            </div>
           ) : inputs.rothConversionStrategy === 'custom' ? (
             <div className="flex flex-wrap items-center justify-between gap-3 w-full">
               <div className="flex flex-wrap items-center gap-2.5">
@@ -967,7 +1045,7 @@ export const TaxableIncomeWorkspace: React.FC<TaxableIncomeWorkspaceProps> = ({
             </span>
             <div className="flex items-baseline gap-1.5 mt-0.5">
               <span className="text-base font-black text-emerald-400 font-mono">
-                {kpiStats.convStart} – {kpiStats.convEnd}
+                {isNoConversion ? 'None' : `${kpiStats.convStart} – ${kpiStats.convEnd}`}
               </span>
               <span className="text-[9px] text-slate-500 font-mono truncate">
                 ({formatCurrency(kpiStats.totalConversions)})
@@ -1012,6 +1090,20 @@ export const TaxableIncomeWorkspace: React.FC<TaxableIncomeWorkspaceProps> = ({
               </div>
             </div>
             <ShieldAlert className="w-5 h-5 text-amber-500/50 shrink-0 ml-2" />
+          </div>
+        ) : isNoConversion ? (
+          <div className="glass-panel rounded-xl px-3 py-2 flex items-center justify-between border-l-4 border-l-slate-500 bg-slate-900/60">
+            <div className="min-w-0">
+              <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider block truncate">
+                Roth Conversions
+              </span>
+              <div className="flex items-baseline gap-1.5 mt-0.5">
+                <span className="text-base font-black font-mono text-slate-300">Disabled</span>
+                <span className="text-[9px] text-slate-500 font-mono truncate">
+                  {formatCurrency(0)} per year
+                </span>
+              </div>
+            </div>
           </div>
         ) : inputs.rothConversionStrategy === 'custom' ? (
           <div className="glass-panel rounded-xl px-3 py-2 flex items-center justify-between border-l-4 border-l-purple-500 bg-slate-900/60">
@@ -1210,8 +1302,8 @@ export const TaxableIncomeWorkspace: React.FC<TaxableIncomeWorkspaceProps> = ({
                     <td className="py-2 px-3 font-bold text-slate-100">{r.year}</td>
                     <td className="py-2 px-3 text-slate-400">
                       {inputs.isSingleFiler 
-                        ? (r.yourAge >= (inputs.you.longevityAge ?? 85) ? '-' : r.yourAge)
-                        : `${r.yourAge >= (inputs.you.longevityAge ?? 85) ? '-' : r.yourAge} / ${r.wifeAge >= (inputs.wife?.longevityAge ?? 95) ? '-' : r.wifeAge}`}
+                        ? (r.yourAge >= (inputs.you.longevityAge ?? DEFAULT_YOUR_LONGEVITY_AGE) ? '-' : r.yourAge)
+                        : `${r.yourAge >= (inputs.you.longevityAge ?? DEFAULT_YOUR_LONGEVITY_AGE) ? '-' : r.yourAge} / ${r.wifeAge >= (inputs.wife?.longevityAge ?? DEFAULT_WIFE_LONGEVITY_AGE) ? '-' : r.wifeAge}`}
                     </td>
                     <td className="py-2 px-3">{formatCurrency(r.grossNonConvAGI)}</td>
                     <td className="py-2 px-3 text-slate-400">-{formatCurrency(r.stdDeduction)}</td>
@@ -1223,7 +1315,7 @@ export const TaxableIncomeWorkspace: React.FC<TaxableIncomeWorkspaceProps> = ({
                           {r.isRothConversionCapped && (
                             <span
                               className="text-[9px] px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-300 border border-amber-500/40 font-semibold cursor-help"
-                              title={`Requested conversion was ${formatCurrency(r.requestedCustomRothConversion || 0)}, but was capped due to exhausted pre-tax IRA balance.`}
+                              title={`Requested conversion was ${formatCurrency(r.requestedCustomRothConversion || 0)}, but was capped because the pre-tax IRA balance, less the RMD that must stay in each IRA, was exhausted.`}
                             >
                               ⚠️ Capped
                             </span>
@@ -1378,7 +1470,9 @@ export const TaxableIncomeWorkspace: React.FC<TaxableIncomeWorkspaceProps> = ({
                       <span>Recommended Strategy</span>
                     </div>
                     <div className="text-base font-black text-slate-100">
-                      {optimizationResult.bestStrategy === 'fill-to-target' ? (
+                      {optimizationResult.bestStrategy === 'none' ? (
+                        <>No Roth Conversions (None)</>
+                      ) : optimizationResult.bestStrategy === 'fill-to-target' ? (
                         <>Fill-to-Target ({getTargetPresetInfo(optimizationResult.bestTargetValue)?.description || `Target Limit: ${formatCurrency(optimizationResult.bestTargetValue || 0)}`})</>
                       ) : optimizationResult.bestStrategy === 'custom' ? (
                         <>Maintain Active Custom Schedule</>
@@ -1402,7 +1496,7 @@ export const TaxableIncomeWorkspace: React.FC<TaxableIncomeWorkspaceProps> = ({
                       {/* Metric 1: Net Ending Estate */}
                       <div className="bg-slate-950/40 border border-slate-800/60 p-3.5 rounded-xl flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
                         <div className="space-y-0.5">
-                          <span className="text-xs font-bold text-slate-200">Ending Net Estate</span>
+                          <span className="text-xs font-bold text-slate-200">Ending Portfolio</span>
                           <span className="text-[10px] text-slate-500 block">Total portfolio value remaining at simulation end</span>
                         </div>
                         <div className="flex items-center gap-4 justify-between sm:justify-end">
@@ -1511,7 +1605,6 @@ export const TaxableIncomeWorkspace: React.FC<TaxableIncomeWorkspaceProps> = ({
           onClose={() => setShowCustomModal(false)}
           inputs={inputs}
           ledger={ledger}
-          simulateSurvivor={simulateSurvivor}
           activeScenarioId={inputs.activeCustomScenarioId}
           onSaveScenario={(scenario, applyImmediately) => {
             if (onSaveCustomScenario) {
@@ -1532,7 +1625,6 @@ export const TaxableIncomeWorkspace: React.FC<TaxableIncomeWorkspaceProps> = ({
           isOpen={showTEModal}
           onClose={() => setShowTEModal(false)}
           inputs={inputs}
-          simulateSurvivor={simulateSurvivor}
           activeScenarioSequence={activeScenarioSequence}
           onApplySchedule={(schedule, scenarioName = 'Tax Equilibrium Schedule (TE)') => {
             const newScenario: CustomRothScenario = {

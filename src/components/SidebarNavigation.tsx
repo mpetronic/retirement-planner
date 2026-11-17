@@ -78,7 +78,7 @@ const PRIMARY_NAV_ITEMS: NavItem[] = [
     label: 'Lookback Ledger',
     shortLabel: 'Ledger',
     icon: TableProperties,
-    description: '35-year cashflow accounting',
+    description: 'Year-by-year cashflow accounting',
   },
   {
     id: 'monte-carlo',

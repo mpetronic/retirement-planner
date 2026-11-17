@@ -126,7 +126,7 @@ To ensure inflation remains macroeconomically consistent with nominal returns wi
    ```
    Simulated_CPI = Clamp(CMA_Target_CPI + Shock_t, INFLATION_RATE_MIN, INFLATION_RATE_MAX)
    ```
-4. In crisis / stagflation states within the Markov regime-switching generator, stagflation shocks (1973, 1974, 1980, 2022) are added directly to `CMA_Target_CPI`.
+4. The Markov regime-switching generator and its crisis-state stagflation oversampling were removed (simulation review item 2). Inflation is always sampled uniformly from the historical shocks above.
 
 This preserves real-world clustering, fat tails, and historical crises while centering long-term purchasing power decay exactly on the institution's forecast.
 
@@ -150,7 +150,7 @@ export interface MonteCarloSettings {
   stressTest?: StressTestConfig;
   randomizeCPI?: boolean;
   constantCPIRate?: number | null;
-  enableRegimeSwitching?: boolean;
+  enableRegimeSwitching?: boolean; // Deprecated and ignored: regime switching and mean reversion were removed
   historicalSamplingStrategy?: 'hybrid' | 'block' | 'random';
   calibrateHistoricalMeans?: boolean;
 

@@ -62,13 +62,13 @@ export interface PortfolioBalances {
 export interface LockedReturnSequence {
   id: string; // Unique timestamp or ID of the sequence
   mode: 'monte-carlo' | 'historical';
-  equityReturns: number[]; // Array of 35 rates (2026 to 2060)
-  fixedIncomeReturns: number[]; // Array of 35 rates (2026 to 2060)
-  inflationRates?: number[]; // Array of 35 inflation rates (2026 to 2060)
+  equityReturns: number[]; // One rate per simulated year, starting at the simulation start year
+  fixedIncomeReturns: number[]; // One rate per simulated year, starting at the simulation start year
+  inflationRates?: number[]; // One inflation rate per simulated year
 }
 
 export interface StressTestYearOverride {
-  year: number;            // e.g. 2028 (2026 to 2060)
+  year: number;            // e.g. 2028, any year within the simulation horizon
   equityReturn: number;    // e.g. -0.25 (-25%)
   fixedIncomeReturn: number; // e.g. -0.05 (-5%)
 }
@@ -111,7 +111,8 @@ export interface MonteCarloSettings {
   stressTest?: StressTestConfig; // Optional multi-year sequence of returns stress test config
   randomizeCPI?: boolean;        // If true (default), randomize annual CPI per trial; if false, hold constant
   constantCPIRate?: number | null; // Optional custom constant CPI rate if held constant (e.g. 0.025)
-  enableRegimeSwitching?: boolean; // If true (default), apply Markov 2-state regime switching and Ornstein-Uhlenbeck mean reversion
+  /** @deprecated Removed: regime switching and mean reversion no longer exist. Kept so older saved plans still load; ignored. */
+  enableRegimeSwitching?: boolean;
   historicalSamplingStrategy?: 'hybrid' | 'block' | 'random'; // Historical bootstrap strategy (hybrid: 35% block / 65% random, block: 100% contiguous, random: 100% random resampled)
   calibrateHistoricalMeans?: boolean; // If true (default), calibrate historical return shocks to match user configured baseline means (e.g. 7% equity / 4% bond)
   enableHistoricalStudentT?: boolean; // If true, apply Student-t fat-tail scaling (df=5) to historical bootstrap shocks. Only applicable in historical mode (not CMA/synthetic).
@@ -129,6 +130,7 @@ export interface ExpenseItemDefinition {
   isOneTime?: boolean;
   targetYear?: number | null; // The specific year a one-time expense occurs (in today's dollars)
   applicableStates?: string[]; // ['ALL'] (default) or specific state codes (e.g. ['FL'], ['MD'])
+  isSALTEligible?: boolean; // Recurring item (e.g. property tax) counted toward the federal SALT itemized deduction
   dueMonths?: number[]; // Array of 1-based month numbers (1 to 12) when this non-monthly expense is due
 }
 
@@ -139,13 +141,44 @@ export interface ExpenseCatalog {
 
 export interface DetailedExpensesState {
   catalog: ExpenseCatalog;
-  states?: string[]; // Configured state roster (e.g. ['MD', 'FL'])
+  states?: string[]; // Configured state roster (state codes)
   costs: {
     [stateCode: string]: Record<string, number>;
   };
   frequencies: Record<string, number>;
-  MD?: Record<string, number>;
-  FL?: Record<string, number>;
+}
+
+/** Key in DetailedExpensesState.costs holding costs that apply to every state. */
+export const ALL_STATES_COST_KEY = 'ALL';
+
+/**
+ * Resolves an item's cost for a state: the state's own entry, then the all-states entry, then 0.
+ * Never falls back to another state's costs.
+ */
+export function resolveExpenseCost(
+  costs: DetailedExpensesState['costs'] | undefined,
+  stateCode: string,
+  itemId: string
+): number {
+  return costs?.[stateCode]?.[itemId] ?? costs?.[ALL_STATES_COST_KEY]?.[itemId] ?? 0;
+}
+
+/**
+ * Legacy plan format: per-state costs stored as top-level keys of the detailed expenses object
+ * instead of under `costs`. Only the two states that existed in that format were ever written.
+ * This is the only place those keys are read.
+ */
+const LEGACY_TOP_LEVEL_COST_STATE_KEYS = ['MD', 'FL'];
+
+function readLegacyTopLevelCosts(rawObj: Record<string, unknown>): Record<string, Record<string, number>> {
+  const legacy: Record<string, Record<string, number>> = {};
+  for (const stateCode of LEGACY_TOP_LEVEL_COST_STATE_KEYS) {
+    const value = rawObj[stateCode];
+    if (value && typeof value === 'object') {
+      legacy[stateCode] = { ...(value as Record<string, number>) };
+    }
+  }
+  return legacy;
 }
 
 // Backward compatibility types
@@ -218,14 +251,9 @@ export const DEFAULT_DETAILED_EXPENSES_STATE: DetailedExpensesState = {
     categories: [...DEFAULT_EXPENSE_CATEGORIES],
     items: []
   },
-  states: ['MD', 'FL'],
-  costs: {
-    MD: {},
-    FL: {}
-  },
-  frequencies: {},
-  MD: {},
-  FL: {}
+  states: [],
+  costs: {},
+  frequencies: {}
 };
 
 /**
@@ -243,18 +271,15 @@ export function normalizeDetailedExpenses(raw?: unknown): DetailedExpensesState 
   if (rawCatalog && Array.isArray(rawCatalog.items) && Array.isArray(rawCatalog.categories)) {
     const rawCosts = (rawObj.costs || {}) as Record<string, Record<string, number>>;
     const costs: Record<string, Record<string, number>> = { ...rawCosts };
-    if (rawObj.MD && !costs.MD) costs.MD = { ...(rawObj.MD as Record<string, number>) };
-    if (rawObj.FL && !costs.FL) costs.FL = { ...(rawObj.FL as Record<string, number>) };
-    
-    // Ensure default MD and FL objects exist
-    if (!costs.MD) costs.MD = {};
-    if (!costs.FL) costs.FL = {};
+    for (const [stateCode, legacyCosts] of Object.entries(readLegacyTopLevelCosts(rawObj))) {
+      if (!costs[stateCode]) costs[stateCode] = legacyCosts;
+    }
 
-    const rawStates = Array.isArray(rawObj.states) && rawObj.states.length > 0 
-      ? (rawObj.states as string[]) 
-      : ['MD', 'FL'];
+    const rawStates = Array.isArray(rawObj.states) ? (rawObj.states as string[]) : [];
     const stateSet = new Set<string>(rawStates);
     Object.keys(costs).forEach(s => stateSet.add(s));
+    // The all-states cost bucket is not a state of residence
+    stateSet.delete(ALL_STATES_COST_KEY);
 
     const frequencies: Record<string, number> = {
       ...((rawObj.frequencies as Record<string, number>) || {})
@@ -277,15 +302,12 @@ export function normalizeDetailedExpenses(raw?: unknown): DetailedExpensesState 
       },
       states: Array.from(stateSet),
       costs,
-      frequencies,
-      MD: costs.MD,
-      FL: costs.FL
+      frequencies
     };
   }
 
   // Legacy format migration
-  const legacyMD = (rawObj.MD || {}) as Record<string, number>;
-  const legacyFL = (rawObj.FL || {}) as Record<string, number>;
+  const legacyCosts = readLegacyTopLevelCosts(rawObj);
   const legacyFreqs = (rawObj.frequencies || {}) as Record<string, number>;
 
   const knownOneTimeKeys = new Set([
@@ -301,8 +323,8 @@ export function normalizeDetailedExpenses(raw?: unknown): DetailedExpensesState 
     'post65DentalPremium', 'post65DentalOOP', 'post65VisionPremium', 'post65VisionOOP'
   ]);
 
-  // Infer legacy items if legacy keys exist in raw.MD or raw.FL (excluding healthcare keys)
-  const legacyKeys = Array.from(new Set([...Object.keys(legacyMD), ...Object.keys(legacyFL)]))
+  // Infer legacy items from the keys of every legacy per-state cost map (excluding healthcare keys)
+  const legacyKeys = Array.from(new Set(Object.values(legacyCosts).flatMap((stateCosts) => Object.keys(stateCosts))))
     .filter((key) => !healthcareKeys.has(key));
   const legacyItems: ExpenseItemDefinition[] = legacyKeys.map((key) => {
     const isOneTime = knownOneTimeKeys.has(key);
@@ -316,10 +338,7 @@ export function normalizeDetailedExpenses(raw?: unknown): DetailedExpensesState 
     };
   });
 
-  const costs: Record<string, Record<string, number>> = {
-    MD: { ...legacyMD },
-    FL: { ...legacyFL }
-  };
+  const costs: Record<string, Record<string, number>> = legacyCosts;
 
   const frequencies: Record<string, number> = {
     ...legacyFreqs
@@ -330,11 +349,9 @@ export function normalizeDetailedExpenses(raw?: unknown): DetailedExpensesState 
       categories: [...DEFAULT_EXPENSE_CATEGORIES],
       items: legacyItems
     },
-    states: ['MD', 'FL'],
+    states: Object.keys(costs),
     costs,
-    frequencies,
-    MD: costs.MD,
-    FL: costs.FL
+    frequencies
   };
 }
 
@@ -365,8 +382,6 @@ export const DEFAULT_CHARITY_SETTINGS: CharitySettings = {
   maxAnnualTithe: null,
   useQCD: true,
 };
-
-export const BASE_QCD_LIMIT = 105000;
 
 export interface YearActualsRecord {
   year: number;
@@ -478,13 +493,18 @@ export function describeSSReductions(config: SSReductionConfig | null | undefine
     .join(', ');
 }
 
+/** How Roth conversions are determined: none (disabled), a flat annual amount, fill-to-target income, or a custom per-year schedule. */
+export type RothConversionStrategy = 'none' | 'flat' | 'fill-to-target' | 'custom';
+
+/** Which traditional IRA funds Roth conversions: a percent split, or one spouse's IRA drained first. */
+export type RothConversionSourceMode = 'percent' | 'you-first' | 'wife-first';
+
 export interface AppStateInputs {
   isConfigured: boolean;
   ssReductions?: SSReductionConfig;
   isSingleFiler: boolean;
   simulationStartYear?: number | null; // Configured base simulation start year (defaults to current year when initialized)
   useDetailedExpenses?: boolean;
-  simulateSurvivor?: boolean;
   lockedReturnSequence?: LockedReturnSequence | null;
   you: SpouseProfile;
   wife: SpouseProfile;
@@ -503,8 +523,12 @@ export interface AppStateInputs {
   annualRothConversion: number;
   rothConversionStartYear?: number;
   rothConversionEndYear?: number;
-  rothConversionStrategy: 'flat' | 'fill-to-target' | 'custom';
+  rothConversionStrategy: RothConversionStrategy;
   rothConversionTargetValue: number | null;
+  /** Which spouse's traditional IRA funds Roth conversions. Defaults to an even percent split. */
+  rothConversionSourceMode?: RothConversionSourceMode;
+  /** In 'percent' mode, the share (0-100) of each conversion taken from the primary spouse's IRA. */
+  rothConversionYourSharePercent?: number;
   customRothScenarios?: CustomRothScenario[];
   activeCustomScenarioId?: string | null;
   monteCarloSettings: MonteCarloSettings;
@@ -516,6 +540,12 @@ export interface AppStateInputs {
   bucketSettings?: BucketStrategySettings;
   priorTaxReturnMAGI?: Record<number, number | null>; // Historical 2-year lookback tax return MAGI (e.g. 2024 for 2026, 2025 for 2027)
 }
+
+/** Fallback demographics used when a plan omits a birth date or longevity age. Shared so all engines agree. */
+export const DEFAULT_YOUR_BIRTH_YEAR = 1960;
+export const DEFAULT_WIFE_BIRTH_YEAR = 1964;
+export const DEFAULT_YOUR_LONGEVITY_AGE = 85;
+export const DEFAULT_WIFE_LONGEVITY_AGE = 95;
 
 /**
  * Resolves the starting year for a retirement plan simulation.
@@ -546,12 +576,15 @@ export interface SimulationResultRow {
   wifeRMD: number;
   yourSalary?: number; // Pre-retirement annual active salary earned
   wifeSalary?: number; // Pre-retirement annual active salary earned
-  capitalGainsTriggered: number;
+  capitalGainsTriggered: number; // Capital gains taxed this year (in-year sales + prior-year tax-funding gains)
   intentionalRothConversion: number;
   requestedCustomRothConversion?: number;
   isRothConversionCapped?: boolean;
   rothConversionShortfall?: number;
-  otherTaxableIncome: number; // Placeholder if needed
+  otherTaxableIncome: number; // Discretionary pre-tax IRA draws taxed this year (in-year draws + prior-year tax-funding draws)
+  capitalLossCarryforward?: number; // Net capital loss carried into next year after the ordinary-income offset
+  priorYearTaxFundingGains?: number; // Portion of capitalGainsTriggered realized by selling brokerage to pay last year's tax settlement
+  priorYearTaxFundingPreTaxDraw?: number; // Portion of otherTaxableIncome drawn from pre-tax IRAs to pay last year's tax settlement
   
   // MAGI & Tax Calculations
   magi: number;
@@ -564,8 +597,13 @@ export interface SimulationResultRow {
   niitTax: number;
   taxableSS: number;
   taxableDividends: number;
+  isSingleReturn: boolean; // True when the year was filed as a single return
+  irmaaUsesSingleTiers?: boolean; // True when this year's IRMAA used single tiers (filing status of the year minus 2 return)
+  qualifiedDividends?: number; // Portion of dividends taxed at preferential capital gains rates
   taxableInterest: number;
   cpiFactor: number;
+  /** Factor that carries this year's federal rule-table dollar limits (brackets, deductions, IRMAA tiers) to this year. */
+  federalIndexFactor?: number;
   activeState?: string;
   activeCounty?: string | null;
   effectiveLocalTaxRate?: number;
@@ -599,7 +637,7 @@ export interface SimulationResultRow {
   
   // Drawdowns
   drawdownTaxable: number;
-  drawdownPreTax: number;
+  drawdownPreTax: number; // Cash withdrawn this year, including year-end tax settlement draws (taxed next year)
   drawdownRoth: number;
   drawdownCash: number;
   reinvestedSurplus?: number; // Total annual surplus reinvested into Taxable Brokerage

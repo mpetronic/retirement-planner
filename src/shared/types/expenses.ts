@@ -51,6 +51,10 @@ export interface StatementFormatProfile {
   nickname: string; // e.g. "Capital One Venture", "Chase Sapphire", "Navy Federal Checking"
   fingerprint: string; // Normalized sorted header token hash
   mapping: StatementColumnMapping;
+  /** Original CSV header names, kept so the format can be edited without loading a statement. */
+  headers?: string[];
+  /** Case-insensitive regexes tested against the description; matching rows are excluded from import. */
+  ignorePatterns?: string[];
   createdAt: string;
   updatedAt: string;
 }
@@ -131,6 +135,8 @@ export interface StorageAdapter {
   updateExpense(id: string, updates: Partial<ActualExpense>): Promise<ActualExpense>;
   updateExpensesBatch?(batch: Array<{ id: string; updates: Partial<ActualExpense> }>): Promise<ActualExpense[]>;
   deleteExpense(id: string): Promise<void>;
+  /** Deletes many expenses at once. `date` (YYYY-MM-DD) lets cloud adapters address records without a lookup. */
+  deleteExpensesBatch?(items: Array<{ id: string; date: string }>): Promise<void>;
   clearAllExpenses?(): Promise<void>;
 
   // Pending queue sync

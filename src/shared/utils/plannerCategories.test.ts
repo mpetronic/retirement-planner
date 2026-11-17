@@ -7,6 +7,9 @@ import {
   syncPlannerCatalogToCloudStorage,
   mergeWithCustomCategories,
   sortPlannerExpenseItems,
+  findCatalogItem,
+  newCatalogItemId,
+  type PlannerExpenseLineItem,
 } from './plannerCategories';
 import { DEFAULT_DETAILED_EXPENSES_STATE } from '../../types';
 import type { StorageAdapter } from '../storage';
@@ -76,7 +79,10 @@ describe('plannerCategories synchronization', () => {
     expect(parsed.detailedExpenses.catalog.categories).toContain('Home');
     const catalogItem = parsed.detailedExpenses.catalog.items.find((i: { name: string; category: string }) => i.name === 'Housewares' && i.category === 'Home');
     expect(catalogItem).toBeDefined();
-    expect(parsed.detailedExpenses.costs.MD[catalogItem.id]).toBe(150);
+    // New items are seeded into the all-states bucket so every state resolves a cost
+    expect(parsed.detailedExpenses.costs.ALL[catalogItem.id]).toBe(150);
+    expect(parsed.detailedExpenses.costs.MD).toBeUndefined();
+    expect(parsed.detailedExpenses.costs.FL).toBeUndefined();
   });
 
   it('should sync custom categories array from storage adapter into planner detailed expenses', () => {
@@ -308,5 +314,32 @@ describe('sortPlannerExpenseItems', () => {
     const sorted = sortPlannerExpenseItems(items, ['Living', 'Home']);
     expect(sorted.map(i => i.id)).toEqual(['b', 'a']);
     expect(items).toEqual(copy);
+  });
+});
+
+describe('findCatalogItem', () => {
+  const item = (id: string, groupCategory: string, name: string): PlannerExpenseLineItem => ({
+    id,
+    groupCategory,
+    name,
+    displayName: `${groupCategory} - ${name}`,
+    plannedMonthlyDefault: 0,
+  });
+  const catalog = [item('gas', 'Home', 'Gas'), item('autoGas', 'Transportation', 'Auto gas'), item('internet', 'Home', 'Internet/TV')];
+
+  it('returns the item with the matching category and name, ignoring case and whitespace', () => {
+    expect(findCatalogItem(catalog, 'home', ' GAS ')?.id).toBe('gas');
+    expect(findCatalogItem(catalog, 'Transportation', 'Auto gas')?.id).toBe('autoGas');
+  });
+
+  it('does not match on name alone or on a partial name', () => {
+    expect(findCatalogItem(catalog, 'Transportation', 'Gas')).toBeUndefined();
+    expect(findCatalogItem(catalog, 'Home', 'Internet')).toBeUndefined();
+  });
+});
+
+describe('newCatalogItemId', () => {
+  it('uses the single item_<timestamp>_<random> convention', () => {
+    expect(newCatalogItemId()).toMatch(/^item_\d+_[a-z0-9]{1,5}$/);
   });
 });

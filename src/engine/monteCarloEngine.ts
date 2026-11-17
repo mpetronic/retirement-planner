@@ -1,5 +1,5 @@
 import { AppStateInputs, LockedReturnSequence, StressTestConfig, StressTestYearOverride, getSimulationStartYear } from '../types';
-import { runRetirementSimulation } from './simulationEngine';
+import { runRetirementSimulation, getSimulationHorizonYears } from './simulationEngine';
 
 // Modern historical stock (S&P 500 total return) and bond (US 10-Yr Treasury total return) annual returns from 1970 to 2025.
 // These 56 years provide a highly realistic distribution of modern inflation and interest rate regimes.
@@ -65,8 +65,9 @@ export const HISTORICAL_RETURNS: HistoricalYear[] = [
   { year: 2021, stock: 0.2871, bond: -0.0147, inflation: 0.0470 },
   { year: 2022, stock: -0.1811, bond: -0.1783, inflation: 0.0800 },
   { year: 2023, stock: 0.2629, bond: 0.0388, inflation: 0.0412 },
-  { year: 2024, stock: 0.2400, bond: 0.0250, inflation: 0.0295 },
-  { year: 2025, stock: 0.1000, bond: 0.0300, inflation: 0.0271 },
+  { year: 2024, stock: 0.2502, bond: 0.0250, inflation: 0.0295 },
+  // 2025 actuals: S&P 500 total return 17.9% (FactSet via RBC), ICE US Treasury 7-10 Year index 8.2% (iShares IEF fact sheet), CPI-U Dec/Dec 2.7% (BLS)
+  { year: 2025, stock: 0.1790, bond: 0.0820, inflation: 0.0270 },
 ];
 
 /**
@@ -104,6 +105,12 @@ export const BOND_RETURN_MAX = 0.30;
 export const INFLATION_RATE_MIN = -0.02;
 export const INFLATION_RATE_MAX = 0.15;
 
+/** Number of annual steps generated per Monte Carlo return sequence. */
+export const MONTE_CARLO_SEQUENCE_YEARS = 35;
+
+/** Annual inflation used when CPI randomization is off and no constant rate is supplied. */
+export const DEFAULT_CONSTANT_CPI_RATE = 0.025;
+
 /**
  * Clamps a numeric value within specified minimum and maximum bounds.
  */
@@ -112,11 +119,25 @@ export function clamp(val: number, min: number, max: number): number {
 }
 
 /**
- * Generates joint stock/bond returns for 35 years using bivariate normal distribution
- * with optional 2-state Markov regime-switching and Ornstein-Uhlenbeck mean reversion.
+ * Converts a stated geometric (compound) annual return into the arithmetic annual mean that a
+ * simulation must draw so that the median compound path tracks the stated geometric return.
  *
- * Implements institutional volatility drag adjustment: annual distribution drift is elevated
- * by half the variance (sigma^2 / 2) so simulated median compound wealth tracks the target geometric CAGR.
+ * Volatility drag: a portfolio that earns arithmetic mean m with annual volatility sigma compounds at
+ * roughly m - sigma^2 / (2 * (1 + m)). Inverting that gives the arithmetic mean to draw.
+ */
+export function geometricToArithmeticMean(geometricMean: number, volatility: number): number {
+  return geometricMean + (volatility * volatility) / (2 * (1 + geometricMean));
+}
+
+/**
+ * Generates joint stock/bond returns for the requested number of years (default 35) using a bivariate normal distribution with
+ * independent annual draws (no regime switching, no mean reversion). This is the CMA-faithful
+ * parametric model: it reproduces the entered volatility and correlation and, through the volatility
+ * drag adjustment, makes the median compound path track the entered geometric CAGR.
+ *
+ * Known limits (also documented in the in-app help): annual draws are symmetric, so the model
+ * under-represents crash years relative to real history, and it has no volatility clustering. Use the
+ * historical bootstrap mode as the real-history check.
  */
 export function generateSyntheticSequence(
   equityMean: number,
@@ -127,126 +148,43 @@ export function generateSyntheticSequence(
   rand: () => number = Math.random,
   randomizeCPI: boolean = true,
   constantCPIRate?: number | null,
-  enableRegimeSwitching: boolean = true,
-  targetCPIRate?: number
+  targetCPIRate?: number,
+  years: number = MONTE_CARLO_SEQUENCE_YEARS
 ): Omit<LockedReturnSequence, 'id'> {
   const equityReturns: number[] = [];
   const fixedIncomeReturns: number[] = [];
   const inflationRates: number[] = [];
-  
-  // Stochastic arithmetic drift translation (calibrated discrete annual volatility drag)
-  const equityDrift = equityMean + (equityVol * equityVol) / (2 * (1 + equityMean));
-  const bondDrift = bondMean + (bondVol * bondVol) / (2 * (1 + bondMean));
 
-  // Markov 2-State regime parameters:
-  // State 0: Expansion / Normal Growth (80% unconditional probability)
-  // State 1: Contraction / Crisis / Bear Market (20% unconditional probability)
-  const p00 = 0.85; // 85% chance of remaining in expansion (avg duration ~6.7 yrs)
-  const p11 = 0.40; // 40% chance of remaining in bear/crisis (avg duration ~1.67 yrs)
-  
-  // Ergodic stationary distribution: pi_0 = (1 - p11) / ((1 - p00) + (1 - p11)) = 0.60 / 0.75 = 0.80
-  const pi0 = (1 - p11) / ((1 - p00) + (1 - p11));
-  const pi1 = 1 - pi0;
-  
-  // In crisis state, expected equity return is negative (-8%)
-  const muCrisis = -0.08;
-  // Calibrate expansion mean mu_0 so that unconditional weighted expectation equals equityDrift:
-  // pi0 * mu_0 + pi1 * muCrisis = equityDrift  =>  mu_0 = (equityDrift - pi1 * muCrisis) / pi0
-  const muExpansion = (equityDrift - pi1 * muCrisis) / pi0;
-  
-  // Initial state selection based on stationary probability
-  let currentState = rand() < pi0 ? 0 : 1;
-  
-  // Cumulative log return tracking for Ornstein-Uhlenbeck mean reversion
-  // Tracks continuous compounding target matching geometric CAGR
-  let cumulativeRealizedLogReturn = 0;
-  const targetLogRate = Math.log(Math.max(0.001, 1 + equityMean));
-  const kappa = 0.20; // Mean-reversion speed: 20% annual correction of cumulative tracking gap
-  
-  for (let i = 0; i < 35; i++) {
-    // 1. Advance Markov State if regime switching is enabled
-    if (enableRegimeSwitching && i > 0) {
-      if (currentState === 0) {
-        currentState = rand() < p00 ? 0 : 1;
-      } else {
-        currentState = rand() < p11 ? 1 : 0;
-      }
-    }
-    
-    // 2. Base expected returns and volatilities per state
-    let effEquityMean = equityDrift;
-    let effEquityVol = equityVol;
-    let effBondMean = bondDrift;
-    let effBondVol = bondVol;
-    let effCorrelation = correlation;
-    
-    if (enableRegimeSwitching) {
-      if (currentState === 0) {
-        // Normal Expansion State
-        effEquityMean = muExpansion;
-        effEquityVol = equityVol * 0.85;
-        effBondMean = bondDrift;
-        effBondVol = bondVol;
-      } else {
-        // Contraction / Crisis State: High volatility, depressed returns, flight-to-safety bond boost
-        effEquityMean = muCrisis;
-        effEquityVol = equityVol * 1.50;
-        effBondMean = bondDrift + 0.015; // +1.5% flight-to-safety / rate-cut boost
-        effBondVol = bondVol * 1.20;
-        effCorrelation = Math.min(0.60, correlation + 0.20); // Correlation rises during systemic panics
-      }
-      
-      // 3. Mean Reversion Drift Adjustment
-      const targetCumLog = i * targetLogRate;
-      const trackingGap = cumulativeRealizedLogReturn - targetCumLog;
-      // Clamp drift adjustment to prevent over-correction / extreme swings ([-4%, +4%])
-      const driftAdjustment = Math.max(-0.04, Math.min(0.04, -kappa * trackingGap));
-      effEquityMean += driftAdjustment;
-    }
-    
-    // 4. Correlated standard normal variables (Box-Muller)
+  // Stochastic arithmetic drift translation (calibrated discrete annual volatility drag)
+  const equityDrift = geometricToArithmeticMean(equityMean, equityVol);
+  const bondDrift = geometricToArithmeticMean(bondMean, bondVol);
+
+  for (let i = 0; i < years; i++) {
+    // Correlated standard normal variables (Box-Muller)
     const z1 = nextGaussian(rand);
     const z2 = nextGaussian(rand);
-    
-    // Correlated transformation
+
     const x1 = z1;
-    const x2 = effCorrelation * z1 + Math.sqrt(Math.max(0.0001, 1 - effCorrelation * effCorrelation)) * z2;
-    
-    // In CMA/synthetic mode, returns directly follow the calibrated bivariate normal distribution,
-    // honoring institutional CMA volatility and correlation without uncalibrated fat-tail inflation.
-    const rawEquityReturn = effEquityMean + effEquityVol * x1;
-    const rawBondReturn = effBondMean + effBondVol * x2;
-    
+    const x2 = correlation * z1 + Math.sqrt(Math.max(0.0001, 1 - correlation * correlation)) * z2;
+
+    const rawEquityReturn = equityDrift + equityVol * x1;
+    const rawBondReturn = bondDrift + bondVol * x2;
+
     // Clamp to realistic historical boundaries
-    const equityReturn = clamp(rawEquityReturn, EQUITY_RETURN_MIN, EQUITY_RETURN_MAX);
-    const bondReturn = clamp(rawBondReturn, BOND_RETURN_MIN, BOND_RETURN_MAX);
-    
-    equityReturns.push(equityReturn);
-    fixedIncomeReturns.push(bondReturn);
-    
-    // Update cumulative realized log return for next year's mean reversion
-    cumulativeRealizedLogReturn += Math.log(Math.max(0.01, 1 + equityReturn));
-    
-    // 6. Inflation sampling
+    equityReturns.push(clamp(rawEquityReturn, EQUITY_RETURN_MIN, EQUITY_RETURN_MAX));
+    fixedIncomeReturns.push(clamp(rawBondReturn, BOND_RETURN_MIN, BOND_RETURN_MAX));
+
+    // Inflation sampling: historical shocks re-centered on the target CPI when one is provided
     if (randomizeCPI) {
-      if (enableRegimeSwitching && currentState === 1 && rand() < 0.40) {
-        // In crisis state, 40% probability of sampling elevated historical stagflation CPI
-        const stagflationIndices = [3, 4, 10, 11, 51, 52]; // 1973, 1974, 1980, 1981, 2021, 2022
-        const sIdx = stagflationIndices[Math.floor(rand() * stagflationIndices.length)];
-        const rawCpi = HISTORICAL_RETURNS[sIdx].inflation;
-        const sampledCpi = targetCPIRate !== undefined ? targetCPIRate + (rawCpi - HISTORICAL_CPI_MEAN) : rawCpi;
-        inflationRates.push(clamp(sampledCpi, INFLATION_RATE_MIN, INFLATION_RATE_MAX));
-      } else {
-        const histIdx = Math.floor(rand() * HISTORICAL_RETURNS.length);
-        const rawCpi = HISTORICAL_RETURNS[histIdx].inflation;
-        const sampledCpi = targetCPIRate !== undefined ? targetCPIRate + (rawCpi - HISTORICAL_CPI_MEAN) : rawCpi;
-        inflationRates.push(clamp(sampledCpi, INFLATION_RATE_MIN, INFLATION_RATE_MAX));
-      }
+      const histIdx = Math.floor(rand() * HISTORICAL_RETURNS.length);
+      const rawCpi = HISTORICAL_RETURNS[histIdx].inflation;
+      const sampledCpi = targetCPIRate !== undefined ? targetCPIRate + (rawCpi - HISTORICAL_CPI_MEAN) : rawCpi;
+      inflationRates.push(clamp(sampledCpi, INFLATION_RATE_MIN, INFLATION_RATE_MAX));
     } else {
-      inflationRates.push(clamp(constantCPIRate ?? 0.025, INFLATION_RATE_MIN, INFLATION_RATE_MAX));
+      inflationRates.push(clamp(constantCPIRate ?? DEFAULT_CONSTANT_CPI_RATE, INFLATION_RATE_MIN, INFLATION_RATE_MAX));
     }
   }
-  
+
   return {
     mode: 'monte-carlo',
     equityReturns,
@@ -260,11 +198,20 @@ export const HISTORICAL_STOCK_MEAN = HISTORICAL_RETURNS.reduce((sum, y) => sum +
 export const HISTORICAL_BOND_MEAN = HISTORICAL_RETURNS.reduce((sum, y) => sum + y.bond, 0) / HISTORICAL_RETURNS.length;
 export const HISTORICAL_CPI_MEAN = HISTORICAL_RETURNS.reduce((sum, y) => sum + y.inflation, 0) / HISTORICAL_RETURNS.length;
 
+// Population standard deviation of the historical sample, used to convert a stated geometric return
+// into the arithmetic mean the bootstrap must be centered on (volatility drag).
+function historicalStdDev(values: number[], mean: number): number {
+  const variance = values.reduce((sum, v) => sum + (v - mean) * (v - mean), 0) / values.length;
+  return Math.sqrt(variance);
+}
+export const HISTORICAL_STOCK_VOLATILITY = historicalStdDev(HISTORICAL_RETURNS.map(y => y.stock), HISTORICAL_STOCK_MEAN);
+export const HISTORICAL_BOND_VOLATILITY = historicalStdDev(HISTORICAL_RETURNS.map(y => y.bond), HISTORICAL_BOND_MEAN);
+
 /**
- * Generates a historical bootstrapped sequence of 35 years.
+ * Generates a historical bootstrapped sequence of the requested number of years (default 35).
  * Can be random sampling (with replacement) or contiguous block sampling.
- * Optionally calibrates (shifts) historical shocks so their long-term mean matches
- * user-configured baseline return rates and inflation targets.
+ * Optionally calibrates (shifts) historical shocks so their compound (geometric) growth matches
+ * user-configured baseline return rates, and their mean inflation matches the inflation target.
  */
 export function generateHistoricalSequence(
   blockSampling: boolean = false,
@@ -276,32 +223,39 @@ export function generateHistoricalSequence(
   equityMean?: number,
   bondMean?: number,
   targetCPIRate?: number,
-  enableStudentT: boolean = false
+  enableStudentT: boolean = false,
+  years: number = MONTE_CARLO_SEQUENCE_YEARS
 ): Omit<LockedReturnSequence, 'id'> {
   const equityReturns: number[] = [];
   const fixedIncomeReturns: number[] = [];
   const inflationRates: number[] = [];
   
   // Compute calibration shift if calibrateMeans is enabled and target means are provided
-  const stockShift = calibrateMeans && equityMean !== undefined ? (equityMean - HISTORICAL_STOCK_MEAN) : 0;
-  const bondShift = calibrateMeans && bondMean !== undefined ? (bondMean - HISTORICAL_BOND_MEAN) : 0;
+  // The configured returns are geometric CAGRs, so the bootstrap sample is centered on the matching
+  // arithmetic mean (geometric plus volatility drag, using the sample's own volatility).
+  const stockBaseline = calibrateMeans && equityMean !== undefined
+    ? geometricToArithmeticMean(equityMean, HISTORICAL_STOCK_VOLATILITY)
+    : HISTORICAL_STOCK_MEAN;
+  const bondBaseline = calibrateMeans && bondMean !== undefined
+    ? geometricToArithmeticMean(bondMean, HISTORICAL_BOND_VOLATILITY)
+    : HISTORICAL_BOND_MEAN;
+  const stockShift = stockBaseline - HISTORICAL_STOCK_MEAN;
+  const bondShift = bondBaseline - HISTORICAL_BOND_MEAN;
   const cpiShift = calibrateMeans && targetCPIRate !== undefined ? (targetCPIRate - HISTORICAL_CPI_MEAN) : 0;
-  
-  const stockBaseline = calibrateMeans && equityMean !== undefined ? equityMean : HISTORICAL_STOCK_MEAN;
-  const bondBaseline = calibrateMeans && bondMean !== undefined ? bondMean : HISTORICAL_BOND_MEAN;
   const df = 5;
 
   if (blockSampling) {
-    // Select a continuous 35-year historical segment.
-    // Restrict starting index to [0, count - 35] so every block is fully contiguous without wrapping.
+    // Select a continuous historical segment. Starting index is restricted to [0, count - years] so a
+    // block that fits the dataset is fully contiguous. A block longer than the dataset wraps around
+    // to the first historical year once it runs off the end.
     const count = HISTORICAL_RETURNS.length;
-    const maxStartIdx = Math.max(0, count - 35);
+    const maxStartIdx = Math.max(0, count - years);
     let idx = startYearIndex !== undefined 
       ? Math.min(startYearIndex, maxStartIdx) 
       : Math.floor(rand() * (maxStartIdx + 1));
       
-    for (let i = 0; i < 35; i++) {
-      const yearData = HISTORICAL_RETURNS[idx];
+    for (let i = 0; i < years; i++) {
+      const yearData = HISTORICAL_RETURNS[idx % count];
       let eq = yearData.stock + stockShift;
       let fi = yearData.bond + bondShift;
 
@@ -318,13 +272,13 @@ export function generateHistoricalSequence(
 
       equityReturns.push(clamp(eq, EQUITY_RETURN_MIN, EQUITY_RETURN_MAX));
       fixedIncomeReturns.push(clamp(fi, BOND_RETURN_MIN, BOND_RETURN_MAX));
-      const rawCpi = randomizeCPI ? (yearData.inflation + cpiShift) : (constantCPIRate ?? 0.025);
+      const rawCpi = randomizeCPI ? (yearData.inflation + cpiShift) : (constantCPIRate ?? DEFAULT_CONSTANT_CPI_RATE);
       inflationRates.push(clamp(rawCpi, INFLATION_RATE_MIN, INFLATION_RATE_MAX));
       idx++;
     }
   } else {
     // Standard random year bootstrap (sampling with replacement)
-    for (let i = 0; i < 35; i++) {
+    for (let i = 0; i < years; i++) {
       const idx = Math.floor(rand() * HISTORICAL_RETURNS.length);
       const yearData = HISTORICAL_RETURNS[idx];
       let eq = yearData.stock + stockShift;
@@ -343,7 +297,7 @@ export function generateHistoricalSequence(
 
       equityReturns.push(clamp(eq, EQUITY_RETURN_MIN, EQUITY_RETURN_MAX));
       fixedIncomeReturns.push(clamp(fi, BOND_RETURN_MIN, BOND_RETURN_MAX));
-      const rawCpi = randomizeCPI ? (yearData.inflation + cpiShift) : (constantCPIRate ?? 0.025);
+      const rawCpi = randomizeCPI ? (yearData.inflation + cpiShift) : (constantCPIRate ?? DEFAULT_CONSTANT_CPI_RATE);
       inflationRates.push(clamp(rawCpi, INFLATION_RATE_MIN, INFLATION_RATE_MAX));
     }
   }
@@ -360,7 +314,7 @@ export interface MonteCarloTrialResult {
   trialIndex: number;
   success: boolean; // Portfolio survived (ended above $0)
   endingEstate: number;
-  portfolioHistory: number[]; // Length 35, portfolio value each year
+  portfolioHistory: number[]; // One entry per simulated year (the simulation horizon)
   sequence: LockedReturnSequence;
   timeToRuin: number | null; // Year of first ruin, or null if survived
 }
@@ -377,9 +331,11 @@ export interface MonteCarloSummary {
     p90: number; // 90th percentile (Best Case)
   }[];
   representativeSequences: {
-    worst: LockedReturnSequence;  // Trial near 10th percentile
-    median: LockedReturnSequence; // Trial near 50th percentile
-    best: LockedReturnSequence;   // Trial near 90th percentile
+    // Each is a single trial ranked by cumulative blended market return, not by ending estate, so
+    // its final portfolio value will not match the same percentile in `percentiles`.
+    worst: LockedReturnSequence;  // Trial at the 10th percentile of cumulative market return
+    median: LockedReturnSequence; // Trial at the 50th percentile of cumulative market return
+    best: LockedReturnSequence;   // Trial at the 90th percentile of cumulative market return
   };
   medianSurvivalYears: number | null; // Median years of survival for failed trials
 }
@@ -405,7 +361,7 @@ export function applyStressTestToSequence<T extends Omit<LockedReturnSequence, '
   const equityReturns = [...seq.equityReturns];
   const fixedIncomeReturns = [...seq.fixedIncomeReturns];
 
-  for (let yearIdx = 0; yearIdx < 35; yearIdx++) {
+  for (let yearIdx = 0; yearIdx < seq.equityReturns.length; yearIdx++) {
     const year = startYear + yearIdx;
     const ov = overrideMap.get(year);
     if (ov) {
@@ -515,7 +471,6 @@ export function computeRepresentativeSequences(
  */
 export function runMonteCarloSimulation(
   inputs: AppStateInputs,
-  simulateSurvivor: boolean = false,
   preGeneratedSequences?: Omit<LockedReturnSequence, 'id'>[]
 ): MonteCarloSummary {
   const trials = inputs.monteCarloSettings?.trials || 1000;
@@ -534,9 +489,9 @@ export function runMonteCarloSimulation(
   const constantCpi = (inputs.monteCarloSettings?.randomizeCPI === false && inputs.monteCarloSettings?.constantCPIRate != null)
     ? inputs.monteCarloSettings.constantCPIRate
     : inputs.growthAssumptions.cpiInflationRate;
-  const enableRegimeSwitching = inputs.monteCarloSettings?.enableRegimeSwitching !== false;
 
   const targetCpi = inputs.growthAssumptions.cpiInflationRate;
+  const horizonYears = getSimulationHorizonYears(inputs);
 
   // Compile raw sequences across all trials
   const rawSequences: Omit<LockedReturnSequence, 'id'>[] = [];
@@ -558,7 +513,8 @@ export function runMonteCarloSimulation(
         equityMean,
         bondMean,
         targetCpi,
-        enableStudentT
+        enableStudentT,
+        horizonYears
       ));
     } else {
       rawSequences.push(generateSyntheticSequence(
@@ -570,8 +526,8 @@ export function runMonteCarloSimulation(
         rand,
         isCpiRandomized,
         constantCpi,
-        enableRegimeSwitching,
-        targetCpi
+        targetCpi,
+        horizonYears
       ));
     }
   }
@@ -592,7 +548,7 @@ export function runMonteCarloSimulation(
     };
     
     // Run the retirement simulation with this specific trial return sequence
-    const ledger = runRetirementSimulation(inputs, simulateSurvivor, sequence);
+    const ledger = runRetirementSimulation(inputs, sequence);
     const portfolioHistory = ledger.map(r => r.totalPortfolioValue);
     const endingEstate = portfolioHistory[portfolioHistory.length - 1] || 0;
     
@@ -621,7 +577,7 @@ export function runMonteCarloSimulation(
   if (failedTrials.length > 0) {
     const survivalYears = failedTrials.map(r => {
       const idx = r.portfolioHistory.findIndex(v => v <= 0.01);
-      return idx !== -1 ? idx : 35;
+      return idx !== -1 ? idx : r.portfolioHistory.length;
     });
     survivalYears.sort((a, b) => a - b);
     const mid = Math.floor(survivalYears.length / 2);
@@ -631,8 +587,11 @@ export function runMonteCarloSimulation(
   }
 
   // Compile annual percentile values
+  // Rows cover the longest ledger any trial produced, so the final row is always the last simulated
+  // year (survivor mode ends a year earlier than the calendar horizon).
+  const percentileYears = results.reduce((max, r) => Math.max(max, r.portfolioHistory.length), 0);
   const percentiles: MonteCarloSummary['percentiles'] = [];
-  for (let yearIdx = 0; yearIdx < 35; yearIdx++) {
+  for (let yearIdx = 0; yearIdx < percentileYears; yearIdx++) {
     const year = simStartYear + yearIdx;
     
     // Collect portfolio values for this year across all trials

@@ -53,6 +53,7 @@ const mockInputs: AppStateInputs = {
 
 const mockLedgerRow: SimulationResultRow = {
   year: 2026,
+  isSingleReturn: false,
   yourAge: 61,
   wifeAge: 59,
   yourSS: 0,

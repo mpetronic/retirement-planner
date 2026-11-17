@@ -14,7 +14,6 @@ export const SAMPLE_DEMO_PLAN: AppStateInputs = {
   isConfigured: true,
   isSingleFiler: false,
   simulationStartYear: 2026,
-  simulateSurvivor: false,
   you: {
     name: 'Sample Primary',
     birthDate: '1961-04-15',
@@ -85,7 +84,6 @@ export const SAMPLE_DEMO_PLAN: AppStateInputs = {
     seed: null,
     randomizeCPI: true,
     constantCPIRate: null,
-    enableRegimeSwitching: true,
     historicalSamplingStrategy: 'hybrid',
     calibrateHistoricalMeans: true,
     enableHistoricalStudentT: false,

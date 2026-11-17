@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useEffect, useRef } from 'react';
+import React, { useState, useMemo, useEffect, useRef, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import {
   X,
@@ -13,6 +13,7 @@ import {
   CreditCard,
   Eye,
   EyeOff,
+  Trash2,
 } from 'lucide-react';
 import { getStorageAdapter } from '../shared/storage';
 import {
@@ -24,6 +25,7 @@ import {
 import {
   getPlannerExpenseCatalog,
   savePlannerExpenseLineItem,
+  findCatalogItem,
   PlannerExpenseLineItem,
 } from '../shared/utils/plannerCategories';
 import { getPlannerProfileNames, resolveLoggedInPayerName } from '../shared/utils/profileNames';
@@ -33,6 +35,9 @@ import {
   guessColumnMapping,
   findMatchingFormatProfile,
   saveFormatProfile,
+  deleteFormatProfile,
+  getSavedFormatProfiles,
+  getProfileHeaders,
   categorizeLocally,
   batchSaveLearnedMerchantRules,
   batchCategorizeWithLLM,
@@ -43,12 +48,13 @@ import {
 } from '../shared/utils/merchantMatcher';
 import { FormatSetupModal } from './FormatSetupModal';
 import { toDuplicateCandidates } from '../utils/expenseSplit';
+import { REIMBURSABLE_GROUP, REIMBURSABLE_NAME } from '../shared/utils/reimbursableExpense';
+import { getWorksheetRowClassName } from './worksheetRowStyle';
+import { isAiMatchCandidate, isUncategorized } from './worksheetRowRules';
+import { compileIgnorePatterns, isIgnoredByPatterns } from '../shared/utils/ignoreRules';
 
 // Amounts within one cent are treated as equal when matching against existing expenses.
 const AMOUNT_MATCH_TOLERANCE = 0.01;
-
-const isUncategorized = (row: Pick<ParsedWorksheetRow, 'category' | 'lineItem'>): boolean =>
-  row.category === UNCATEGORIZED || row.lineItem === UNCATEGORIZED;
 
 export interface ImportExpensesModalProps {
   isOpen: boolean;
@@ -71,6 +77,8 @@ export interface ParsedWorksheetRow {
   /** Number of split-receipt categories this duplicate matched; 0 when not a split match. */
   duplicateSplitCount: number;
   isPaymentTransfer: boolean;
+  /** True when the row is excluded by one of the statement format's ignore patterns, not the built-in payment check. */
+  excludedByRule: boolean;
   selected: boolean;
   isUnknown: boolean;
   mappingSource: 'learned' | 'heuristic' | 'llm' | 'user' | 'unknown';
@@ -147,8 +155,23 @@ export const ImportExpensesModal: React.FC<ImportExpensesModalProps> = ({
   // Statement Format Profile State
   const [rawHeaders, setRawHeaders] = useState<string[]>([]);
   const [rawSampleLines, setRawSampleLines] = useState<string[][]>([]);
+  const [rawDataLines, setRawDataLines] = useState<string[][]>([]);
   const [currentProfile, setCurrentProfile] = useState<StatementFormatProfile | null>(null);
+  // Only the profile for this statement's own format is editable; a profile left over from an
+  // earlier file must not leak its id or ignore patterns into a new, unrecognized format.
+  const editingProfile = useMemo(
+    () => (currentProfile && currentProfile.fingerprint === calculateHeaderFingerprint(rawHeaders) ? currentProfile : null),
+    [currentProfile, rawHeaders]
+  );
   const [isFormatSetupOpen, setIsFormatSetupOpen] = useState<boolean>(false);
+  // Saved formats listed on the upload screen, and the one open for editing without a statement
+  const [savedProfiles, setSavedProfiles] = useState<StatementFormatProfile[]>([]);
+  const [listEditProfile, setListEditProfile] = useState<StatementFormatProfile | null>(null);
+  const refreshSavedProfiles = useCallback(() => {
+    setSavedProfiles(
+      [...getSavedFormatProfiles()].sort((a, b) => a.nickname.localeCompare(b.nickname, undefined, { sensitivity: 'base' }))
+    );
+  }, []);
   const [formatSetupInitialMapping, setFormatSetupInitialMapping] = useState<StatementColumnMapping | null>(null);
 
   // Filters & Search
@@ -197,8 +220,9 @@ export const ImportExpensesModal: React.FC<ImportExpensesModalProps> = ({
         .catch(err => console.error('Failed to load existing expenses:', err));
 
       setCatalogItems(getPlannerExpenseCatalog());
+      refreshSavedProfiles();
     }
-  }, [isOpen, selectedYear]);
+  }, [isOpen, selectedYear, refreshSavedProfiles]);
 
   // Profile names for payer selector
   const profileNames = useMemo(() => getPlannerProfileNames(), []);
@@ -241,6 +265,8 @@ export const ImportExpensesModal: React.FC<ImportExpensesModalProps> = ({
       // Track available existing expenses for 1-to-1 balanced duplicate matching
       // Split receipts collapse into one candidate at the receipt total, so one statement charge matches the group
       const unmatchedExisting = toDuplicateCandidates(existingExpenses);
+
+      const ignoreRegexes = compileIgnorePatterns(profile?.ignorePatterns);
 
       const candidates: ParsedWorksheetRow[] = [];
 
@@ -288,7 +314,9 @@ export const ImportExpensesModal: React.FC<ImportExpensesModalProps> = ({
           else if (creditVal > 0) netAmount = -creditVal;
         }
 
-        const isPaymentTransfer = isPaymentOrTransfer(rawDesc, rawType, rawCat);
+        const isBuiltInPayment = isPaymentOrTransfer(rawDesc, rawType, rawCat);
+        const matchesIgnoreRule = isIgnoredByPatterns(rawDesc, ignoreRegexes);
+        const isPaymentTransfer = isBuiltInPayment || matchesIgnoreRule;
 
         const cleanMerchant = normalizeMerchant(rawDesc);
 
@@ -321,6 +349,7 @@ export const ImportExpensesModal: React.FC<ImportExpensesModalProps> = ({
           isDuplicate,
           duplicateSplitCount,
           isPaymentTransfer,
+          excludedByRule: matchesIgnoreRule && !isBuiltInPayment,
           selected: !isPaymentTransfer && !isDuplicate,
           isUnknown: localMatch.isUnknown,
           mappingSource: localMatch.source,
@@ -354,12 +383,20 @@ export const ImportExpensesModal: React.FC<ImportExpensesModalProps> = ({
       const sampleLines = lines.slice(1, 10).map(l => parseCsvLine(l));
       setRawHeaders(headers);
       setRawSampleLines(sampleLines);
+      setRawDataLines(lines.slice(1).map(l => parseCsvLine(l)));
 
       // Check if format is recognized
       const matchingProfile = findMatchingFormatProfile(headers);
 
       if (matchingProfile) {
-        processCsvWithMapping(rawContent, matchingProfile.mapping, matchingProfile);
+        // Older profiles lack the original headers; store them so the format is fully editable later
+        let profileToUse = matchingProfile;
+        if (!matchingProfile.headers) {
+          profileToUse = { ...matchingProfile, headers };
+          saveFormatProfile(profileToUse);
+          refreshSavedProfiles();
+        }
+        processCsvWithMapping(rawContent, profileToUse.mapping, profileToUse);
       } else {
         // New unrecognized format: guess initial mapping and open setup dialog
         const guessed = guessColumnMapping(headers, sampleLines);
@@ -397,10 +434,27 @@ export const ImportExpensesModal: React.FC<ImportExpensesModalProps> = ({
   // Save new format profile from setup modal
   const handleSaveFormatProfile = (newProfile: StatementFormatProfile) => {
     saveFormatProfile(newProfile);
+    refreshSavedProfiles();
     setCurrentProfile(newProfile);
     if (csvText) {
       processCsvWithMapping(csvText, newProfile.mapping, newProfile);
     }
+  };
+
+  // Save a profile edited from the saved formats list; no statement is reprocessed
+  const handleSaveProfileFromList = (updated: StatementFormatProfile) => {
+    saveFormatProfile(updated);
+    refreshSavedProfiles();
+    if (currentProfile?.id === updated.id) setCurrentProfile(updated);
+  };
+
+  const handleDeleteSavedProfile = (profile: StatementFormatProfile) => {
+    if (!window.confirm(`Delete the "${profile.nickname}" statement format? Statements in this format will ask for column setup again.`)) {
+      return;
+    }
+    deleteFormatProfile(profile.id);
+    refreshSavedProfiles();
+    if (currentProfile?.id === profile.id) setCurrentProfile(null);
   };
 
   // Toggle row selection
@@ -507,7 +561,7 @@ export const ImportExpensesModal: React.FC<ImportExpensesModalProps> = ({
 
   // Trigger LLM Smart Categorization for uncategorized items
   const handleRunAiCategorization = async () => {
-    const unmapped = parsedRows.filter(isUncategorized);
+    const unmapped = parsedRows.filter(isAiMatchCandidate);
     if (unmapped.length === 0) return;
 
     setIsAiMatching(true);
@@ -528,7 +582,7 @@ export const ImportExpensesModal: React.FC<ImportExpensesModalProps> = ({
           const existsInCatalog = match && catalogItems.some(
             c => c.groupCategory === match.category && c.name === match.lineItem
           );
-          if (match && existsInCatalog && isUncategorized(r)) {
+          if (match && existsInCatalog && isAiMatchCandidate(r)) {
             return {
               ...r,
               category: match.category,
@@ -552,13 +606,20 @@ export const ImportExpensesModal: React.FC<ImportExpensesModalProps> = ({
     }
   };
 
+  // A row is unresolved when it is uncategorized or names an expense that is not in the catalog
+  const needsCatalogItem = useCallback(
+    (row: Pick<ParsedWorksheetRow, 'category' | 'lineItem'>): boolean =>
+      isUncategorized(row) || !findCatalogItem(catalogItems, row.category, row.lineItem),
+    [catalogItems]
+  );
+
   // Filtered rows for the worksheet
   const filteredRows = useMemo(() => {
     return parsedRows.filter(r => {
       if (hideDuplicates && r.isDuplicate) return false;
 
       // Filter tabs
-      if (activeFilterTab === 'UNKNOWN' && !isUncategorized(r)) return false;
+      if (activeFilterTab === 'UNKNOWN' && (r.isPaymentTransfer || !needsCatalogItem(r))) return false;
       if (activeFilterTab === 'DUPLICATES' && !r.isDuplicate) return false;
       if (activeFilterTab === 'PAYMENTS' && !r.isPaymentTransfer) return false;
 
@@ -579,12 +640,24 @@ export const ImportExpensesModal: React.FC<ImportExpensesModalProps> = ({
 
       return true;
     });
-  }, [parsedRows, hideDuplicates, activeFilterTab, searchTerm]);
+  }, [parsedRows, hideDuplicates, activeFilterTab, searchTerm, needsCatalogItem]);
 
   // Counts and totals
   const selectedRows = useMemo(() => parsedRows.filter(r => r.selected && !r.isPaymentTransfer), [parsedRows]);
-  const totalSpendSelected = useMemo(() => selectedRows.reduce((sum, r) => sum + r.amount, 0), [selectedRows]);
-  const unknownCount = useMemo(() => parsedRows.filter(isUncategorized).length, [parsedRows]);
+  // Rows classified as reimbursable are imported but are not the household's own spending
+  const totalSpendSelected = useMemo(
+    () => selectedRows
+      .filter(r => !(r.category === REIMBURSABLE_GROUP && r.lineItem === REIMBURSABLE_NAME))
+      .reduce((sum, r) => sum + r.amount, 0),
+    [selectedRows]
+  );
+  // Payments and transfers are never stored, so they never need an expense name
+  const unknownCount = useMemo(
+    () => parsedRows.filter(r => !r.isPaymentTransfer && needsCatalogItem(r)).length,
+    [parsedRows, needsCatalogItem]
+  );
+  // Rows Smart Match AI will actually process; reaches zero once the AI has done what it can
+  const aiMatchCount = useMemo(() => parsedRows.filter(isAiMatchCandidate).length, [parsedRows]);
   const selectedUncategorizedCount = useMemo(() => selectedRows.filter(isUncategorized).length, [selectedRows]);
   const duplicateCount = useMemo(() => parsedRows.filter(r => r.isDuplicate).length, [parsedRows]);
   const paymentCount = useMemo(() => parsedRows.filter(r => r.isPaymentTransfer).length, [parsedRows]);
@@ -592,6 +665,20 @@ export const ImportExpensesModal: React.FC<ImportExpensesModalProps> = ({
   // Execute Submission
   const handleExecuteSubmit = async () => {
     if (selectedRows.length === 0) return;
+
+    const rowsMissingCatalogItem = selectedRows.filter(
+      row => !isUncategorized(row) && !findCatalogItem(catalogItems, row.category, row.lineItem)
+    );
+    if (rowsMissingCatalogItem.length > 0) {
+      const missingNames = Array.from(new Set(rowsMissingCatalogItem.map(row => `${row.category} - ${row.lineItem}`)));
+      setImportStatusMessage(
+        `${rowsMissingCatalogItem.length} selected ${rowsMissingCatalogItem.length === 1 ? 'expense uses' : 'expenses use'} ` +
+        `an expense name that is not in your catalog (${missingNames.join(', ')}). ` +
+        'Choose an existing expense name or create it with "Create New Expense Name" before importing.'
+      );
+      setActiveFilterTab('UNKNOWN');
+      return;
+    }
 
     if (selectedUncategorizedCount > 0) {
       setImportStatusMessage(
@@ -613,7 +700,12 @@ export const ImportExpensesModal: React.FC<ImportExpensesModalProps> = ({
         .map(row => {
           const catDisplayName = `${row.category} - ${row.lineItem}`;
           const noteText = [row.rawDescription, row.notes].filter(Boolean).join(' | ');
-          const catalogId = `cat_${row.category.toLowerCase()}_${row.lineItem.toLowerCase().replace(/[^a-z0-9]/g, '_')}`;
+          // Every selected row was checked against the catalog above, so the lookup always succeeds here
+          const catalogItem = findCatalogItem(catalogItems, row.category, row.lineItem);
+          if (!catalogItem) {
+            throw new Error(`No catalog item for ${catDisplayName}`);
+          }
+          const catalogId = catalogItem.id;
 
           return {
             date: row.date,
@@ -837,6 +929,52 @@ export const ImportExpensesModal: React.FC<ImportExpensesModalProps> = ({
                   </button>
                 </div>
               )}
+
+              {savedProfiles.length > 0 && (
+                <div className="pt-2 border-t border-slate-200 dark:border-slate-700 text-left space-y-2">
+                  <h4 className="text-xs font-bold uppercase tracking-wider text-slate-600 dark:text-slate-300">
+                    Saved Statement Formats ({savedProfiles.length})
+                  </h4>
+                  <ul className="space-y-1.5">
+                    {savedProfiles.map(profile => {
+                      const ruleCount = profile.ignorePatterns?.length ?? 0;
+                      return (
+                        <li
+                          key={profile.id}
+                          className="flex items-center gap-1 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 hover:border-indigo-400 dark:hover:border-indigo-500 transition-colors"
+                        >
+                          <button
+                            type="button"
+                            onClick={() => setListEditProfile(profile)}
+                            title="Review and edit this statement format"
+                            className="flex flex-1 min-w-0 items-center gap-2.5 px-3 py-2 text-left"
+                          >
+                            <CreditCard className="w-4 h-4 shrink-0 text-indigo-500" />
+                            <span className="min-w-0">
+                              <span className="block text-xs font-semibold text-slate-900 dark:text-slate-100 truncate">
+                                {profile.nickname}
+                              </span>
+                              <span className="block text-[11px] text-slate-500 dark:text-slate-400 truncate">
+                                Date: {profile.mapping.dateColumn} · Description: {profile.mapping.descriptionColumn}
+                                {ruleCount > 0 && ` · ${ruleCount} ignore rule${ruleCount > 1 ? 's' : ''}`}
+                              </span>
+                            </span>
+                            <Pencil className="w-3.5 h-3.5 ml-auto shrink-0 text-slate-400" />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleDeleteSavedProfile(profile)}
+                            title="Delete this statement format"
+                            className="p-2 mr-1 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-slate-100 dark:hover:bg-slate-700"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        </li>
+                      );
+                    })}
+                  </ul>
+                </div>
+              )}
             </div>
           </div>
         ) : (
@@ -911,7 +1049,7 @@ export const ImportExpensesModal: React.FC<ImportExpensesModalProps> = ({
                       : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800'
                   }`}
                 >
-                  Payments ({paymentCount})
+                  Excluded ({paymentCount})
                 </button>
               </div>
 
@@ -927,14 +1065,14 @@ export const ImportExpensesModal: React.FC<ImportExpensesModalProps> = ({
                   <span>Hide Duplicates</span>
                 </label>
 
-                {unknownCount > 0 && (
+                {aiMatchCount > 0 && (
                   <button
                     onClick={handleRunAiCategorization}
                     disabled={isAiMatching}
                     className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700 text-white text-xs font-semibold shadow-md shadow-indigo-600/20 transition-all hover:scale-[1.02] active:scale-[0.98] disabled:opacity-50"
                   >
                     <Sparkles className={`w-3.5 h-3.5 ${isAiMatching ? 'animate-spin' : ''}`} />
-                    <span>{isAiMatching ? 'Categorizing...' : `Smart Match AI (${unknownCount})`}</span>
+                    <span>{isAiMatching ? 'Categorizing...' : `Smart Match AI (${aiMatchCount})`}</span>
                   </button>
                 )}
               </div>
@@ -953,7 +1091,7 @@ export const ImportExpensesModal: React.FC<ImportExpensesModalProps> = ({
                   <select
                     value={bulkCategory}
                     onChange={(e) => setBulkCategory(e.target.value)}
-                    className="px-2 py-1 rounded-lg border border-indigo-200 dark:border-indigo-800 bg-white dark:bg-slate-900 text-xs text-slate-900 dark:text-slate-100"
+                    className="px-2 py-1 rounded-lg border border-indigo-200 dark:border-indigo-800 bg-white dark:bg-slate-800 text-xs text-slate-900 dark:text-slate-100"
                   >
                     <option value="">-- Set Category --</option>
                     {availableCategoryGroups.map(g => (
@@ -964,7 +1102,7 @@ export const ImportExpensesModal: React.FC<ImportExpensesModalProps> = ({
                   <select
                     value={bulkLineItem}
                     onChange={(e) => setBulkLineItem(e.target.value)}
-                    className="px-2 py-1 rounded-lg border border-indigo-200 dark:border-indigo-800 bg-white dark:bg-slate-900 text-xs text-slate-900 dark:text-slate-100"
+                    className="px-2 py-1 rounded-lg border border-indigo-200 dark:border-indigo-800 bg-white dark:bg-slate-800 text-xs text-slate-900 dark:text-slate-100"
                   >
                     <option value="">-- Set Expense Name --</option>
                     {catalogItems
@@ -977,7 +1115,7 @@ export const ImportExpensesModal: React.FC<ImportExpensesModalProps> = ({
                   <select
                     value={bulkPayer}
                     onChange={(e) => setBulkPayer(e.target.value)}
-                    className="px-2 py-1 rounded-lg border border-indigo-200 dark:border-indigo-800 bg-white dark:bg-slate-900 text-xs text-slate-900 dark:text-slate-100"
+                    className="px-2 py-1 rounded-lg border border-indigo-200 dark:border-indigo-800 bg-white dark:bg-slate-800 text-xs text-slate-900 dark:text-slate-100"
                   >
                     <option value="">-- Set Payer --</option>
                     {payerOptions.map(p => (
@@ -1019,21 +1157,13 @@ export const ImportExpensesModal: React.FC<ImportExpensesModalProps> = ({
                 </thead>
                 <tbody className="divide-y divide-slate-100 dark:divide-slate-800/60 font-sans">
                   {filteredRows.map(row => {
-                    const isRowUnknown = isUncategorized(row);
+                    const isRowUnknown = needsCatalogItem(row);
                     const categoryLineItems = catalogItems.filter(c => c.groupCategory === row.category);
 
                     return (
                       <tr
                         key={row.id}
-                        className={`transition-colors ${
-                          row.isPaymentTransfer
-                            ? 'opacity-40 bg-slate-100/30 dark:bg-slate-900/30'
-                            : row.isDuplicate
-                            ? 'bg-slate-100/50 dark:bg-slate-900/50 text-slate-500'
-                            : isRowUnknown
-                            ? 'bg-amber-50/40 dark:bg-amber-950/20 hover:bg-amber-50/70'
-                            : 'hover:bg-slate-50 dark:hover:bg-slate-800/40'
-                        }`}
+                        className={getWorksheetRowClassName(row, isRowUnknown)}
                       >
                         {/* Select Checkbox */}
                         <td className="py-2 px-3 text-center">
@@ -1041,7 +1171,13 @@ export const ImportExpensesModal: React.FC<ImportExpensesModalProps> = ({
                             type="checkbox"
                             checked={row.selected && !row.isPaymentTransfer}
                             disabled={row.isPaymentTransfer}
-                            title={row.isPaymentTransfer ? "Payments and transfers are automatically excluded from storage" : undefined}
+                            title={
+                              row.excludedByRule
+                                ? "Excluded by this statement format's ignore rules"
+                                : row.isPaymentTransfer
+                                ? "Payments and transfers are automatically excluded from storage"
+                                : undefined
+                            }
                             onChange={() => handleToggleRow(row.id)}
                             className="rounded border-slate-300 text-indigo-600 focus:ring-indigo-500 cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed"
                           />
@@ -1065,12 +1201,21 @@ export const ImportExpensesModal: React.FC<ImportExpensesModalProps> = ({
                               </span>
                             )}
 
-                            {row.isPaymentTransfer && (
+                            {row.isPaymentTransfer && !row.excludedByRule && (
                               <span
                                 title="Internal payment / transfer - excluded from stored expenses"
                                 className="px-1.5 py-0.5 rounded text-[10px] font-semibold bg-blue-100 dark:bg-blue-950/60 text-blue-700 dark:text-blue-300"
                               >
                                 Payment (Excluded)
+                              </span>
+                            )}
+
+                            {row.excludedByRule && (
+                              <span
+                                title="Matches an ignore pattern in this statement format - excluded from stored expenses"
+                                className="px-1.5 py-0.5 rounded text-[10px] font-semibold bg-blue-100 dark:bg-blue-950/60 text-blue-700 dark:text-blue-300"
+                              >
+                                Ignored (rule)
                               </span>
                             )}
 
@@ -1126,10 +1271,10 @@ export const ImportExpensesModal: React.FC<ImportExpensesModalProps> = ({
                                   handleUpdateRowLineItem(row.id, e.target.value);
                                 }
                               }}
-                              className={`w-full py-1 px-2 text-xs rounded-lg border ${
+                              className={`w-full py-1 px-2 text-xs rounded-lg border bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-200 ${
                                 row.lineItem === UNCATEGORIZED
-                                  ? 'border-amber-400 bg-amber-50/50 dark:bg-amber-950/30 text-amber-900 dark:text-amber-200 font-semibold'
-                                  : 'border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-200'
+                                  ? 'border-amber-400'
+                                  : 'border-slate-200 dark:border-slate-700'
                               } focus:ring-1 focus:ring-indigo-500`}
                             >
                               {categoryLineItems.map(item => (
@@ -1232,10 +1377,30 @@ export const ImportExpensesModal: React.FC<ImportExpensesModalProps> = ({
           onClose={() => setIsFormatSetupOpen(false)}
           headers={rawHeaders}
           sampleRows={rawSampleLines}
+          allRows={rawDataLines}
           initialMapping={formatSetupInitialMapping}
-          initialNickname={currentProfile?.nickname || 'New Statement Profile'}
+          existingProfile={editingProfile}
+          initialNickname={editingProfile?.nickname || currentProfile?.nickname || 'New Statement Profile'}
           fingerprint={calculateHeaderFingerprint(rawHeaders)}
           onSaveProfile={handleSaveFormatProfile}
+        />
+      )}
+
+      {/* Edit a saved format from the upload screen (no statement loaded) */}
+      {listEditProfile && (
+        <FormatSetupModal
+          key={listEditProfile.id}
+          isOpen
+          onClose={() => setListEditProfile(null)}
+          headers={getProfileHeaders(listEditProfile)}
+          headersIncomplete={!listEditProfile.headers}
+          sampleRows={[]}
+          allRows={[]}
+          initialMapping={listEditProfile.mapping}
+          existingProfile={listEditProfile}
+          initialNickname={listEditProfile.nickname}
+          fingerprint={listEditProfile.fingerprint}
+          onSaveProfile={handleSaveProfileFromList}
         />
       )}
 

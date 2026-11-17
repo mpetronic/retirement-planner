@@ -22,7 +22,6 @@ interface CustomRothScenarioModalProps {
   onClose: () => void;
   inputs: AppStateInputs;
   ledger: SimulationResultRow[];
-  simulateSurvivor: boolean;
   activeScenarioId?: string | null;
   onSaveScenario: (scenario: CustomRothScenario, applyImmediately?: boolean) => void;
   onDeleteScenario: (scenarioId: string) => void;
@@ -33,7 +32,6 @@ export const CustomRothScenarioModal: React.FC<CustomRothScenarioModalProps> = (
   onClose,
   inputs,
   ledger,
-  simulateSurvivor,
   activeScenarioId,
   onSaveScenario,
   onDeleteScenario,
@@ -177,13 +175,13 @@ export const CustomRothScenarioModal: React.FC<CustomRothScenarioModalProps> = (
     };
 
     try {
-      const previewLedger = runRetirementSimulation(previewInputs, simulateSurvivor, null);
+      const previewLedger = runRetirementSimulation(previewInputs, null);
       const cappedRows = previewLedger.filter((r) => r.isRothConversionCapped);
       return { previewLedger, cappedRows };
     } catch {
       return null;
     }
-  }, [isOpen, sortedYears, selectedId, scenarioName, schedule, inputs, simulateSurvivor]);
+  }, [isOpen, sortedYears, selectedId, scenarioName, schedule, inputs]);
 
   const cappedYears = previewSimulation?.cappedRows || [];
 

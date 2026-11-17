@@ -251,6 +251,27 @@ export function deleteFormatProfile(id: string): void {
   }
 }
 
+/**
+ * Column names available when editing a saved format without a statement loaded: the stored
+ * headers, or for older profiles only the columns the mapping uses.
+ */
+export function getProfileHeaders(profile: StatementFormatProfile): string[] {
+  if (profile.headers && profile.headers.length > 0) return profile.headers;
+  const m = profile.mapping;
+  const mapped = [
+    m.dateColumn,
+    m.descriptionColumn,
+    m.amountColumn,
+    m.debitColumn,
+    m.creditColumn,
+    m.categoryColumn,
+    m.typeColumn,
+    m.notesColumn,
+    m.payerColumn,
+  ];
+  return Array.from(new Set(mapped.filter((c): c is string => Boolean(c))));
+}
+
 export function findMatchingFormatProfile(headers: string[]): StatementFormatProfile | undefined {
   const fp = calculateHeaderFingerprint(headers);
   const profiles = getSavedFormatProfiles();

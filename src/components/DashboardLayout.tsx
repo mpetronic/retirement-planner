@@ -1,5 +1,6 @@
 import React, { useMemo } from 'react';
 import { SimulationResultRow, AppStateInputs, describeSSReductions } from '../types';
+import { formatSuccessRate } from '../utils/formatters';
 import {
   DollarSign,
   TrendingUp,
@@ -22,6 +23,7 @@ interface DashboardLayoutProps {
     p90: SimulationResultRow[];
   };
   successRate: number;
+  /** All-trial percentile table, already CPI-discounted when the display is in today's dollars. */
   inputs: AppStateInputs;
   activeView: ActiveViewType;
   onNavigate: (view: ActiveViewType) => void;
@@ -45,7 +47,7 @@ interface DashboardLayoutProps {
 const VIEW_TITLES: Record<ActiveViewType, { title: string; category?: string }> = {
   overview: { title: 'Overview & Cash Flow Trajectory', category: 'Workspaces' },
   'taxable-income': { title: 'Taxable Income Planner', category: 'Workspaces' },
-  'lookback-ledger': { title: '35-Year Lookback Ledger', category: 'Workspaces' },
+  'lookback-ledger': { title: 'Lookback Ledger', category: 'Workspaces' },
   'monte-carlo': { title: 'Monte Carlo Stochastic Analysis', category: 'Workspaces' },
   compare: { title: 'Plan Scenario Comparison', category: 'Workspaces' },
   actuals: { title: 'Actuals & Guardrails Governance', category: 'Workspaces' },
@@ -178,6 +180,8 @@ export const DashboardLayout: React.FC<DashboardLayoutProps> = ({
       flat: computeForLedger(parallelLedgers.flat),
     };
   }, [ledger, parallelLedgers]);
+
+  const scenarioPathLabel = globalScenario === 'flat' ? '' : `, ${globalScenario.toUpperCase()} path`;
 
   const currentViewMeta = VIEW_TITLES[activeView] || { title: 'Retirement Planner', category: 'Dashboard' };
 
@@ -420,14 +424,11 @@ export const DashboardLayout: React.FC<DashboardLayoutProps> = ({
             <div className="glass-panel rounded-lg px-3 py-1.5 flex items-center justify-between border-l-4 border-l-emerald-500 bg-slate-900/60">
               <div className="min-w-0">
                 <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider block truncate">
-                  Ending Net Estate (Age {stats.active.endingAge})
+                  Ending Portfolio{scenarioPathLabel} (Age {stats.active.endingAge})
                 </span>
-                <div className="flex items-baseline gap-1.5 mt-0.5">
+                <div className="mt-0.5">
                   <span className="text-base font-black text-emerald-400 font-mono">
                     {formatCurrency(stats.active.endingEstate)}
-                  </span>
-                  <span className="text-[9px] text-slate-500 font-mono truncate">
-                    ({formatCurrency(stats.p10.endingEstate)}–{formatCurrency(stats.p90.endingEstate)})
                   </span>
                 </div>
               </div>
@@ -439,12 +440,9 @@ export const DashboardLayout: React.FC<DashboardLayoutProps> = ({
                 <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider block truncate">
                   Lifetime Income Taxes
                 </span>
-                <div className="flex items-baseline gap-1.5 mt-0.5">
+                <div className="mt-0.5">
                   <span className="text-base font-black text-rose-400 font-mono">
                     {formatCurrency(stats.active.totalTaxes)}
-                  </span>
-                  <span className="text-[9px] text-slate-500 font-mono truncate">
-                    ({formatCurrency(stats.p10.totalTaxes)}–{formatCurrency(stats.p90.totalTaxes)})
                   </span>
                 </div>
               </div>
@@ -456,12 +454,9 @@ export const DashboardLayout: React.FC<DashboardLayoutProps> = ({
                 <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider block truncate">
                   Lifetime IRMAA Surcharges
                 </span>
-                <div className="flex items-baseline gap-1.5 mt-0.5">
+                <div className="mt-0.5">
                   <span className="text-base font-black text-amber-400 font-mono">
                     {formatCurrency(stats.active.totalSurcharges)}
-                  </span>
-                  <span className="text-[9px] text-slate-500 font-mono truncate">
-                    ({formatCurrency(stats.p10.totalSurcharges)}–{formatCurrency(stats.p90.totalSurcharges)})
                   </span>
                 </div>
               </div>
@@ -473,12 +468,9 @@ export const DashboardLayout: React.FC<DashboardLayoutProps> = ({
                 <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider block truncate">
                   Plan Success Rate
                 </span>
-                <div className="flex items-baseline gap-1.5 mt-0.5">
+                <div className="mt-0.5">
                   <span className="text-base font-black text-blue-400 font-mono">
-                    {(successRate * 100).toFixed(1)}%
-                  </span>
-                  <span className="text-[9px] text-slate-500 font-mono truncate">
-                    ({inputs.monteCarloSettings.trials} trials)
+                    {formatSuccessRate(successRate)}
                   </span>
                 </div>
               </div>

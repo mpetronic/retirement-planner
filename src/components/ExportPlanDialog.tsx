@@ -31,7 +31,6 @@ interface ExportPlanDialogProps {
   isOpen: boolean;
   onClose: () => void;
   inputs: AppStateInputs;
-  simulateSurvivor?: boolean;
   savedPlans?: SavedPlan[];
   ledger: SimulationResultRow[];
   initialFormat?: ExportFormatType;
@@ -41,7 +40,6 @@ export const ExportPlanDialog: React.FC<ExportPlanDialogProps> = ({
   isOpen,
   onClose,
   inputs,
-  simulateSurvivor = false,
   savedPlans = [],
   ledger,
   initialFormat = 'json',
@@ -98,7 +96,7 @@ export const ExportPlanDialog: React.FC<ExportPlanDialogProps> = ({
       let blob: Blob;
 
       if (selectedFormat === 'json') {
-        blob = generateJsonBlob(inputs, simulateSurvivor, savedPlans);
+        blob = generateJsonBlob(inputs, savedPlans);
       } else if (selectedFormat === 'pdf') {
         blob = await generatePdfBlob(inputs);
       } else {
@@ -251,7 +249,7 @@ export const ExportPlanDialog: React.FC<ExportPlanDialogProps> = ({
                     Excel Ledger
                   </div>
                   <p className="text-[10px] text-slate-400 mt-0.5 leading-snug">
-                    35-yr tax, cash-flow & IRMAA sheets
+                    Tax, cash-flow & IRMAA sheets
                   </p>
                 </div>
               </button>

@@ -94,6 +94,17 @@ describe('summarizeLoggedSpending', () => {
     expect(s.irmaa).toBe(50);
   });
 
+  it('leaves out money paid for someone else', () => {
+    const s = summarizeLoggedSpending([
+      { amount: 20, category: 'Leisure', name: 'Wine', catalogId: 'wine' },
+      { amount: 20, category: 'Reimbursable', name: 'Paid for others', catalogId: 'reimbursable' },
+      { amount: 15, categoryName: 'Reimbursable - Paid for others', categoryId: 'reimbursable' },
+    ]);
+    expect(s.total).toBe(20);
+    expect(s.living).toBe(20);
+    expect(s.livingByCategory).toEqual({ Leisure: 20 });
+  });
+
   it('is not shrunk by a small batch because it sums whatever list it is given', () => {
     const year = Array.from({ length: 10 }, () => exp(7000, 'Housing - Rent', 'Housing'));
     expect(summarizeLoggedSpending(year).total).toBe(70000);

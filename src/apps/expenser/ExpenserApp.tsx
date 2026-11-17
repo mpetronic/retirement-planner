@@ -56,9 +56,12 @@ import {
   mergeWithCustomCategories,
   sortPlannerExpenseItems,
   savePlannerExpenseLineItem,
+  newCatalogItemId,
   syncPlannerCatalogToCloudStorage,
   PlannerExpenseLineItem,
+  resolvePlanState,
 } from '../../shared/utils/plannerCategories';
+import { REIMBURSABLE_CATALOG_ID, isReimbursableExpense, excludeReimbursable } from '../../shared/utils/reimbursableExpense';
 import { groupExpensesByDay } from '../../shared/utils/recentExpenseGroups';
 import { detectHorizontalSwipe } from '../../shared/utils/swipeGesture';
 
@@ -284,6 +287,8 @@ export const ExpenserApp: React.FC = () => {
     const merged = mergeWithCustomCategories(plannerItems, categories, allowedPlannerCategories);
 
     const allowed = merged.filter(item => {
+      // The built-in reimbursable item has no plan category, so it bypasses the category filter
+      if (item.id === REIMBURSABLE_CATALOG_ID) return true;
       const groupLower = item.groupCategory.trim().toLowerCase();
       if (allowedPlannerCategories.length > 0 && !allowedPlannerCategories.some(c => c.trim().toLowerCase() === groupLower)) {
         return false;
@@ -397,6 +402,7 @@ export const ExpenserApp: React.FC = () => {
       .map(id => itemsMap.get(id))
       .filter((item): item is PlannerExpenseLineItem => {
         if (!item) return false;
+        if (item.id === REIMBURSABLE_CATALOG_ID) return true;
         const groupLower = item.groupCategory.trim().toLowerCase();
         if (allowedPlannerCategories.length > 0 && !allowedPlannerCategories.some(c => c.trim().toLowerCase() === groupLower)) {
           return false;
@@ -422,11 +428,7 @@ export const ExpenserApp: React.FC = () => {
         try {
           const parsed = JSON.parse(raw);
           detailedExpenses = parsed.detailedExpenses;
-          const currentYear = new Date().getFullYear();
-          const relocYear = parsed.jurisdiction?.relocationYear;
-          activeState = (relocYear !== null && relocYear !== undefined && currentYear >= Number(relocYear))
-            ? (parsed.jurisdiction?.targetState || parsed.jurisdiction?.currentState || 'MD')
-            : (parsed.jurisdiction?.currentState || 'MD');
+          activeState = resolvePlanState(parsed);
           profileNames = {
             primaryName: parsed.you?.name || 'Primary',
             spouseName: parsed.wife?.name || 'Spouse',
@@ -939,7 +941,7 @@ export const ExpenserApp: React.FC = () => {
     const group = newCatGroup.trim() || 'Living';
     const itemName = newCatName.trim();
     const formattedDisplayName = `${group} - ${itemName}`;
-    const newId = `item_custom_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
+    const newId = newCatalogItemId();
     const budgetVal = parseFloat(newCatBudget) || 0;
 
     // 1. Permanently register in Planner SSOT detailedExpenses catalog in localStorage
@@ -1234,7 +1236,7 @@ export const ExpenserApp: React.FC = () => {
 
   // Calculate Today's Total
   const todayStr = new Date().toISOString().split('T')[0];
-  const todayTotal = recentExpenses
+  const todayTotal = excludeReimbursable(recentExpenses)
     .filter(e => e.date === todayStr)
     .reduce((sum, e) => sum + e.amount, 0);
 
@@ -1933,6 +1935,14 @@ export const ExpenserApp: React.FC = () => {
                               <span className="flex-1 min-w-0 truncate text-sm font-semibold text-white">
                                 {displayName}
                               </span>
+                              {isReimbursableExpense(exp) && (
+                                <span
+                                  className="whitespace-nowrap shrink-0 text-[10px] px-1.5 py-0.5 rounded-full bg-slate-700/60 text-slate-300 border border-slate-600"
+                                  title="Paid for someone else; not counted in your spending"
+                                >
+                                  Not counted
+                                </span>
+                              )}
                               {exp.splitGroupId && (
                                 <span
                                   className="inline-flex items-center gap-0.5 whitespace-nowrap shrink-0 text-[10px] px-1.5 py-0.5 rounded-full bg-amber-500/15 text-amber-300 border border-amber-500/30"

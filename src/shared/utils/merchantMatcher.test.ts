@@ -8,7 +8,9 @@ import {
   saveLearnedMerchantRule,
   getLearnedMerchantRules,
   isPaymentOrTransfer,
+  getProfileHeaders,
 } from './merchantMatcher';
+import { StatementFormatProfile } from '../types/expenses';
 
 describe('merchantMatcher', () => {
   beforeEach(() => {
@@ -153,6 +155,37 @@ describe('merchantMatcher', () => {
       expect(res.lineItem).toBe(UNCATEGORIZED);
       expect(res.isUnknown).toBe(true);
       expect(res.source).toBe('unknown');
+    });
+  });
+
+  describe('getProfileHeaders', () => {
+    const baseProfile: StatementFormatProfile = {
+      id: 'p1',
+      nickname: 'Checking',
+      fingerprint: 'amount|date|memo',
+      mapping: {
+        dateColumn: 'Posted',
+        descriptionColumn: 'Memo',
+        amountMode: 'single',
+        amountColumn: 'Amount',
+        chargesAreNegative: false,
+        typeColumn: 'Memo',
+      },
+      createdAt: '2026-01-01T00:00:00.000Z',
+      updatedAt: '2026-01-01T00:00:00.000Z',
+    };
+
+    it('returns the stored headers when present', () => {
+      const headers = ['Posted', 'Memo', 'Amount', 'Balance'];
+      expect(getProfileHeaders({ ...baseProfile, headers })).toEqual(headers);
+    });
+
+    it('falls back to the distinct mapped columns in mapping order', () => {
+      expect(getProfileHeaders(baseProfile)).toEqual(['Posted', 'Memo', 'Amount']);
+    });
+
+    it('treats an empty stored list as missing', () => {
+      expect(getProfileHeaders({ ...baseProfile, headers: [] })).toEqual(['Posted', 'Memo', 'Amount']);
     });
   });
 

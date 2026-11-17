@@ -1,16 +1,16 @@
 import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { SimulationResultRow, AppStateInputs, getSimulationStartYear } from '../types';
+import { SimulationResultRow, AppStateInputs, getSimulationStartYear, DEFAULT_YOUR_LONGEVITY_AGE, DEFAULT_WIFE_LONGEVITY_AGE } from '../types';
 import { TableProperties, Info, AlertTriangle, X } from 'lucide-react';
-import { IRMAA_TIERS_MFJ, IRMAA_TIERS_SINGLE, MD_PENSION_EXCLUSION_BASE_CAP } from '../engine/taxRates2026';
+import { getFederalIndexing, getFederalRules, indexedIrmaaLimit } from '../engine/federalTaxRules';
 import { calculateFedTaxWithLTCG, calculateTaxableSS } from '../engine/simulationEngine';
-import { getEffectiveLocalTaxRate, calculateStateAndLocalTax } from '../engine/stateTaxRegistry';
+import { calculateStateAndLocalTax, calculatePensionExclusion, resolveActiveJurisdiction } from '../engine/stateTaxRegistry';
+import { countAgedFilers } from '../engine/federalDeduction';
 import { RowInspectionDialog } from './RowInspectionDialog';
 
 interface LookbackLedgerTableProps {
   ledger: SimulationResultRow[];
   inputs: AppStateInputs;
-  simulateSurvivor: boolean;
   onNavigateToActuals?: (year: number) => void;
 }
 
@@ -100,17 +100,11 @@ const HoverPopup: React.FC<{
 export const LookbackLedgerTable: React.FC<LookbackLedgerTableProps> = ({
   ledger,
   inputs,
-  simulateSurvivor,
   onNavigateToActuals,
 }) => {
   const [selectedRow, setSelectedRow] = useState<SimulationResultRow | null>(null);
   const simStartYear = getSimulationStartYear(inputs);
   const [showWarningsModal, setShowWarningsModal] = useState(false);
-  const deathYear = useMemo(() => {
-    if (!inputs.you.birthDate) return 2045;
-    const year = parseInt(inputs.you.birthDate.split('-')[0], 10);
-    return isNaN(year) ? 2045 : (year + (inputs.you.longevityAge ?? 85));
-  }, [inputs.you.birthDate, inputs.you.longevityAge]);
 
   const formatCurrency = (val: number) => {
     return new Intl.NumberFormat('en-US', {
@@ -135,15 +129,17 @@ export const LookbackLedgerTable: React.FC<LookbackLedgerTableProps> = ({
       const year = r.year;
       const magi = r.magi;
       
-      const cpiFactor = r.cpiFactor;
-      const isSingle = simulateSurvivor && year >= deathYear;
-      const tiers = isSingle ? IRMAA_TIERS_SINGLE : IRMAA_TIERS_MFJ;
+      const cpiFactor = r.federalIndexFactor ?? r.cpiFactor;
+      // This year's MAGI is judged two years later using this year's filing status
+      const isSingle = r.isSingleReturn;
+      const irmaaRules = getFederalRules(year).irmaaTiers;
+      const tiers = isSingle ? irmaaRules.single : irmaaRules.mfj;
 
       // Find which tier the current MAGI falls into
       let currentTierIdx = 0;
       for (let i = tiers.length - 1; i >= 0; i--) {
         const prevTier = tiers[i - 1];
-        const prevLimit = prevTier ? (prevTier.limit === Infinity ? Infinity : prevTier.limit * cpiFactor) : 0;
+        const prevLimit = prevTier ? indexedIrmaaLimit(prevTier, cpiFactor) : 0;
         if (magi > prevLimit) {
           currentTierIdx = i;
           break;
@@ -152,10 +148,7 @@ export const LookbackLedgerTable: React.FC<LookbackLedgerTableProps> = ({
 
       if (currentTierIdx > 0) {
         const crossedTier = tiers[currentTierIdx - 1];
-        let cliffLimit = crossedTier.limit;
-        if (crossedTier.tierNumber < 4) {
-          cliffLimit = crossedTier.limit * cpiFactor;
-        }
+        const cliffLimit = indexedIrmaaLimit(crossedTier, cpiFactor);
 
         const excess = magi - cliffLimit;
         if (excess > 0 && excess <= 5000) {
@@ -191,7 +184,7 @@ export const LookbackLedgerTable: React.FC<LookbackLedgerTableProps> = ({
     });
 
     return activeWarnings;
-  }, [ledger, simulateSurvivor, inputs, deathYear, simStartYear]);
+  }, [ledger, inputs, simStartYear]);
 
   return (
     <div className="glass-panel rounded-2xl p-3.5 space-y-3">
@@ -202,6 +195,11 @@ export const LookbackLedgerTable: React.FC<LookbackLedgerTableProps> = ({
             <TableProperties className="w-5 h-5 text-emerald-400" />
             Lookback Linkage Ledger Table
           </h3>
+          {ledger.length > 0 && (
+            <p className="text-xs font-mono text-emerald-400/80">
+              {ledger[0].year}–{ledger[ledger.length - 1].year} ({ledger.length} years)
+            </p>
+          )}
           <p className="text-xs text-slate-400">
             Under Medicare guidelines, your Modified Adjusted Gross Income (MAGI) in a tax year dictates your premium surcharges exactly 2 years later.
           </p>
@@ -265,8 +263,7 @@ export const LookbackLedgerTable: React.FC<LookbackLedgerTableProps> = ({
               const conversionTax = (() => {
                 if (r.intentionalRothConversion <= 0) return 0;
                 
-                const cpiFactor = r.cpiFactor;
-                const isSingle = simulateSurvivor && r.year >= deathYear;
+                const isSingle = r.isSingleReturn;
                 
                 // Dividends and capital gains are unchanged by the conversion
                 const taxableNonQualifiedPortion = inputs.portfolio.taxableNonQualifiedPortion !== undefined && inputs.portfolio.taxableNonQualifiedPortion !== null 
@@ -286,7 +283,7 @@ export const LookbackLedgerTable: React.FC<LookbackLedgerTableProps> = ({
                   taxableOrdinaryWithout, 
                   capitalGains, 
                   isSingle, 
-                  cpiFactor
+                  getFederalIndexing(r.year, r.cpiFactor, simStartYear, inputs.growthAssumptions.cpiInflationRate)
                 );
                 
                 const niitThreshold = isSingle ? 200000 : 250000;
@@ -305,41 +302,31 @@ export const LookbackLedgerTable: React.FC<LookbackLedgerTableProps> = ({
               // so FL residents (who pay $0 state tax) always see $0 here.
               const conversionStateTax = (() => {
                 if (r.intentionalRothConversion <= 0 || r.stateIncomeTax <= 0) return 0;
-                const isSingle = simulateSurvivor && r.year >= deathYear;
+                const isSingle = r.isSingleReturn;
                 const cpiFactor = r.cpiFactor;
                 
-                // MD pension exclusion (doesn't change without conversion)
-                const capExcl = MD_PENSION_EXCLUSION_BASE_CAP * cpiFactor;
-                const mdPensionExclusion = (() => {
+                const { state: activeState, effectiveLocalRate } = resolveActiveJurisdiction(inputs.jurisdiction, r.year);
+
+                // Pension exclusion (doesn't change without conversion)
+                const pensionExclusion = (() => {
                   if (isSingle) {
                     const age = inputs.isSingleFiler ? r.yourAge : r.wifeAge;
                     const ss = inputs.isSingleFiler ? r.yourSS : r.wifeSS;
-                    const rmdAndDraw = (inputs.isSingleFiler ? r.yourRMD : r.wifeRMD) + r.drawdownPreTax;
-                    return (age >= 65) ? Math.min(rmdAndDraw, Math.max(0, capExcl - ss)) : 0;
-                  } else {
-                    const exclJohn = (r.yourAge >= 65) ? Math.min(r.yourRMD + r.drawdownPreTax, Math.max(0, capExcl - r.yourSS)) : 0;
-                    const exclWife = (r.wifeAge >= 65) ? Math.min(r.wifeRMD + r.drawdownPreTax, Math.max(0, capExcl - r.wifeSS)) : 0;
-                    return Math.min(exclJohn + exclWife, Math.max(0, capExcl - r.yourSS) + Math.max(0, capExcl - r.wifeSS));
+                    const rmdAndDraw = (inputs.isSingleFiler ? r.yourRMD : r.wifeRMD) + r.otherTaxableIncome;
+                    return calculatePensionExclusion(activeState, [
+                      { age, isAlive: true, socialSecurityBenefit: ss, eligibleDistributions: rmdAndDraw },
+                    ], cpiFactor);
                   }
+                  return calculatePensionExclusion(activeState, [
+                    { age: r.yourAge, isAlive: true, socialSecurityBenefit: r.yourSS, eligibleDistributions: r.yourRMD + r.otherTaxableIncome },
+                    { age: r.wifeAge, isAlive: true, socialSecurityBenefit: r.wifeSS, eligibleDistributions: r.wifeRMD + r.otherTaxableIncome },
+                  ], cpiFactor);
                 })();
 
                 const otherAGIWithout = Math.max(0, r.fedAGI - r.taxableSS - r.intentionalRothConversion);
                 const totalSS = r.yourSS + r.wifeSS;
                 const taxableSSWithout = calculateTaxableSS(totalSS, otherAGIWithout, isSingle);
                 const agiWithout = otherAGIWithout + taxableSSWithout;
-
-                const isRelocated = inputs.jurisdiction.relocationYear !== null && r.year >= inputs.jurisdiction.relocationYear;
-                const isIntraStateRelocation = Boolean(
-                  inputs.jurisdiction.targetState === inputs.jurisdiction.currentState &&
-                  inputs.jurisdiction.targetCounty &&
-                  inputs.jurisdiction.targetCounty !== inputs.jurisdiction.currentCounty
-                );
-                const activeState = isRelocated
-                  ? (isIntraStateRelocation ? inputs.jurisdiction.targetState : (inputs.jurisdiction.targetState || 'FL'))
-                  : inputs.jurisdiction.currentState;
-                const activeCounty = isRelocated ? inputs.jurisdiction.targetCounty : inputs.jurisdiction.currentCounty;
-                const activeCustomRate = isRelocated ? inputs.jurisdiction.targetLocalTaxRate : inputs.jurisdiction.currentLocalTaxRate;
-                const effectiveLocalRate = getEffectiveLocalTaxRate(activeState, activeCounty, activeCustomRate);
 
                 const stateTaxWith = r.stateIncomeTax;
                 const stateTaxWithoutResult = calculateStateAndLocalTax(
@@ -349,10 +336,12 @@ export const LookbackLedgerTable: React.FC<LookbackLedgerTableProps> = ({
                     taxableSS: taxableSSWithout,
                     isSingle,
                     cpiFactor,
-                    pensionExclusion: mdPensionExclusion,
+                    taxYear: r.year,
+                    agedFilerCount: countAgedFilers(isSingle, !!inputs.isSingleFiler, r.yourAge, r.wifeAge, isSingle && !inputs.isSingleFiler),
+                    pensionExclusion,
                     ordinaryIncome: Math.max(0, agiWithout - (r.capitalGainsTriggered || 0)),
                     capitalGains: r.capitalGainsTriggered || 0,
-                    retirementDistributions: Math.max(0, ((r.yourRMD || 0) + (r.wifeRMD || 0) + (r.drawdownPreTax || 0)) - (r.intentionalRothConversion || 0)),
+                    retirementDistributions: Math.max(0, ((r.yourRMD || 0) + (r.wifeRMD || 0) + (r.otherTaxableIncome || 0)) - (r.intentionalRothConversion || 0)),
                   },
                   effectiveLocalRate
                 );
@@ -444,8 +433,8 @@ export const LookbackLedgerTable: React.FC<LookbackLedgerTableProps> = ({
                       )}
                       <span className="text-[10px] font-normal text-slate-400">
                         {inputs.isSingleFiler 
-                          ? `(${r.yourAge >= (inputs.you.longevityAge ?? 85) ? '-' : r.yourAge})` 
-                          : `(${r.yourAge >= (inputs.you.longevityAge ?? 85) ? '-' : r.yourAge}/${r.wifeAge >= (inputs.wife?.longevityAge ?? 95) ? '-' : r.wifeAge})`}
+                          ? `(${r.yourAge >= (inputs.you.longevityAge ?? DEFAULT_YOUR_LONGEVITY_AGE) ? '-' : r.yourAge})` 
+                          : `(${r.yourAge >= (inputs.you.longevityAge ?? DEFAULT_YOUR_LONGEVITY_AGE) ? '-' : r.yourAge}/${r.wifeAge >= (inputs.wife?.longevityAge ?? DEFAULT_WIFE_LONGEVITY_AGE) ? '-' : r.wifeAge})`}
                       </span>
                     </div>
                   </td>
@@ -853,9 +842,10 @@ export const LookbackLedgerTable: React.FC<LookbackLedgerTableProps> = ({
 
                     {/* IRMAA Tier Reference Popup */}
                     {(() => {
-                      const isSingle = simulateSurvivor && r.year >= deathYear;
-                      const tiers = isSingle ? IRMAA_TIERS_SINGLE : IRMAA_TIERS_MFJ;
-                      const cpiFactor = r.cpiFactor;
+                      const isSingle = r.irmaaUsesSingleTiers ?? r.isSingleReturn;
+                      const irmaaRules = getFederalRules(r.year).irmaaTiers;
+                      const tiers = isSingle ? irmaaRules.single : irmaaRules.mfj;
+                      const cpiFactor = r.federalIndexFactor ?? r.cpiFactor;
                       const healthcareFactor = Math.pow(1 + inputs.growthAssumptions.healthcareInflationRate, r.year - simStartYear);
                       return (
                         <HoverPopup align="right" className="w-[380px] whitespace-normal bg-slate-950/95 backdrop-blur-md border border-slate-800 rounded-2xl p-4 shadow-2xl text-xs text-slate-300 pointer-events-none font-sans normal-case">
@@ -872,9 +862,7 @@ export const LookbackLedgerTable: React.FC<LookbackLedgerTableProps> = ({
                           <div className="space-y-0.5">
                             {tiers.map((tier) => {
                               const isActive = tier.tierNumber === r.surchargeTier;
-                              const inflatedLimit = tier.limit === Infinity
-                                ? null
-                                : (tier.tierNumber < 4 ? tier.limit * cpiFactor : tier.limit);
+                              const inflatedLimit = tier.limit === Infinity ? null : indexedIrmaaLimit(tier, cpiFactor);
                               const monthlySurcharge = (tier.partBSurcharge + tier.partDSurcharge) * healthcareFactor;
                               return (
                                 <div
@@ -933,7 +921,7 @@ export const LookbackLedgerTable: React.FC<LookbackLedgerTableProps> = ({
       <div className="flex gap-2 items-start text-xs text-slate-500 leading-relaxed">
         <Info className="w-4 h-4 text-slate-400 flex-shrink-0 mt-0.5" />
         <p>
-          MAGI is calculated as Federal Adjusted Gross Income (AGI) plus tax-exempt interest. Surcharges represent the combined Medicare Part B and Part D premium hikes applied directly to the spouses. In Survivor simulations, the surcharge calculation automatically switches to Single Filer thresholds starting in {deathYear} (after the projected passing of {inputs.you.name || 'You'}).
+          MAGI is calculated as Federal Adjusted Gross Income (AGI) plus tax-exempt interest. Surcharges represent the combined Medicare Part B and Part D premium hikes applied directly to the spouses. When the longevity ages differ, the surcharge calculation automatically switches to Single Filer thresholds the year after the first spouse's projected passing.
         </p>
       </div>
 
@@ -943,8 +931,6 @@ export const LookbackLedgerTable: React.FC<LookbackLedgerTableProps> = ({
         row={selectedRow}
         prevRow={selectedRow ? (ledger.indexOf(selectedRow) > 0 ? ledger[ledger.indexOf(selectedRow) - 1] : null) : null}
         inputs={inputs}
-        simulateSurvivor={simulateSurvivor}
-        deathYear={deathYear}
         ledger={ledger}
         onSelectRow={setSelectedRow}
       />

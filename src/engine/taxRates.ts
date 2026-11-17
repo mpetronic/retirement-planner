@@ -1,35 +1,29 @@
-// 2026 Tax Rates & Reference Data for the Retirement Scenario Optimizer
+// Tax rates & reference data for the Retirement Scenario Optimizer. Federal brackets, deductions and
+// IRMAA tiers live in the year-keyed tables in federalTaxRules.ts.
+import { getFederalRules } from './federalTaxRules';
+export type { TaxBracket, IRMAATier } from './federalTaxRules';
 
-export const BASE_MEDICARE_PART_B = 202.90;
-export const BASE_MEDICARE_PART_D = 34.50;
+/** Additional Medicare Tax rate (IRC 3101(b)(2)) on wages. Thresholds are year-keyed in federalTaxRules.ts. */
+export const STATUTORY_ADDITIONAL_MEDICARE_RATE = 0.009;
 
 /**
- * Maryland Maximum Pension Exclusion Baseline Cap ($34,300 per eligible individual age 65+)
- * Statutory cap set by Comptroller of Maryland equal to the max annual Social Security benefit at Full Retirement Age.
+ * Latest-known-year federal rules, private to the static Roth target presets and defaults below, which
+ * are built once at load and need a single fixed year. Nothing else exports flat federal constants:
+ * engine calculations must look rules up by tax year through getFederalIndexing.
  */
-export const MD_PENSION_EXCLUSION_BASE_CAP = 34300;
-
-export interface TaxBracket {
-  rate: number;
-  limit: number; // upper limit of this bracket (Infinity for the top bracket)
-}
-
-export interface IRMAATier {
-  tierNumber: number;
-  limit: number; // MAGI upper limit
-  partBSurcharge: number;
-  partDSurcharge: number;
-}
-
-// 2026 Federal Standard Deductions
-export const FED_STANDARD_DEDUCTION_MFJ = 32200;
-export const FED_STANDARD_DEDUCTION_SINGLE = 16100;
-export const STATUTORY_STD_DEDUCTION_SINGLE_MFJ_MIDPOINT = (FED_STANDARD_DEDUCTION_SINGLE + FED_STANDARD_DEDUCTION_MFJ) / 2;
+const LATEST_FEDERAL_RULES = getFederalRules();
+const FED_BRACKETS_MFJ = LATEST_FEDERAL_RULES.brackets.mfj;
+const FED_BRACKETS_SINGLE = LATEST_FEDERAL_RULES.brackets.single;
+const FED_STANDARD_DEDUCTION_MFJ = LATEST_FEDERAL_RULES.standardDeduction.mfj;
+const IRMAA_TIERS_MFJ = LATEST_FEDERAL_RULES.irmaaTiers.mfj;
+const IRMAA_TIERS_SINGLE = LATEST_FEDERAL_RULES.irmaaTiers.single;
 
 /**
  * Net Investment Income Tax (NIIT) Statutory Constants (IRC Section 1411)
  */
 export const STATUTORY_NIIT_RATE = 0.038;
+/** Net capital losses beyond gains can offset this much ordinary income per year (same for single and MFJ); the rest carries forward. */
+export const CAPITAL_LOSS_ORDINARY_OFFSET_LIMIT = 3000;
 export const STATUTORY_NIIT_THRESHOLD_SINGLE = 200000;
 export const STATUTORY_NIIT_THRESHOLD_MFJ = 250000;
 
@@ -49,71 +43,31 @@ export const STATUTORY_IRMAA_LOOKBACK_YEARS = 2;
  */
 export const STATUTORY_MEDICARE_ELIGIBILITY_AGE = 65;
 
-// 2026 Federal Brackets (MFJ) - Single Source of Truth
-export const FED_BRACKETS_MFJ: TaxBracket[] = [
-  { rate: 0.10, limit: 24800 },
-  { rate: 0.12, limit: 100800 },
-  { rate: 0.22, limit: 211400 },
-  { rate: 0.24, limit: 403550 },
-  { rate: 0.32, limit: 512450 },
-  { rate: 0.35, limit: 768700 },
-  { rate: 0.37, limit: Infinity }
-];
-
-// 2026 Federal Brackets (Single) - Single Source of Truth
-export const FED_BRACKETS_SINGLE: TaxBracket[] = [
-  { rate: 0.10, limit: 12400 },
-  { rate: 0.12, limit: 50400 },
-  { rate: 0.22, limit: 105700 },
-  { rate: 0.24, limit: 201775 },
-  { rate: 0.32, limit: 256225 },
-  { rate: 0.35, limit: 640600 },
-  { rate: 0.37, limit: Infinity }
-];
-
-// 2026 Federal Long-Term Capital Gains Brackets (Single)
-export const FED_LTCG_BRACKETS_SINGLE: TaxBracket[] = [
-  { rate: 0.00, limit: 50200 },
-  { rate: 0.15, limit: 554000 },
-  { rate: 0.20, limit: Infinity }
-];
-
-// 2026 Federal Long-Term Capital Gains Brackets (MFJ)
-export const FED_LTCG_BRACKETS_MFJ: TaxBracket[] = [
-  { rate: 0.00, limit: 100500 },
-  { rate: 0.15, limit: 623000 },
-  { rate: 0.20, limit: Infinity }
-];
-
-// 2026 IRMAA Tiers (MFJ)
-// Tier 5 represents greater than or equal to $750k, so we set its limit to Infinity
-export const IRMAA_TIERS_MFJ: IRMAATier[] = [
-  { tierNumber: 0, limit: 218000, partBSurcharge: 0.00, partDSurcharge: 0.00 },
-  { tierNumber: 1, limit: 274000, partBSurcharge: 81.20, partDSurcharge: 14.50 },
-  { tierNumber: 2, limit: 342000, partBSurcharge: 202.90, partDSurcharge: 37.50 },
-  { tierNumber: 3, limit: 410000, partBSurcharge: 324.60, partDSurcharge: 60.40 },
-  { tierNumber: 4, limit: 749999, partBSurcharge: 446.30, partDSurcharge: 83.30 },
-  { tierNumber: 5, limit: Infinity, partBSurcharge: 487.00, partDSurcharge: 91.00 }
-];
-
-// 2026 IRMAA Tiers (Single)
-export const IRMAA_TIERS_SINGLE: IRMAATier[] = [
-  { tierNumber: 0, limit: 109000, partBSurcharge: 0.00, partDSurcharge: 0.00 },
-  { tierNumber: 1, limit: 137000, partBSurcharge: 81.20, partDSurcharge: 14.50 },
-  { tierNumber: 2, limit: 171000, partBSurcharge: 202.90, partDSurcharge: 37.50 },
-  { tierNumber: 3, limit: 205000, partBSurcharge: 324.60, partDSurcharge: 60.40 },
-  { tierNumber: 4, limit: 499999, partBSurcharge: 446.30, partDSurcharge: 83.30 },
-  { tierNumber: 5, limit: Infinity, partBSurcharge: 487.00, partDSurcharge: 91.00 }
-];
-
 /**
  * Default Fill-to-Target benchmark target (derived dynamically from the 12% Federal Tax Bracket ceiling in FED_BRACKETS_MFJ)
  */
 export const DEFAULT_FILL_TO_TARGET_VALUE = FED_BRACKETS_MFJ.find((b) => b.rate === 0.12)?.limit ?? 100800;
 
+/**
+ * How a preset's dollar value is carried to a simulated year: 'federal' follows the year's federal rule
+ * indexing, 'start-year' follows plan CPI from the simulation start (custom values entered in start-year
+ * dollars), and 'fixed' is not adjusted (statutory IRMAA top cliff).
+ */
+export type PresetIndexing = 'federal' | 'start-year' | 'fixed';
+
+export function presetIndexFactor(
+  preset: { indexing: PresetIndexing },
+  cpiFactor: number,
+  federalIndexFactor: number
+): number {
+  if (preset.indexing === 'fixed') return 1;
+  return preset.indexing === 'federal' ? federalIndexFactor : cpiFactor;
+}
+
 export interface ConversionTargetPreset {
   id: string;
   type: 'bracket' | 'irmaa';
+  indexing: PresetIndexing;
   rateLabel: string;
   shortLabel: string;
   description: string;
@@ -149,6 +103,7 @@ export const CONVERSION_TARGET_PRESETS: ConversionTargetPreset[] = [
     return {
       id: `bracket_${pct}`,
       type: 'bracket' as const,
+      indexing: 'federal' as const,
       rateLabel: `${pct}%`,
       shortLabel: `${pct}% ($${kStr}k)`,
       description: `Top of ${pct}% Fed Tax Bracket ($${b.limit.toLocaleString()} Taxable Income)`,
@@ -163,6 +118,7 @@ export const CONVERSION_TARGET_PRESETS: ConversionTargetPreset[] = [
   {
     id: 'irmaa_1',
     type: 'irmaa' as const,
+    indexing: 'federal' as const,
     rateLabel: 'Tier 1',
     shortLabel: `Tier 1 ($${(IRMAA_TIERS_MFJ[0].limit / 1000).toFixed(0)}k)`,
     description: `IRMAA Tier 1 Cliff ($${IRMAA_TIERS_MFJ[0].limit.toLocaleString()} MAGI)`,
@@ -174,6 +130,7 @@ export const CONVERSION_TARGET_PRESETS: ConversionTargetPreset[] = [
   {
     id: 'irmaa_2',
     type: 'irmaa' as const,
+    indexing: 'federal' as const,
     rateLabel: 'Tier 2',
     shortLabel: `Tier 2 ($${(IRMAA_TIERS_MFJ[1].limit / 1000).toFixed(0)}k)`,
     description: `IRMAA Tier 2 Cliff ($${IRMAA_TIERS_MFJ[1].limit.toLocaleString()} MAGI)`,
@@ -185,6 +142,7 @@ export const CONVERSION_TARGET_PRESETS: ConversionTargetPreset[] = [
   {
     id: 'irmaa_3',
     type: 'irmaa' as const,
+    indexing: 'federal' as const,
     rateLabel: 'Tier 3',
     shortLabel: `Tier 3 ($${(IRMAA_TIERS_MFJ[2].limit / 1000).toFixed(0)}k)`,
     description: `IRMAA Tier 3 Cliff ($${IRMAA_TIERS_MFJ[2].limit.toLocaleString()} MAGI)`,
@@ -196,6 +154,7 @@ export const CONVERSION_TARGET_PRESETS: ConversionTargetPreset[] = [
   {
     id: 'irmaa_4',
     type: 'irmaa' as const,
+    indexing: 'federal' as const,
     rateLabel: 'Tier 4',
     shortLabel: `Tier 4 ($${(IRMAA_TIERS_MFJ[3].limit / 1000).toFixed(0)}k)`,
     description: `IRMAA Tier 4 Cliff ($${IRMAA_TIERS_MFJ[3].limit.toLocaleString()} MAGI)`,
@@ -207,6 +166,7 @@ export const CONVERSION_TARGET_PRESETS: ConversionTargetPreset[] = [
   {
     id: 'irmaa_5',
     type: 'irmaa' as const,
+    indexing: 'fixed' as const,
     rateLabel: 'Tier 5',
     shortLabel: 'Tier 5 ($750k)',
     description: 'IRMAA Tier 5 Cliff ($750,000 MAGI)',
@@ -217,6 +177,14 @@ export const CONVERSION_TARGET_PRESETS: ConversionTargetPreset[] = [
   },
 ];
 
+/**
+ * True when a typed target equals a preset's bracket ceiling expressed as AGI, that is the taxable income
+ * ceiling plus the standard deduction of the latest rule year.
+ */
+export function matchesBracketTargetWithDeduction(preset: { jointBase: number }, targetValue: number | null): boolean {
+  return targetValue !== null && targetValue === preset.jointBase + FED_STANDARD_DEDUCTION_MFJ;
+}
+
 export function getTargetPresetInfo(targetValue: number | null): ConversionTargetPreset | null {
   if (targetValue === null || targetValue === undefined || targetValue <= 0) return null;
 
@@ -225,13 +193,14 @@ export function getTargetPresetInfo(targetValue: number | null): ConversionTarge
       p.targetValue === targetValue ||
       p.jointBase === targetValue ||
       Math.abs(p.jointBase - targetValue) <= 1 ||
-      p.jointBase + FED_STANDARD_DEDUCTION_MFJ === targetValue
+      matchesBracketTargetWithDeduction(p, targetValue)
   );
   if (found) return found;
 
   return {
     id: `custom_${targetValue}`,
     type: 'irmaa',
+    indexing: 'start-year',
     rateLabel: `$${targetValue.toLocaleString()}`,
     shortLabel: `$${(targetValue / 1000).toFixed(0)}k`,
     description: `Target MAGI Limit ($${targetValue.toLocaleString()} MAGI)`,
@@ -293,28 +262,38 @@ export function getIRSUniformLifetimeFactor(age: number): number {
   return factors[age] || factors[72];
 }
 
-// Maryland State Tax Bracket Rates (Graduated)
-// MD has piggyback local taxes which average 3.20% (added directly to the State's graduated rate)
-export const MD_GRADUATED_TIERS_SINGLE = [
-  { rate: 0.02, limit: 1000 },
-  { rate: 0.03, limit: 2000 },
-  { rate: 0.04, limit: 3000 },
-  { rate: 0.0475, limit: 100000 },
-  { rate: 0.05, limit: 125000 },
-  { rate: 0.0525, limit: 150000 },
-  { rate: 0.055, limit: 250000 },
-  { rate: 0.0575, limit: Infinity }
-];
 
-export const MD_GRADUATED_TIERS_MFJ = [
-  { rate: 0.02, limit: 1000 },
-  { rate: 0.03, limit: 2000 },
-  { rate: 0.04, limit: 3000 },
-  { rate: 0.0475, limit: 150000 },
-  { rate: 0.05, limit: 175000 },
-  { rate: 0.0525, limit: 225000 },
-  { rate: 0.055, limit: 300000 },
-  { rate: 0.0575, limit: Infinity }
-];
+export const STATUTORY_AGED_DEDUCTION_AGE = 65;
 
-export const MD_PIGGYBACK_RATE = 0.0320; // flat 3.20% local tax
+/**
+ * One Big Beautiful Bill Act (Public Law 119-21) senior deduction, tax years 2025 through 2028.
+ * Per filer age 65 or older, not inflation indexed, available whether or not the filer itemizes.
+ */
+export const OBBBA_SENIOR_DEDUCTION_FIRST_YEAR = 2025;
+export const OBBBA_SENIOR_DEDUCTION_LAST_YEAR = 2028;
+export const OBBBA_SENIOR_DEDUCTION_PER_FILER = 6000;
+export const OBBBA_SENIOR_DEDUCTION_PHASEOUT_RATE = 0.06;
+export const OBBBA_SENIOR_DEDUCTION_PHASEOUT_THRESHOLD_MFJ = 150000;
+export const OBBBA_SENIOR_DEDUCTION_PHASEOUT_THRESHOLD_SINGLE = 75000;
+
+/**
+ * OBBBA state and local tax (SALT) deduction cap. Base cap and phase-down threshold apply in the first
+ * year and grow 1% per year through the last enhanced year. After that the pre-OBBBA cap returns.
+ * The cap shrinks by 30% of MAGI above the threshold but never below the pre-OBBBA cap.
+ */
+export const OBBBA_SALT_CAP_FIRST_YEAR = 2025;
+export const OBBBA_SALT_CAP_LAST_YEAR = 2029;
+export const OBBBA_SALT_CAP_FIRST_YEAR_AMOUNT = 40000;
+export const OBBBA_SALT_CAP_ANNUAL_GROWTH = 0.01;
+export const OBBBA_SALT_PHASEDOWN_THRESHOLD_FIRST_YEAR = 500000;
+export const OBBBA_SALT_PHASEDOWN_RATE = 0.30;
+export const PRE_OBBBA_SALT_CAP = 10000;
+
+/**
+ * OBBBA charitable changes effective 2026: itemized gifts are reduced by a floor of 0.5% of AGI, and
+ * non-itemizers may deduct cash gifts up to a fixed amount. These amounts are not inflation indexed.
+ */
+export const OBBBA_CHARITABLE_FIRST_YEAR = 2026;
+export const OBBBA_CHARITABLE_ITEMIZED_AGI_FLOOR_RATE = 0.005;
+export const OBBBA_NON_ITEMIZER_CHARITABLE_DEDUCTION_MFJ = 2000;
+export const OBBBA_NON_ITEMIZER_CHARITABLE_DEDUCTION_SINGLE = 1000;
