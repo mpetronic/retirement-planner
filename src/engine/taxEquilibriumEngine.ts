@@ -167,7 +167,6 @@ export function calculateDynamicRMDHurdleRate(ledger: SimulationResultRow[], cur
  */
 function evaluatePlanTaxCostForYear(
   baseInputs: AppStateInputs,
-  simulateSurvivor: boolean,
   activeSequence: LockedReturnSequence | null | undefined,
   activeSchedule: Record<number, number>,
   targetYear: number
@@ -194,7 +193,7 @@ function evaluatePlanTaxCostForYear(
     activeCustomScenarioId: customScenario.id,
   };
 
-  const ledger = runRetirementSimulation(testInputs, simulateSurvivor, activeSequence);
+  const ledger = runRetirementSimulation(testInputs, activeSequence);
   const ledgerRow = ledger.find((r) => r.year === targetYear);
   const irmaaRow = ledger.find((r) => r.year === targetYear + STATUTORY_IRMAA_LOOKBACK_YEARS);
 
@@ -217,7 +216,6 @@ function evaluatePlanTaxCostForYear(
  */
 export function calculateTaxEquilibriumSchedule(
   inputs: AppStateInputs,
-  simulateSurvivor: boolean = false,
   overrideSequence?: LockedReturnSequence | null
 ): TaxEquilibriumResult {
   const simStartYear = getSimulationStartYear(inputs);
@@ -234,7 +232,7 @@ export function calculateTaxEquilibriumSchedule(
     baselineSchedule[y] = 0;
   }
 
-  const baselineEval = evaluatePlanTaxCostForYear(inputs, simulateSurvivor, overrideSequence, baselineSchedule, startYear);
+  const baselineEval = evaluatePlanTaxCostForYear(inputs, overrideSequence, baselineSchedule, startYear);
   const baselineLedger = baselineEval.ledger;
 
   const baselineLifetimeTaxes = baselineLedger.reduce((sum, r) => sum + r.totalIncomeTax + (r.niitTax || 0) + (r.combinedSurchargeAnnual || 0), 0);
@@ -273,7 +271,7 @@ export function calculateTaxEquilibriumSchedule(
     solvedSchedule[year] = 0;
 
     // Evaluate dynamic RMD hurdle rate based on current cumulative plan
-    const currentRun = evaluatePlanTaxCostForYear(inputs, simulateSurvivor, overrideSequence, solvedSchedule, year);
+    const currentRun = evaluatePlanTaxCostForYear(inputs, overrideSequence, solvedSchedule, year);
     const dynamicHurdleRate = calculateDynamicRMDHurdleRate(currentRun.ledger, currentState);
     totalBenchmarkSum += dynamicHurdleRate;
     benchmarkCount++;
@@ -317,7 +315,7 @@ export function calculateTaxEquilibriumSchedule(
 
         // Test next increment
         solvedSchedule[year] = nextConversion;
-        const nextEval = evaluatePlanTaxCostForYear(inputs, simulateSurvivor, overrideSequence, solvedSchedule, year);
+        const nextEval = evaluatePlanTaxCostForYear(inputs, overrideSequence, solvedSchedule, year);
         
         // Check liquidity / cash reserve constraint
         // If conversion tax draws liquid reserves below floor or creates a cash deficit
@@ -332,7 +330,7 @@ export function calculateTaxEquilibriumSchedule(
 
         // Compute marginal rate on this step
         solvedSchedule[year] = currentOptimalConversion;
-        const curEval = evaluatePlanTaxCostForYear(inputs, simulateSurvivor, overrideSequence, solvedSchedule, year);
+        const curEval = evaluatePlanTaxCostForYear(inputs, overrideSequence, solvedSchedule, year);
         const incrementalCost = nextEval.totalDrag - curEval.totalDrag;
         const marginalRate = incrementalCost / step;
 
@@ -340,7 +338,7 @@ export function calculateTaxEquilibriumSchedule(
         const deltaIRMAA = nextEval.lookbackIRMAA - curEval.lookbackIRMAA;
         if (deltaIRMAA > 0 && deltaIRMAA / step > IRMAA_CLIFF_DRAG_DETECTION_THRESHOLD) {
           limitingFactor = 'IRMAA Cliff Boundary';
-          const isSingle = (simulateSurvivor || inputs.isSingleFiler);
+          const isSingle = curEval.irmaaRow?.irmaaUsesSingleTiers ?? inputs.isSingleFiler;
           const irmaaRules = getFederalRules(year).irmaaTiers;
           const tiers = isSingle ? irmaaRules.single : irmaaRules.mfj;
           const nextTierNum = nextEval.irmaaRow?.surchargeTier && nextEval.irmaaRow.surchargeTier > 0 
@@ -383,7 +381,7 @@ export function calculateTaxEquilibriumSchedule(
 
     // Capture finalized optimal amount for this year
     solvedSchedule[year] = currentOptimalConversion;
-    const finalYearEval = evaluatePlanTaxCostForYear(inputs, simulateSurvivor, overrideSequence, solvedSchedule, year);
+    const finalYearEval = evaluatePlanTaxCostForYear(inputs, overrideSequence, solvedSchedule, year);
     const finalRow = finalYearEval.ledgerRow;
 
     const baseOrdinary = (finalRow?.yourSalary ?? 0) + (finalRow?.wifeSalary ?? 0) +
@@ -410,7 +408,7 @@ export function calculateTaxEquilibriumSchedule(
   }
 
   // 3. Final Simulation with the Full Solved TE Schedule
-  const optimizedEval = evaluatePlanTaxCostForYear(inputs, simulateSurvivor, overrideSequence, solvedSchedule, startYear);
+  const optimizedEval = evaluatePlanTaxCostForYear(inputs, overrideSequence, solvedSchedule, startYear);
   const optimizedLedger = optimizedEval.ledger;
 
   const optimizedLifetimeTaxes = optimizedLedger.reduce((sum, r) => sum + r.totalIncomeTax + (r.niitTax || 0) + (r.combinedSurchargeAnnual || 0), 0);

@@ -780,7 +780,6 @@ describe('runRetirementSimulation', () => {
     const inputs = getMockInputs();
     inputs.isConfigured = true;
     inputs.isSingleFiler = false;
-    inputs.simulateSurvivor = true;
     inputs.you.birthDate = '1960-01-01'; // Turns 85 in 2045 (Death Year)
     inputs.wife.birthDate = '1964-01-01';
 
@@ -796,7 +795,7 @@ describe('runRetirementSimulation', () => {
     inputs.jurisdiction.targetState = 'MD';
     inputs.jurisdiction.relocationYear = null;
 
-    const resultsMD = runRetirementSimulation(inputs, true);
+    const resultsMD = runRetirementSimulation(inputs);
 
     // Total taxable balance at start of 2026: 500k + 500k = 1,000,000 at a 2% yield.
     const row2026 = resultsMD.find(r => r.year === 2026);
@@ -809,7 +808,7 @@ describe('runRetirementSimulation', () => {
     for (const stateCode of ['FL', 'TX']) {
       inputs.jurisdiction.currentState = stateCode;
       inputs.jurisdiction.targetState = stateCode;
-      const row2045 = runRetirementSimulation(inputs, true).find(r => r.year === 2045);
+      const row2045 = runRetirementSimulation(inputs).find(r => r.year === 2045);
       expect(row2045!.endWifeTaxableBasis).toBeLessThan(row2045!.endWifeTaxableBrokerage);
       expect(row2045!.endWifeTaxableBasis).toBeGreaterThan(0);
     }
@@ -822,7 +821,6 @@ describe('runRetirementSimulation', () => {
       const inputs = getMockInputs();
       inputs.isConfigured = true;
       inputs.isSingleFiler = false;
-      inputs.simulateSurvivor = true;
       inputs.you.birthDate = '1960-01-01';
       inputs.you.longevityAge = HUSBAND_DEATH_YEAR - 1960;
       inputs.you.estimatedPIA = 3000;
@@ -839,7 +837,7 @@ describe('runRetirementSimulation', () => {
     it('should reduce the survivor benefit for her age when it starts', () => {
       const inputs = getSurvivorInputs();
       inputs.wife.birthDate = '1968-01-01'; // Age 62 when widowed in January 2030
-      const row = runRetirementSimulation(inputs, true).find(r => r.year === HUSBAND_DEATH_YEAR)!;
+      const row = runRetirementSimulation(inputs).find(r => r.year === HUSBAND_DEATH_YEAR)!;
       expect(row.wifeSS).toBeCloseTo(annualSS(calculateSurvivorBenefit(3000, 67, 62), row), 0);
       expect(row.wifeSS).toBeLessThan(annualSS(3000, row));
     });
@@ -847,14 +845,14 @@ describe('runRetirementSimulation', () => {
     it('should pay the full survivor benefit when she is widowed at FRA or older', () => {
       const inputs = getSurvivorInputs();
       inputs.wife.birthDate = '1962-01-01'; // Age 68 when widowed
-      const row = runRetirementSimulation(inputs, true).find(r => r.year === HUSBAND_DEATH_YEAR)!;
+      const row = runRetirementSimulation(inputs).find(r => r.year === HUSBAND_DEATH_YEAR)!;
       expect(row.wifeSS).toBeCloseTo(annualSS(3000, row), 0);
     });
 
     it('should pay nothing before 60, then the age-60 survivor rate for life', () => {
       const inputs = getSurvivorInputs();
       inputs.wife.birthDate = '1972-01-01'; // Age 58 when widowed, 60 in 2032
-      const results = runRetirementSimulation(inputs, true);
+      const results = runRetirementSimulation(inputs);
       expect(results.find(r => r.year === 2031)!.wifeSS).toBe(0);
       const row2032 = results.find(r => r.year === 2032)!;
       expect(row2032.wifeSS).toBeCloseTo(annualSS(3000 * SS_SURVIVOR_EARLIEST_AGE_FACTOR, row2032), 0);
@@ -865,10 +863,10 @@ describe('runRetirementSimulation', () => {
 
     it('should pay own benefit plus the excess spousal amount once the husband files', () => {
       const inputs = getSurvivorInputs();
-      inputs.simulateSurvivor = false;
       inputs.wife.targetSSClaimingAge = 62; // Claims own in 2026
       inputs.you.targetSSClaimingAge = 70; // Files in 2030, when she is 66
-      const results = runRetirementSimulation(inputs, false);
+      inputs.you.longevityAge = 90; // Husband stays alive through the filing years
+      const results = runRetirementSimulation(inputs);
       const before = results.find(r => r.year === 2029)!;
       expect(before.wifeSS).toBeCloseTo(annualSS(calculateSSBenefit(1000, 62), before), 0);
       const after = results.find(r => r.year === 2031)!;
@@ -877,8 +875,27 @@ describe('runRetirementSimulation', () => {
       expect(after.wifeSS).toBeCloseTo(annualSS(expectedMonthly, after), 0);
     });
 
+    it('should file jointly through the end when both longevity ages fall in the same year', () => {
+      const inputs = getSurvivorInputs();
+      inputs.you.birthDate = '1960-01-01';
+      inputs.you.longevityAge = 80;
+      inputs.wife.birthDate = '1960-01-01';
+      inputs.wife.longevityAge = 80;
+      const results = runRetirementSimulation(inputs);
+      expect(results[results.length - 1].year).toBe(2039);
+      expect(results.every(r => r.isSingleReturn === false)).toBe(true);
+    });
+
+    it('should file as single every year for a single filer', () => {
+      const inputs = getSurvivorInputs();
+      inputs.isSingleFiler = true;
+      const results = runRetirementSimulation(inputs);
+      expect(results.length).toBeGreaterThan(0);
+      expect(results.every(r => r.isSingleReturn === true)).toBe(true);
+    });
+
     it('should keep MFJ IRMAA tiers until the lookback return is a single return', () => {
-      const results = runRetirementSimulation(getSurvivorInputs(), true);
+      const results = runRetirementSimulation(getSurvivorInputs());
       const row = (year: number) => results.find(r => r.year === year)!;
       // Year of death is still a joint return
       expect(row(HUSBAND_DEATH_YEAR).isSingleReturn).toBe(false);
@@ -895,7 +912,7 @@ describe('runRetirementSimulation', () => {
       inputs.you.longevityAge = 90;
       inputs.wife.birthDate = '1975-01-01';
       inputs.wife.longevityAge = 55; // Dies in 2030 at 55; the husband is 70
-      const row = runRetirementSimulation(inputs, true).find(r => r.year === 2031)!;
+      const row = runRetirementSimulation(inputs).find(r => r.year === 2031)!;
       expect(row.isSingleReturn).toBe(true);
       const rules = getFederalRules(row.year);
       const indexFactor = row.federalIndexFactor ?? row.cpiFactor;
@@ -908,7 +925,7 @@ describe('runRetirementSimulation', () => {
       inputs.you.targetSSClaimingAge = 70;
       inputs.you.longevityAge = 66; // Dies in 2026 at age 66 before reaching FRA or claiming at 70
       inputs.wife.birthDate = '1958-01-01'; // Age 68 in 2026 (past survivor FRA)
-      const row2026 = runRetirementSimulation(inputs, true).find(r => r.year === 2026)!;
+      const row2026 = runRetirementSimulation(inputs).find(r => r.year === 2026)!;
       expect(row2026.wifeSS).toBeCloseTo(annualSS(3000, row2026), 0);
     });
 
@@ -920,7 +937,7 @@ describe('runRetirementSimulation', () => {
       inputs.wife.birthDate = '1968-01-01'; // Age 62 in 2030, FRA 67 in 2035
       inputs.wife.estimatedPIA = 2600;
       inputs.wife.targetSSClaimingAge = 62; // Own benefit at 62 is 1,820/mo (> age-62 survivor 1,752.14/mo, < unreduced 2,200/mo)
-      const results = runRetirementSimulation(inputs, true);
+      const results = runRetirementSimulation(inputs);
       const row2030 = results.find(r => r.year === 2030)!;
       expect(row2030.wifeSS).toBeCloseTo(annualSS(calculateSSBenefit(2600, 62), row2030), 0);
       const row2035 = results.find(r => r.year === 2035)!;
@@ -936,7 +953,6 @@ describe('runRetirementSimulation', () => {
       const inputs = getMockInputs();
       inputs.isConfigured = true;
       inputs.isSingleFiler = false;
-      inputs.simulateSurvivor = true;
       inputs.you.birthDate = '1960-01-01';
       inputs.you.longevityAge = 90;
       inputs.wife.birthDate = '1964-01-01';
@@ -952,7 +968,7 @@ describe('runRetirementSimulation', () => {
     };
 
     it('should merge the wife cash and Roth into the husband and zero out her balances', () => {
-      const results = runRetirementSimulation(getWifeFirstInputs(), true);
+      const results = runRetirementSimulation(getWifeFirstInputs());
       const before = results.find(r => r.year === WIFE_DEATH_YEAR - 1)!;
       const after = results.find(r => r.year === WIFE_DEATH_YEAR)!;
 
@@ -985,7 +1001,7 @@ describe('runRetirementSimulation', () => {
         }];
         inputs.activeCustomScenarioId = 'wife-first';
 
-        const results = runRetirementSimulation(inputs, true);
+        const results = runRetirementSimulation(inputs);
         const survivorRows = results.filter(r => r.year > WIFE_DEATH_YEAR && r.year <= WIFE_DEATH_YEAR + 5);
         expect(survivorRows.length).toBeGreaterThan(0);
         for (const row of survivorRows) {
@@ -1001,7 +1017,7 @@ describe('runRetirementSimulation', () => {
       inputs.you.targetSSClaimingAge = 67;
       inputs.wife.estimatedPIA = 3000;
       inputs.wife.targetSSClaimingAge = 70; // Claims in 2034 (or earns full DRCs to 70 at death in 2034)
-      const results = runRetirementSimulation(inputs, true);
+      const results = runRetirementSimulation(inputs);
       const rowAfterDeath = results.find(r => r.year === WIFE_DEATH_YEAR)!;
       const expectedMonthly = calculateSurvivorBenefit(3000, 70, 74, WIFE_LONGEVITY_AGE);
       expect(rowAfterDeath.yourSS).toBeCloseTo(expectedMonthly * 12 * rowAfterDeath.cpiFactor * (rowAfterDeath.ssPaymentLevel ?? 1), 0);
@@ -1016,7 +1032,7 @@ describe('runRetirementSimulation', () => {
       inputs.wife.longevityAge = 63; // Dies in 2027 before claiming
       inputs.wife.estimatedPIA = 1500;
       inputs.wife.targetSSClaimingAge = 67;
-      const results = runRetirementSimulation(inputs, true);
+      const results = runRetirementSimulation(inputs);
       const row2027 = results.find(r => r.year === 2027)!;
       const expectedSurvivorMonthly = calculateSurvivorBenefit(1500, 67, 63, 63);
       expect(row2027.yourSS).toBeCloseTo(expectedSurvivorMonthly * 12 * row2027.cpiFactor * (row2027.ssPaymentLevel ?? 1), 0);
@@ -1469,8 +1485,7 @@ describe('runRetirementSimulation fixes', () => {
   it('should check surviving spouse age for standard deduction age addition when single', () => {
     const inputs = getMockInputs();
     inputs.isSingleFiler = false;
-    inputs.simulateSurvivor = true;
-    const results = runRetirementSimulation(inputs, true);
+    const results = runRetirementSimulation(inputs);
     const row2051 = results.find(r => r.year === 2051);
     expect(row2051).toBeDefined();
     const rules2026 = getFederalRules(2026);
@@ -1640,7 +1655,8 @@ describe('runRetirementSimulation fixes', () => {
       const results = runRetirementSimulation(inputs);
       expect(results[0].year).toBe(2024);
       expect(results[0].yourAge).toBe(64);
-      expect(results[results.length - 1].year).toBe(2050);
+      // The last survivor is removed in their longevity year (2050), so the final simulated year is 2049
+      expect(results[results.length - 1].year).toBe(2049);
 
       // In 2024, salary is active, no SS
       expect(results[0].yourSalary).toBeGreaterThan(0);
@@ -1666,7 +1682,8 @@ describe('runRetirementSimulation fixes', () => {
       const results = runRetirementSimulation(inputs);
       expect(results[0].year).toBe(2030);
       expect(results[0].yourAge).toBe(60);
-      expect(results[results.length - 1].year).toBe(2065);
+      // The last survivor is removed in their longevity year (2065), so the final simulated year is 2064
+      expect(results[results.length - 1].year).toBe(2064);
 
       const row2040 = results.find(r => r.year === 2040);
       expect(row2040).toBeDefined();

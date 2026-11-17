@@ -72,7 +72,7 @@ describe('taxEquilibriumEngine', () => {
 
   it('calculates a valid dynamic RMD hurdle rate', () => {
     const inputs = getMockInputs();
-    const result = calculateTaxEquilibriumSchedule(inputs, false, null);
+    const result = calculateTaxEquilibriumSchedule(inputs, null);
 
     expect(result.averageBenchmarkRate).toBeGreaterThan(DEFAULT_TAX_EQUILIBRIUM_FLOOR_RATE);
     expect(result.averageBenchmarkRate).toBeLessThan(0.45);
@@ -135,7 +135,7 @@ describe('taxEquilibriumEngine', () => {
 
   it('generates a year-by-year schedule with limiting factors', () => {
     const inputs = getMockInputs();
-    const result = calculateTaxEquilibriumSchedule(inputs, false, null);
+    const result = calculateTaxEquilibriumSchedule(inputs, null);
 
     expect(result).toBeDefined();
     expect(Object.keys(result.schedule).length).toBe(7); // 2027 to 2033
@@ -165,7 +165,7 @@ describe('taxEquilibriumEngine', () => {
   it('runs within performance expectations (< 500ms for multi-year window)', () => {
     const inputs = getMockInputs();
     const startTime = performance.now();
-    const result = calculateTaxEquilibriumSchedule(inputs, false, null);
+    const result = calculateTaxEquilibriumSchedule(inputs, null);
     const duration = performance.now() - startTime;
 
     expect(result.yearlyDetails.length).toBeGreaterThan(0);
@@ -176,7 +176,7 @@ describe('taxEquilibriumEngine', () => {
     const inputs = getMockInputs();
     inputs.isConfigured = false;
 
-    const result = calculateTaxEquilibriumSchedule(inputs, false, null);
+    const result = calculateTaxEquilibriumSchedule(inputs, null);
     expect(result.yearlyDetails.length).toBe(0);
     expect(result.averageBenchmarkRate).toBe(0);
     expect(result.lifetimeImpact.lifetimeTaxSavings).toBe(0);
@@ -187,7 +187,7 @@ describe('taxEquilibriumEngine', () => {
     inputs.portfolio.yourPreTaxIRA = 25000;
     inputs.portfolio.wifePreTaxIRA = 0;
 
-    const result = calculateTaxEquilibriumSchedule(inputs, false, null);
+    const result = calculateTaxEquilibriumSchedule(inputs, null);
     const firstYearConversion = result.yearlyDetails[0].optimalConversion;
     expect(firstYearConversion).toBeLessThanOrEqual(35000); // Bounded by initial small IRA plus slight growth
   });

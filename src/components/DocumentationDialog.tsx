@@ -86,7 +86,7 @@ export const DocumentationDialog: React.FC<DocumentationDialogProps> = ({
               </div>
               <div>
                 <h3 className="text-base font-black text-slate-100">Welcome to Retirement Planner 2.0</h3>
-                <p className="text-xs text-emerald-400/90 font-medium">Interactive 35-Year Tax, Medicare IRMAA & Wealth Simulation Engine</p>
+                <p className="text-xs text-emerald-400/90 font-medium">Interactive Lifetime Tax, Medicare IRMAA & Wealth Simulation Engine</p>
               </div>
             </div>
             <p className="text-xs text-slate-300 leading-relaxed mt-3">
@@ -114,7 +114,7 @@ export const DocumentationDialog: React.FC<DocumentationDialogProps> = ({
                 <span>How Retirement Planner 2.0 Solves It</span>
               </div>
               <ul className="text-[11px] text-slate-300 space-y-1.5 list-disc list-inside leading-relaxed">
-                <li><strong className="text-slate-200">35-Year Granular Ledger:</strong> Year-by-year cashflow accounting across Taxable, Pre-Tax IRA, and Roth accounts from Age 65 to 100.</li>
+                <li><strong className="text-slate-200">Granular Ledger:</strong> Year-by-year cashflow accounting across Taxable, Pre-Tax IRA, and Roth accounts from the start year through the configured longevity ages.</li>
                 <li><strong className="text-slate-200">Precise 2-Year IRMAA Tracking:</strong> Year T MAGI is accurately mapped to Year T+2 Medicare surcharge brackets.</li>
                 <li><strong className="text-slate-200">Automated Roth Optimization:</strong> 2D sweep algorithms evaluate optimal Roth conversion amounts and SS claiming ages.</li>
                 <li><strong className="text-slate-200">1,000+ Monte Carlo Trials:</strong> Both a correlated parametric (CMA-faithful) engine and a real-history bootstrap engine.</li>
@@ -179,7 +179,7 @@ export const DocumentationDialog: React.FC<DocumentationDialogProps> = ({
                   </span>
                   <ExternalLink className="w-3 h-3 text-slate-500 group-hover:text-emerald-400" />
                 </div>
-                <div className="text-[10px] text-slate-400 mt-1">35-Year Audit Ledger</div>
+                <div className="text-[10px] text-slate-400 mt-1">Audit Ledger</div>
               </button>
 
               <button
@@ -330,7 +330,7 @@ export const DocumentationDialog: React.FC<DocumentationDialogProps> = ({
     },
     {
       id: 'workspace-2',
-      title: 'Workspace 2: 35-Year Lookback Ledger',
+      title: 'Workspace 2: Lookback Ledger',
       category: 'Workspaces',
       icon: ShieldAlert,
       badge: 'Audit & Ledger',
@@ -340,10 +340,10 @@ export const DocumentationDialog: React.FC<DocumentationDialogProps> = ({
           <div className="p-4 bg-slate-900/60 border border-slate-800 rounded-2xl">
             <h3 className="text-sm font-bold text-slate-100 mb-1 flex items-center gap-2">
               <ShieldAlert className="w-4 h-4 text-blue-400" />
-              Comprehensive 35-Year Cashflow & Tax Audit Table
+              Comprehensive Cashflow & Tax Audit Table
             </h3>
             <p className="text-xs text-slate-400 leading-relaxed">
-              Workspace 2 provides a year-by-year financial accounting matrix spanning ages 65 through 100. It presents full transparency into how the simulation engine computes balances, returns, withdrawals, taxes, and healthcare surcharges every single year.
+              Workspace 2 provides a year-by-year financial accounting matrix spanning the start year through the year before the last survivor's longevity age. It presents full transparency into how the simulation engine computes balances, returns, withdrawals, taxes, and healthcare surcharges every single year.
             </p>
           </div>
 
@@ -395,7 +395,7 @@ export const DocumentationDialog: React.FC<DocumentationDialogProps> = ({
 
           <div className="p-4 bg-blue-950/20 border border-blue-900/30 rounded-xl flex items-center justify-between">
             <div className="text-xs text-slate-300">
-              Inspect your year-by-year 35-year audit ledger now:
+              Inspect your year-by-year audit ledger now:
             </div>
             <button
               type="button"
@@ -558,7 +558,7 @@ export const DocumentationDialog: React.FC<DocumentationDialogProps> = ({
             <div className="p-4 bg-slate-950/60 border border-slate-800 rounded-xl space-y-2">
               <span className="text-xs font-bold text-emerald-400 block">Variance & Delta Breakdown Cards</span>
               <ul className="text-[11px] text-slate-300 space-y-1.5 list-disc list-inside leading-relaxed">
-                <li><strong className="text-slate-200">Ending Estate Variance:</strong> Net difference in wealth left to heirs at age 100.</li>
+                <li><strong className="text-slate-200">Ending Estate Variance:</strong> Net difference in wealth left to heirs at the end of the simulation.</li>
                 <li><strong className="text-slate-200">Cumulative Tax Differential:</strong> Direct comparison of total Federal and State income taxes paid.</li>
                 <li><strong className="text-slate-200">Medicare IRMAA Delta:</strong> Surcharges avoided across retirement.</li>
                 <li><strong className="text-slate-200">Success Rate Delta:</strong> Change in probability of never depleting portfolio reserves.</li>
@@ -762,10 +762,10 @@ export const DocumentationDialog: React.FC<DocumentationDialogProps> = ({
             <div className="p-4 bg-slate-950/60 border border-slate-800 rounded-xl space-y-2">
               <div className="flex items-center gap-2 text-emerald-400 font-bold text-xs">
                 <FileSpreadsheet className="w-4 h-4" />
-                <span>Excel & CSV 35-Year Ledger Export</span>
+                <span>Excel & CSV Ledger Export</span>
               </div>
               <p className="text-[11px] text-slate-300 leading-relaxed">
-                Download the complete 35-year tabular ledger into Microsoft Excel (.xlsx) or CSV format for spreadsheet verification and custom charting.
+                Download the complete tabular ledger into Microsoft Excel (.xlsx) or CSV format for spreadsheet verification and custom charting.
               </p>
             </div>
 
@@ -1129,7 +1129,7 @@ export const DocumentationDialog: React.FC<DocumentationDialogProps> = ({
                 Q: How does the Global Outlook switcher affect calculations?
               </h4>
               <p className="text-[11px] text-slate-400 leading-relaxed">
-                The Global Outlook switcher in the header (Flat, Worst P10, Median P50, Best P90) immediately swaps the market return sequence across all worksheets simultaneously. Switching to Worst (P10) allows you to audit the entire 35-year Lookback Ledger and Bracket Map under pessimistic market conditions.
+                The Global Outlook switcher in the header (Flat, Worst P10, Median P50, Best P90) immediately swaps the market return sequence across all worksheets simultaneously. Switching to Worst (P10) allows you to audit the entire Lookback Ledger and Bracket Map under pessimistic market conditions.
               </p>
             </div>
 
@@ -1302,7 +1302,7 @@ export const DocumentationDialog: React.FC<DocumentationDialogProps> = ({
         <div className="px-6 py-3.5 bg-slate-950/80 border-t border-slate-800 flex items-center justify-between text-xs text-slate-400">
           <div className="flex items-center gap-2 text-[11px]">
             <Sparkles className="w-3.5 h-3.5 text-emerald-400" />
-            <span>Retirement Planner 2.0 &bull; Interactive 35-Year Model</span>
+            <span>Retirement Planner 2.0 &bull; Interactive Lifetime Model</span>
           </div>
 
           <button

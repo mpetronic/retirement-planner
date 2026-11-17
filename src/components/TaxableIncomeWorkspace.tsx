@@ -96,7 +96,6 @@ const ColumnHelpHeader: React.FC<ColumnHelpHeaderProps> = ({
 interface TaxableIncomeWorkspaceProps {
   ledger: SimulationResultRow[];
   inputs: AppStateInputs;
-  simulateSurvivor: boolean;
   activeScenarioSequence: LockedReturnSequence | null;
   onApplyOptimization: (
     annualConversion: number,
@@ -118,7 +117,6 @@ interface TaxableIncomeWorkspaceProps {
 export const TaxableIncomeWorkspace: React.FC<TaxableIncomeWorkspaceProps> = ({
   ledger,
   inputs,
-  simulateSurvivor,
   activeScenarioSequence,
   onApplyOptimization,
   onUpdateStrategy,
@@ -225,22 +223,12 @@ export const TaxableIncomeWorkspace: React.FC<TaxableIncomeWorkspaceProps> = ({
     return `${yr} (${primaryAgeStr}/${spouseAgeStr})`;
   };
 
-  // Parse birth year for survivor status checks
-  const yourBirthYear = useMemo(() => {
-    const dateStr = inputs.you.birthDate;
-    if (!dateStr) return 1960;
-    const match = dateStr.match(/^(\d{4})/);
-    return match ? parseInt(match[1], 10) : 1960;
-  }, [inputs.you.birthDate]);
-
-  const deathYear = yourBirthYear + (inputs.you.longevityAge ?? DEFAULT_YOUR_LONGEVITY_AGE);
-
   // Compute non-conversion taxable income breakdown for each year
   // Net Taxable Base = max(0, Non-Conversion AGI - Standard Deduction)
   // Components scaled proportionally so total stacked base equals Net Non-Conversion Taxable Income
   const processedRows = useMemo(() => {
     return ledger.map((r) => {
-      const isSingle = simulateSurvivor && r.year >= deathYear;
+      const isSingle = r.isSingleReturn;
       const rothConv = r.intentionalRothConversion || 0;
       
       // Gross income components (before standard deduction)
@@ -285,7 +273,7 @@ export const TaxableIncomeWorkspace: React.FC<TaxableIncomeWorkspaceProps> = ({
         rothConversionShortfall: r.rothConversionShortfall,
       };
     });
-  }, [ledger, simulateSurvivor, deathYear]);
+  }, [ledger]);
 
   // Compute dynamic benchmark line data points (indexed to Taxable Income threshold)
   const benchmarkLineData = useMemo(() => {
@@ -655,7 +643,6 @@ export const TaxableIncomeWorkspace: React.FC<TaxableIncomeWorkspaceProps> = ({
         const result = optimizeRetirementScenario(
           inputs,
           goal,
-          simulateSurvivor,
           activeScenarioSequence
         );
         setOptimizationResult(result);
@@ -1618,7 +1605,6 @@ export const TaxableIncomeWorkspace: React.FC<TaxableIncomeWorkspaceProps> = ({
           onClose={() => setShowCustomModal(false)}
           inputs={inputs}
           ledger={ledger}
-          simulateSurvivor={simulateSurvivor}
           activeScenarioId={inputs.activeCustomScenarioId}
           onSaveScenario={(scenario, applyImmediately) => {
             if (onSaveCustomScenario) {
@@ -1639,7 +1625,6 @@ export const TaxableIncomeWorkspace: React.FC<TaxableIncomeWorkspaceProps> = ({
           isOpen={showTEModal}
           onClose={() => setShowTEModal(false)}
           inputs={inputs}
-          simulateSurvivor={simulateSurvivor}
           activeScenarioSequence={activeScenarioSequence}
           onApplySchedule={(schedule, scenarioName = 'Tax Equilibrium Schedule (TE)') => {
             const newScenario: CustomRothScenario = {

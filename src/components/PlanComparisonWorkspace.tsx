@@ -29,7 +29,6 @@ interface PlanComparisonWorkspaceProps {
   onLoadPlan: (inputs: AppStateInputs) => void;
   savedPlans: SavedPlan[];
   onSavePlans: (plans: SavedPlan[] | ((prev: SavedPlan[]) => SavedPlan[])) => void;
-  simulateSurvivor: boolean;
   useTodayDollars: boolean;
   selectedPlanAId: string;
   setSelectedPlanAId: (id: string) => void;
@@ -45,7 +44,6 @@ export const PlanComparisonWorkspace: React.FC<PlanComparisonWorkspaceProps> = (
   onLoadPlan,
   savedPlans,
   onSavePlans,
-  simulateSurvivor,
   useTodayDollars,
   selectedPlanAId,
   setSelectedPlanAId,
@@ -343,7 +341,6 @@ export const PlanComparisonWorkspace: React.FC<PlanComparisonWorkspaceProps> = (
       name,
       inputs: {
         ...JSON.parse(JSON.stringify(inputs)),
-        simulateSurvivor,
       },
       createdAt: new Date().toLocaleDateString('en-US', {
         month: 'short',
@@ -491,10 +488,9 @@ export const PlanComparisonWorkspace: React.FC<PlanComparisonWorkspaceProps> = (
     name: 'Current Active Plan',
     inputs: {
       ...inputs,
-      simulateSurvivor,
     },
     createdAt: 'Active Workspace',
-  }), [inputs, simulateSurvivor]);
+  }), [inputs]);
 
   // Resolve Plan A and Plan B (defaulting Plan A to current active plan if unset)
   const effectivePlanAId = selectedPlanAId || 'current';
@@ -538,13 +534,10 @@ export const PlanComparisonWorkspace: React.FC<PlanComparisonWorkspaceProps> = (
       isSingleFiler: inputs.isSingleFiler,
       simulationStartYear: inputs.simulationStartYear,
     };
-    const simSurvivorA = (planA.inputs as { simulateSurvivor?: boolean })?.simulateSurvivor !== undefined 
-      ? (planA.inputs as { simulateSurvivor?: boolean }).simulateSurvivor!
-      : simulateSurvivor;
-    const rawResult = runRetirementSimulation(inputsA, simSurvivorA, activeSequence).filter((r) => r.year <= globalEndingYear);
+    const rawResult = runRetirementSimulation(inputsA, activeSequence).filter((r) => r.year <= globalEndingYear);
     if (!useTodayDollars) return rawResult;
     return rawResult.map((r) => discountRow(r));
-  }, [planA, simulateSurvivor, useTodayDollars, inputs, globalEndingYear, activeSequence, ledger]);
+  }, [planA, useTodayDollars, inputs, globalEndingYear, activeSequence, ledger]);
 
   const simResultB = useMemo(() => {
     if (!planB) return null;
@@ -558,13 +551,10 @@ export const PlanComparisonWorkspace: React.FC<PlanComparisonWorkspaceProps> = (
       isSingleFiler: inputs.isSingleFiler,
       simulationStartYear: inputs.simulationStartYear,
     };
-    const simSurvivorB = (planB.inputs as { simulateSurvivor?: boolean })?.simulateSurvivor !== undefined 
-      ? (planB.inputs as { simulateSurvivor?: boolean }).simulateSurvivor!
-      : simulateSurvivor;
-    const rawResult = runRetirementSimulation(inputsB, simSurvivorB, activeSequence).filter((r) => r.year <= globalEndingYear);
+    const rawResult = runRetirementSimulation(inputsB, activeSequence).filter((r) => r.year <= globalEndingYear);
     if (!useTodayDollars) return rawResult;
     return rawResult.map((r) => discountRow(r));
-  }, [planB, simulateSurvivor, useTodayDollars, inputs, globalEndingYear, activeSequence, ledger]);
+  }, [planB, useTodayDollars, inputs, globalEndingYear, activeSequence, ledger]);
 
   // Sum lifetime stats
   const statsA = useMemo(() => simResultA ? calculateLifetimeMetrics(simResultA) : null, [simResultA]);

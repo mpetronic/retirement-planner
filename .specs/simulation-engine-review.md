@@ -749,11 +749,11 @@ the fixed FRA are documented in #21.
 
 These are not bugs, but they shape the results and should be decided consciously.
 
-- **Baseline (non-survivor) mode assumes both of you live to the later longevity date.**
-  `simulationEngine.ts:393` and `490-491`: with survivor mode off, `youDeceased` is never true, so both
-  SS benefits, MFJ brackets and MFJ IRMAA tiers continue through 2059 even though your longevity is 85
-  (2045). The default view is the optimistic one; the survivor view is the realistic one for the last
-  14 years.
+- **Survivor behavior is implicit in the longevity ages.** The survivor toggle was removed. Each
+  spouse is removed in their longevity year, the plan files single the year after the first death,
+  and the simulation ends the year before the last survivor's longevity year. Equal longevity ages
+  give a joint plan with no survivor years. A plan with longevity ages that differ now always shows
+  the survivor tax and Social Security effects.
 - **Real spending is flat for life.** No spending-smile decline in the 70s-80s, and no long-term care
   shock in the late years. LTC is the single largest unmodeled tail risk for a plan running to 95.
 - **No "other income" at all.** There is no field for pension, annuity, rental, or part-time income;

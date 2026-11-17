@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import { X, TrendingUp, TrendingDown, Wallet, Activity, ShieldAlert, Shield, Award } from 'lucide-react';
-import { SimulationResultRow, AppStateInputs } from '../types';
+import { SimulationResultRow, AppStateInputs, DEFAULT_YOUR_LONGEVITY_AGE } from '../types';
 import { getFederalRules, indexedIrmaaLimit } from '../engine/federalTaxRules';
 import { SankeyFlowDiagram } from './SankeyFlowDiagram';
 
@@ -11,8 +11,6 @@ interface RowInspectionDialogProps {
   row: SimulationResultRow | null;
   prevRow: SimulationResultRow | null;
   inputs: AppStateInputs;
-  simulateSurvivor: boolean;
-  deathYear: number;
   ledger: SimulationResultRow[];
   onSelectRow: (row: SimulationResultRow) => void;
 }
@@ -23,16 +21,19 @@ export const RowInspectionDialog: React.FC<RowInspectionDialogProps> = ({
   row,
   prevRow,
   inputs,
-  simulateSurvivor,
-  deathYear,
   ledger,
   onSelectRow
 }) => {
   const [activeTab, setActiveTab] = useState<'income' | 'expenses' | 'assets' | 'irmaa' | 'flow'>('flow'); // Default to 'flow' for beautiful high-level starting visual!
 
   // Ages and Filer Status
-  const isSingle = simulateSurvivor && row ? row.year >= deathYear : false;
-  const isSurvivorYear = simulateSurvivor && row ? row.year >= deathYear : false;
+  const isSingle = row ? row.isSingleReturn : false;
+  const isSurvivorYear = !inputs.isSingleFiler && isSingle;
+  // The survivor is whichever spouse has not reached their longevity age in this row
+  const survivorIsWife = !!row && row.yourAge >= (inputs.you.longevityAge ?? DEFAULT_YOUR_LONGEVITY_AGE);
+  const survivorLabel = row
+    ? (survivorIsWife ? `${inputs.wife.name || 'Spouse'} (Survivor, Age ${row.wifeAge})` : `${inputs.you.name || 'You'} (Survivor, Age ${row.yourAge})`)
+    : '';
 
   const currentIndex = row ? ledger.findIndex(r => r.year === row.year) : -1;
   const handlePrev = useCallback(() => {
@@ -169,7 +170,7 @@ export const RowInspectionDialog: React.FC<RowInspectionDialogProps> = ({
               Detailed Year {row.year} Financial Inspector
             </h3>
             <p className="text-xs text-slate-400 mt-1 flex flex-wrap gap-x-2 gap-y-1">
-              <span>{inputs.isSingleFiler ? 'Single Filer' : isSurvivorYear ? `${inputs.wife.name || 'Spouse'} (Survivor, Age ${row.wifeAge})` : `${inputs.you.name || 'You'} (Age ${row.yourAge}) & ${inputs.wife.name || 'Spouse'} (Age ${row.wifeAge})`}</span>
+              <span>{inputs.isSingleFiler ? 'Single Filer' : isSurvivorYear ? survivorLabel : `${inputs.you.name || 'You'} (Age ${row.yourAge}) & ${inputs.wife.name || 'Spouse'} (Age ${row.wifeAge})`}</span>
               <span className="text-slate-600">|</span>
               <span>CPI Factor: <span className="font-mono">{row.cpiFactor.toFixed(3)}</span></span>
             </p>

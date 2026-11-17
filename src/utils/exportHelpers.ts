@@ -92,12 +92,10 @@ export interface PlanExportJsonPayload extends AppStateInputs {
 
 export const generateJsonBlob = (
   inputs: AppStateInputs,
-  simulateSurvivor?: boolean,
   savedPlans?: SavedPlan[]
 ): Blob => {
   const payload: PlanExportJsonPayload = {
     ...inputs,
-    simulateSurvivor: simulateSurvivor !== undefined ? simulateSurvivor : (inputs.simulateSurvivor ?? false),
     savedPlans: savedPlans || [],
     customScenarios: inputs.customRothScenarios || [],
   };

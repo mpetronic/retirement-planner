@@ -49,7 +49,6 @@ interface RothCandidate {
 export function optimizeRetirementScenario(
   inputs: AppStateInputs,
   goalInput: OptimizationGoal | string,
-  simulateSurvivor: boolean,
   overrideSequence?: LockedReturnSequence | null
 ): OptimizationResult {
   // Normalize goal string defensively (handling hyphens or underscores)
@@ -158,7 +157,7 @@ export function optimizeRetirementScenario(
           },
         };
 
-        const ledger = runRetirementSimulation(testInputs, simulateSurvivor, overrideSequence);
+        const ledger = runRetirementSimulation(testInputs, overrideSequence);
         if (ledger.length === 0) continue;
 
         // Compute metrics

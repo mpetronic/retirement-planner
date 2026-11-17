@@ -471,7 +471,6 @@ export function computeRepresentativeSequences(
  */
 export function runMonteCarloSimulation(
   inputs: AppStateInputs,
-  simulateSurvivor: boolean = false,
   preGeneratedSequences?: Omit<LockedReturnSequence, 'id'>[]
 ): MonteCarloSummary {
   const trials = inputs.monteCarloSettings?.trials || 1000;
@@ -549,7 +548,7 @@ export function runMonteCarloSimulation(
     };
     
     // Run the retirement simulation with this specific trial return sequence
-    const ledger = runRetirementSimulation(inputs, simulateSurvivor, sequence);
+    const ledger = runRetirementSimulation(inputs, sequence);
     const portfolioHistory = ledger.map(r => r.totalPortfolioValue);
     const endingEstate = portfolioHistory[portfolioHistory.length - 1] || 0;
     

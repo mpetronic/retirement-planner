@@ -209,11 +209,11 @@ describe('runMonteCarloSimulation', () => {
     expect(summary.successRate).toBeLessThanOrEqual(1.0);
 
     expect(summary.percentiles).toBeInstanceOf(Array);
-    // Horizon runs to the later longevity year: wife born 1968 + 95 = 2063, so 2026 through 2063.
-    expect(getSimulationHorizonYears(inputs)).toBe(38);
-    expect(summary.percentiles.length).toBe(38);
+    // The last survivor is removed in their longevity year: wife born 1968 + 95 = 2063, so 2026 through 2062.
+    expect(getSimulationHorizonYears(inputs)).toBe(37);
+    expect(summary.percentiles.length).toBe(37);
     expect(summary.percentiles[0].year).toBe(2026);
-    expect(summary.percentiles[37].year).toBe(2063);
+    expect(summary.percentiles[36].year).toBe(2062);
 
     // Verify representative paths
     expect(summary.representativeSequences.worst).toBeDefined();
@@ -229,9 +229,9 @@ describe('runMonteCarloSimulation', () => {
 
   it('should size sequences and percentiles to a horizon longer than the default length', () => {
     const inputs = getMockInputs();
-    inputs.wife.longevityAge = 105; // 1968 + 105 = 2073, so 48 simulated years
+    inputs.wife.longevityAge = 105; // 1968 + 105 = 2073, so 2026 through 2072 is 47 simulated years
     const horizon = getSimulationHorizonYears(inputs);
-    expect(horizon).toBe(48);
+    expect(horizon).toBe(47);
     expect(horizon).toBeGreaterThan(MONTE_CARLO_SEQUENCE_YEARS);
 
     const summary = runMonteCarloSimulation(inputs);
@@ -248,12 +248,11 @@ describe('runMonteCarloSimulation', () => {
     );
   });
 
-  it('should end the percentile table on the last simulated year in survivor mode', () => {
+  it('should end the percentile table on the year before the last survivor longevity year', () => {
     const inputs = getMockInputs();
-    const summary = runMonteCarloSimulation(inputs, true);
+    const summary = runMonteCarloSimulation(inputs);
     const last = summary.percentiles[summary.percentiles.length - 1];
-    // Survivor mode stops at the final longevity year, one row short of the calendar horizon.
-    expect(summary.percentiles.length).toBe(getSimulationHorizonYears(inputs) - 1);
+    expect(summary.percentiles.length).toBe(getSimulationHorizonYears(inputs));
     expect(last.year).toBe(2062);
     expect(last.p50).toBeGreaterThan(0);
   });
@@ -1245,7 +1244,7 @@ describe('Constant vs Randomized CPI Simulation', () => {
         },
       };
 
-      const rows = runRetirementSimulation(mockInputs, false, seq);
+      const rows = runRetirementSimulation(mockInputs, seq);
 
       // Verify year-by-year that row.cpiFactor exactly matches cumulative compound product of activeSeq.inflationRates
       let cumulativeProduct = 1.0;

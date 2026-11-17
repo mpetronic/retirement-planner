@@ -53,8 +53,6 @@ interface InputControlSidebarProps {
   useTodayDollars: boolean;
   setUseTodayDollars: (val: boolean) => void;
   globalScenario: 'flat' | 'p10' | 'p50' | 'p90';
-  simulateSurvivor: boolean;
-  setSimulateSurvivor: (val: boolean) => void;
   ledger: SimulationResultRow[];
   globalFontSize: number;
   setGlobalFontSize: (val: number) => void;
@@ -71,8 +69,6 @@ export const InputControlSidebar: React.FC<InputControlSidebarProps> = ({
   useTodayDollars,
   setUseTodayDollars,
   globalScenario,
-  simulateSurvivor,
-  setSimulateSurvivor,
   ledger,
   globalFontSize,
   setGlobalFontSize,
@@ -117,9 +113,6 @@ export const InputControlSidebar: React.FC<InputControlSidebarProps> = ({
             ...parsed,
             isConfigured: true
           };
-          if (typeof parsed.simulateSurvivor === 'boolean') {
-            setSimulateSurvivor(parsed.simulateSurvivor);
-          }
           onChange(cleaned);
         } else {
           alert('Invalid plan configuration file. Please ensure the file is a valid JSON exported from this app.');
@@ -722,27 +715,6 @@ export const InputControlSidebar: React.FC<InputControlSidebarProps> = ({
                 </div>
               )}
             </div>
-
-            {/* Survivor simulation mode toggle switch */}
-            {!inputs.isSingleFiler && (
-              <div className="p-4 bg-slate-950/60 rounded-xl border border-slate-800 flex items-center justify-between">
-                <div className="space-y-0.5 pr-2">
-                  <label htmlFor="simulateSurvivorToggle" className="text-xs font-semibold text-slate-200 cursor-pointer block">
-                    Simulate Survivor View
-                  </label>
-                  <span className="text-[10px] text-slate-500 block leading-normal font-sans">
-                    Model compressed tax brackets and Medicare surcharges when one spouse passes away.
-                  </span>
-                </div>
-                <input
-                  type="checkbox"
-                  id="simulateSurvivorToggle"
-                  checked={simulateSurvivor}
-                  onChange={(e) => setSimulateSurvivor(e.target.checked)}
-                  className="w-4 h-4 bg-slate-900 rounded border-slate-800 text-emerald-500 focus:ring-emerald-500 accent-emerald-500 cursor-pointer flex-shrink-0"
-                />
-              </div>
-            )}
           </div>
         )}
 
@@ -1129,7 +1101,7 @@ export const InputControlSidebar: React.FC<InputControlSidebarProps> = ({
                 <p className="text-[10px] text-slate-400 bg-slate-900/60 p-2 rounded border border-slate-800/40 leading-relaxed">
                   {inputs.jurisdiction.relocationYear 
                     ? `Modeling relocation from ${inputs.jurisdiction.currentState} to ${inputs.jurisdiction.targetState} in calendar year ${inputs.jurisdiction.relocationYear}.`
-                    : `Active residency in ${inputs.jurisdiction.currentState} remains unchanged for the entire 35-year timeline.`}
+                    : `Active residency in ${inputs.jurisdiction.currentState} remains unchanged for the entire plan timeline.`}
                 </p>
               </div>
             </div>
@@ -1487,7 +1459,6 @@ export const InputControlSidebar: React.FC<InputControlSidebarProps> = ({
           isOpen={exportDialogFormat !== null}
           onClose={() => setExportDialogFormat(null)}
           inputs={inputs}
-          simulateSurvivor={simulateSurvivor}
           ledger={ledger}
           initialFormat={exportDialogFormat}
         />

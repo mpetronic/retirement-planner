@@ -65,7 +65,7 @@ describe('optimizeRetirementScenario', () => {
     const inputs = getMockInputs();
     
     // Test 'max_portfolio' optimization
-    const result = optimizeRetirementScenario(inputs, 'max_portfolio', false, null);
+    const result = optimizeRetirementScenario(inputs, 'max_portfolio', null);
 
     expect(result).toBeDefined();
     expect(result.bestStrategy).toMatch(/^(flat|fill-to-target|custom)$/);
@@ -87,7 +87,7 @@ describe('optimizeRetirementScenario', () => {
 
   it('should handle hyphenated goals like max-portfolio gracefully', () => {
     const inputs = getMockInputs();
-    const result = optimizeRetirementScenario(inputs, 'max-portfolio', false, null);
+    const result = optimizeRetirementScenario(inputs, 'max-portfolio', null);
 
     expect(result).toBeDefined();
     expect(result.bestStrategy).toBeDefined();
@@ -97,10 +97,10 @@ describe('optimizeRetirementScenario', () => {
   it('should successfully optimize for max_roth and min_taxes', () => {
     const inputs = getMockInputs();
 
-    const rothResult = optimizeRetirementScenario(inputs, 'max_roth', false, null);
+    const rothResult = optimizeRetirementScenario(inputs, 'max_roth', null);
     expect(rothResult.details.endingRoth).toBeGreaterThan(0);
 
-    const taxResult = optimizeRetirementScenario(inputs, 'min_taxes', false, null);
+    const taxResult = optimizeRetirementScenario(inputs, 'min_taxes', null);
     expect(taxResult.details.lifetimeTaxes).toBeGreaterThanOrEqual(0);
   });
 
@@ -109,7 +109,7 @@ describe('optimizeRetirementScenario', () => {
     inputs.isSingleFiler = true;
     inputs.wife.targetSSClaimingAge = 64;
 
-    const result = optimizeRetirementScenario(inputs, 'max_portfolio', false, null);
+    const result = optimizeRetirementScenario(inputs, 'max_portfolio', null);
     expect(result.bestWifeSSAge).toBe(64);
     expect(result.details.survivorBenefitAnnual).toBe(0);
     expect(result.details.spousalAddOnAnnual).toBe(0);
@@ -129,7 +129,7 @@ describe('optimizeRetirementScenario', () => {
     ];
     inputs.activeCustomScenarioId = 'scenario-1';
 
-    const result = optimizeRetirementScenario(inputs, 'max_portfolio', false, null);
+    const result = optimizeRetirementScenario(inputs, 'max_portfolio', null);
     expect(['flat', 'fill-to-target', 'custom']).toContain(result.bestStrategy);
   });
 
@@ -137,7 +137,7 @@ describe('optimizeRetirementScenario', () => {
     const inputs = getMockInputs();
     inputs.rothConversionStrategy = 'none';
 
-    const result = optimizeRetirementScenario(inputs, 'max_portfolio', false, null);
+    const result = optimizeRetirementScenario(inputs, 'max_portfolio', null);
     expect(['none', 'flat', 'fill-to-target', 'custom']).toContain(result.bestStrategy);
     expect(Number.isFinite(result.metricValue)).toBe(true);
   });
@@ -153,7 +153,7 @@ describe('optimizeRetirementScenario', () => {
     inputs.wife.activeSalary = 0;
 
     for (const goal of ['max_portfolio', 'min_taxes', 'min_surcharges'] as const) {
-      const result = optimizeRetirementScenario(inputs, goal, false, null);
+      const result = optimizeRetirementScenario(inputs, goal, null);
       expect(result.bestStrategy).toBe('none');
       expect(result.bestAnnualRothConversion).toBe(0);
     }
@@ -162,7 +162,7 @@ describe('optimizeRetirementScenario', () => {
   it('should never report a flat strategy with a zero annual conversion', () => {
     const inputs = getMockInputs();
     for (const goal of ['max_portfolio', 'min_taxes', 'min_surcharges', 'max_roth'] as const) {
-      const result = optimizeRetirementScenario(inputs, goal, false, null);
+      const result = optimizeRetirementScenario(inputs, goal, null);
       expect(result.bestStrategy === 'flat' && result.bestAnnualRothConversion === 0).toBe(false);
     }
   });
@@ -172,7 +172,7 @@ describe('optimizeRetirementScenario', () => {
     inputs.rothConversionStrategy = 'none';
     inputs.isConfigured = false;
 
-    const result = optimizeRetirementScenario(inputs, 'max_portfolio', false, null);
+    const result = optimizeRetirementScenario(inputs, 'max_portfolio', null);
     expect(result.bestStrategy).toBe('none');
   });
 
@@ -180,19 +180,16 @@ describe('optimizeRetirementScenario', () => {
     const inputs = getMockInputs();
     inputs.isConfigured = false;
 
-    const result = optimizeRetirementScenario(inputs, 'min_taxes', false, null);
+    const result = optimizeRetirementScenario(inputs, 'min_taxes', null);
     expect(result.metricValue).toBe(0);
     expect(isFinite(result.metricValue)).toBe(true);
     expect(result.details.endingEstate).toBe(0);
   });
 
-  it('should calculate accurate survivorBenefitAnnual even when simulateSurvivor is false', () => {
+  it('should calculate a positive survivorBenefitAnnual for the default plan', () => {
     const inputs = getMockInputs();
-    const resultWithoutSurvivor = optimizeRetirementScenario(inputs, 'max_portfolio', false, null);
-    const resultWithSurvivor = optimizeRetirementScenario(inputs, 'max_portfolio', true, null);
-
-    expect(resultWithoutSurvivor.details.survivorBenefitAnnual).toBeGreaterThan(0);
-    expect(resultWithSurvivor.details.survivorBenefitAnnual).toBeGreaterThan(0);
+    const result = optimizeRetirementScenario(inputs, 'max_portfolio', null);
+    expect(result.details.survivorBenefitAnnual).toBeGreaterThan(0);
   });
 
   it('should compute survivorBenefitAnnual and spousalAddOnAnnual symmetrically when wife has higher PIA and predeceases husband', () => {
@@ -204,7 +201,7 @@ describe('optimizeRetirementScenario', () => {
     inputs.wife.longevityAge = 75;
     inputs.wife.estimatedPIA = 3000;
 
-    const result = optimizeRetirementScenario(inputs, 'max_portfolio', true, null);
+    const result = optimizeRetirementScenario(inputs, 'max_portfolio', null);
     expect(result.details.spousalAddOnAnnual).toBeGreaterThan(0);
     expect(result.details.survivorBenefitAnnual).toBeGreaterThan(0);
   });

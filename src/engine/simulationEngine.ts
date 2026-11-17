@@ -416,15 +416,18 @@ export function parseBirthYearAndMonth(dateStr: string | undefined, defaultYear:
 
 // Full multi-decade simulation runner
 /**
- * Last calendar year the simulation runs: the later of the two spouses' longevity years, or only
- * your longevity year for a single filer. Never earlier than the simulation start year.
+ * Last calendar year the simulation runs: the year before the last survivor's longevity year (the
+ * later of the two spouses' longevity years, or only yours for a single filer), because each person
+ * is removed in their longevity year. Never earlier than the simulation start year.
  */
 export function getSimulationEndYear(inputs: AppStateInputs): number {
   const { year: yourBirthYear } = parseBirthYearAndMonth(inputs.you.birthDate, DEFAULT_YOUR_BIRTH_YEAR);
   const { year: wifeBirthYear } = parseBirthYearAndMonth(inputs.wife.birthDate, DEFAULT_WIFE_BIRTH_YEAR);
   const yourDeathYear = yourBirthYear + (inputs.you.longevityAge ?? DEFAULT_YOUR_LONGEVITY_AGE);
   const wifeDeathYear = inputs.isSingleFiler ? 0 : (wifeBirthYear + (inputs.wife.longevityAge ?? DEFAULT_WIFE_LONGEVITY_AGE));
-  return Math.max(getSimulationStartYear(inputs), inputs.isSingleFiler ? yourDeathYear : Math.max(yourDeathYear, wifeDeathYear));
+  // Each spouse is removed in their longevity year, so the last simulated year is the one before the last death
+  const lastDeathYear = inputs.isSingleFiler ? yourDeathYear : Math.max(yourDeathYear, wifeDeathYear);
+  return Math.max(getSimulationStartYear(inputs), lastDeathYear - 1);
 }
 
 /** Number of annual steps in the simulation, from the start year through the last survivor's longevity year. */
@@ -434,7 +437,6 @@ export function getSimulationHorizonYears(inputs: AppStateInputs): number {
 
 export function runRetirementSimulation(
   inputs: AppStateInputs,
-  simulateSurvivor: boolean = false,
   activeSequence?: LockedReturnSequence | null
 ): SimulationResultRow[] {
   if (!inputs.isConfigured) {
@@ -581,12 +583,13 @@ export function runRetirementSimulation(
     } = resolveActiveJurisdiction(inputs.jurisdiction, year);
 
 
-    const youDeceased = simulateSurvivor && (year >= DEATH_YEAR);
-    const wifeDeceased = inputs.isSingleFiler || (simulateSurvivor && (year >= WIFE_DEATH_YEAR));
+    // Survivor behavior follows from the longevity ages: each spouse is removed at their own death year
+    const youDeceased = year >= DEATH_YEAR;
+    const wifeDeceased = inputs.isSingleFiler || year >= WIFE_DEATH_YEAR;
     const firstDeathYear = Math.min(DEATH_YEAR, WIFE_DEATH_YEAR);
-    const isSingle = (simulateSurvivor && (year > (inputs.isSingleFiler ? DEATH_YEAR : firstDeathYear))) || inputs.isSingleFiler;
+    const isSingle = inputs.isSingleFiler || year > firstDeathYear;
 
-    if (simulateSurvivor && youDeceased && wifeDeceased) {
+    if (youDeceased && wifeDeceased) {
       break;
     }
 

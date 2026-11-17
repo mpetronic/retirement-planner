@@ -43,7 +43,6 @@ interface BucketManagementWorkspaceProps {
   ledger: SimulationResultRow[];
   inputs: AppStateInputs;
   onInputsChange: (newInputs: AppStateInputs) => void;
-  simulateSurvivor?: boolean;
 }
 
 export const BucketManagementWorkspace: React.FC<BucketManagementWorkspaceProps> = ({

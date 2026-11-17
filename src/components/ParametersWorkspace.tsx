@@ -45,6 +45,7 @@ import {
   getEffectiveLocalTaxRate,
   getDefaultRelocationState,
 } from '../engine/stateTaxRegistry';
+import { getSimulationHorizonYears } from '../engine/simulationEngine';
 import { SAMPLE_DEMO_PLAN } from '../shared/utils/sampleDemoPlan';
 import { NumericInput } from './NumericInput';
 import { RangeSlider } from './RangeSlider';
@@ -140,8 +141,6 @@ interface ParametersWorkspaceProps {
   inputs: AppStateInputs;
   onChange: (newInputs: AppStateInputs | ((prev: AppStateInputs) => AppStateInputs)) => void;
   onReset: () => void;
-  simulateSurvivor: boolean;
-  setSimulateSurvivor: (val: boolean) => void;
   ledger: SimulationResultRow[];
   globalScenario: 'flat' | 'p10' | 'p50' | 'p90';
   savedPlans?: SavedPlan[];
@@ -154,8 +153,6 @@ export const ParametersWorkspace: React.FC<ParametersWorkspaceProps> = ({
   inputs,
   onChange,
   onReset,
-  simulateSurvivor,
-  setSimulateSurvivor,
   ledger,
   savedPlans = [],
   onSavePlans,
@@ -169,6 +166,11 @@ export const ParametersWorkspace: React.FC<ParametersWorkspaceProps> = ({
   const [showExpensesDialog, setShowExpensesDialog] = useState(false);
   const [showResetConfirm, setShowResetConfirm] = useState(false);
   const [exportDialogFormat, setExportDialogFormat] = useState<ExportFormatType | null>(null);
+  // First year filed as single after one spouse passes; null when there is no survivor phase
+  const survivorStartYear = useMemo(
+    () => (inputs.isSingleFiler ? null : (ledger?.find((r) => r.isSingleReturn)?.year ?? null)),
+    [ledger, inputs.isSingleFiler]
+  );
 
   useEffect(() => {
     setTempYouBirthDate(inputs.you.birthDate || '1960-01-01');
@@ -306,9 +308,6 @@ export const ParametersWorkspace: React.FC<ParametersWorkspaceProps> = ({
             ...parsed,
             isConfigured: true,
           };
-          if (typeof parsed.simulateSurvivor === 'boolean') {
-            setSimulateSurvivor(parsed.simulateSurvivor);
-          }
           if (Array.isArray(parsed.savedPlans) && onSavePlans) {
             onSavePlans(parsed.savedPlans);
           }
@@ -899,49 +898,24 @@ export const ParametersWorkspace: React.FC<ParametersWorkspaceProps> = ({
                   </div>
                 </div>
                 <span className={`text-xs px-2.5 py-1 rounded-lg font-mono font-bold ${
-                  !inputs.isSingleFiler
-                    ? simulateSurvivor
-                      ? 'bg-rose-500/10 text-rose-300 border border-rose-500/20'
-                      : 'bg-slate-800 text-slate-400 border border-slate-700'
-                    : 'bg-slate-800 text-slate-500 border border-slate-700'
+                  survivorStartYear !== null
+                    ? 'bg-rose-500/10 text-rose-300 border border-rose-500/20'
+                    : 'bg-slate-800 text-slate-400 border border-slate-700'
                 }`}>
-                  {!inputs.isSingleFiler ? (simulateSurvivor ? 'Survivor Active' : 'Off') : 'N/A (Single)'}
+                  {inputs.isSingleFiler ? 'N/A (Single)' : survivorStartYear !== null ? `Survivor from ${survivorStartYear}` : 'Joint to the end'}
                 </span>
               </div>
 
               <div className="space-y-3">
                 {!inputs.isSingleFiler ? (
-                  <div className="p-3.5 bg-slate-950/60 rounded-xl border border-slate-800 space-y-3">
-                    <div className="flex items-center justify-between">
-                      <label htmlFor="simulateSurvivorToggle" className="cursor-pointer">
-                        <span className="text-xs font-semibold text-slate-200 block">Simulate Survivor Scenario</span>
-                        <span className="text-[10px] text-slate-400">
-                          Stress tests widow's tax penalty if primary spouse passes away first
-                        </span>
-                      </label>
-                      <div className="flex items-center gap-2.5">
-                        <input
-                          type="checkbox"
-                          id="simulateSurvivorToggle"
-                          checked={simulateSurvivor}
-                          onChange={(e) => setSimulateSurvivor(e.target.checked)}
-                          className="rounded border-slate-700 text-rose-500 focus:ring-rose-500 h-4 w-4 bg-slate-900 cursor-pointer accent-rose-500"
-                        />
-                        <button
-                          type="button"
-                          onClick={() => setSimulateSurvivor(!simulateSurvivor)}
-                          className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all border cursor-pointer ${
-                            simulateSurvivor
-                              ? 'bg-rose-500/20 text-rose-300 border-rose-500/50 shadow-sm'
-                              : 'bg-slate-800 text-slate-400 border-slate-700 hover:text-slate-200'
-                          }`}
-                        >
-                          {simulateSurvivor ? 'Survivor Active' : 'Off'}
-                        </button>
-                      </div>
-                    </div>
+                  <div className="p-3.5 bg-slate-950/60 rounded-xl border border-slate-800 space-y-2">
+                    <span className="text-xs font-semibold text-slate-200 block">
+                      {survivorStartYear !== null
+                        ? `Survivor phase begins in ${survivorStartYear}`
+                        : 'Both spouses reach their longevity age in the same year'}
+                    </span>
                     <p className="text-[10px] text-slate-500 leading-normal">
-                      When active, compresses tax brackets to single filer rates and reduces dual Social Security to the single higher benefit upon survivor transition.
+                      The survivor phase follows from the two longevity ages. After the first spouse passes, the plan files as single, the smaller Social Security benefit drops off in favor of the survivor benefit, and Medicare surcharges use single thresholds. Set both longevity ages equal to plan for no survivor years.
                     </p>
                   </div>
                 ) : (
@@ -1496,7 +1470,7 @@ export const ParametersWorkspace: React.FC<ParametersWorkspaceProps> = ({
                       : 'Continuous Plan'}
                   </span>
                   <span className="text-[10px] font-mono text-amber-400 font-semibold">
-                    {inputs.jurisdiction.relocationYear !== null ? `Starting ${inputs.jurisdiction.relocationYear}` : '35 Years'}
+                    {inputs.jurisdiction.relocationYear !== null ? `Starting ${inputs.jurisdiction.relocationYear}` : `${getSimulationHorizonYears(inputs)} Years`}
                   </span>
                 </div>
                 {inputs.jurisdiction.relocationYear !== null ? (
@@ -1972,7 +1946,7 @@ export const ParametersWorkspace: React.FC<ParametersWorkspaceProps> = ({
               </div>
             </div>
             <p className="text-xs text-slate-400">
-              Export and import your complete plan configuration, generate executive PDF reports, or download the 35-year simulation ledger as an Excel spreadsheet.
+              Export and import your complete plan configuration, generate executive PDF reports, or download the year-by-year simulation ledger as an Excel spreadsheet.
             </p>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3.5 pt-2">
@@ -2026,7 +2000,7 @@ export const ParametersWorkspace: React.FC<ParametersWorkspaceProps> = ({
                 <FileSpreadsheet className="w-6 h-6 text-emerald-400 group-hover:scale-110 transition-transform" />
                 <div>
                   <span className="text-xs font-bold block text-slate-100">Excel Simulation Ledger</span>
-                  <span className="text-[10px] text-slate-500">35-year cashflows .xlsx</span>
+                  <span className="text-[10px] text-slate-500">Year-by-year cashflows .xlsx</span>
                 </div>
               </button>
             </div>
@@ -2141,7 +2115,6 @@ export const ParametersWorkspace: React.FC<ParametersWorkspaceProps> = ({
           isOpen={exportDialogFormat !== null}
           onClose={() => setExportDialogFormat(null)}
           inputs={inputs}
-          simulateSurvivor={simulateSurvivor}
           savedPlans={savedPlans}
           ledger={ledger}
           initialFormat={exportDialogFormat}

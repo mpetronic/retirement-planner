@@ -36,7 +36,6 @@ ChartJS.register(...registerables);
 interface MonteCarloWorkspaceProps {
   inputs: AppStateInputs;
   onChangeInputs: (newInputs: AppStateInputs) => void;
-  simulateSurvivor: boolean;
   summary: MonteCarloSummary;
   globalScenario: 'flat' | 'p10' | 'p50' | 'p90';
   useTodayDollars?: boolean;

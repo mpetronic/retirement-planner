@@ -14,7 +14,6 @@ export const SAMPLE_DEMO_PLAN: AppStateInputs = {
   isConfigured: true,
   isSingleFiler: false,
   simulationStartYear: 2026,
-  simulateSurvivor: false,
   you: {
     name: 'Sample Primary',
     birthDate: '1961-04-15',

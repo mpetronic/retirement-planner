@@ -1,6 +1,6 @@
 # Retirement Planner Dashboard
 
-An interactive, premium, 35-year financial planning web application. This tool empowers users to model market trajectories (using Flat, stochastic Monte Carlo with Capital Market Assumptions, or historical backfill conditions), spousal claiming scenarios, 3-bucket portfolio structures, and tax optimization strategies (such as Roth conversions and multi-state relocations) while calculating federal taxes, state and local taxes (supporting all 50 U.S. states and Washington D.C.), capital gains, Medicare base premiums, and Modified Adjusted Gross Income (MAGI) lookback IRMAA surcharges.
+An interactive, premium, lifetime financial planning web application. This tool empowers users to model market trajectories (using Flat, stochastic Monte Carlo with Capital Market Assumptions, or historical backfill conditions), spousal claiming scenarios, 3-bucket portfolio structures, and tax optimization strategies (such as Roth conversions and multi-state relocations) while calculating federal taxes, state and local taxes (supporting all 50 U.S. states and Washington D.C.), capital gains, Medicare base premiums, and Modified Adjusted Gross Income (MAGI) lookback IRMAA surcharges.
 
 ---
 
@@ -44,7 +44,7 @@ An interactive, premium, 35-year financial planning web application. This tool e
 ## Overview & Core Features
 
 - **Interactive Onboarding Wizard**: Guided 4-step setup flow for first-time users to configure personal profiles, retirement timing, initial portfolio balances, and return assumptions.
-- **35-Year Spousal Timeline Engine**: Tracks annual income, Social Security claiming ages (62-70), active employment salaries, 401(k) contributions, asset compounding, and priority-based drawdown waterfalls.
+- **Lifetime Spousal Timeline Engine**: Tracks annual income, Social Security claiming ages (62-70), active employment salaries, 401(k) contributions, asset compounding, and priority-based drawdown waterfalls.
 - **Federal & State Tax Engine**: Models Federal ordinary income brackets (10% to 37%), standard deductions with age 65+ senior bumps, preferential long-term capital gains rates (0%, 15%, 20%), and comprehensive state and local income tax profiles across all 50 U.S. states and Washington D.C. (graduated tax brackets, flat taxes, zero-income-tax states, statutory retirement/pension exemptions, and county/municipal piggyback surtaxes) with customizable relocation year modeling.
 - **Medicare IRMAA & Form SSA-44 Modeling**: Simulates 2-year MAGI lookback Medicare IRMAA surcharge tiers (Part B & Part D) with Form SSA-44 life-changing event income adjustments upon retirement.
 - **Multi-Strategy Roth Conversion Planner**: Models flat annual conversions, dynamic "Fill-to-Bracket / Fill-to-IRMAA" strategies, custom year-by-year schedules, or a "None" mode that disables all conversions for a baseline comparison, with customizable conversion start and end year windows.
@@ -77,7 +77,7 @@ Granular taxable income and deduction analysis.
 - **In-Workspace Controls**: Direct controls for conversion year ranges, target thresholds, and real-time benchmark line adjustments.
 
 ### 3. Lookback Ledger
-Comprehensive 35-year financial ledger.
+Comprehensive year-by-year financial ledger.
 - **Full Cashflow Accounting**: Year-by-year columns tracking asset balances (Pre-tax, Roth, Taxable, Cash), Social Security benefits, RMDs, employee 401(k) contributions, standard deductions, tax brackets, effective tax rates, state and local taxes, Form SSA-44 lookback MAGI, Medicare base & IRMAA surcharges, charitable QCDs & tithes, and estate values.
 - **Row Inspection Drilldown**: Click any year row to open a detailed inspection modal breaking down that specific year's tax calculations, MAGI adjustments, and account movements.
 - **KPI Summary Banner**: Quick-toggle summary bar displaying ending estate, total lifetime taxes paid, Medicare surcharges, base premiums, and charitable contributions.
@@ -360,7 +360,7 @@ Open `http://localhost:5173` in your browser.
 
 ### ⚡ Running the Vite Production Build (High Performance)
 
-While `npm run dev` provides hot-module reloading (HMR) and fast iteration during development, it executes unbundled code with React development mode validation and un-minified assets. For computationally heavy tasks—such as simulating **1,000+ Monte Carlo trials**, executing multi-variable **Roth conversion strategy optimizations**, or rendering extensive 35-year tabular ledgers—running the compiled production bundle locally delivers **significantly faster execution, silky-smooth 60+ FPS chart interactions, and optimal runtime performance**.
+While `npm run dev` provides hot-module reloading (HMR) and fast iteration during development, it executes unbundled code with React development mode validation and un-minified assets. For computationally heavy tasks—such as simulating **1,000+ Monte Carlo trials**, executing multi-variable **Roth conversion strategy optimizations**, or rendering extensive multi-decade tabular ledgers—running the compiled production bundle locally delivers **significantly faster execution, silky-smooth 60+ FPS chart interactions, and optimal runtime performance**.
 
 #### Step 1: Compile the Production Bundle
 Compile TypeScript strictly (`tsc -b`), run dead-code elimination, and produce minified static assets in `/dist`:

@@ -17,7 +17,6 @@ ChartJS.register(...registerables);
 interface BracketMapChartProps {
   ledger: SimulationResultRow[];
   inputs: AppStateInputs;
-  simulateSurvivor?: boolean;
 }
 
 export const BracketMapChart: React.FC<BracketMapChartProps> = ({
