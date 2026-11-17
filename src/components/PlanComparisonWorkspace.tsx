@@ -1,6 +1,7 @@
 import React, { useState, useMemo } from 'react';
 import { AppStateInputs, SavedPlan, SimulationResultRow, LockedReturnSequence, getSimulationStartYear, describeSSReductions } from '../types';
 import { runRetirementSimulation } from '../engine/simulationEngine';
+import { describeRothConversionSource, getRothConversionSourceNames } from '../engine/rothConversionSplit';
 import { 
   Plus, 
   Trash2, 
@@ -130,13 +131,16 @@ export const PlanComparisonWorkspace: React.FC<PlanComparisonWorkspaceProps> = (
         (pPort.wifeCash || 0)
       ));
 
-    const rothStrategyText = pInputs.rothConversionStrategy === 'none'
+    const rothStrategyBaseText = pInputs.rothConversionStrategy === 'none'
       ? `No Conversion ($0/yr)`
       : pInputs.rothConversionStrategy === 'fill-to-target'
       ? `Fill-to-Target Bracket (${formatCurrency(pInputs.rothConversionTargetValue ?? 0)})`
       : pInputs.annualRothConversion > 0
         ? `Flat Annual Conversion (${formatCurrency(pInputs.annualRothConversion)}/yr)`
         : `No Conversion ($0/yr)`;
+    const rothStrategyText = pInputs.rothConversionStrategy === 'none' || pInputs.isSingleFiler
+      ? rothStrategyBaseText
+      : `${rothStrategyBaseText}, source: ${describeRothConversionSource(pInputs.rothConversionSourceMode, pInputs.rothConversionYourSharePercent, getRothConversionSourceNames(pInputs.you.name, pInputs.wife?.name))}`;
 
     const relocationText = pJuris.relocationYear
       ? `Relocating from ${pJuris.currentState} to ${pJuris.targetState} in ${pJuris.relocationYear}`

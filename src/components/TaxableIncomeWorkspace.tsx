@@ -15,9 +15,11 @@ import {
   LockedReturnSequence,
   CustomRothScenario,
   RothConversionStrategy,
+  RothConversionSourceMode,
   getSimulationStartYear,
 } from '../types';
 import { getSimulationHorizonYears } from '../engine/simulationEngine';
+import { DEFAULT_ROTH_SOURCE_YOUR_PERCENT, getRothConversionSourceNames } from '../engine/rothConversionSplit';
 import { RangeSlider } from './RangeSlider';
 import { 
   Calculator,
@@ -139,6 +141,9 @@ export const TaxableIncomeWorkspace: React.FC<TaxableIncomeWorkspaceProps> = ({
   }, [inputs.rothConversionStrategy, customScenarios, inputs.activeCustomScenarioId]);
 
   // Selected benchmark state (only active and defaults in fill-to-target mode)
+  const sourceMode: RothConversionSourceMode = inputs.rothConversionSourceMode ?? 'percent';
+  const yourSharePercent = inputs.rothConversionYourSharePercent ?? DEFAULT_ROTH_SOURCE_YOUR_PERCENT;
+  const sourceNames = getRothConversionSourceNames(inputs.you.name, inputs.wife?.name);
   const isFillToTarget = inputs.rothConversionStrategy === 'fill-to-target';
   const isNoConversion = inputs.rothConversionStrategy === 'none';
   const activeTarget = useMemo(() => {
@@ -817,6 +822,56 @@ export const TaxableIncomeWorkspace: React.FC<TaxableIncomeWorkspaceProps> = ({
               </select>
             </div>
 
+            {/* Conversion Source Controls: which spouse's IRA funds each conversion */}
+            {!inputs.isSingleFiler && (
+              <div
+                className={`flex items-center gap-1.5 px-2.5 py-1 rounded-xl bg-slate-950 border border-slate-800 text-[11px] font-mono text-slate-300 ${isNoConversion ? 'opacity-40 pointer-events-none' : ''}`}
+                aria-disabled={isNoConversion}
+                title={isNoConversion
+                  ? 'Conversion source is not used while Roth conversions are set to None'
+                  : 'Choose which spouse\'s traditional IRA funds Roth conversions. If one IRA runs out (after reserving its RMD), the rest comes from the other.'}
+              >
+                <span className="text-[10px] font-sans text-slate-400">Source:</span>
+                <select
+                  value={sourceMode}
+                  onChange={(e) => {
+                    if (onInputsChange) {
+                      onInputsChange({ ...inputs, rothConversionSourceMode: e.target.value as RothConversionSourceMode });
+                    }
+                  }}
+                  className="bg-slate-900 border border-slate-800 rounded px-1 py-0.5 text-[11px] text-emerald-400 font-bold font-sans focus:outline-none cursor-pointer"
+                  title="Roth Conversion Source"
+                  disabled={isNoConversion}
+                >
+                  <option value="percent">Percent split</option>
+                  <option value="you-first">{sourceNames.you}, then {sourceNames.wife}</option>
+                  <option value="wife-first">{sourceNames.wife}, then {sourceNames.you}</option>
+                </select>
+                {sourceMode === 'percent' && (
+                  <>
+                    <input
+                      type="number"
+                      min={0}
+                      max={100}
+                      step={5}
+                      value={yourSharePercent}
+                      onChange={(e) => {
+                        const raw = Number(e.target.value);
+                        if (!Number.isFinite(raw) || !onInputsChange) return;
+                        onInputsChange({ ...inputs, rothConversionYourSharePercent: Math.min(100, Math.max(0, raw)) });
+                      }}
+                      className="w-12 bg-slate-900 border border-slate-800 rounded px-1 py-0.5 text-[11px] text-emerald-400 font-bold font-mono focus:outline-none"
+                      title={`Percent of each conversion taken from ${sourceNames.you}'s IRA`}
+                      disabled={isNoConversion}
+                    />
+                    <span className="text-[10px] font-sans text-slate-400">
+                      % {sourceNames.you} / {100 - yourSharePercent}% {sourceNames.wife}
+                    </span>
+                  </>
+                )}
+              </div>
+            )}
+
             <button
               type="button"
               onClick={handleRunOptimizer}
@@ -1271,7 +1326,7 @@ export const TaxableIncomeWorkspace: React.FC<TaxableIncomeWorkspaceProps> = ({
                           {r.isRothConversionCapped && (
                             <span
                               className="text-[9px] px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-300 border border-amber-500/40 font-semibold cursor-help"
-                              title={`Requested conversion was ${formatCurrency(r.requestedCustomRothConversion || 0)}, but was capped due to exhausted pre-tax IRA balance.`}
+                              title={`Requested conversion was ${formatCurrency(r.requestedCustomRothConversion || 0)}, but was capped because the pre-tax IRA balance, less the RMD that must stay in each IRA, was exhausted.`}
                             >
                               ⚠️ Capped
                             </span>

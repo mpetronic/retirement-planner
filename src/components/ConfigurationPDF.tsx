@@ -2,6 +2,7 @@ import React from 'react';
 import { Document, Page, Text, View, StyleSheet } from '@react-pdf/renderer';
 import { AppStateInputs, StateHealthcareConfig, normalizeDetailedExpenses, getSimulationStartYear, describeSSReductions } from '../types';
 import { getStateTaxProfile } from '../engine/stateTaxRegistry';
+import { describeRothConversionSource, getRothConversionSourceNames } from '../engine/rothConversionSplit';
 import { getMedicareStandardAmounts, MedicareStandardAmounts } from '../engine/federalTaxRules';
 
 // Create stylesheet for PDF formatting
@@ -792,6 +793,14 @@ export const ConfigurationPDF: React.FC<PDFProps> = ({ inputs }) => {
                   <Text style={styles.rowLabel}>Start Year / End Year:</Text>
                   <Text style={styles.rowValue}>{inputs.rothConversionStartYear ?? simStartYear} / {inputs.rothConversionEndYear ?? (simStartYear + 9)}</Text>
                 </View>
+                {inputs.rothConversionStrategy !== 'none' && !inputs.isSingleFiler && (
+                  <View style={styles.row}>
+                    <Text style={styles.rowLabel}>Conversion Source:</Text>
+                    <Text style={styles.rowValue}>
+                      {describeRothConversionSource(inputs.rothConversionSourceMode, inputs.rothConversionYourSharePercent, getRothConversionSourceNames(inputs.you.name, inputs.wife?.name))}
+                    </Text>
+                  </View>
+                )}
               </View>
             </View>
 

@@ -39,7 +39,7 @@ Use this table to track what has been debated and fixed.
 | 16 | Stale 2025 statutory constants | Low | Fixed |
 | 17 | MC sequences hard-capped at 35 years | Low-Medium | Fixed |
 | 18 | Bear-market rule uses look-ahead | Low-Medium | Fixed |
-| 19 | RMD counted when not distributed; cross-spouse QCD | Low | Open |
+| 19 | RMD counted when not distributed; cross-spouse QCD | Low | Fixed |
 | 20 | Minor tax-base omissions | Low | Open |
 | 21 | Modeling assumptions to make explicit | Info | Open |
 
@@ -696,6 +696,23 @@ the current year's inflation factor.
 
 **Recommendation.** Take the RMD before the conversion and cap the conversion at balance minus RMD;
 track QCD per spouse in the monthly draw.
+
+**Resolution.** Fixed in three parts. First, the January 1 conversion (flat and custom) now limits each
+spouse to their balance minus their own statutory RMD, because an RMD belongs to its account owner and
+cannot be converted. The custom strategy's capped flag and shortfall use the same limits. The
+fill-to-target year-end conversion is unchanged, since the monthly draws have already paid the RMDs by
+then. Second, the monthly RMD draw is per spouse: cash due is the RMD accrued to date, less that
+spouse's own QCDs, less what they already drew. The combined `monthlyQcd` and the spouse offset
+formula are gone, and uneven QCDs carry forward. Third, taxable RMD income is the cash actually
+distributed (`annualYourRmdDraw`, `annualWifeRmdDraw`), so an IRA that runs dry mid-year is no longer
+taxed on an RMD it never paid. Normal years produce the same numbers as before. Known limitation: a
+QCD that lands late in the year does not claw back earlier cash draws, so taxable RMD can run slightly
+above the statutory amount minus QCDs in that case. Monthly QCDs from the tithe engine do not trigger
+it.
+
+Added alongside the fix: a conversion source setting (percent split, or one spouse's IRA first, with
+overflow to the other) in `rothConversionSplit.ts`, used by both the January 1 and year-end
+conversions. The default is an even split, which matches the previous behavior.
 
 ---
 

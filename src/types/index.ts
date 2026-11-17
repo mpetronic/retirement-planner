@@ -496,6 +496,9 @@ export function describeSSReductions(config: SSReductionConfig | null | undefine
 /** How Roth conversions are determined: none (disabled), a flat annual amount, fill-to-target income, or a custom per-year schedule. */
 export type RothConversionStrategy = 'none' | 'flat' | 'fill-to-target' | 'custom';
 
+/** Which traditional IRA funds Roth conversions: a percent split, or one spouse's IRA drained first. */
+export type RothConversionSourceMode = 'percent' | 'you-first' | 'wife-first';
+
 export interface AppStateInputs {
   isConfigured: boolean;
   ssReductions?: SSReductionConfig;
@@ -523,6 +526,10 @@ export interface AppStateInputs {
   rothConversionEndYear?: number;
   rothConversionStrategy: RothConversionStrategy;
   rothConversionTargetValue: number | null;
+  /** Which spouse's traditional IRA funds Roth conversions. Defaults to an even percent split. */
+  rothConversionSourceMode?: RothConversionSourceMode;
+  /** In 'percent' mode, the share (0-100) of each conversion taken from the primary spouse's IRA. */
+  rothConversionYourSharePercent?: number;
   customRothScenarios?: CustomRothScenario[];
   activeCustomScenarioId?: string | null;
   monteCarloSettings: MonteCarloSettings;

@@ -6,6 +6,7 @@ import {
   presetIndexFactor,
 } from './taxRates';
 import { calculateFederalDeduction, countAgedFilers } from './federalDeduction';
+import { splitRothConversion } from './rothConversionSplit';
 import { FederalIndexing, getFederalIndexing, indexedIrmaaLimit, getMedicareStandardAmounts } from './federalTaxRules';
 import { calculateStateAndLocalTax, calculatePensionExclusion, getStateTaxProfile, resolveActiveJurisdiction } from './stateTaxRegistry';
 
@@ -1142,7 +1143,11 @@ export function runRetirementSimulation(
     }
 
     if (targetConversion > 0) {
-      const totalAvailablePreTax = isSoleSurvivorWife ? wifePreTax : isSoleSurvivorYou ? yourPreTax : (yourPreTax + (wifeDeceased ? 0 : wifePreTax));
+      // An RMD cannot be converted and must come out of its owner's own IRA, so each spouse's
+      // convertible amount is their balance minus their own statutory RMD.
+      const yourConvertibleLimit = youDeceased ? 0 : Math.max(0, yourPreTax - yourRMD);
+      const wifeConvertibleLimit = wifeDeceased ? 0 : Math.max(0, wifePreTax - wifeRMD);
+      const totalAvailablePreTax = isSoleSurvivorWife ? wifeConvertibleLimit : isSoleSurvivorYou ? yourConvertibleLimit : (yourConvertibleLimit + wifeConvertibleLimit);
 
       if (inputs.rothConversionStrategy === 'custom') {
         if (targetConversion > totalAvailablePreTax + 0.01) {
@@ -1206,40 +1211,27 @@ export function runRetirementSimulation(
 
       if (targetConversion > 0) {
         if (isSoleSurvivorWife) {
-          wifeConverted = Math.min(targetConversion, wifePreTax);
+          wifeConverted = Math.min(targetConversion, wifeConvertibleLimit);
           wifePreTax -= wifeConverted;
           wifeRoth += wifeConverted;
         } else if (isSoleSurvivorYou) {
-          yourConverted = Math.min(targetConversion, yourPreTax);
+          yourConverted = Math.min(targetConversion, yourConvertibleLimit);
           yourPreTax -= yourConverted;
           yourRoth += yourConverted;
         } else {
-          const halfTarget = targetConversion / 2;
-          const husbandDrawn = Math.min(halfTarget, yourPreTax);
-          yourConverted += husbandDrawn;
-          yourPreTax -= husbandDrawn;
-          yourRoth += husbandDrawn;
-
-          const wifeDrawn = Math.min(halfTarget, wifePreTax);
-          wifeConverted += wifeDrawn;
-          wifePreTax -= wifeDrawn;
-          wifeRoth += wifeDrawn;
-
-          const totalDrawn = husbandDrawn + wifeDrawn;
-          const remainder = targetConversion - totalDrawn;
-          if (remainder > 0.01) {
-            if (yourPreTax > 0) {
-              const extra = Math.min(remainder, yourPreTax);
-              yourConverted += extra;
-              yourPreTax -= extra;
-              yourRoth += extra;
-            } else if (wifePreTax > 0) {
-              const extra = Math.min(remainder, wifePreTax);
-              wifeConverted += extra;
-              wifePreTax -= extra;
-              wifeRoth += extra;
-            }
-          }
+          const split = splitRothConversion(
+            targetConversion,
+            yourConvertibleLimit,
+            wifeConvertibleLimit,
+            inputs.rothConversionSourceMode,
+            inputs.rothConversionYourSharePercent
+          );
+          yourConverted = split.your;
+          yourPreTax -= split.your;
+          yourRoth += split.your;
+          wifeConverted = split.wife;
+          wifePreTax -= split.wife;
+          wifeRoth += split.wife;
         }
         combinedRothConversion = yourConverted + wifeConverted;
       }
@@ -1397,6 +1389,9 @@ export function runRetirementSimulation(
     let annualQcdAmount = 0;
     let yourAnnualQCD = 0;
     let wifeAnnualQCD = 0;
+    // Cash actually distributed to satisfy each spouse's own RMD (excludes that spouse's QCDs)
+    let annualYourRmdDraw = 0;
+    let annualWifeRmdDraw = 0;
     let annualNonQcdTithe = 0;
 
     // Pre-compute baseline predictable tax and quarterly estimated tax vouchers
@@ -1617,21 +1612,23 @@ export function runRetirementSimulation(
       annualQcdAmount += monthlyQcd;
       annualNonQcdTithe += monthlyNonQcd;
 
-      // Pro-rated monthly RMD distributions (cash distribution is reduced by any QCD offsetting)
+      // Pro-rated monthly RMD distributions. Each spouse's RMD is satisfied only by their own QCDs
+      // and their own cash draws, so the cash due is the RMD accrued to date less what that spouse
+      // has already given by QCD or already drawn. This carries uneven QCDs forward correctly.
       let monthlyYourRmdDraw = 0;
       let monthlyWifeRmdDraw = 0;
+      const rmdYearFractionDue = (month + 1) / 12;
       if (yourRMD > 0 && yourPreTax > 0) {
-        const targetMonthlyRMD = yourRMD / 12;
-        const cashRmdDraw = Math.max(0, targetMonthlyRMD - monthlyQcd);
+        const cashRmdDraw = Math.max(0, yourRMD * rmdYearFractionDue - yourAnnualQCD - annualYourRmdDraw);
         monthlyYourRmdDraw = Math.min(cashRmdDraw, yourPreTax);
         yourPreTax -= monthlyYourRmdDraw;
+        annualYourRmdDraw += monthlyYourRmdDraw;
       }
       if (wifeRMD > 0 && wifePreTax > 0) {
-        const targetMonthlyRMD = wifeRMD / 12;
-        const spouseQcdOffset = monthlyQcd > 0 ? Math.max(0, monthlyQcd - (yourRMD / 12)) : 0;
-        const cashRmdDraw = Math.max(0, targetMonthlyRMD - spouseQcdOffset);
+        const cashRmdDraw = Math.max(0, wifeRMD * rmdYearFractionDue - wifeAnnualQCD - annualWifeRmdDraw);
         monthlyWifeRmdDraw = Math.min(cashRmdDraw, wifePreTax);
         wifePreTax -= monthlyWifeRmdDraw;
+        annualWifeRmdDraw += monthlyWifeRmdDraw;
       }
 
       // Base expenses
@@ -1888,9 +1885,11 @@ export function runRetirementSimulation(
     // Post-Compounding Year-End Settlement (Month 11 true-up)
     // ---------------------------------------------------------
 
-    // Under IRS rules, QCDs satisfy statutory RMDs dollar-for-dollar
-    const taxableYourRMD = Math.max(0, yourRMD - yourAnnualQCD);
-    const taxableWifeRMD = Math.max(0, wifeRMD - wifeAnnualQCD);
+    // Taxable RMD income is the cash actually distributed. QCDs satisfy the RMD dollar-for-dollar and
+    // never reach taxable income, and an account that ran dry mid-year cannot be taxed on money it
+    // never paid out.
+    const taxableYourRMD = annualYourRmdDraw;
+    const taxableWifeRMD = annualWifeRmdDraw;
     const taxableCombinedRMD = taxableYourRMD + taxableWifeRMD;
 
     // 1. Fill-to-Target Roth Conversion (executed with full hindsight of realized income/gains)
@@ -2019,32 +2018,20 @@ export function runRetirementSimulation(
           yourPreTax -= yourConverted;
           yourRoth += yourConverted;
         } else {
-          const halfTarget = targetConversion / 2;
-          const husbandDrawn = Math.min(halfTarget, yourPreTax);
-          yourConverted += husbandDrawn;
-          yourPreTax -= husbandDrawn;
-          yourRoth += husbandDrawn;
-
-          const wifeDrawn = Math.min(halfTarget, wifePreTax);
-          wifeConverted += wifeDrawn;
-          wifePreTax -= wifeDrawn;
-          wifeRoth += wifeDrawn;
-
-          const totalDrawn = husbandDrawn + wifeDrawn;
-          const remainder = targetConversion - totalDrawn;
-          if (remainder > 0.01) {
-            if (yourPreTax > 0) {
-              const extra = Math.min(remainder, yourPreTax);
-              yourConverted += extra;
-              yourPreTax -= extra;
-              yourRoth += extra;
-            } else if (wifePreTax > 0) {
-              const extra = Math.min(remainder, wifePreTax);
-              wifeConverted += extra;
-              wifePreTax -= extra;
-              wifeRoth += extra;
-            }
-          }
+          // The year's RMDs were already drawn monthly, so the remaining balances are fully convertible.
+          const split = splitRothConversion(
+            targetConversion,
+            youDeceased ? 0 : yourPreTax,
+            wifeDeceased ? 0 : wifePreTax,
+            inputs.rothConversionSourceMode,
+            inputs.rothConversionYourSharePercent
+          );
+          yourConverted += split.your;
+          yourPreTax -= split.your;
+          yourRoth += split.your;
+          wifeConverted += split.wife;
+          wifePreTax -= split.wife;
+          wifeRoth += split.wife;
         }
       }
       combinedRothConversion = yourConverted + wifeConverted;
