@@ -1,5 +1,5 @@
 import React, { useState, useRef, useMemo } from 'react';
-import { AppStateInputs, SimulationResultRow, getSimulationStartYear, normalizeDetailedExpenses } from '../types';
+import { AppStateInputs, SimulationResultRow, getSimulationStartYear, normalizeDetailedExpenses, DEFAULT_YOUR_LONGEVITY_AGE, DEFAULT_WIFE_LONGEVITY_AGE } from '../types';
 import {
   User,
   TrendingUp,
@@ -501,7 +501,7 @@ export const InputControlSidebar: React.FC<InputControlSidebarProps> = ({
                       min={50}
                       max={110}
                       step={1}
-                      value={inputs.you.longevityAge ?? 85}
+                      value={inputs.you.longevityAge ?? DEFAULT_YOUR_LONGEVITY_AGE}
                       onChange={(val) => updateNestedState('you', 'longevityAge', val)}
                       renderLabel={(val) => (
                         <label className="text-[10px] text-slate-400 font-bold uppercase tracking-wider flex justify-between">
@@ -690,7 +690,7 @@ export const InputControlSidebar: React.FC<InputControlSidebarProps> = ({
                         min={50}
                         max={110}
                         step={1}
-                        value={inputs.wife.longevityAge ?? 95}
+                        value={inputs.wife.longevityAge ?? DEFAULT_WIFE_LONGEVITY_AGE}
                         onChange={(val) => updateNestedState('wife', 'longevityAge', val)}
                         renderLabel={(val) => (
                           <label className="text-[10px] text-slate-400 font-bold uppercase tracking-wider flex justify-between">

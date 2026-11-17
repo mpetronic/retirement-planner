@@ -1,5 +1,5 @@
 import React, { useState, useMemo } from 'react';
-import { AppStateInputs, SavedPlan, SimulationResultRow, LockedReturnSequence, getSimulationStartYear, describeSSReductions } from '../types';
+import { AppStateInputs, SavedPlan, SimulationResultRow, LockedReturnSequence, getSimulationStartYear, describeSSReductions, DEFAULT_YOUR_LONGEVITY_AGE, DEFAULT_WIFE_LONGEVITY_AGE } from '../types';
 import { runRetirementSimulation } from '../engine/simulationEngine';
 import { describeRothConversionSource, getRothConversionSourceNames } from '../engine/rothConversionSplit';
 import { 
@@ -77,8 +77,8 @@ export const PlanComparisonWorkspace: React.FC<PlanComparisonWorkspaceProps> = (
     // Fallback if ledger is not provided
     const yourBirthYear = inputs.you.birthDate ? parseInt(inputs.you.birthDate.split('-')[0], 10) : 1960;
     const wifeBirthYear = inputs.wife.birthDate ? parseInt(inputs.wife.birthDate.split('-')[0], 10) : 1964;
-    const deathYear = yourBirthYear + (inputs.you.longevityAge ?? 85);
-    const wifeDeathYear = inputs.isSingleFiler ? 0 : (wifeBirthYear + (inputs.wife.longevityAge ?? 95));
+    const deathYear = yourBirthYear + (inputs.you.longevityAge ?? DEFAULT_YOUR_LONGEVITY_AGE);
+    const wifeDeathYear = inputs.isSingleFiler ? 0 : (wifeBirthYear + (inputs.wife.longevityAge ?? DEFAULT_WIFE_LONGEVITY_AGE));
     const endYr = Math.max(simStartYear, inputs.isSingleFiler ? deathYear : Math.max(deathYear, wifeDeathYear));
     const endAge = endYr - yourBirthYear;
     return {

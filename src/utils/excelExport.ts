@@ -1,5 +1,5 @@
 import * as XLSX from 'xlsx';
-import { AppStateInputs, SimulationResultRow, normalizeDetailedExpenses, getSimulationStartYear } from '../types';
+import { AppStateInputs, SimulationResultRow, normalizeDetailedExpenses, getSimulationStartYear, DEFAULT_YOUR_LONGEVITY_AGE, DEFAULT_WIFE_LONGEVITY_AGE } from '../types';
 
 export const generateExcelWorkbook = (ledger: SimulationResultRow[], inputs: AppStateInputs): XLSX.WorkBook => {
   const wb = XLSX.utils.book_new();
@@ -31,7 +31,7 @@ export const generateExcelWorkbook = (ledger: SimulationResultRow[], inputs: App
     ["Primary Birth Date", inputs.you.birthDate],
     ["Primary Planned Retirement Age", inputs.you.plannedRetirementAge ?? 67],
     ["Primary Planned Retirement Month", inputs.you.plannedRetirementMonth ?? 1],
-    ["Primary Projected Longevity Age", inputs.you.longevityAge ?? 95],
+    ["Primary Projected Longevity Age", inputs.you.longevityAge ?? DEFAULT_YOUR_LONGEVITY_AGE],
     ["Primary Active Work Salary", inputs.you.activeSalary ?? 0],
     ["Primary Target SS Claiming Age", inputs.you.targetSSClaimingAge ?? 67],
     ["Primary Estimated SS Benefit (PIA / monthly)", inputs.you.estimatedPIA ?? 0],
@@ -45,7 +45,7 @@ export const generateExcelWorkbook = (ledger: SimulationResultRow[], inputs: App
       ["Spouse Birth Date", inputs.wife.birthDate],
       ["Planned Retirement Age", inputs.wife.plannedRetirementAge ?? 67],
       ["Planned Retirement Month", inputs.wife.plannedRetirementMonth ?? 1],
-      ["Projected Longevity Age", inputs.wife.longevityAge ?? 95],
+      ["Projected Longevity Age", inputs.wife.longevityAge ?? DEFAULT_WIFE_LONGEVITY_AGE],
       ["Active Work Salary", inputs.wife.activeSalary ?? 0],
       ["Target SS Claiming Age", inputs.wife.targetSSClaimingAge ?? 67],
       ["Estimated SS Benefit (PIA / monthly)", inputs.wife.estimatedPIA ?? 0],

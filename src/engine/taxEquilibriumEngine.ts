@@ -109,9 +109,7 @@ export function calculateDynamicRMDHurdleRate(ledger: SimulationResultRow[], cur
     if (annualRMD <= 0) continue;
 
     const federalRules = getFederalRules(row.year);
-    const standardDeductionMidpoint =
-      (federalRules.standardDeduction.single + federalRules.standardDeduction.mfj) / 2;
-    const isSingle = row.isSingleReturn ?? (row.standardDeduction < standardDeductionMidpoint * (row.federalIndexFactor ?? (row.cpiFactor || 1)));
+    const isSingle = row.isSingleReturn;
     const brackets = isSingle ? federalRules.brackets.single : federalRules.brackets.mfj;
     // Ledger values are nominal future dollars, so bracket limits must be inflated to match.
     // Capital gains and qualified dividends sit on top of ordinary income and use preferential
@@ -151,7 +149,7 @@ export function calculateDynamicRMDHurdleRate(ledger: SimulationResultRow[], cur
 
     // NIIT drag (3.8% if MAGI exceeds statutory limits and investment income is present)
     const niitThreshold = isSingle ? STATUTORY_NIIT_THRESHOLD_SINGLE : STATUTORY_NIIT_THRESHOLD_MFJ;
-    const niitRate = (row.magi > niitThreshold && (row.taxableDividends > 0 || row.capitalGainsTriggered > 0)) ? STATUTORY_NIIT_RATE : 0;
+    const niitRate = (row.magi > niitThreshold && (row.taxableDividends > 0 || (row.taxableInterest ?? 0) > 0 || row.capitalGainsTriggered > 0)) ? STATUTORY_NIIT_RATE : 0;
 
     const totalMarginalRate = effectiveFedRate + stateRate + niitRate;
 

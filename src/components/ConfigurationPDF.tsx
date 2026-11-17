@@ -1,6 +1,6 @@
 import React from 'react';
 import { Document, Page, Text, View, StyleSheet } from '@react-pdf/renderer';
-import { AppStateInputs, StateHealthcareConfig, normalizeDetailedExpenses, getSimulationStartYear, describeSSReductions } from '../types';
+import { AppStateInputs, StateHealthcareConfig, normalizeDetailedExpenses, getSimulationStartYear, describeSSReductions, DEFAULT_YOUR_LONGEVITY_AGE, DEFAULT_WIFE_LONGEVITY_AGE } from '../types';
 import { getStateTaxProfile } from '../engine/stateTaxRegistry';
 import { describeRothConversionSource, getRothConversionSourceNames } from '../engine/rothConversionSplit';
 import { getMedicareStandardAmounts, MedicareStandardAmounts } from '../engine/federalTaxRules';
@@ -421,7 +421,7 @@ export const ConfigurationPDF: React.FC<PDFProps> = ({ inputs }) => {
                 </View>
                 <View style={styles.row}>
                   <Text style={styles.rowLabel}>Projected Longevity Age:</Text>
-                  <Text style={styles.rowValue}>{inputs.you.longevityAge ?? 85} yrs</Text>
+                  <Text style={styles.rowValue}>{inputs.you.longevityAge ?? DEFAULT_YOUR_LONGEVITY_AGE} yrs</Text>
                 </View>
                 <View style={styles.row}>
                   <Text style={styles.rowLabel}>Active Work Annual Salary:</Text>
@@ -465,7 +465,7 @@ export const ConfigurationPDF: React.FC<PDFProps> = ({ inputs }) => {
                     </View>
                     <View style={styles.row}>
                       <Text style={styles.rowLabel}>Projected Longevity Age:</Text>
-                      <Text style={styles.rowValue}>{inputs.wife.longevityAge ?? 95} yrs</Text>
+                      <Text style={styles.rowValue}>{inputs.wife.longevityAge ?? DEFAULT_WIFE_LONGEVITY_AGE} yrs</Text>
                     </View>
                     <View style={styles.row}>
                       <Text style={styles.rowLabel}>Active Work Annual Salary:</Text>

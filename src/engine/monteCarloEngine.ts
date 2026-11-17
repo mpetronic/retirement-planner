@@ -65,8 +65,9 @@ export const HISTORICAL_RETURNS: HistoricalYear[] = [
   { year: 2021, stock: 0.2871, bond: -0.0147, inflation: 0.0470 },
   { year: 2022, stock: -0.1811, bond: -0.1783, inflation: 0.0800 },
   { year: 2023, stock: 0.2629, bond: 0.0388, inflation: 0.0412 },
-  { year: 2024, stock: 0.2400, bond: 0.0250, inflation: 0.0295 },
-  { year: 2025, stock: 0.1000, bond: 0.0300, inflation: 0.0271 },
+  { year: 2024, stock: 0.2502, bond: 0.0250, inflation: 0.0295 },
+  // 2025 actuals: S&P 500 total return 17.9% (FactSet via RBC), ICE US Treasury 7-10 Year index 8.2% (iShares IEF fact sheet), CPI-U Dec/Dec 2.7% (BLS)
+  { year: 2025, stock: 0.1790, bond: 0.0820, inflation: 0.0270 },
 ];
 
 /**

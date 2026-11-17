@@ -1,6 +1,10 @@
-import { AppStateInputs, SimulationResultRow, LockedReturnSequence, getSimulationStartYear, getSSPaymentLevel, normalizeDetailedExpenses, ALL_STATES_COST_KEY, StateHealthcareConfig } from '../types';
+import { AppStateInputs, SimulationResultRow, LockedReturnSequence, getSimulationStartYear, getSSPaymentLevel, normalizeDetailedExpenses, DEFAULT_YOUR_BIRTH_YEAR, DEFAULT_WIFE_BIRTH_YEAR, DEFAULT_YOUR_LONGEVITY_AGE, DEFAULT_WIFE_LONGEVITY_AGE, ALL_STATES_COST_KEY, StateHealthcareConfig } from '../types';
 import {
   STATUTORY_ADDITIONAL_MEDICARE_RATE,
+  STATUTORY_NIIT_RATE,
+  CAPITAL_LOSS_ORDINARY_OFFSET_LIMIT,
+  STATUTORY_NIIT_THRESHOLD_SINGLE,
+  STATUTORY_NIIT_THRESHOLD_MFJ,
   getIRSUniformLifetimeFactor,
   getTargetPresetInfo,
   presetIndexFactor,
@@ -363,9 +367,9 @@ export function applyBucketLiquidityConstraintToConversion(
     const taxableOrdinary = Math.max(0, fedAGI - capitalGains - stdDeduction);
     const { totalTax: fedBaseTax } = calculateFedTaxWithLTCG(taxableOrdinary, capitalGains, isSingle, deductionContext.federal);
 
-    const niitThreshold = isSingle ? 200000 : 250000;
+    const niitThreshold = isSingle ? STATUTORY_NIIT_THRESHOLD_SINGLE : STATUTORY_NIIT_THRESHOLD_MFJ;
     const excessMAGI = Math.max(0, fedAGI - niitThreshold);
-    const niitTax = Math.min(capitalGains, excessMAGI) * 0.038;
+    const niitTax = Math.min(capitalGains, excessMAGI) * STATUTORY_NIIT_RATE;
 
     return fedBaseTax + niitTax + stateTax;
   };
@@ -416,10 +420,10 @@ export function parseBirthYearAndMonth(dateStr: string | undefined, defaultYear:
  * your longevity year for a single filer. Never earlier than the simulation start year.
  */
 export function getSimulationEndYear(inputs: AppStateInputs): number {
-  const { year: yourBirthYear } = parseBirthYearAndMonth(inputs.you.birthDate, 1960);
-  const { year: wifeBirthYear } = parseBirthYearAndMonth(inputs.wife.birthDate, 1964);
-  const yourDeathYear = yourBirthYear + (inputs.you.longevityAge ?? 85);
-  const wifeDeathYear = inputs.isSingleFiler ? 0 : (wifeBirthYear + (inputs.wife.longevityAge ?? 95));
+  const { year: yourBirthYear } = parseBirthYearAndMonth(inputs.you.birthDate, DEFAULT_YOUR_BIRTH_YEAR);
+  const { year: wifeBirthYear } = parseBirthYearAndMonth(inputs.wife.birthDate, DEFAULT_WIFE_BIRTH_YEAR);
+  const yourDeathYear = yourBirthYear + (inputs.you.longevityAge ?? DEFAULT_YOUR_LONGEVITY_AGE);
+  const wifeDeathYear = inputs.isSingleFiler ? 0 : (wifeBirthYear + (inputs.wife.longevityAge ?? DEFAULT_WIFE_LONGEVITY_AGE));
   return Math.max(getSimulationStartYear(inputs), inputs.isSingleFiler ? yourDeathYear : Math.max(yourDeathYear, wifeDeathYear));
 }
 
@@ -456,10 +460,10 @@ export function runRetirementSimulation(
   const taxableNonQualifiedPortion = inputs.portfolio.taxableNonQualifiedPortion !== undefined && inputs.portfolio.taxableNonQualifiedPortion !== null ? inputs.portfolio.taxableNonQualifiedPortion : 0.30;
   
   // Actuarial death year definition for survivor mode:
-  const { year: yourBirthYear, month: yourBirthMonth } = parseBirthYearAndMonth(inputs.you.birthDate, 1960);
-  const { year: wifeBirthYear, month: wifeBirthMonth } = parseBirthYearAndMonth(inputs.wife.birthDate, 1964);
-  const DEATH_YEAR = yourBirthYear + (inputs.you.longevityAge ?? 85);
-  const WIFE_DEATH_YEAR = inputs.isSingleFiler ? 0 : (wifeBirthYear + (inputs.wife.longevityAge ?? 95));
+  const { year: yourBirthYear, month: yourBirthMonth } = parseBirthYearAndMonth(inputs.you.birthDate, DEFAULT_YOUR_BIRTH_YEAR);
+  const { year: wifeBirthYear, month: wifeBirthMonth } = parseBirthYearAndMonth(inputs.wife.birthDate, DEFAULT_WIFE_BIRTH_YEAR);
+  const DEATH_YEAR = yourBirthYear + (inputs.you.longevityAge ?? DEFAULT_YOUR_LONGEVITY_AGE);
+  const WIFE_DEATH_YEAR = inputs.isSingleFiler ? 0 : (wifeBirthYear + (inputs.wife.longevityAge ?? DEFAULT_WIFE_LONGEVITY_AGE));
 
   const simStartYear = getSimulationStartYear(inputs);
   const startYear = inputs.rothConversionStartYear !== undefined ? inputs.rothConversionStartYear : (simStartYear + 1);
@@ -472,6 +476,8 @@ export function runRetirementSimulation(
   const activeSeq = activeSequence;
 
   let cpiFactor = 1.0;
+  // CPI index in the first year a flat Roth conversion runs; later amounts grow with the simulated CPI path
+  let flatConversionBaseCpiFactor: number | null = null;
   let healthcareFactor = 1.0;
   let priorMonthlyTithe = 0;
   let isTitheInitialized = false;
@@ -480,7 +486,10 @@ export function runRetirementSimulation(
   // Prior-year tax-funding income carried into the next tax year. When the year-end tax settlement is
   // paid by selling brokerage or drawing from a pre-tax IRA, that sale/draw is itself taxable. The
   // settlement is a next-year (April) event, so the income is recognized on the following year's return.
+  // Signed: a negative value is a net loss realized while funding last year's tax settlement
   let carriedTaxFundingGains = 0;
+  // Net capital losses not yet used against gains or the annual ordinary-income offset
+  let capitalLossCarryforward = 0;
   let carriedYourTaxFundingDraw = 0;
   let carriedWifeTaxFundingDraw = 0;
 
@@ -1138,7 +1147,8 @@ export function runRetirementSimulation(
     } 
     // 2. Flat Roth Conversion (pre-determined annual conversion executed on Jan 1)
     else if (inputs.rothConversionStrategy === 'flat' && year >= startYear && year <= endYear) {
-      const conversionInflationFactor = Math.pow(1 + inputs.growthAssumptions.cpiInflationRate, year - startYear);
+      if (flatConversionBaseCpiFactor === null) flatConversionBaseCpiFactor = cpiFactor;
+      const conversionInflationFactor = cpiFactor / flatConversionBaseCpiFactor;
       targetConversion = inputs.annualRothConversion * conversionInflationFactor;
     }
 
@@ -1370,11 +1380,26 @@ export function runRetirementSimulation(
     let annualDrawdownPreTax = 0;
     let annualDrawdownRoth = 0;
     // Taxable-income accumulators start from the income created by funding last year's tax settlement
-    const priorYearTaxFundingGains = carriedTaxFundingGains;
+    const priorYearTaxFundingGains = Math.max(0, carriedTaxFundingGains);
     const priorYearTaxFundingPreTaxDraw = carriedYourTaxFundingDraw + carriedWifeTaxFundingDraw;
     let annualYourTradDraw = carriedYourTaxFundingDraw;
     let annualWifeTradDraw = carriedWifeTaxFundingDraw;
-    let annualCapitalGainsTriggered = carriedTaxFundingGains;
+    // Realized gains and losses net against each other and against the carried-forward loss, so
+    // annualCapitalGainsTriggered is never negative; any unused loss stays in annualNetCapitalLoss.
+    let annualCapitalGainsTriggered = 0;
+    let annualNetCapitalLoss = capitalLossCarryforward;
+    const realizeCapitalGain = (gain: number) => {
+      if (gain >= 0) {
+        const absorbed = Math.min(annualNetCapitalLoss, gain);
+        annualNetCapitalLoss -= absorbed;
+        annualCapitalGainsTriggered += gain - absorbed;
+      } else {
+        const offsetAgainstGains = Math.min(annualCapitalGainsTriggered, -gain);
+        annualCapitalGainsTriggered -= offsetAgainstGains;
+        annualNetCapitalLoss += -gain - offsetAgainstGains;
+      }
+    };
+    realizeCapitalGain(carriedTaxFundingGains);
     carriedTaxFundingGains = 0;
     carriedYourTaxFundingDraw = 0;
     carriedWifeTaxFundingDraw = 0;
@@ -1532,8 +1557,9 @@ export function runRetirementSimulation(
         const currentPortfolio = totalTaxable + totalPreTax + totalRoth + totalCash;
 
         // Portfolio expected annual return rate (weighted across accounts)
+        // Growth rates are total returns; dividends are a payout from that return, not additional to it
         const expectedAnnualReturnRate = currentPortfolio > 0
-          ? ((totalTaxable * (taxableGrowthRate + taxableDividendYield)) +
+          ? ((totalTaxable * taxableGrowthRate) +
              (totalPreTax * preTaxGrowthRate) +
              (totalRoth * rothGrowthRate) +
              (totalCash * cashRate)) / currentPortfolio
@@ -1761,7 +1787,7 @@ export function runRetirementSimulation(
           if (!youDeceased && yourTaxable > 0) {
             const draw = Math.min(deficit, yourTaxable);
             const basisRatio = yourTaxable > 0 ? (yourBasis / yourTaxable) : 0;
-            annualCapitalGainsTriggered += Math.max(0, draw * (1 - basisRatio));
+            realizeCapitalGain(draw * (1 - basisRatio));
             annualDrawdownTaxable += draw;
             deficit -= draw;
             yourTaxable -= draw;
@@ -1770,7 +1796,7 @@ export function runRetirementSimulation(
           if (deficit > 0 && wifeTaxable > 0) {
             const draw = Math.min(deficit, wifeTaxable);
             const basisRatio = wifeTaxable > 0 ? (wifeBasis / wifeTaxable) : 0;
-            annualCapitalGainsTriggered += Math.max(0, draw * (1 - basisRatio));
+            realizeCapitalGain(draw * (1 - basisRatio));
             annualDrawdownTaxable += draw;
             deficit -= draw;
             wifeTaxable -= draw;
@@ -2049,7 +2075,11 @@ export function runRetirementSimulation(
     const qualifiedDividends = totalDividends * (1 - taxableNonQualifiedPortion);
     const totalCashInterest = annualYourInterest + annualWifeInterest;
 
-    const nonSSOrdinary = taxableSalary + rmd + rothConv + ordinaryDividends + totalCashInterest + tradDraw;
+    // A net capital loss offsets a limited amount of ordinary income; the rest carries forward
+    const capitalLossOrdinaryOffset = Math.min(annualNetCapitalLoss, CAPITAL_LOSS_ORDINARY_OFFSET_LIMIT);
+    capitalLossCarryforward = annualNetCapitalLoss - capitalLossOrdinaryOffset;
+
+    const nonSSOrdinary = taxableSalary + rmd + rothConv + ordinaryDividends + totalCashInterest + tradDraw - capitalLossOrdinaryOffset;
     const capitalGains = annualCapitalGainsTriggered + qualifiedDividends;
     const otherAGI = nonSSOrdinary + capitalGains;
     const taxableSS = calculateTaxableSS(totalSS, otherAGI, isSingle);
@@ -2095,11 +2125,12 @@ export function runRetirementSimulation(
     const { totalTax: fedBaseTax } = calculateFedTaxWithLTCG(taxableOrdinary, capitalGains, isSingle, federal);
     let fedIncomeTax = fedBaseTax;
 
-    const niitThreshold = isSingle ? 200000 : 250000;
+    const niitThreshold = isSingle ? STATUTORY_NIIT_THRESHOLD_SINGLE : STATUTORY_NIIT_THRESHOLD_MFJ;
     const excessMAGI = Math.max(0, fedAGI - niitThreshold);
-    const netInvestmentIncome = annualCapitalGainsTriggered + totalDividends;
+    // Net investment income includes taxable interest (cash), not just gains and dividends
+    const netInvestmentIncome = annualCapitalGainsTriggered + totalDividends + totalCashInterest;
     const niitBase = Math.min(netInvestmentIncome, excessMAGI);
-    const niitTax = niitBase * 0.038;
+    const niitTax = niitBase * STATUTORY_NIIT_RATE;
     fedIncomeTax += niitTax;
 
     const totalTaxBill = fedIncomeTax + stateIncomeTax;
@@ -2141,7 +2172,7 @@ export function runRetirementSimulation(
         if (!youDeceased && yourTaxable > 0) {
           const draw = Math.min(deficit, yourTaxable);
           const basisRatio = yourTaxable > 0 ? (yourBasis / yourTaxable) : 0;
-          carriedTaxFundingGains += Math.max(0, draw * (1 - basisRatio));
+          carriedTaxFundingGains += draw * (1 - basisRatio);
           annualDrawdownTaxable += draw;
           deficit -= draw;
           yourTaxable -= draw;
@@ -2150,7 +2181,7 @@ export function runRetirementSimulation(
         if (deficit > 0 && wifeTaxable > 0) {
           const draw = Math.min(deficit, wifeTaxable);
           const basisRatio = wifeTaxable > 0 ? (wifeBasis / wifeTaxable) : 0;
-          carriedTaxFundingGains += Math.max(0, draw * (1 - basisRatio));
+          carriedTaxFundingGains += draw * (1 - basisRatio);
           annualDrawdownTaxable += draw;
           deficit -= draw;
           wifeTaxable -= draw;
@@ -2353,6 +2384,7 @@ export function runRetirementSimulation(
       rothConversionShortfall,
       otherTaxableIncome: annualYourTradDraw + annualWifeTradDraw,
       priorYearTaxFundingGains,
+      capitalLossCarryforward,
       priorYearTaxFundingPreTaxDraw,
       magi,
       fedAGI,

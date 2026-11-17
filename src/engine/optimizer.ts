@@ -1,4 +1,4 @@
-import { AppStateInputs, LockedReturnSequence, RothConversionStrategy } from '../types';
+import { AppStateInputs, LockedReturnSequence, RothConversionStrategy, DEFAULT_YOUR_BIRTH_YEAR, DEFAULT_WIFE_BIRTH_YEAR, DEFAULT_YOUR_LONGEVITY_AGE, DEFAULT_WIFE_LONGEVITY_AGE } from '../types';
 import {
   runRetirementSimulation,
   calculateSSBenefit,
@@ -86,10 +86,10 @@ export function optimizeRetirementScenario(
     return fallback;
   };
   
-  const yourBirthYear = parseBirthYear(inputs.you.birthDate, 1960);
-  const deathYear = yourBirthYear + (inputs.you.longevityAge ?? 85);
-  const wifeBirthYear = parseBirthYear(inputs.wife.birthDate, 1962);
-  const wifeDeathYear = wifeBirthYear + (inputs.wife.longevityAge ?? 85);
+  const yourBirthYear = parseBirthYear(inputs.you.birthDate, DEFAULT_YOUR_BIRTH_YEAR);
+  const deathYear = yourBirthYear + (inputs.you.longevityAge ?? DEFAULT_YOUR_LONGEVITY_AGE);
+  const wifeBirthYear = parseBirthYear(inputs.wife.birthDate, DEFAULT_WIFE_BIRTH_YEAR);
+  const wifeDeathYear = wifeBirthYear + (inputs.wife.longevityAge ?? DEFAULT_WIFE_LONGEVITY_AGE);
   // Absolute month counts, used to find the wife's age when a spousal or survivor benefit starts
   const yourBirthAbsMonth = yourBirthYear * 12 + parseBirthYearAndMonth(inputs.you.birthDate, yourBirthYear).month;
   const wifeBirthAbsMonth = wifeBirthYear * 12 + parseBirthYearAndMonth(inputs.wife.birthDate, wifeBirthYear).month;

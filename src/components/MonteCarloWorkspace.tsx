@@ -1,7 +1,7 @@
 import React, { useMemo } from 'react';
 import { Chart } from 'react-chartjs-2';
 import { Chart as ChartJS, registerables, ChartOptions, TooltipItem } from 'chart.js';
-import { AppStateInputs, MonteCarloSettings, describeSSReductions } from '../types';
+import { AppStateInputs, MonteCarloSettings, describeSSReductions, DEFAULT_YOUR_BIRTH_YEAR, DEFAULT_WIFE_BIRTH_YEAR } from '../types';
 import { getSimulationEndYear, getSimulationHorizonYears } from '../engine/simulationEngine';
 import { formatSuccessRate } from '../utils/formatters';
 import { MonteCarloSummary } from '../engine/monteCarloEngine';
@@ -72,8 +72,8 @@ export const MonteCarloWorkspace: React.FC<MonteCarloWorkspaceProps> = ({
       return fallback;
     };
 
-    const youBirthYear = parseBirthYear(inputs.you.birthDate, 1960);
-    const wifeBirthYear = parseBirthYear(inputs.wife.birthDate, 1964);
+    const youBirthYear = parseBirthYear(inputs.you.birthDate, DEFAULT_YOUR_BIRTH_YEAR);
+    const wifeBirthYear = parseBirthYear(inputs.wife.birthDate, DEFAULT_WIFE_BIRTH_YEAR);
 
     return {
       you: finalYear - youBirthYear,

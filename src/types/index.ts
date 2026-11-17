@@ -542,6 +542,12 @@ export interface AppStateInputs {
   priorTaxReturnMAGI?: Record<number, number | null>; // Historical 2-year lookback tax return MAGI (e.g. 2024 for 2026, 2025 for 2027)
 }
 
+/** Fallback demographics used when a plan omits a birth date or longevity age. Shared so all engines agree. */
+export const DEFAULT_YOUR_BIRTH_YEAR = 1960;
+export const DEFAULT_WIFE_BIRTH_YEAR = 1964;
+export const DEFAULT_YOUR_LONGEVITY_AGE = 85;
+export const DEFAULT_WIFE_LONGEVITY_AGE = 95;
+
 /**
  * Resolves the starting year for a retirement plan simulation.
  * If explicitly configured on the plan inputs, returns that constant year.
@@ -577,6 +583,7 @@ export interface SimulationResultRow {
   isRothConversionCapped?: boolean;
   rothConversionShortfall?: number;
   otherTaxableIncome: number; // Discretionary pre-tax IRA draws taxed this year (in-year draws + prior-year tax-funding draws)
+  capitalLossCarryforward?: number; // Net capital loss carried into next year after the ordinary-income offset
   priorYearTaxFundingGains?: number; // Portion of capitalGainsTriggered realized by selling brokerage to pay last year's tax settlement
   priorYearTaxFundingPreTaxDraw?: number; // Portion of otherTaxableIncome drawn from pre-tax IRAs to pay last year's tax settlement
   
@@ -591,7 +598,7 @@ export interface SimulationResultRow {
   niitTax: number;
   taxableSS: number;
   taxableDividends: number;
-  isSingleReturn?: boolean; // True when the year was filed as a single return
+  isSingleReturn: boolean; // True when the year was filed as a single return
   irmaaUsesSingleTiers?: boolean; // True when this year's IRMAA used single tiers (filing status of the year minus 2 return)
   qualifiedDividends?: number; // Portion of dividends taxed at preferential capital gains rates
   taxableInterest: number;

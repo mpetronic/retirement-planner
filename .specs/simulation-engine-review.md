@@ -40,7 +40,7 @@ Use this table to track what has been debated and fixed.
 | 17 | MC sequences hard-capped at 35 years | Low-Medium | Fixed |
 | 18 | Bear-market rule uses look-ahead | Low-Medium | Fixed |
 | 19 | RMD counted when not distributed; cross-spouse QCD | Low | Fixed |
-| 20 | Minor tax-base omissions | Low | Open |
+| 20 | Minor tax-base omissions | Low | Fixed |
 | 21 | Modeling assumptions to make explicit | Info | Open |
 
 ---
@@ -735,6 +735,14 @@ conversions. The default is an even split, which matches the previous behavior.
 - `taxEquilibriumEngine.ts:115` infers `isSingle` from the std-deduction midpoint, which is fragile.
 - Historical 2025 row is a placeholder; 2024 S&P TR is 25.02% vs 24.00 in the table.
 
+**Resolution:** NIIT base now includes cash interest (also in the tax-equilibrium NIIT drag check);
+capital losses net against gains, offset up to $3,000 of ordinary income and carry forward
+(`capitalLossCarryforward`); the tithe estimate no longer adds dividend yield to a total return;
+optimizer and UI demographic fallbacks share `DEFAULT_*` constants; `isSingleReturn` is required and
+the midpoint inference is removed; flat conversions follow the simulated CPI; the 2024 and 2025
+historical rows are corrected. Fund distributions, constant MC cash yield, quarterly estimates and
+the fixed FRA are documented in #21.
+
 ---
 
 ## 21. Modeling assumptions worth being explicit about
@@ -754,6 +762,17 @@ These are not bugs, but they shape the results and should be decided consciously
   Irrelevant at your ages, relevant if the sample plan is shared.
 - **No underpayment penalty** on the (often large) year-end settlement.
 - **No employer 401(k) match** is modeled during working years.
+- **Mutual fund capital gain distributions are not modeled separately.** Only the non-qualified
+  dividend portion approximates them. For a bond-heavy taxable account, raise that portion above the
+  0.15 default.
+- **The Monte Carlo cash yield is constant** (`cashYieldRate`) while bond returns are stochastic.
+  Cash is a small slice and a money-market yield is not driven by bond price moves.
+- **Quarterly estimated tax vouchers exclude NIIT and fill-to-target conversions**, and no
+  underpayment penalty or safe-harbor rule is modeled. Settlement happens in full at year end.
+- **Full retirement age is fixed at 67** (`SS_FULL_RETIREMENT_AGE`), correct for anyone born 1960 or
+  later. A plan with an earlier birth year would get the wrong FRA.
+- **Capital losses are not split short-term vs long-term**, the offset limit is the same for single
+  and MFJ ($3,000), and the state return follows the federal offset.
 - **Taxable account returns are modeled correctly** (dividends are subtracted before applying total
   return, so there is no double count). Checked specifically because it is a common error.
 

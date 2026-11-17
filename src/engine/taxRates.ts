@@ -22,6 +22,8 @@ const IRMAA_TIERS_SINGLE = LATEST_FEDERAL_RULES.irmaaTiers.single;
  * Net Investment Income Tax (NIIT) Statutory Constants (IRC Section 1411)
  */
 export const STATUTORY_NIIT_RATE = 0.038;
+/** Net capital losses beyond gains can offset this much ordinary income per year (same for single and MFJ); the rest carries forward. */
+export const CAPITAL_LOSS_ORDINARY_OFFSET_LIMIT = 3000;
 export const STATUTORY_NIIT_THRESHOLD_SINGLE = 200000;
 export const STATUTORY_NIIT_THRESHOLD_MFJ = 250000;
 

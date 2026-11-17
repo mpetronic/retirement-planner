@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { SimulationResultRow, AppStateInputs, getSimulationStartYear } from '../types';
+import { SimulationResultRow, AppStateInputs, getSimulationStartYear, DEFAULT_YOUR_LONGEVITY_AGE, DEFAULT_WIFE_LONGEVITY_AGE } from '../types';
 import { TableProperties, Info, AlertTriangle, X } from 'lucide-react';
 import { getFederalIndexing, getFederalRules, indexedIrmaaLimit } from '../engine/federalTaxRules';
 import { calculateFedTaxWithLTCG, calculateTaxableSS } from '../engine/simulationEngine';
@@ -110,7 +110,7 @@ export const LookbackLedgerTable: React.FC<LookbackLedgerTableProps> = ({
   const deathYear = useMemo(() => {
     if (!inputs.you.birthDate) return 2045;
     const year = parseInt(inputs.you.birthDate.split('-')[0], 10);
-    return isNaN(year) ? 2045 : (year + (inputs.you.longevityAge ?? 85));
+    return isNaN(year) ? 2045 : (year + (inputs.you.longevityAge ?? DEFAULT_YOUR_LONGEVITY_AGE));
   }, [inputs.you.birthDate, inputs.you.longevityAge]);
 
   const formatCurrency = (val: number) => {
@@ -435,8 +435,8 @@ export const LookbackLedgerTable: React.FC<LookbackLedgerTableProps> = ({
                       )}
                       <span className="text-[10px] font-normal text-slate-400">
                         {inputs.isSingleFiler 
-                          ? `(${r.yourAge >= (inputs.you.longevityAge ?? 85) ? '-' : r.yourAge})` 
-                          : `(${r.yourAge >= (inputs.you.longevityAge ?? 85) ? '-' : r.yourAge}/${r.wifeAge >= (inputs.wife?.longevityAge ?? 95) ? '-' : r.wifeAge})`}
+                          ? `(${r.yourAge >= (inputs.you.longevityAge ?? DEFAULT_YOUR_LONGEVITY_AGE) ? '-' : r.yourAge})` 
+                          : `(${r.yourAge >= (inputs.you.longevityAge ?? DEFAULT_YOUR_LONGEVITY_AGE) ? '-' : r.yourAge}/${r.wifeAge >= (inputs.wife?.longevityAge ?? DEFAULT_WIFE_LONGEVITY_AGE) ? '-' : r.wifeAge})`}
                       </span>
                     </div>
                   </td>

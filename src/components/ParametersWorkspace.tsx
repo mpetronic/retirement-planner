@@ -10,6 +10,8 @@ import {
   SS_PAYMENT_PERCENT_MIN,
   SS_PAYMENT_PERCENT_MAX,
   SS_REDUCTION_MIN_YEAR,
+  DEFAULT_WIFE_LONGEVITY_AGE,
+  DEFAULT_YOUR_LONGEVITY_AGE
 } from '../types';
 import {
   Wallet,
@@ -515,7 +517,7 @@ export const ParametersWorkspace: React.FC<ParametersWorkspaceProps> = ({
                   min={50}
                   max={110}
                   step={1}
-                  value={inputs.you.longevityAge ?? 90}
+                  value={inputs.you.longevityAge ?? DEFAULT_YOUR_LONGEVITY_AGE}
                   onChange={(val) => updateNestedState('you', 'longevityAge', val)}
                   renderLabel={(displayVal) => (
                     <div className="flex justify-between items-center text-xs">
@@ -712,7 +714,7 @@ export const ParametersWorkspace: React.FC<ParametersWorkspaceProps> = ({
                     min={50}
                     max={110}
                     step={1}
-                    value={inputs.wife.longevityAge ?? 95}
+                    value={inputs.wife.longevityAge ?? DEFAULT_WIFE_LONGEVITY_AGE}
                     onChange={(val) => updateNestedState('wife', 'longevityAge', val)}
                     renderLabel={(displayVal) => (
                       <div className="flex justify-between items-center text-xs">

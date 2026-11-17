@@ -13,6 +13,7 @@ import {
   calculateFedTaxWithLTCG,
   getRMDStartAge,
 } from './simulationEngine';
+import { STATUTORY_NIIT_RATE, STATUTORY_NIIT_THRESHOLD_SINGLE, CAPITAL_LOSS_ORDINARY_OFFSET_LIMIT } from './taxRates';
 import { getFederalRules, FederalIndexing } from './federalTaxRules';
 
 // 2026 rules at the 2026 start year, so no indexing is applied
@@ -489,7 +490,7 @@ describe('runRetirementSimulation', () => {
     const actualEndTaxable = row2040!.endYourTaxableBrokerage + row2040!.endWifeTaxableBrokerage;
     // Expected value calibrated for the monthly-compounding engine with cash buffer yield
     // and prior-year tax-funding income carried into the following tax year.
-    expect(actualEndTaxable).toBeCloseTo(663730.2, 0);
+    expect(actualEndTaxable).toBeCloseTo(663383.8, 0);
   });
 
   it('should apply pre-Medicare premiums and detailed health expenses correctly based on age, work status, and retirement', () => {
@@ -1412,6 +1413,57 @@ describe('runRetirementSimulation fixes', () => {
     expect(row2026.taxableInterest).toBeGreaterThan(0);
     expect(row2026.fedAGI).toBeCloseTo(row2026.taxableInterest, 1);
     expect(row2026.magi).toBeCloseTo(row2026.taxableInterest, 1);
+  });
+
+  it('should grow flat Roth conversions with the simulated CPI index', () => {
+    const inputs = getMockInputs();
+    inputs.rothConversionStrategy = 'flat';
+    inputs.annualRothConversion = 50000;
+    inputs.rothConversionStartYear = 2027;
+    inputs.rothConversionEndYear = 2030;
+    inputs.portfolio.yourPreTaxIRA = 2_000_000;
+    const rows = runRetirementSimulation(inputs);
+    const first = rows.find(r => r.year === 2027)!;
+    const later = rows.find(r => r.year === 2030)!;
+
+    expect(first.intentionalRothConversion).toBeGreaterThan(0);
+    expect(later.intentionalRothConversion / first.intentionalRothConversion)
+      .toBeCloseTo(later.cpiFactor! / first.cpiFactor!, 3);
+  });
+
+  it('should carry net capital losses forward and offset only the annual ordinary-income limit', () => {
+    const inputs = getMockInputs();
+    inputs.isSingleFiler = true;
+    inputs.annualLivingExpenses = 150000;
+    inputs.you.plannedRetirementAge = 55;
+    inputs.you.estimatedPIA = 0;
+    inputs.portfolio.yourCash = 0;
+    inputs.portfolio.yourPreTaxIRA = 0;
+    inputs.portfolio.yourRothIRA = 0;
+    // Underwater taxable account: basis is double the market value, so every sale realizes a loss
+    inputs.portfolio.yourTaxableBrokerage = 400000;
+    inputs.portfolio.yourTaxableBasis = 800000;
+    const rows = runRetirementSimulation(inputs);
+    const first = rows[0];
+
+    expect(first.capitalGainsTriggered).toBe(0);
+    expect(first.drawdownTaxable ?? 0).toBeGreaterThan(0);
+    expect(first.capitalLossCarryforward ?? 0).toBeGreaterThan(CAPITAL_LOSS_ORDINARY_OFFSET_LIMIT);
+    // The ordinary offset can only reduce AGI by the statutory limit
+    expect(first.fedAGI).toBeGreaterThanOrEqual(first.taxableInterest + first.taxableDividends - CAPITAL_LOSS_ORDINARY_OFFSET_LIMIT - 0.01);
+  });
+
+  it('should apply NIIT to cash interest when MAGI exceeds the statutory threshold', () => {
+    const inputs = getMockInputs();
+    inputs.isSingleFiler = true;
+    inputs.portfolio.yourCash = 10_000_000;
+    const row = runRetirementSimulation(inputs)[0];
+
+    const expectedNiit =
+      Math.min(row.taxableInterest, row.magi - STATUTORY_NIIT_THRESHOLD_SINGLE) * STATUTORY_NIIT_RATE;
+    expect(row.taxableInterest).toBeGreaterThan(STATUTORY_NIIT_THRESHOLD_SINGLE);
+    expect(expectedNiit).toBeGreaterThan(0);
+    expect(row.niitTax).toBeCloseTo(expectedNiit, 1);
   });
 
   it('should check surviving spouse age for standard deduction age addition when single', () => {

@@ -17,6 +17,8 @@ import {
   RothConversionStrategy,
   RothConversionSourceMode,
   getSimulationStartYear,
+  DEFAULT_YOUR_LONGEVITY_AGE,
+  DEFAULT_WIFE_LONGEVITY_AGE
 } from '../types';
 import { getSimulationHorizonYears } from '../engine/simulationEngine';
 import { DEFAULT_ROTH_SOURCE_YOUR_PERCENT, getRothConversionSourceNames } from '../engine/rothConversionSplit';
@@ -211,8 +213,8 @@ export const TaxableIncomeWorkspace: React.FC<TaxableIncomeWorkspaceProps> = ({
       wifeAge = yr - wifeBirthYear || (63 + delta);
     }
 
-    const primaryLongevity = inputs.you.longevityAge ?? 85;
-    const spouseLongevity = inputs.wife?.longevityAge ?? 95;
+    const primaryLongevity = inputs.you.longevityAge ?? DEFAULT_YOUR_LONGEVITY_AGE;
+    const spouseLongevity = inputs.wife?.longevityAge ?? DEFAULT_WIFE_LONGEVITY_AGE;
     const primaryAgeStr = yourAge >= primaryLongevity ? '-' : String(yourAge);
     const spouseAgeStr = wifeAge >= spouseLongevity ? '-' : String(wifeAge);
 
@@ -231,7 +233,7 @@ export const TaxableIncomeWorkspace: React.FC<TaxableIncomeWorkspaceProps> = ({
     return match ? parseInt(match[1], 10) : 1960;
   }, [inputs.you.birthDate]);
 
-  const deathYear = yourBirthYear + (inputs.you.longevityAge ?? 85);
+  const deathYear = yourBirthYear + (inputs.you.longevityAge ?? DEFAULT_YOUR_LONGEVITY_AGE);
 
   // Compute non-conversion taxable income breakdown for each year
   // Net Taxable Base = max(0, Non-Conversion AGI - Standard Deduction)
@@ -434,8 +436,8 @@ export const TaxableIncomeWorkspace: React.FC<TaxableIncomeWorkspaceProps> = ({
 
     const datasets = rawDatasets.filter(Boolean) as ChartData<'bar' | 'line'>['datasets'];
 
-    const primaryLongevity = inputs.you.longevityAge ?? 85;
-    const spouseLongevity = inputs.wife?.longevityAge ?? 95;
+    const primaryLongevity = inputs.you.longevityAge ?? DEFAULT_YOUR_LONGEVITY_AGE;
+    const spouseLongevity = inputs.wife?.longevityAge ?? DEFAULT_WIFE_LONGEVITY_AGE;
 
     const labels = processedRows.map((r) => {
       const isSingle = inputs.isSingleFiler || !r.wifeAge || r.wifeAge === 0;
@@ -533,8 +535,8 @@ export const TaxableIncomeWorkspace: React.FC<TaxableIncomeWorkspaceProps> = ({
               if (!items.length) return '';
               const idx = items[0].dataIndex;
               const r = processedRows[idx];
-              const primaryLongevity = inputs.you.longevityAge ?? 85;
-              const spouseLongevity = inputs.wife?.longevityAge ?? 95;
+              const primaryLongevity = inputs.you.longevityAge ?? DEFAULT_YOUR_LONGEVITY_AGE;
+              const spouseLongevity = inputs.wife?.longevityAge ?? DEFAULT_WIFE_LONGEVITY_AGE;
               const primaryAgeStr = r.yourAge >= primaryLongevity ? '-' : String(r.yourAge);
               const spouseAgeStr = r.wifeAge >= spouseLongevity ? '-' : String(r.wifeAge);
               if (inputs.isSingleFiler || !r.wifeAge || r.wifeAge === 0) {
@@ -1313,8 +1315,8 @@ export const TaxableIncomeWorkspace: React.FC<TaxableIncomeWorkspaceProps> = ({
                     <td className="py-2 px-3 font-bold text-slate-100">{r.year}</td>
                     <td className="py-2 px-3 text-slate-400">
                       {inputs.isSingleFiler 
-                        ? (r.yourAge >= (inputs.you.longevityAge ?? 85) ? '-' : r.yourAge)
-                        : `${r.yourAge >= (inputs.you.longevityAge ?? 85) ? '-' : r.yourAge} / ${r.wifeAge >= (inputs.wife?.longevityAge ?? 95) ? '-' : r.wifeAge}`}
+                        ? (r.yourAge >= (inputs.you.longevityAge ?? DEFAULT_YOUR_LONGEVITY_AGE) ? '-' : r.yourAge)
+                        : `${r.yourAge >= (inputs.you.longevityAge ?? DEFAULT_YOUR_LONGEVITY_AGE) ? '-' : r.yourAge} / ${r.wifeAge >= (inputs.wife?.longevityAge ?? DEFAULT_WIFE_LONGEVITY_AGE) ? '-' : r.wifeAge}`}
                     </td>
                     <td className="py-2 px-3">{formatCurrency(r.grossNonConvAGI)}</td>
                     <td className="py-2 px-3 text-slate-400">-{formatCurrency(r.stdDeduction)}</td>
